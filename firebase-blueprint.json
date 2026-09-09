@@ -1,0 +1,632 @@
+{
+  "entities": {
+    "Organization": {
+      "title": "Organization (Tenant)",
+      "description": "Multi-tenant organization boundary isolating SGQ data, manuals, and records",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Organization unique identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Organization business name"
+        },
+        "legalName": {
+          "type": "string",
+          "description": "Organization official legal/commercial name"
+        },
+        "logoUrl": {
+          "type": "string",
+          "description": "URL or vector path of the organization logo"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ACTIVE", "INACTIVE"],
+          "description": "Organization operating status"
+        },
+        "configuration": {
+          "type": "object",
+          "description": "Tenant specific configurations including sectors, categories, SLAs, and presentation defaults"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["id", "name", "status", "createdAt", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "User profile with role-based access control metadata and organization tenancy",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID"
+        },
+        "email": {
+          "type": "string",
+          "description": "User email address"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User full name or alias"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["ADMIN", "GESTOR_SGQ", "AUDITOR", "CONSULTA"],
+          "description": "User SGQ role"
+        },
+        "organizationId": {
+          "type": "string",
+          "description": "ID of the tenant organization"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["ACTIVE", "INACTIVE"],
+          "description": "Account operational status"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["uid", "email", "role", "organizationId", "status", "createdAt", "updatedAt"]
+    },
+    "NonConformity": {
+      "title": "Non-Conformity Record (RNC)",
+      "description": "Complete aviation quality management non-conformity report (F 001-29 standard)",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique NC record ID"
+        },
+        "codigoFormulario": {
+          "type": "string",
+          "description": "Official form code (e.g. F 001-29)"
+        },
+        "revisao": {
+          "type": "string",
+          "description": "Form revision code"
+        },
+        "numeroNC": {
+          "type": "string",
+          "description": "Human-readable sequential or assigned NC number"
+        },
+        "titulo": {
+          "type": "string",
+          "description": "Title and summary of the non-conformity"
+        },
+        "tipoAcao": {
+          "type": "string",
+          "enum": ["Corretiva", "Preventiva", "Oportunidade de Melhoria"],
+          "description": "Classification of required action"
+        },
+        "descricaoNC": {
+          "type": "string",
+          "description": "Detailed description of the non-conformity"
+        },
+        "normaReferencia": {
+          "type": "string",
+          "description": "Reference norm and clause"
+        },
+        "setor": {
+          "type": "string",
+          "description": "Department or base involved"
+        },
+        "categoria": {
+          "type": "string",
+          "description": "SGQ taxonomy category"
+        },
+        "statusGeral": {
+          "type": "string",
+          "description": "Lifecycle status of the non-conformity"
+        },
+        "prazoResposta": {
+          "type": "string",
+          "description": "Target response deadline"
+        },
+        "dataIdentificacao": {
+          "type": "string",
+          "description": "Identification date"
+        },
+        "auditor": {
+          "type": "string",
+          "description": "Auditor responsible for raising the RNC"
+        },
+        "criadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "atualizadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["id", "codigoFormulario", "numeroNC", "titulo", "tipoAcao", "descricaoNC", "statusGeral", "criadoEm", "atualizadoEm"]
+    },
+    "Manual": {
+      "title": "SGQ Manual & Regulatory Document",
+      "description": "Full aeronautical manual, regulatory standard, or procedure with versioning and chapters",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique manual identifier"
+        },
+        "codigo": {
+          "type": "string",
+          "description": "Document code (e.g. MOMQ, RBAC 145)"
+        },
+        "titulo": {
+          "type": "string",
+          "description": "Full document title"
+        },
+        "revisao": {
+          "type": "string",
+          "description": "Current active revision code"
+        },
+        "dataVigencia": {
+          "type": "string",
+          "description": "Effective start date"
+        },
+        "status": {
+          "type": "string",
+          "description": "Validity status"
+        },
+        "descricaoResumo": {
+          "type": "string",
+          "description": "Summary of manual scope"
+        },
+        "conteudoTexto": {
+          "type": "string",
+          "description": "Indexed text content for AI and audit verification"
+        },
+        "criadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "atualizadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last update timestamp"
+        }
+      },
+      "required": ["id", "codigo", "titulo", "revisao", "dataVigencia", "status", "criadoEm", "atualizadoEm"]
+    },
+    "OrganizationAuditLog": {
+      "title": "Organization Audit Trail Log",
+      "description": "Tamper-evident audit log of quality events, changes, and approvals within an organization",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Audit entry unique ID"
+        },
+        "organizationId": {
+          "type": "string",
+          "description": "Organization ID"
+        },
+        "entity": {
+          "type": "string",
+          "description": "Target entity type"
+        },
+        "entityId": {
+          "type": "string",
+          "description": "Target entity ID"
+        },
+        "action": {
+          "type": "string",
+          "description": "Action executed"
+        },
+        "changedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Event timestamp"
+        },
+        "changedByUid": {
+          "type": "string",
+          "description": "UID of author"
+        },
+        "changedByEmail": {
+          "type": "string",
+          "description": "Email of author"
+        }
+      },
+      "required": ["id", "organizationId", "entity", "entityId", "action", "changedAt", "changedByUid", "changedByEmail"]
+    },
+    "SystemDiagnostic": {
+      "title": "System Diagnostic Record",
+      "description": "Technical real-time record to validate Firestore multi-user read/write/update/delete capabilities",
+      "type": "object",
+      "properties": {
+        "testId": {
+          "type": "string",
+          "description": "Diagnostic record unique ID"
+        },
+        "createdByUid": {
+          "type": "string",
+          "description": "Creator Firebase Auth UID"
+        },
+        "createdByEmail": {
+          "type": "string",
+          "description": "Creator email address"
+        },
+        "message": {
+          "type": "string",
+          "description": "Diagnostic message or test payload"
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of the test record"
+        },
+        "lastModifiedByEmail": {
+          "type": "string",
+          "description": "Email of user who last modified the record"
+        },
+        "lastModifiedByUid": {
+          "type": "string",
+          "description": "UID of user who last modified the record"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp"
+        }
+      },
+      "required": ["testId", "createdByUid", "createdByEmail", "message", "status", "createdAt", "updatedAt"]
+    },
+    "RncComparison": {
+      "title": "RNC Responded Document Comparison Record",
+      "description": "Analysis, semantic divergence, and human validation comparing original RNC/AI hypothesis with actual user responses",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Comparison unique ID"
+        },
+        "documentoFonteId": {
+          "type": "string",
+          "description": "Source document tracking identifier"
+        },
+        "nomeArquivoFonte": {
+          "type": "string",
+          "description": "Original filename (e.g. resposta_NC_015.docx)"
+        },
+        "tipoArquivoFonte": {
+          "type": "string",
+          "enum": ["DOCX", "PDF", "TXT", "TEXTO_COLADO"],
+          "description": "Format of source document"
+        },
+        "textoOriginalExtraido": {
+          "type": "string",
+          "description": "Extracted text content from the uploaded response document"
+        },
+        "rncIdAssociada": {
+          "type": "string",
+          "description": "ID of associated RNC in QualiGest"
+        },
+        "numeroNCAssociada": {
+          "type": "string",
+          "description": "Assigned NC number"
+        },
+        "statusGeral": {
+          "type": "string",
+          "description": "Validation and processing status"
+        },
+        "dataUpload": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Upload timestamp"
+        },
+        "criadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "atualizadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp"
+        }
+      },
+      "required": ["id", "documentoFonteId", "nomeArquivoFonte", "tipoArquivoFonte", "statusGeral", "criadoEm", "atualizadoEm"]
+    },
+    "ValidatedKnowledge": {
+      "title": "SGQ Validated Knowledge Pattern",
+      "description": "Empirical quality knowledge pattern validated from recurring real-world user responses and approved by SGQ Manager",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Pattern unique identifier"
+        },
+        "tituloPadrao": {
+          "type": "string",
+          "description": "Standardized title of the quality pattern"
+        },
+        "categoria": {
+          "type": "string",
+          "description": "SGQ domain category"
+        },
+        "setor": {
+          "type": "string",
+          "description": "Relevant operational sector or workshop"
+        },
+        "contextoDesvio": {
+          "type": "string",
+          "description": "Symptom and factual context"
+        },
+        "causaValidada": {
+          "type": "string",
+          "description": "Root cause confirmed by human responders and validated by SGQ"
+        },
+        "nivelMaturidade": {
+          "type": "integer",
+          "description": "Knowledge maturity level 1 to 5"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PROPOSTO", "VALIDADO", "PADRAO_SGQ", "OBSOLETO", "ARQUIVADO"],
+          "description": "Governance status"
+        },
+        "validadoPorGestor": {
+          "type": "string",
+          "description": "Name or email of SGQ Manager who validated the pattern"
+        },
+        "dataValidacao": {
+          "type": "string",
+          "description": "Date of formal validation"
+        },
+        "criadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "atualizadoEm": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp"
+        }
+      },
+      "required": ["id", "tituloPadrao", "categoria", "setor", "causaValidada", "nivelMaturidade", "status", "criadoEm", "atualizadoEm"]
+    },
+    "Person": {
+      "title": "Person / Collaborator (Colaborador)",
+      "description": "Personnel performing maintenance, quality, and support operations under SGQ",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "nome": { "type": "string" },
+        "matricula": { "type": "string" },
+        "setor": { "type": "string" },
+        "funcao": { "type": "string" },
+        "cargoOperacional": { "type": "string" },
+        "status": { "type": "string", "enum": ["ATIVO", "INATIVO", "AFASTADO", "DESLIGADO"] },
+        "restricaoOperacional": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "organizationId", "nome", "matricula", "setor", "funcao", "status"]
+    },
+    "Competency": {
+      "title": "Competency Definition",
+      "description": "Standard competency in the SGQ catalog with maturity levels and training links",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "codigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "descricao": { "type": "string" },
+        "criticidade": { "type": "string", "enum": ["BAIXA", "MEDIA", "ALTA", "CRITICA"] },
+        "status": { "type": "string", "enum": ["ATIVA", "INATIVA"] }
+      },
+      "required": ["id", "organizationId", "codigo", "nome", "criticidade", "status"]
+    },
+    "TrainingCourse": {
+      "title": "Training Course",
+      "description": "Technical and regulatory training curriculum (RBAC 145, EWIS, FTS, HF, etc.)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "codigo": { "type": "string" },
+        "titulo": { "type": "string" },
+        "tipo": { "type": "string" },
+        "cargaHorariaHoras": { "type": "number" },
+        "recorrente": { "type": "boolean" },
+        "periodicidadeMeses": { "type": "number" },
+        "origemPrazo": { "type": "string" },
+        "status": { "type": "string", "enum": ["ATIVO", "INATIVO"] }
+      },
+      "required": ["id", "organizationId", "codigo", "titulo", "cargaHorariaHoras", "status"]
+    },
+    "PersonQualification": {
+      "title": "Person Qualification",
+      "description": "CHTs ANAC, Internal Authorizations (RTS, RII), NDT, and licenses with expiration controls",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "colaboradorId": { "type": "string" },
+        "tipo": { "type": "string" },
+        "titulo": { "type": "string" },
+        "numeroRegistro": { "type": "string" },
+        "status": { "type": "string" },
+        "bloqueiaOperacaoSeVencida": { "type": "boolean" }
+      },
+      "required": ["id", "organizationId", "colaboradorId", "tipo", "titulo", "status"]
+    },
+    "ControlledDocument": {
+      "title": "Controlled Document",
+      "description": "Logical identity of a controlled technical or regulatory document (MOMQ, RBAC, AMM, POP)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "codigo": { "type": "string" },
+        "titulo": { "type": "string" },
+        "categoria": { "type": "string" },
+        "emissor": { "type": "string" },
+        "responsavelNome": { "type": "string" },
+        "statusGeral": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "codigo", "titulo", "categoria", "statusGeral"]
+    },
+    "DocumentRevision": {
+      "title": "Document Revision",
+      "description": "Immutable version record of a controlled document with effective dates and lifecycle status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "documentoId": { "type": "string" },
+        "codigoDocumento": { "type": "string" },
+        "numeroRevisao": { "type": "string" },
+        "dataEntradaVigor": { "type": "string" },
+        "statusCicloVida": { "type": "string" },
+        "ehImutavel": { "type": "boolean" }
+      },
+      "required": ["id", "organizationId", "documentoId", "codigoDocumento", "numeroRevisao", "dataEntradaVigor", "statusCicloVida"]
+    },
+    "ExternalDocumentSource": {
+      "title": "External Document Source",
+      "description": "Official external publication repositories (ANAC, FAA, EASA, OEMs)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "nome": { "type": "string" },
+        "tipoFonte": { "type": "string" },
+        "frequenciaDias": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "nome", "tipoFonte", "status"]
+    },
+    "ClientRevisionRequest": {
+      "title": "Client Revision Request",
+      "description": "Tracking of customer-supplied technical manual revision requests and multilingual communications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "clienteNome": { "type": "string" },
+        "documentoCodigo": { "type": "string" },
+        "idioma": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "clienteNome", "documentoCodigo", "idioma", "status"]
+    }
+  },
+  "firestore": {
+    "/organizations/{organizationId}": {
+      "schema": "Organization",
+      "description": "Tenant organizations boundary"
+    },
+    "/organizations/{organizationId}/nonConformities/{ncId}": {
+      "schema": "NonConformity",
+      "description": "Non-conformity records belonging to the organization"
+    },
+    "/organizations/{organizationId}/manuals/{manualId}": {
+      "schema": "Manual",
+      "description": "Regulatory manuals and standards belonging to the organization"
+    },
+    "/organizations/{organizationId}/auditTrails/{auditId}": {
+      "schema": "OrganizationAuditLog",
+      "description": "Audit trails and immutable operational history for the organization"
+    },
+    "/organizations/{organizationId}/rncComparisons/{comparisonId}": {
+      "schema": "RncComparison",
+      "description": "Responded RNC comparison analyses, semantic divergences, and validation history"
+    },
+    "/organizations/{organizationId}/validatedKnowledge/{knowledgeId}": {
+      "schema": "ValidatedKnowledge",
+      "description": "SGQ organizational validated knowledge base and learned root cause/action patterns"
+    },
+    "/organizations/{organizationId}/persons/{personId}": {
+      "schema": "Person",
+      "description": "Collaborators and operational personnel records"
+    },
+    "/organizations/{organizationId}/competencies/{competencyId}": {
+      "schema": "Competency",
+      "description": "Catalog of technical competencies and evaluation levels"
+    },
+    "/organizations/{organizationId}/personCompetencies/{personCompetencyId}": {
+      "schema": "PersonCompetency",
+      "description": "Attributed competency levels and validity records per collaborator"
+    },
+    "/organizations/{organizationId}/trainingCourses/{courseId}": {
+      "schema": "TrainingCourse",
+      "description": "Training programs and courses catalog"
+    },
+    "/organizations/{organizationId}/trainingRecords/{trainingRecordId}": {
+      "schema": "TrainingRecord",
+      "description": "Completed training records with grade, instructor, and certification"
+    },
+    "/organizations/{organizationId}/qualifications/{qualificationId}": {
+      "schema": "PersonQualification",
+      "description": "Technical licenses (CHT ANAC, RTS, RII, NDT) and operational authorizations"
+    },
+    "/organizations/{organizationId}/personDocuments/{documentId}": {
+      "schema": "PersonDocument",
+      "description": "Objective evidence, certificates, diplomas, and documents per person"
+    },
+    "/organizations/{organizationId}/activityRequirements/{activityId}": {
+      "schema": "ActivityRequirement",
+      "description": "Operational activities matrix and mandatory competency/qualification requirements"
+    },
+    "/organizations/{organizationId}/aiCompetencySuggestions/{suggestionId}": {
+      "schema": "AiCompetencySuggestion",
+      "description": "AI hypotheses and suggestions for human SGQ validation and training correlations"
+    },
+    "/organizations/{organizationId}/controlled_documents/{documentId}": {
+      "schema": "ControlledDocument",
+      "description": "Controlled technical, operational, and regulatory documents"
+    },
+    "/organizations/{organizationId}/document_revisions/{revisionId}": {
+      "schema": "DocumentRevision",
+      "description": "Versioned immutable records and revisions of controlled documents"
+    },
+    "/organizations/{organizationId}/external_document_sources/{sourceId}": {
+      "schema": "ExternalDocumentSource",
+      "description": "Controlled external authority and OEM publications and verification schedules"
+    },
+    "/organizations/{organizationId}/client_revision_requests/{requestId}": {
+      "schema": "ClientRevisionRequest",
+      "description": "Customer manual revision confirmation requests and verification tracking"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile records indexed strictly by Firebase Auth UID"
+    },
+    "/systemDiagnostics/{diagnosticId}": {
+      "schema": "SystemDiagnostic",
+      "description": "Real-time diagnostic test collection for multi-user infrastructure verification"
+    }
+  }
+}

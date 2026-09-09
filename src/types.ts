@@ -1,0 +1,1910 @@
+export type TipoAcao = 'Corretiva' | 'Preventiva' | 'Oportunidade de Melhoria';
+
+// Vínculo opcional com Auditoria Externa (Fase 8)
+export interface VinculoAuditoriaExterna {
+  auditoriaId: string;
+  numeroAuditoria: string;
+  constatacaoId: string;
+  numeroConstatacaoExterna: string;
+  entidadeAuditora: string;
+  dataVinculo: string;
+}
+
+export type SeveridadeRisco = '1' | '2' | '3' | '4' | '5';
+export type ProbabilidadeRisco = 'A' | 'B' | 'C' | 'D' | 'E';
+export type NivelRisco = 'Baixo' | 'Médio' | 'Alto' | 'Crítico';
+
+export interface AvaliacaoRisco {
+  severidade: SeveridadeRisco | string;
+  probabilidade: ProbabilidadeRisco | string;
+  codigo: string; // Ex: '2C', '1A', '4E'
+  nivel: NivelRisco;
+  nivelRisco?: NivelRisco;
+  justificativa?: string;
+}
+
+// Workflow completo de ciclo de vida da Não Conformidade
+export type StatusGeralNC =
+  | 'Rascunho'
+  | 'Aberta'
+  | 'Em Investigação'
+  | 'Ação Corretiva'
+  | 'Aguardando Eficácia'
+  | 'Aguardando Aprovação'
+  | 'Encerrada'
+  | 'Rejeitada'
+  | 'Cancelada'
+  | 'Suspensa'
+  // Compatibilidade com estados legados
+  | 'Em Contenção'
+  | 'Em Análise de Causa'
+  | 'Ação em Andamento'
+  | 'Em Andamento'
+  | 'Reaberta'
+  | 'Atrasada';
+
+export type MetodoVerificacaoEficacia = 
+  | 'Documental' 
+  | 'Visual' 
+  | 'Entrevista' 
+  | 'Outro'
+  | 'Reauditoria / Inspeção de Acompanhamento'
+  | 'Reauditoria';
+
+// Classificação de tipo de documento
+export type TipoDocumento = 
+  | 'Documento Normativo Oficial'
+  | 'Manual Interno'
+  | 'Procedimento (POP)'
+  | 'Instrução de Trabalho (IT)'
+  | 'Evidência'
+  | 'Informação de IA'
+  | 'Informação do Usuário';
+
+// Status de vigência documental
+export type StatusVigenciaDocumento = 
+  | 'Vigente'
+  | 'Em Revisão'
+  | 'Obsoleto'
+  | 'Vigência não verificada'
+  | 'Vigência não determinada — requer validação humana';
+
+// Origem da Informação
+export type OrigemInformacao = 
+  | 'MANUAL'
+  | 'REGULAMENTO'
+  | 'DOCUMENTO IMPORTADO'
+  | 'USUÁRIO'
+  | 'IA GEMINI'
+  | 'MOTOR DETERMINÍSTICO'
+  | 'REGRA DO SISTEMA';
+
+// Distinção clara de tipos de evidência (Seção 10)
+export type TipoEvidencia = 
+  | 'Evidência Objetiva'
+  | 'Declaração'
+  | 'Hipótese'
+  | 'Conclusão Validada';
+
+export interface EvidenciaItem {
+  id: string;
+  descricao: string;
+  tipo: TipoEvidencia;
+  fonteOrigem: OrigemInformacao;
+  documentoVinculadoId?: string;
+  documentoVinculadoNome?: string;
+  anexoNome?: string;
+  dataRegistro: string;
+  registradoPor: string;
+  validadoPorResponsavel?: boolean;
+  observacoes?: string;
+}
+
+// Nível qualitativo de suporte documental (Seção 6 - elimina números falsos de confiança)
+export type NivelSuporteDocumental = 
+  | 'Evidência forte'
+  | 'Evidência moderada'
+  | 'Evidência limitada'
+  | 'Evidência insuficiente';
+
+// Trilha de Auditoria e Rastreabilidade (Seção 8)
+export type OrigemAlteracao = 
+  | 'Alteração manual pelo usuário'
+  | 'Gerada pela IA'
+  | 'Importada de documento'
+  | 'Modificada pelo usuário'
+  | 'Aprovada'
+  | 'Rejeitada'
+  | 'Harmonização IA 5 Porquês'
+  | 'Harmonização Total IA'
+  | 'Regra do Sistema';
+
+// Modelo de Decisão Estruturada para Sugestões da IA / Motor SGQ (Ponto 2)
+export type StatusDecisaoSugestao = 'PENDENTE' | 'ACEITA' | 'EDITADA' | 'REJEITADA';
+
+export interface SuggestionDecision {
+  id: string;
+  field: 'contencao' | 'cincoPorques' | 'ishikawa' | 'acaoCorretiva' | 'enquadramento' | 'titulo' | 'setor' | 'categoria' | string;
+  fieldLabel: string;
+  suggestedValue: any;
+  finalValue: any;
+  source: OrigemInformacao | string;
+  status: StatusDecisaoSugestao;
+  justificativa?: string;
+  user: string;
+  timestamp: string;
+}
+
+export interface RegistroAuditoriaNC {
+  id?: string;
+  dataHora?: string;
+  data?: string; // alias for dataHora
+  usuario: string;
+  campoAlterado?: string;
+  campoModificado?: string; // alias for campoAlterado
+  valorAnterior: string;
+  novoValor: string;
+  origem?: OrigemAlteracao | string;
+  tipoEvento?: 'CRIACAO' | 'EDICAO' | 'SUGESTAO_ACEITA' | 'SUGESTAO_EDITADA' | 'SUGESTAO_REJEITADA' | 'AVALIACAO_RISCO' | 'STATUS_CHANGE' | 'ENCERRAMENTO' | string;
+  decisaoHumana?: 'Aceita' | 'Editada' | 'Rejeitada' | 'Rascunho';
+  justificativa?: string;
+  motivo?: string; // alias for justificativa
+}
+
+// Versão de documento para controle de configuração (Seção 3)
+export interface VersaoDocumentoConfig {
+  id: string;
+  revisaoOuEmenda: string; // Ex: 'Emenda 07', 'Rev. 14'
+  dataPublicacao?: string;
+  inicioVigencia: string; // YYYY-MM-DD
+  fimVigencia?: string; // YYYY-MM-DD
+  fonte: string; // Ex: 'ANAC - Portal Oficial', 'SGQ Interno'
+  status: StatusVigenciaDocumento;
+  resumoAlteracoes?: string;
+  arquivoNome?: string;
+  arquivoTamanho?: string;
+}
+
+export interface PreAnaliseContencao {
+  descricao: string;
+  responsavel: string;
+  dataLimite: string; // YYYY-MM-DD
+  dataConclusao?: string;
+  status: 'Pendente' | 'Concluída' | 'Não Aplicável';
+  observacoes?: string;
+  origem?: OrigemInformacao;
+  validadoPorHumano?: boolean;
+}
+
+export interface AnaliseCausaRaiz {
+  metodologia: '5 Porquês' | 'Ishikawa' | 'Texto Livre';
+  cincoPorques: string[]; // Quantidade variável de porquês (Seção 9)
+  explicacaoCausaSistemica?: string;
+  ishikawa?: {
+    metodo?: string;
+    maquina?: string;
+    maoDeObra?: string;
+    material?: string;
+    medicao?: string;
+    meioAmbiente?: string;
+  };
+  detalhes: string;
+  statusValidacao?: 'HIPÓTESE – REQUER VALIDAÇÃO HUMANA' | 'VALIDADA PELO RESPONSÁVEL' | 'REJEITADA';
+  evidenciasSustentacao?: string[];
+  evidenciasFaltantes?: string[];
+  perguntasInvestigacao?: string[];
+  nivelSuporteDocumental?: NivelSuporteDocumental;
+  validadoPorResponsavel?: boolean;
+  responsavelValidacao?: string;
+  dataValidacao?: string;
+  coerenciaAvaliada?: CoerenciaCausaRaizResultado;
+}
+
+// Diagnóstico de Coerência Causal dos 5 Porquês com a Conclusão & Ação Corretiva
+export interface CoerenciaCausaRaizResultado {
+  coerente: boolean;
+  grauCoerencia: 'Alta' | 'Moderada' | 'Baixa' | 'Incoerente';
+  scoreCoerencia: number; // 0 a 100
+  diagnostico: string;
+  analiseEncadeamento: Array<{
+    nivel: number;
+    titulo: string;
+    texto: string;
+    status: 'Conectado' | 'Salto Lógico' | 'Desconectado' | 'Causa Raiz Conclusiva';
+    observacao: string;
+  }>;
+  saltosLogicosIdentificados: string[];
+  conclusaoSugeridaCoerente: string;
+  cincoPorquesSugeridosCoerentes: string[];
+  acaoCorretivaSugeridaAlinhada: string;
+  justificativaSistemica?: string;
+  recomendacoesSGQ: string[];
+  dataAvaliacao?: string;
+  origemMotor?: string;
+}
+
+export interface AcaoCorretiva {
+  descricao: string;
+  comoSeraFeito?: string;
+  responsavel: string;
+  dataPrazo: string; // YYYY-MM-DD
+  dataConclusao?: string;
+  status: 'Não Iniciada' | 'Em Andamento' | 'Concluída' | 'Cancelada';
+  assinaturaResponsavel?: string;
+  validadoPorHumano?: boolean;
+}
+
+export interface VerificacaoEficacia {
+  metodo: MetodoVerificacaoEficacia;
+  outroMetodoDetalhe?: string;
+  avaliacaoRiscoResidual?: AvaliacaoRisco;
+  encerrado: 'SIM' | 'NÃO' | 'Pendente';
+  motivo?: string;
+  dataVerificacao?: string;
+  auditorVerificador?: string;
+  evidencias?: string;
+  criterioAprovacao?: string;
+}
+
+export interface HistoricoPrazo {
+  id: string;
+  dataAnterior: string;
+  novaData: string;
+  motivo: string;
+  usuario: string;
+  alteradoEm: string;
+}
+
+// Vínculo normativo com controle de configuração (Seção 3)
+export interface DocumentoNormativoAplicavel {
+  manualOuRegulamentoId?: string;
+  codigo: string; // Ex: 'RBAC 145', 'MOMQ'
+  titulo?: string;
+  revisaoOuEmenda: string; // Ex: 'Emenda 07'
+  tipo: TipoDocumento;
+  fonte: string; // Ex: 'ANAC Oficial', 'SGQ Interno'
+  statusVigenciaNaData: StatusVigenciaDocumento;
+  dataVigenciaInicio?: string;
+  dataVigenciaFim?: string;
+  capituloOuItem?: string; // Ex: '145.109' ou '3.4.3'
+  tituloRequisito?: string;
+  trechoRequisito?: string;
+  localizadoNaBase: boolean; // Se false -> "Requisito não localizado na base documental."
+}
+
+// ----------------------------------------------------
+// ANÁLISE E SUGESTÃO DO SETOR RESPONSÁVEL (SEÇÃO 6)
+// ----------------------------------------------------
+export interface AnaliseSetorResponsavel {
+  setorSugerido: string;
+  confianca: 'ALTA' | 'MEDIA' | 'BAIXA' | 'INSUFICIENTE';
+  justificativa: string;
+  setoresCandidatos?: Array<{ setor: string; relevancia: string; justificativa?: string }>;
+  origem: 'ANALISE_HEURISTICA_HISTORICO' | 'IA_GEMINI_ANALYSIS' | 'CONHECIMENTO_SGQ' | 'FALLBACK_DETERMINISTICO';
+  dataHora: string;
+  requerAtencaoDivergencia?: boolean;
+  setorInformado?: string;
+  decisaoFinal?: string;
+  usuarioDecisor?: string;
+  dataHoraDecisao?: string;
+  statusDecisao?: 'ACEITA' | 'DIVERGENTE_MANTIDA' | 'ALTERADA_MANUALMENTE' | 'PENDENTE';
+  justificativaDivergencia?: string;
+}
+
+export interface NCRecord {
+  id: string;
+  // Cabeçalho Oficial (F 001-29)
+  codigoFormulario: string; // Ex: 'F 001-29'
+  revisao: string; // Ex: '00'
+  dataEmissaoFormulario: string; // Ex: '02/09/2025'
+  numeroNC: string; // Ex: '05' ou 'NC-05'
+  titulo: string; // Ex: 'Pré Auditoria FAA'
+  tipoAcao: TipoAcao;
+
+  // 1. Descrição e Detalhes
+  descricaoNC: string;
+  normaReferencia: string; // Ex: 'MOMQ 3.4.3', 'ISO 9001:2015 7.1.5', 'RBAC 145'
+  documentoNormativoAplicavel?: DocumentoNormativoAplicavel;
+  versaoDocumentoId?: string; // ID da versão do documento normativo aplicável na data da ocorrência
+  setor: string; // Ex: 'REC - Calibração', 'Manutenção de Linha', 'Qualidade'
+  categoria: string; // Ex: 'Calibração e Metrologia', 'Controle Documental', etc.
+  responsavel?: string; // Responsável Geral pela Não Conformidade / Tratativa
+  avaliacaoRiscoInicial: AvaliacaoRisco;
+  prazoResposta: string; // YYYY-MM-DD (Prazo de Resposta da NC)
+  dataIdentificacao: string; // YYYY-MM-DD
+  auditor: string; // Ex: 'Paulo Okubo'
+
+  // Evidências e Declarações Estruturadas
+  evidenciasObjetivas?: EvidenciaItem[];
+
+  // 2. Pré-Análise da Causa e Ação de Contenção
+  preAnaliseContencao: PreAnaliseContencao;
+
+  // 3. Análise da Causa Raiz
+  analiseCausaRaiz: AnaliseCausaRaiz;
+
+  // 4. Ação Corretiva
+  acaoCorretiva: AcaoCorretiva;
+
+  // 6. Verificação da Eficácia
+  verificacaoEficacia: VerificacaoEficacia;
+
+  // Metadados do Sistema e Rastreabilidade
+  statusGeral: StatusGeralNC;
+  criadoEm: string;
+  atualizadoEm: string;
+  historicoPrazos: HistoricoPrazo[];
+  trilhaAuditoria?: RegistroAuditoriaNC[];
+  decisoesSugestoes?: SuggestionDecision[]; // Registro de decisões humanas sobre sugestões (Ponto 2 e 3)
+  tags?: string[];
+  documentoOrigemNome?: string;
+  aprovadoPor?: string;
+  dataAprovacao?: string;
+  justificativaFechamento?: string;
+  prioridadeInteligente?: PrioridadeInteligente;
+  explicacoesIA?: Record<string, ExplicacaoIAItem>;
+  analiseSetor?: AnaliseSetorResponsavel;
+  origemAuditoriaExterna?: VinculoAuditoriaExterna;
+}
+
+// ----------------------------------------------------
+// GOVERNANÇA ONTOLÓGICA DA INFORMAÇÃO SGQ (FASE 5)
+// ----------------------------------------------------
+export type OntologicalClassification = 
+  | 'FACT'               // Fato documental / evidência objetiva comprovada
+  | 'USER_RESPONSE'      // Resposta factual do executor / técnico de campo
+  | 'AI_SUGGESTION'      // Hipótese preliminar gerada por IA / motor
+  | 'INFERENCE'          // Síntese / correlação derivada sob análise
+  | 'VALIDATED_KNOWLEDGE';// Padrão formalmente homologado pelo SGQ
+
+// ----------------------------------------------------
+// PRIORIZAÇÃO INTELIGENTE EXPLICÁVEL (FASE 5)
+// ----------------------------------------------------
+export type NivelPrioridadeInteligente = 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO';
+
+export interface FatoresPrioridade {
+  riscoScore: number;         // 1 a 20 (baseado na matriz 5x5)
+  atrasoDias: number;         // Dias de vencimento (positivo = atrasado)
+  recorrenciaScore: number;   // 0 a 10 (baseado em histórico no setor/categoria)
+  impactoScore: number;       // 1 a 10 (impacto operacional / aeronavegabilidade)
+  pendenciaEficacia: boolean; // Se está aguardando verificação de eficácia
+}
+
+export interface PrioridadeInteligente {
+  nivel: NivelPrioridadeInteligente;
+  scoreGeral: number; // 0 a 100
+  justificativaExplicavel: string;
+  fatores: FatoresPrioridade;
+  calculadoEm: string;
+}
+
+// ----------------------------------------------------
+// PAINEL DE SAÚDE E ÍNDICE DE INTEGRIDADE DO SGQ (FASE 5)
+// ----------------------------------------------------
+export type CategoriaSaudeSGQ = 'RNC' | 'CONHECIMENTO' | 'DOCUMENTACAO' | 'GOVERNANCA' | 'SEGURANCA';
+export type SeveridadeSaudeSGQ = 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO';
+export type StatusIntegridadeSGQ = 'BOM' | 'ATENCAO' | 'CRITICO';
+
+export interface ItemSaudeSGQ {
+  id: string;
+  categoria: CategoriaSaudeSGQ;
+  severidade: SeveridadeSaudeSGQ;
+  titulo: string;
+  descricao: string;
+  targetId?: string;
+  targetNumeroNC?: string;
+  targetType?: 'RNC' | 'MANUAL' | 'KNOWLEDGE' | 'USER' | 'AUDIT';
+  acaoSugerida: string;
+  resolvido?: boolean;
+}
+
+export interface RelatorioSaudeSGQ {
+  scoreIntegridade: number; // 0 a 100%
+  statusIntegridade: StatusIntegridadeSGQ;
+  breakdown: {
+    rnc: number;          // 0 a 100%
+    conhecimento: number; // 0 a 100%
+    documentacao: number; // 0 a 100%
+    governanca: number;   // 0 a 100%
+    seguranca: number;    // 0 a 100%
+  };
+  totalItensCriticos: number;
+  totalItensAlerta: number;
+  totalItensNormais: number;
+  itens: ItemSaudeSGQ[];
+  geradoEm: string;
+}
+
+// ----------------------------------------------------
+// EXPLICABILIDADE DA IA ("Por que o QualiGest sugeriu isso?")
+// ----------------------------------------------------
+export interface ExplicacaoIAItem {
+  campoId: string;
+  tituloCampo: string;
+  oQueFoiSugerido: string;
+  porQueFoiSugerido: string;
+  evidenciasConsideradas: string[];
+  rncsSemelhantesConsultadas: string[];
+  padroesConhecimentoUtilizados: string[];
+  nivelConfianca: 'ALTA' | 'MEDIA' | 'BAIXA';
+  ontologia: OntologicalClassification;
+  modeloOuMotor: string;
+  geradoEm: string;
+}
+
+// ----------------------------------------------------
+// MODO AUDITORIA TÉCNICA DO QUALIGEST (FASE 5)
+// ----------------------------------------------------
+export type CategoriaAuditoriaTecnica = 'SEGURANCA' | 'INTEGRIDADE_DADOS' | 'GOVERNANCA' | 'IA_FALLBACK' | 'AUDIT_TRAIL';
+
+export interface ItemAuditoriaTecnica {
+  id: string;
+  categoria: CategoriaAuditoriaTecnica;
+  nome: string;
+  status: 'OK' | 'ATENCAO' | 'CRITICO';
+  detalhe: string;
+  evidencias: string[];
+  recomendacao?: string;
+}
+
+export interface RelatorioAuditoriaTecnica {
+  checks: ItemAuditoriaTecnica[];
+  totalOk: number;
+  totalAtencao: number;
+  totalCritico: number;
+  statusGeral: 'CONFORME' | 'REQUER_ATENCAO' | 'NAO_CONFORME';
+  scoreConformidade: number; // 0 a 100%
+  executadoEm: string;
+  auditorEmail: string;
+}
+
+export interface AlertaItem {
+  id: string;
+  ncId: string;
+  numeroNC: string;
+  titulo: string;
+  tipoAlerta: 'VENCIDA' | 'VENCE_HOJE' | 'VENCE_7_DIAS' | 'VENCE_15_DIAS' | 'AGUARDANDO_EFICACIA' | 'RISCO_CRITICO';
+  diasRestantes: number;
+  prazo: string;
+  responsavel: string;
+  auditor: string;
+  nivelRisco: NivelRisco;
+  mensagem: string;
+}
+
+export interface FiltrosNC {
+  busca: string;
+  status: string;
+  nivelRisco: string;
+  setor: string;
+  categoria: string;
+  tipoAcao: string;
+  periodo: string;
+  apenasAlertas: boolean;
+  tipoDocumento?: string;
+}
+
+export type StatusManual = 'Vigente' | 'Em Revisão' | 'Obsoleto' | 'Vigência não verificada' | 'Vigência não determinada — requer validação humana';
+
+export interface ManualCapitulo {
+  id: string;
+  numero: string; // Ex: '3.4.3' ou '7.1.5'
+  titulo: string; // Ex: 'Controle de Ferramental e Metrologia'
+  requisitoTexto: string; // Conteúdo normativo / regras mandatórias
+  palavrasChave?: string[];
+  fonteOficial?: string;
+}
+
+export interface ManualRecord {
+  id: string;
+  codigo: string; // Ex: 'MOMQ', 'MGQ', 'MOE', 'SGSO', 'RBAC 145', 'ISO 9001'
+  titulo: string; // Ex: 'Manual da Organização de Manutenção da Qualidade'
+  revisao: string; // Ex: 'Rev. 14' ou 'Emenda 07'
+  tipoDocumento?: TipoDocumento;
+  dataEmissao?: string;
+  dataVigencia: string; // YYYY-MM-DD (Início de vigência)
+  dataFimVigencia?: string; // YYYY-MM-DD (Fim de vigência, se obsoleto)
+  dataVencimentoRevisao?: string;
+  orgaoRegulador?: string; // Ex: 'ANAC', 'FAA', 'ISO', 'SGQ Interno'
+  fonte: string; // Ex: 'Portal ANAC / DOU', 'Repositório SGQ Interno'
+  setoresAplicaveis: string[];
+  descricaoResumo: string;
+  conteudoTexto: string; // Conteúdo textual ou capítulos indexados
+  arquivoTextoCompleto?: string;
+  arquivoBase64?: string;
+  arquivoMimeType?: string;
+  arquivoNome?: string;
+  arquivoTamanho?: string;
+  capitulos?: ManualCapitulo[];
+  versoesConfiguracao?: VersaoDocumentoConfig[]; // Controle de configuração de versões (Seção 3)
+  status: StatusManual;
+  criadoEm: string;
+  atualizadoEm: string;
+  historicoAlteracoes?: Array<{
+    versao: string;
+    data: string;
+    autor: string;
+    descricao: string;
+  }>;
+}
+
+export interface ConsultaManualResposta {
+  pergunta: string;
+  resposta: string;
+  manualConsultado: string;
+  revisaoConsultada: string;
+  citacoes: Array<{
+    capitulo: string;
+    titulo: string;
+    trecho: string;
+    fonteDoc?: string;
+  }>;
+  recomendacoesAuditoria?: string[];
+  nivelSuporteDocumental: NivelSuporteDocumental;
+  justificativaSuporte: string;
+  dataConsulta: string;
+  origemMotor: OrigemInformacao;
+}
+
+export type VereditoPertinencia = 
+  | 'Procedente' 
+  | 'Parcialmente Procedente' 
+  | 'Não Procedente' 
+  | 'Enquadramento Incorreto'
+  | 'Inconclusivo';
+
+// Estrutura rigorosa de auditoria de conformidade (Seção 11)
+export interface ItemAuditoriaConformidade {
+  requisitoNormativo: string;
+  fonteDocumental: string;
+  trechoReferencia: string;
+  evidenciaEncontrada: string;
+  avaliacaoTecnica: string;
+  lacunaIdentificada: string;
+  conclusao: string;
+  localizadoNaBase: boolean;
+}
+
+export interface AuditoriaPertinenciaResultado {
+  ncId: string;
+  veredicto: VereditoPertinencia;
+  nivelSuporteDocumental: NivelSuporteDocumental; // Substitui percentual falso por categoria qualitativa
+  justificativaNivelSuporte: string;
+  resumoVeredito: string;
+  origemMotor: OrigemInformacao; // 'IA GEMINI' | 'MOTOR DETERMINÍSTICO'
+  
+  // Trilha estruturada de auditoria (Seção 11)
+  trilhaAuditoriaConformidade?: ItemAuditoriaConformidade[];
+
+  validacaoRevisao: {
+    manualCitado: string;
+    revisaoCitada?: string;
+    revisaoVigenteCadastrada?: string;
+    revisaoAplicavelNaData?: string; // Versão aplicável na data da ocorrência (Ponto 6)
+    dataReferenciaUtilizada?: string;
+    statusRevisao: StatusManual | 'Desatualizada / Incorreta' | 'Não Cadastrada no Banco' | 'Vigência não verificada' | 'Vigência não determinada — requer validação humana';
+    observacaoRevisao: string;
+    fonteVerificacao?: string;
+  };
+  enquadramentoRecomendado: {
+    manualCorreto: string;
+    capituloItemCorreto: string;
+    tituloRequisito: string;
+    trechoNormativoRelevante: string;
+    localizadoNaBase: boolean;
+  };
+  analiseCritica: string;
+  justificativaTecnica: string;
+  evidenciasExigidas: string[];
+  evidenciasFaltantes?: string[];
+  perguntasInvestigacao?: string[];
+  ajustesSugeridos: {
+    normaReferenciaSugerida?: string;
+    tituloSugerido?: string;
+    tipoAcaoSugerido?: TipoAcao;
+    riscoSugerido?: AvaliacaoRisco;
+    acaoContencaoSugerida?: string;
+    planoAcaoSugerido?: string;
+  };
+  manuaisConsultados: string[];
+  dataAnalise: string;
+}
+
+// ----------------------------------------------------
+// FASE 1 & FASE 2: INFRAESTRUTURA FIREBASE MULTIUSUÁRIO & MULTI-TENANT
+// ----------------------------------------------------
+
+export type UserRole = 'ADMIN' | 'GESTOR_SGQ' | 'AUDITOR' | 'CONSULTA';
+export type UserStatus = 'ACTIVE' | 'INACTIVE';
+
+export interface OrganizationSLAConfig {
+  p1Horas: number; // Crítico - SLA interno de contenção/tratativa (ex: 24h)
+  p2Horas: number; // Alto (ex: 72h)
+  p3Dias: number;  // Médio (ex: 15 dias)
+  p4Dias: number;  // Baixo (ex: 30 dias)
+}
+
+export interface OrganizationChecklistConfig {
+  organizacaoConfigurada: boolean;
+  identidadeVisualConfigurada: boolean;
+  setoresCadastrados: boolean;
+  usuariosCadastrados: boolean;
+  responsaveisDefinidos: boolean;
+  parametrosRevisados: boolean;
+  primeiroManualInserido: boolean;
+  primeiroRNCCadastrado: boolean;
+  equipeOrientada: boolean;
+}
+
+export interface OrganizationConfiguration {
+  setores: string[];
+  categorias: string[];
+  slasInternos: OrganizationSLAConfig;
+  identidadeVisual: {
+    logoUrl?: string;
+    corPrimaria?: string;
+    siglaAeronautica?: string;
+    nomeExibicaoCurto?: string;
+  };
+  parametrosApresentacao?: {
+    rodapePersonalizado?: string;
+    responsavelQualidadePadrao?: string;
+    cargoResponsavelPadrao?: string;
+  };
+  checklistConfiguracao?: OrganizationChecklistConfig;
+}
+
+export interface OrganizationRecord {
+  id: string; // Ex: 'org_impacto_aviation' ou 'org_abc_mro'
+  name: string; // Ex: 'Impacto Aviation MRO' ou 'ABC Aviation Maintenance'
+  legalName?: string; // Razão social
+  logoUrl?: string;
+  language?: string; // Ex: 'pt-BR', 'en-US'
+  timezone?: string; // Ex: 'America/Sao_Paulo'
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string;
+  updatedAt: string;
+  createdByUserUid?: string;
+  createdByUserEmail?: string;
+  configuration?: OrganizationConfiguration;
+  isDemoTenant?: boolean;
+}
+
+export interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  organizationId: string; // ID da organização à qual o usuário pertence
+  status: UserStatus;
+  createdAt: string; // ISO string ou Timestamp serializado
+  updatedAt: string;
+}
+
+export interface SystemDiagnosticRecord {
+  testId: string;
+  createdByUid: string;
+  createdByEmail: string;
+  message: string;
+  status: 'ATIVO' | 'EM_ANDAMENTO' | 'CONCLUIDO' | 'CANCELADO' | string;
+  lastModifiedByEmail?: string;
+  lastModifiedByUid?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrganizationAuditEntry {
+  id: string;
+  organizationId: string;
+  entity: 'NON_CONFORMITY' | 'MANUAL' | 'USER' | 'ORGANIZATION' | 'RNC_COMPARISON' | 'VALIDATED_KNOWLEDGE' | string;
+  entityId: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'BOOTSTRAP' | 'STATUS_CHANGE' | 'VALIDATE_DECISION' | 'APPLY_TO_RNC' | 'PROMOTE_PATTERN';
+  changedAt: string;
+  changedByUid: string;
+  changedByEmail: string;
+  details?: string;
+  summary?: string;
+}
+
+// ----------------------------------------------------
+// MÓDULO: VALIDAÇÃO, COMPARAÇÃO E APRENDIZADO DE RNCS RESPONDIDAS
+// ----------------------------------------------------
+
+export type ClassificacaoDiferenca = 
+  | 'CONVERGENTE'       // 🟢 A resposta é compatível com a análise anterior
+  | 'COMPLEMENTAR'      // 🟡 O usuário acrescentou detalhes/melhorias
+  | 'DIVERGENTE'        // 🟠 Resposta apresenta interpretação diferente (Prevalece resposta do usuário)
+  | 'CONTRADITORIO'     // 🔴 Resposta contradiz diretamente
+  | 'NAO_INFORMADO'     // ⚪ Informação não localizada no documento
+  | 'NOVA_INFORMACAO';  // 🔵 Novo conhecimento que não existia na análise inicial
+
+export type NivelConfianca = 'ALTA' | 'MEDIA' | 'BAIXA' | 'INSUFICIENTE';
+
+export type MetodoIdentificacaoRNC = 
+  | 'NUMERO_EXATO' 
+  | 'CODIGO_SIMILAR' 
+  | 'ANALISE_SEMANTICA' 
+  | 'MANUAL_HUMANA';
+
+export interface CorrespondenciaRNC {
+  rncId?: string;
+  numeroNC?: string;
+  tituloNC?: string;
+  confianca: number; // 0 a 100
+  nivelConfianca: NivelConfianca;
+  metodoIdentificacao: MetodoIdentificacaoRNC;
+  multiplasOpcoes?: Array<{
+    rncId: string;
+    numeroNC: string;
+    titulo: string;
+    setor?: string;
+    confianca: number;
+    motivoSimilaridade: string;
+  }>;
+  duvidaMotivo?: string;
+  confirmadoManualmente?: boolean;
+}
+
+export type CampoComparadoTipo =
+  | 'identificacao'
+  | 'descricao'
+  | 'contencao'
+  | 'causaRaiz'
+  | 'cincoPorques'
+  | 'ishikawa'
+  | 'acaoCorretiva'
+  | 'verificacaoEficacia'
+  | 'risco'
+  | 'normaReferencia';
+
+export type DecisaoPrevalencia = 'ACEITAR_RESPOSTA_USUARIO' | 'MANTER_ORIGINAL' | 'MESCLAR_AMBOS' | 'EDITAR_MANUALMENTE';
+
+export interface DecisaoValidacaoCampo {
+  campoId: string;
+  decisao: DecisaoPrevalencia;
+  valorFinalAprovado: string;
+  justificativa: string;
+}
+
+export interface ItemComparacaoCampo {
+  campoId: CampoComparadoTipo;
+  nomeCampo: string;
+  valorOriginalQualiGest: string;
+  valorRespostaUsuario: string;
+  classificacao: ClassificacaoDiferenca;
+  explicacaoAnalise: string;
+  sugestaoPrevalencia: 'RESPOSTA_USUARIO' | 'ANALISE_ORIGINAL' | 'NECESSITA_REVISAO';
+  decisaoHumana?: 'ACEITAR_RESPOSTA' | 'MANTER_ORIGINAL' | 'REVISAR_MANUALMENTE';
+  valorFinalValidado?: string;
+  justificativaDecisao?: string;
+  validadoPor?: string;
+  validadoEm?: string;
+  tipoDiferenca?: 'SEMANTICA_EQUIVALENTE' | 'NOVO_FATO' | 'DISCORDANCIA_CAUSAL' | 'COMPLEMENTO_PLANO' | 'ERRO_ENQUADRAMENTO';
+}
+
+export type StatusComparacao =
+  | 'PENDENTE_PROCESSAMENTO'
+  | 'PENDENTE_VALIDACAO'
+  | 'DUVIDA_ASSOCIACAO'
+  | 'VALIDADO_COM_DIVERGENCIAS'
+  | 'VALIDADO_CONVERGENTE'
+  | 'REJEITADO'
+  | 'APLICADO_NA_RNC'
+  | 'PROMOVIDO_A_PADRAO';
+
+export interface ComparacaoRNCRecord {
+  id: string;
+  documentoFonteId: string;
+  nomeArquivoFonte: string;
+  tipoArquivoFonte: 'DOCX' | 'PDF' | 'TXT' | 'TEXTO_COLADO';
+  textoOriginalExtraido: string;
+  tamanhoArquivo?: number;
+  dataUpload: string;
+  uploadedPorUid?: string;
+  uploadedPorEmail?: string;
+  
+  // Associação com RNC do QualiGest
+  rncIdAssociada?: string;
+  numeroNCAssociada?: string;
+  correspondencia: CorrespondenciaRNC;
+
+  // Status do Fluxo
+  statusGeral: StatusComparacao;
+
+  // Comparação Campo a Campo
+  camposComparados: ItemComparacaoCampo[];
+
+  // Resumo Quantitativo
+  resumoComparacao: {
+    totalCampos: number;
+    convergentes: number;
+    complementares: number;
+    divergentes: number;
+    contraditorios: number;
+    novasInformacoes: number;
+    naoInformados: number;
+    taxaConcordancia: number; // Percentual 0 a 100%
+    principaisDivergencias: string[];
+    principaisComplementos: string[];
+  };
+
+  // Proposta de Atualização da RNC
+  propostaAtualizacaoRNC?: {
+    descricaoNC?: string;
+    setor?: string;
+    normaReferencia?: string;
+    preAnaliseContencao?: Partial<PreAnaliseContencao>;
+    analiseCausaRaiz?: Partial<AnaliseCausaRaiz>;
+    acaoCorretiva?: Partial<AcaoCorretiva>;
+    verificacaoEficacia?: Partial<VerificacaoEficacia>;
+    avaliacaoRiscoInicial?: Partial<AvaliacaoRisco>;
+  };
+
+  // Validação do Auditor
+  auditorAprovadorEmail?: string;
+  auditorAprovadorUid?: string;
+  dataValidacaoAuditor?: string;
+  parecerAuditorSGQ?: string;
+
+  // Rastreabilidade e Versionamento
+  aplicadaNaRNCEm?: string;
+  aplicadaPorUsuario?: string;
+  versaoGeradaRNC?: string;
+  historicoDecisoes: any[];
+
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+// ----------------------------------------------------
+// BASE DE CONHECIMENTO VALIDADA (PADRÕES DE SGQ / APRENDIZADO)
+// ----------------------------------------------------
+
+export type NivelMaturidadeConhecimento = 
+  | 1 // Nível 1: Evidência (Resposta isolada do usuário)
+  | 2 // Nível 2: Comparação (Diferença identificada pelo sistema)
+  | 3 // Nível 3: Validação (Responsável humano validou)
+  | 4 // Nível 4: Conhecimento Validado (Aprovado para reutilização no setor)
+  | 5; // Nível 5: Padrão do SGQ (Recorrente e aprovado pela Gestão para influenciar IA)
+
+export type StatusConhecimento = 'PROPOSTO' | 'EM_ANALISE_SGQ' | 'VALIDADO' | 'PADRAO_SGQ' | 'OBSOLETO' | 'ARQUIVADO';
+
+export interface ValidatedKnowledgeRecord {
+  id: string;
+  tituloPadrao: string;
+  categoria: string; // Ex: 'Metrologia & Calibração', 'Controle Documental', 'Motores'
+  setor: string; // Ex: 'Oficina REC', 'Célula', 'Linha'
+  contextoDesvio: string; // Situação fática ou sintoma comum
+  
+  // Causa Raiz Validada
+  causaValidada: string;
+  metodologiaRecomendada?: '5_PORQUES' | 'ISHIKAWA' | 'OUTRA';
+  desdobramentoPorques?: string[];
+  
+  // Ações Corretivas Eficazes
+  acoesCorretivasRecomendadas: string[];
+  acoesContencaoRecomendadas?: string[];
+  contencoesRecomendadas?: string[];
+  normasAplicaveis?: string[];
+  normaCapituloRef?: string; // Ex: 'MOMQ Cap. 3.4.3 - Calibração'
+
+  // Governança e Maturidade
+  nivelMaturidade: NivelMaturidadeConhecimento;
+  status: StatusConhecimento;
+  nivelConfianca?: 'ALTA' | 'MEDIA';
+  
+  // Rastreabilidade e Evidências
+  rncsOrigemIds?: string[]; // IDs das RNCs que originaram o padrão
+  rncsOrigemNumeros?: string[]; // Ex: ['NC-001', 'NC-007', 'NC-014']
+  documentosFonteOrigem?: string[];
+  frequenciaObservada?: number;
+  quantidadeOcorrencias?: number;
+  taxaSucessoEficacia?: number; // Percentual de RNCs com esse padrão que tiveram eficácia SIM
+  
+  primeiraOcorrenciaEm?: string;
+  ultimaOcorrenciaEm?: string;
+  criadoPorUid?: string;
+  criadoPorEmail?: string;
+  validadoPorGestor?: string;
+  validadoPorUid?: string;
+  validadoPorEmail?: string;
+  dataValidacao?: string;
+  justificativaConhecimento?: string;
+  justificativaSGQ?: string;
+
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface MetricasDesempenhoIA {
+  totalAnalisesComparadas: number;
+  taxaConcordanciaGeral: number;
+  taxaDivergenciaGeral: number;
+  taxaComplementacaoGeral: number;
+  taxaRejeicaoGeral: number;
+  sugestoesAceitas: number;
+  sugestoesEditadas: number;
+  sugestoesRejeitadas: number;
+  breakdownPorSetor: Record<string, { total: number; concordancia: number; divergencia: number; complementacao: number }>;
+  breakdownPorCategoria: Record<string, { total: number; concordancia: number; divergencia: number; complementacao: number }>;
+  principaisCausasDivergentes: Array<{ campo: string; frequencia: number; descricao: string }>;
+  principaisPadroesIdentificados: Array<{ titulo: string; ocorrencias: number; setor: string }>;
+}
+
+export type ConhecimentoValidadoItem = ValidatedKnowledgeRecord;
+
+// ----------------------------------------------------
+// GERADOR DE APRESENTAÇÃO GERENCIAL DA QUALIDADE (FASE 6.1)
+// ----------------------------------------------------
+export type PeriodoApresentacao = 
+  | 'TODOS' 
+  | 'ULTIMOS_30_DIAS' 
+  | 'ULTIMOS_90_DIAS' 
+  | 'ANO_ATUAL' 
+  | 'PERSONALIZADO';
+
+export type TipoApresentacao = 'COMPLETA' | 'EXECUTIVA';
+
+export interface FiltrosApresentacao {
+  periodo: PeriodoApresentacao;
+  dataInicio?: string;
+  dataFim?: string;
+  setor?: string;
+  tipo: TipoApresentacao;
+}
+
+export interface SlideMetricaItem {
+  rotulo: string;
+  valor: string | number;
+  subtitulo?: string;
+  status?: 'normal' | 'alerta' | 'critico' | 'sucesso';
+}
+
+export interface SlideApresentacao {
+  id: number;
+  numero: number;
+  titulo: string;
+  subtitulo: string;
+  categoria: string;
+  metricasPrincipais: SlideMetricaItem[];
+  pontosChave: string[];
+  tabelaDados?: {
+    colunas: string[];
+    linhas: (string | number)[][];
+  };
+  graficoDados?: any;
+  alertaOuNota?: string;
+  semDados?: boolean;
+  origemRastreabilidade: string;
+}
+
+export interface RelatorioApresentacaoQualidade {
+  geradoEm: string;
+  versaoSistema: string;
+  organizacao: string;
+  responsavel: string;
+  filtros: FiltrosApresentacao;
+  resumoExecutivo: {
+    periodoFormatado: string;
+    totalRNCs: number;
+    sgqHealthScore: number;
+    riscosCriticos: number;
+    acoesAtrasadas: number;
+    recorrencias: number;
+    principaisPontosAtencao: string[];
+  };
+  slides: SlideApresentacao[];
+}
+
+// ----------------------------------------------------
+// ARQUITETURA FUNCIONAL E TÉCNICA REAL (FASE 6.1)
+// ----------------------------------------------------
+export interface ModuloArquitetura {
+  id: string;
+  nome: string;
+  categoria: 'GESTAO_CORE' | 'INVESTIGACAO' | 'APRENDIZADO' | 'GOVERNANCA' | 'SEGURANCA' | 'SERVICOS_IA';
+  finalidade: string;
+  entradas: string[];
+  processamento: string;
+  saidas: string[];
+  dependencias: string[];
+  permissoesRBAC: string;
+  colecoesFirestore: string[];
+  mecanismoAuditoria: string;
+  icone: string;
+}
+
+// ============================================================================
+// FASE 8: GESTÃO DE AUDITORIAS EXTERNAS, CONSTATAÇÕES, RESPOSTAS E APRENDIZADO
+// ============================================================================
+
+export type TipoAuditoriaExterna = 
+  | 'ANAC' 
+  | 'EASA' 
+  | 'FAA' 
+  | 'Cliente' 
+  | 'Certificação' 
+  | 'Recorrente' 
+  | 'Especial' 
+  | 'Outra' 
+  | string;
+
+export type StatusAuditoriaExterna = 
+  | 'RECEBIDA'
+  | 'EM_ANALISE'
+  | 'EM_RESPOSTA'
+  | 'AGUARDANDO_EVIDENCIAS'
+  | 'ENVIADA'
+  | 'AGUARDANDO_ACEITACAO'
+  | 'ACEITA'
+  | 'COM_PENDENCIA'
+  | 'ENCERRADA'
+  | 'CANCELADA';
+
+export type ClassificacaoConstatacao = 
+  | 'MAIOR'
+  | 'MENOR'
+  | 'OBSERVACAO'
+  | 'OPORTUNIDADE_MELHORIA';
+
+export type StatusConstatacao = 
+  | 'ABERTA'
+  | 'EM_ANALISE'
+  | 'RESPOSTA_ELABORADA'
+  | 'ENVIADA'
+  | 'ACEITA'
+  | 'ACEITA_PARCIALMENTE'
+  | 'REJEITADA'
+  | 'COMPLEMENTO_SOLICITADO'
+  | 'ENCERRADA';
+
+export type TipoPrazoAuditoria = 
+  | 'NORMATIVO'
+  | 'CONTRATUAL'
+  | 'INTERNO_SGQ'
+  | 'DEFINIDO_AUDITOR';
+
+export type TipoEvidenciaAuditoria = 
+  | 'Documental'
+  | 'Registro de Sistema'
+  | 'Certificado de Calibração'
+  | 'Ordem de Serviço (OS)'
+  | 'Registro Fotográfico'
+  | 'Treinamento / Certificação'
+  | 'Procedimento Revisado'
+  | 'Outro';
+
+export interface EvidenciaAuditoriaItem {
+  id: string;
+  codigo: string;
+  tipo: TipoEvidenciaAuditoria;
+  descricao: string;
+  documentoNome: string;
+  documentoRevisao?: string;
+  dataRegistro: string;
+  responsavel: string;
+  arquivoNome?: string;
+  arquivoUrlOuHash?: string;
+  statusValidacao: 'VALIDADA' | 'PENDENTE_VALIDACAO' | 'REJEITADA';
+  observacoes?: string;
+}
+
+export interface RequisitoNormativoVinculado {
+  norma: string; // Ex: 'ANAC RBAC 145', 'EASA Part-145', 'MOMQ'
+  itemRequisito: string; // Ex: '145.109(a)'
+  descricaoRequisito: string;
+  comoImpactoImplementa: string; // Como a Impacto cumpre este requisito
+  procedimentoInternoRef: string; // Ex: 'MOMQ Seção 3.4.2'
+  revisaoProcedimento?: string;
+}
+
+export interface RespostaOficialConstatacao {
+  id: string;
+  versao: number;
+  respostaFactual: string;
+  analiseCausa: string;
+  correcaoImediata: string;
+  acaoCorretiva: string;
+  acaoPreventiva?: string;
+  responsavel: string;
+  prazoExecucao: string;
+  referenciasDocumentais: string[];
+  evidenciasIds: string[];
+  statusAprovacao: 'RASCUNHO' | 'SUGESTAO_IA' | 'REVISAO_INTERNA' | 'APROVADA_GESTOR' | 'ENVIADA_AO_AUDITOR';
+  autorNome: string;
+  aprovadorNome?: string;
+  dataHoraAprovacao?: string;
+  sugestaoOriginalIA?: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
+  updatedAt?: string;
+}
+
+export interface RetornoAuditorExterno {
+  id: string;
+  dataRetorno: string;
+  decisao: 'ACEITA' | 'REJEITADA' | 'ACEITA_PARCIALMENTE' | 'SOLICITACAO_COMPLEMENTO';
+  auditorNome: string;
+  parecerAuditor: string;
+  documentoRetornoRef?: string;
+  prazoComplementar?: string;
+  registradoPor: string;
+  dataRegistro: string;
+}
+
+export interface LicaoAprendidaAuditoria {
+  id: string;
+  auditId: string;
+  findingId?: string;
+  organizationId: string;
+  origemTipo?: string;
+  setor?: string;
+  processosImpactados?: string[];
+  titulo: string;
+  oQueAconteceu: string;
+  porQueAconteceu?: string;
+  oQueFoiFeito?: string;
+  oQueFuncionou?: string;
+  oQueNaoFuncionou?: string;
+  oQueFazerDiferente?: string;
+  oQueDevemosFazerDiferente?: string;
+  riscoRecorrencia?: 'BAIXO' | 'MEDIO' | 'ALTO';
+  ondeAplicarConhecimento?: string[];
+  ondeAplicar?: string;
+  tags?: string[];
+  statusValidacao?: string;
+  candidataBaseConhecimento?: boolean;
+  autorNome?: string;
+  criadoEm?: string;
+  updatedAt?: string;
+  candidatoConhecimentoNivel?: number; // 1 a 5
+  promovidoParaConhecimentoId?: string;
+  criadoPor?: string;
+  dataCriacao?: string;
+}
+
+export interface ConstatacaoExternaRecord {
+  id: string;
+  auditId: string;
+  organizationId: string;
+  numeroExterno: string; // Ex: 'FIND-001', 'NC-01/ANAC'
+  classificacao: ClassificacaoConstatacao;
+  descricaoOriginal: string; // Texto original do auditor externo (PRESERVADO INALTERADO)
+  interpretacaoInterna?: string; // Interpretação técnica da organização
+  requisitoNormativo: RequisitoNormativoVinculado;
+  processoAuditado?: string;
+  setorResponsavel: string;
+  responsavelNome: string;
+  nivelRisco: NivelRisco;
+  prazoResposta: string; // YYYY-MM-DD
+  tipoPrazo: TipoPrazoAuditoria;
+  status: StatusConstatacao;
+  respostaOficial?: RespostaOficialConstatacao;
+  historicoRespostas?: RespostaOficialConstatacao[];
+  evidencias: EvidenciaAuditoriaItem[];
+  retornosAuditor: RetornoAuditorExterno[];
+  rncInternaCriadaId?: string;
+  numeroRNCInterna?: string;
+  licaoAprendidaId?: string;
+  trilhaAuditoria: RegistroAuditoriaNC[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditoriaExternaRecord {
+  id: string;
+  organizationId: string;
+  numeroAuditoria: string; // Ex: 'AUD-2026-ANAC-01'
+  tipo: TipoAuditoriaExterna;
+  origem: string; // Ex: 'ANAC - Superintendência de Padrões Operacionais'
+  entidadeAuditora: string; // Ex: 'Agência Nacional de Aviação Civil'
+  auditoresNomes: string[];
+  dataInicio: string;
+  dataTermino: string;
+  escopo: string;
+  local: string;
+  aeronaveOuProcesso?: string;
+  contratoOuCliente?: string;
+  referenciaExterna: string; // Ex: 'Ofício de Auditoria nº 042/2026'
+  status: StatusAuditoriaExterna;
+  responsavelInterno: string;
+  observacoes?: string;
+  documentosRecebidosNomes: string[];
+  dataRecebimento: string;
+  prazoGlobalResposta: string;
+  dataEncerramento?: string;
+  findingsCount: {
+    total: number;
+    maiores: number;
+    menores: number;
+    observacoes: number;
+    abertas: number;
+    respondidas: number;
+    aceitas: number;
+    rejeitadas: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+  createdByUserUid: string;
+}
+
+export interface SimilaridadeConstatacaoItem {
+  tipoSimilaridade: 
+    | 'MESMO_PROBLEMA'
+    | 'PROBLEMA_SEMELHANTE'
+    | 'MESMA_CAUSA'
+    | 'CAUSA_DIFERENTE'
+    | 'MESMO_REQUISITO'
+    | 'APENAS_SIMILARIDADE_TEXTUAL';
+  scoreSimilaridade: number; // 0 a 100
+  findingAnteriorId: string;
+  numeroAuditoria: string;
+  numeroFinding: string;
+  descricao: string;
+  requisito: string;
+  respostaAnterior: string;
+  evidenciasAceitas: string[];
+  resultadoAuditor: string;
+  justificativaSemelhanca: string;
+}
+
+export interface AuditoriaDashboardMetrics {
+  totalAuditorias: number;
+  auditoriasAbertas: number;
+  auditoriasEncerradas: number;
+  totalFindings: number;
+  findingsAbertos: number;
+  findingsVencidos: number;
+  findingsRespondidos: number;
+  findingsAceitos: number;
+  findingsRejeitados: number;
+  taxaAceitacao: number; // percentual 0 a 100
+  prazoMedioRespostaDias: number;
+  distribuicaoPorOrigem: Record<string, number>;
+  distribuicaoPorSetor: Record<string, number>;
+  distribuicaoPorRequisito: Record<string, number>;
+  principaisCausas: Array<{ causa: string; total: number }>;
+  reincidenciasDetectadas: number;
+  semDados: boolean;
+}
+
+// ============================================================================
+// FASE 9: PESSOAS, COMPETÊNCIAS, TREINAMENTOS, QUALIFICAÇÕES E VENCIMENTOS
+// ============================================================================
+
+export type StatusColaborador = 'ATIVO' | 'INATIVO' | 'AFASTADO' | 'DESLIGADO';
+
+export type FuncaoOperacionalColaborador =
+  | 'Mecânico'
+  | 'Inspetor'
+  | 'Técnico'
+  | 'Supervisor'
+  | 'Inspetor de Qualidade'
+  | 'Técnico de Planejamento'
+  | 'Almoxarife'
+  | 'Especialista'
+  | 'Instrutor'
+  | string;
+
+export interface RestricaoOperacional {
+  possuiRestricao: boolean;
+  motivo?: string;
+  dataInicio?: string;
+  dataFim?: string;
+  impedeExecucao: boolean; // Se true: bloqueia atribuição/execução; se false: apenas alerta
+  apenasAlerta: boolean;
+  registradoPor?: string;
+  registradoEm?: string;
+}
+
+export interface ColaboradorPessoa {
+  id: string;
+  organizationId: string;
+  nome: string;
+  matricula: string; // Código interno, ex: 'IMP-1042'
+  setor: string; // Setor controlado pela organização
+  funcao: FuncaoOperacionalColaborador;
+  cargoOperacional?: string;
+  status: StatusColaborador;
+  dataAdmissao?: string;
+  contatoCorporativo?: string;
+  observacoes?: string;
+  restricaoOperacional?: RestricaoOperacional;
+  createdAt: string;
+  updatedAt: string;
+  criadoPor: string;
+  criadoPorUid: string;
+}
+
+export type CriticidadeCompetencia = 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA';
+
+export interface NivelCompetenciaDefinicao {
+  nivel: number; // 1 a 5
+  nome: string; // Ex: 'Nível 1 — Conhecimento'
+  descricao: string;
+}
+
+export interface CompetenciaItem {
+  id: string;
+  organizationId: string;
+  codigo: string; // Ex: 'COMP-INS-01', 'COMP-SUP-01'
+  nome: string; // Ex: 'Inspeção Visual de Célula', 'Recebimento de Materiais Aeronáuticos'
+  descricao: string;
+  setoresAplicaveis: string[];
+  funcoesAplicaveis: string[];
+  criticidade: CriticidadeCompetencia;
+  niveisDefinidos: NivelCompetenciaDefinicao[];
+  treinamentosRequeridosIds: string[]; // Cursos de treinamento que desenvolvem esta competência
+  qualificacaoObrigatoria?: string;
+  status: 'ATIVA' | 'INATIVA';
+  createdAt: string;
+  updatedAt: string;
+  criadoPorUid?: string;
+}
+
+export type StatusCompetenciaColaborador =
+  | 'NAO_QUALIFICADO'
+  | 'EM_TREINAMENTO'
+  | 'QUALIFICADO'
+  | 'VENCENDO'
+  | 'VENCIDO'
+  | 'SUSPENSO'
+  | 'BLOQUEADO';
+
+export interface CompetenciaColaborador {
+  id: string;
+  organizationId: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorMatricula: string;
+  setor: string;
+  competenciaId: string;
+  competenciaCodigo: string;
+  competenciaNome: string;
+  nivelAtual: number; // 1 a 5
+  status: StatusCompetenciaColaborador;
+  dataConcessao?: string;
+  dataValidade?: string;
+  qualificacaoVinculadaId?: string;
+  evidenciasIds?: string[];
+  responsavelValidacaoNome?: string;
+  responsavelValidacaoUid?: string;
+  dataValidacao?: string;
+  observacoes?: string;
+  restricoesEspecificas?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TipoTreinamento =
+  | 'INICIAL'
+  | 'RECORRENTE'
+  | 'RECICLAGEM'
+  | 'OJT'
+  | 'PRATICO'
+  | 'TEORICO'
+  | 'PROCEDIMENTAL'
+  | 'SEGURANCA'
+  | 'QUALIDADE'
+  | 'AERONAUTICO'
+  | 'FABRICANTE'
+  | 'REGULATORIO';
+
+export type ModalidadeTreinamento = 'PRESENCIAL' | 'EAD' | 'HIBRIDO' | 'ON_THE_JOB';
+
+export type OrigemPrazoValidade =
+  | 'REGULAMENTO' // Regulamento ANAC/EASA
+  | 'PROGRAMA_TREINAMENTO' // Manual de Treinamento da Organização
+  | 'INTERNO_SGQ' // Procedimento SGQ interno
+  | 'CLIENTE_FABRICANTE'; // Requisito de fabricante ou cliente
+
+export interface CursoTreinamento {
+  id: string;
+  organizationId: string;
+  codigo: string; // Ex: 'TRN-EWIS-01', 'TRN-FTS-02'
+  titulo: string; // Ex: 'EWIS - Electrical Wiring Interconnection System'
+  tipo: TipoTreinamento;
+  modalidade: ModalidadeTreinamento;
+  cargaHorariaHoras: number;
+  ementa: string;
+  recorrente: boolean;
+  periodicidadeMeses?: number; // Ex: 24 meses
+  origemPrazo: OrigemPrazoValidade;
+  toleranciaDias?: number; // Janela de tolerância operacional
+  competenciasDesenvolvidasIds: string[];
+  status: 'ATIVO' | 'INATIVO';
+  createdAt: string;
+  updatedAt: string;
+  criadoPorUid?: string;
+}
+
+export type ResultadoTreinamento = 'APROVADO' | 'REPROVADO' | 'PARTICIPOU' | 'EM_ANDAMENTO';
+
+export interface RegistroTreinamentoColaborador {
+  id: string;
+  organizationId: string;
+  treinamentoId: string;
+  treinamentoCodigo: string;
+  treinamentoTitulo: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorMatricula: string;
+  dataRealizacao: string; // YYYY-MM-DD
+  dataValidade?: string; // YYYY-MM-DD
+  cargaHoraria: number;
+  instrutor: string;
+  entidadeInstrutora?: string;
+  resultado: ResultadoTreinamento;
+  aproveitamentoPercentual?: number; // 0 a 100
+  documentoCertificadoId?: string;
+  numeroCertificado?: string;
+  observacoes?: string;
+  validadoPorSGQUid?: string;
+  validadoPorSGQNome?: string;
+  dataValidacaoSGQ?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TipoQualificacao =
+  | 'CHT_ANAC'
+  | 'AUTORIZACAO_INTERNA'
+  | 'QUALIFICACAO_NDT'
+  | 'INSPETOR_RII'
+  | 'HABILITACAO_EMPRESA'
+  | 'CERTIFICACAO_FABRICANTE'
+  | 'OUTRA';
+
+export type StatusQualificacao =
+  | 'VALIDA'
+  | 'VENCENDO'
+  | 'VENCIDA'
+  | 'SUSPENSA'
+  | 'REVOGADA';
+
+export interface QualificacaoColaborador {
+  id: string;
+  organizationId: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorMatricula: string;
+  tipo: TipoQualificacao;
+  titulo: string; // Ex: 'CHT ANAC - Célula e GMP', 'Autorização RTS (Return to Service)'
+  escopo: string; // Ex: 'Aeronaves Cessna 208 Caravan, Beechcraft King Air B200'
+  competenciaRelacionadaId?: string;
+  emissor: string; // Ex: 'ANAC', 'Impacto Aviation MRO - Diretoria Técnica'
+  numeroRegistro: string; // Ex: 'CANAC 145892', 'AUT-IMP-2026-04'
+  dataEmissao: string;
+  dataValidade?: string;
+  possuiValidade: boolean;
+  status: StatusQualificacao;
+  limitacoesOperacionais?: string;
+  bloqueiaOperacaoSeVencida: boolean; // IMPEDE EXECUÇÃO vs APENAS ALERTA
+  documentoComprobatorioId?: string;
+  documentoComprobatorioNome?: string;
+  responsavelValidacaoUid: string;
+  responsavelValidacaoNome: string;
+  dataValidacao: string;
+  observacoes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TipoDocumentoPessoa =
+  | 'CERTIFICADO'
+  | 'CHT'
+  | 'HABILITACAO'
+  | 'DECLARACAO'
+  | 'AVALIACAO_PRATICA'
+  | 'FICHA_OJT'
+  | 'AUTORIZACAO_INTERNA'
+  | 'EXAME_MEDICO_AERONAUTICO'
+  | 'OUTRO';
+
+export type StatusValidadeDocumento =
+  | 'VALIDO'
+  | 'VENCENDO_HOJE'
+  | 'VENCENDO_7_DIAS'
+  | 'VENCENDO_15_DIAS'
+  | 'VENCENDO_30_DIAS'
+  | 'VENCENDO_60_DIAS'
+  | 'VENCENDO_90_DIAS'
+  | 'VENCIDO'
+  | 'SEM_VALIDADE';
+
+export interface DocumentoEvidenciaPessoa {
+  id: string;
+  organizationId: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  tipoDocumento: TipoDocumentoPessoa;
+  titulo: string;
+  numeroDocumento?: string;
+  emissor: string;
+  dataEmissao: string;
+  dataValidade?: string;
+  possuiValidade: boolean;
+  statusValidade: StatusValidadeDocumento;
+  referenciaArquivoOuLink?: string;
+  hashArquivo?: string;
+  observacoes?: string;
+  createdAt: string;
+  updatedAt: string;
+  registradoPorUid?: string;
+}
+
+export interface AtividadeCompetenciaRequerida {
+  id: string;
+  organizationId: string;
+  codigoAtividade: string; // Ex: 'ATV-REC-01', 'ATV-INSP-RII'
+  nomeAtividade: string;
+  setor: string;
+  criticidade: 'NORMAL' | 'CRITICA_SEGURANCA' | 'MANDATORIA_ANAC';
+  competenciasExigidas: Array<{
+    competenciaId: string;
+    competenciaNome: string;
+    nivelMinimo: number;
+  }>;
+  qualificacoesExigidasTipos?: TipoQualificacao[];
+  treinamentosMandatoriosIds?: string[];
+  impedeExecucaoSemQualificacao: boolean;
+  status: 'ATIVA' | 'INATIVA';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TipoGapCompetencia =
+  | 'COMPETENCIA_AUSENTE'
+  | 'NIVEL_INSUFICIENTE'
+  | 'QUALIFICACAO_VENCIDA'
+  | 'TREINAMENTO_VENCIDO'
+  | 'DOCUMENTO_AUSENTE'
+  | 'DOCUMENTO_EXPIRADO'
+  | 'RESTRICAO_ATIVA';
+
+export interface GapCompetenciaItem {
+  id: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorMatricula: string;
+  setor: string;
+  funcao: string;
+  competenciaId?: string;
+  competenciaNome?: string;
+  tipoGap: TipoGapCompetencia;
+  descricaoGap: string;
+  nivelRequerido?: number;
+  nivelAtual?: number;
+  treinamentoSugeridoId?: string;
+  treinamentoSugeridoTitulo?: string;
+  criticidade: 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA';
+  bloqueiaOperacao: boolean;
+  dataIdentificacao: string;
+}
+
+export interface SugestaoIACompetencia {
+  id: string;
+  organizationId: string;
+  tipo:
+    | 'SUGESTAO_GAP'
+    | 'SUGESTAO_TREINAMENTO'
+    | 'CORRELACAO_RNC_COMPETENCIA'
+    | 'CORRELACAO_FINDING_COMPETENCIA'
+    | 'ANALISE_DESCRICAO_FUNCAO';
+  titulo: string;
+  hipoteseSugestao: string;
+  justificativa: string;
+  fonteAnalise: string; // RNC #001-29, Finding ANAC, Procedimento MOMQ, etc.
+  confianca: 'ALTA' | 'MEDIA' | 'BAIXA';
+  entidadeAlvoTipo: 'COLABORADOR' | 'RNC' | 'FINDING' | 'SETOR';
+  entidadeAlvoId: string;
+  entidadeAlvoNome?: string;
+  decisaoHumana: 'PENDENTE' | 'ACEITA' | 'REJEITADA' | 'EDITADA';
+  usuarioAvaliadorEmail?: string;
+  dataAvaliacao?: string;
+  observacoesDecisao?: string;
+  createdAt: string;
+}
+
+export interface FaixaVencimentoItem {
+  id: string;
+  tipoItem: 'QUALIFICACAO' | 'TREINAMENTO' | 'DOCUMENTO' | 'COMPETENCIA';
+  colaboradorId: string;
+  colaboradorNome: string;
+  colaboradorMatricula: string;
+  setor: string;
+  titulo: string;
+  subtitulo?: string;
+  dataValidade: string;
+  diasParaVencer: number; // negativo se vencido
+  faixa: 'VENCIDO' | 'HOJE' | '7_DIAS' | '15_DIAS' | '30_DIAS' | '60_DIAS' | '90_DIAS' | 'FUTURO';
+  bloqueiaOperacao: boolean;
+  status: string;
+  documentoId?: string;
+}
+
+export interface CompetenciasDashboardMetrics {
+  totalColaboradores: number;
+  colaboradoresAtivos: number;
+  colaboradoresInativos: number;
+  colaboradoresComRestricao: number;
+  totalCompetencias: number;
+  taxaColaboradoresQualificados: number; // 0 a 100
+  taxaTreinamentosEmDia: number; // 0 a 100
+  vencidosTotal: number;
+  vencendoHoje: number;
+  vencendo7Dias: number;
+  vencendo15Dias: number;
+  vencendo30Dias: number;
+  vencendo60Dias: number;
+  vencendo90Dias: number;
+  totalGapsIdentificados: number;
+  gapsCriticosComBloqueio: number;
+  pessoasEmTreinamento: number;
+  distribuicaoPorSetor: Record<string, {
+    totalPessoas: number;
+    qualificados: number;
+    gaps: number;
+    vencidos: number;
+    taxaConformidade: number;
+  }>;
+  semDados: boolean;
+}
+
+// ----------------------------------------------------
+// FASE 10: CONTROLE DOCUMENTAL, REVISÕES, FONTES EXTERNAS E CONHECIMENTO TEMPORAL
+// ----------------------------------------------------
+
+export type CategoriaDocumental =
+  | 'DOCUMENTO_INTERNO'
+  | 'DOCUMENTO_AUTORIDADE'
+  | 'DOCUMENTO_FABRICANTE'
+  | 'DOCUMENTO_CLIENTE'
+  | 'OUTRO_CONTROLADO';
+
+export type StatusCicloVidaDocumental =
+  | 'RASCUNHO'
+  | 'EM_ANALISE'
+  | 'EM_APROVACAO'
+  | 'APROVADO'
+  | 'VIGENTE'
+  | 'SUBSTITUIDO'
+  | 'OBSOLETO'
+  | 'CANCELADO';
+
+export interface AplicabilidadeDocumental {
+  organizacaoId?: string;
+  setores?: string[];
+  processos?: string[];
+  atividades?: string[];
+  aeronaves?: string[];
+  modelos?: string[];
+  componentes?: string[];
+  clientes?: string[];
+  contratos?: string[];
+  frotas?: string[];
+  requisitosRegulatorios?: string[];
+  escopoRegulatorio?: string;
+  periodoValidadeInicio?: string;
+  periodoValidadeFim?: string;
+  statusDeterminacao: 'DETERMINADA' | 'NAO_DETERMINADA_REQUER_VALIDACAO_HUMANA';
+  observacoesAplicabilidade?: string;
+}
+
+export interface DocumentoControlado {
+  id: string;
+  organizationId: string;
+  codigo: string; // Ex: 'MOMQ', 'POP-REC-001', 'RBAC 145', 'AMM-C208', 'CLI-AZUL-01'
+  titulo: string;
+  categoria: CategoriaDocumental;
+  tipoSubcategoria?: string; // Ex: 'MOMQ', 'POP', 'IT', 'FORM', 'POLITICA', 'RBAC', 'IS', 'AMM', 'IPC', 'CMM', 'SB', 'AD'
+  emissor: string; // Ex: 'Impacto Aviation MRO', 'ANAC', 'Cessna Aircraft Company', 'Azul Linhas Aéreas'
+  clienteNome?: string;
+  fabricanteNome?: string;
+  autoridadeNome?: string;
+  responsavelNome: string;
+  responsavelUid?: string;
+  revisaoVigenteId?: string;
+  revisaoVigenteNumero?: string;
+  fonteOficialCadastrada?: boolean;
+  fonteExternaId?: string;
+  frequenciaVerificacaoDias?: number;
+  ultimaVerificacaoExterna?: string;
+  proximaVerificacaoExterna?: string;
+  exigeEvidenciaLeitura: boolean;
+  aplicabilidadePadrao: AplicabilidadeDocumental;
+  statusGeral: 'ATIVO' | 'INATIVO' | 'CANCELADO';
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RevisaoDocumental {
+  id: string;
+  organizationId: string;
+  documentoId: string;
+  codigoDocumento: string;
+  tituloDocumento: string;
+  numeroRevisao: string; // Ex: 'Rev. 06', 'Rev. 07', 'Rev. 08', 'Emenda 07'
+  dataEmissao: string;
+  dataEntradaVigor: string;
+  dataSubstituicao?: string;
+  statusCicloVida: StatusCicloVidaDocumental;
+  aprovadoPorNome?: string;
+  aprovadoPorUid?: string;
+  dataAprovacao?: string;
+  justificativaAprovacao?: string;
+  escopoAlteracoes?: string;
+  paginasOuSecoesAlteradas?: string[];
+  aplicabilidadeEspecifica?: AplicabilidadeDocumental;
+  origemRevisao: 'INTERNA' | 'FONTE_EXTERNA_OFICIAL' | 'CLIENTE_FORNECIDA' | 'IMPORTACAO';
+  fonteVerificacao?: string;
+  urlFonteExterna?: string;
+  arquivoNome?: string;
+  arquivoTamanhoBytes?: number;
+  arquivoMimeType?: string;
+  arquivoHashSha256?: string;
+  conteudoTextoIntegral?: string;
+  capitulosIndexados?: ManualCapitulo[];
+  observacoes?: string;
+  ehImutavel: boolean;
+  substituidaPorRevisaoId?: string;
+  substituidaPorRevisaoNumero?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FonteExternaControlada {
+  id: string;
+  organizationId: string;
+  nome: string; // Ex: 'Portal ANAC - Legislação RBAC', 'FAA Regulatory & Guidance Library', 'Cessna Customer Support Portal'
+  tipoFonte: 'AUTORIDADE' | 'FABRICANTE' | 'CLIENTE' | 'OUTRA';
+  urlBase?: string;
+  responsavelVerificacaoNome: string;
+  frequenciaDias: number;
+  ultimaVerificacao?: string;
+  proximaVerificacao?: string;
+  ultimoResultadoStatus?: 'CONFORME_SEM_ALTERACAO' | 'NOVA_REVISAO_IDENTIFICADA' | 'ERRO_OU_INDISPONIVEL';
+  ultimoResultadoDetalhes?: string;
+  evidenciaRegistro?: string;
+  status: 'ATIVA' | 'INATIVA';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LogVerificacaoFonteExterna {
+  id: string;
+  organizationId: string;
+  fonteId: string;
+  fonteNome: string;
+  documentoId: string;
+  codigoDocumento: string;
+  revisaoAtualControlada: string;
+  revisaoIdentificadaNaFonte?: string;
+  statusVerificacao: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'FONTE_INDISPONIVEL';
+  mensagem: string;
+  requerValidacaoHumana: boolean;
+  validacaoHumanaStatus: 'PENDENTE' | 'VALIDADA_NOVA_REVISAO_ACEITA' | 'FALSO_POSITIVO_REJEITADA';
+  dataVerificacao: string;
+  executadoPor: string;
+  evidenciaUrlOuTexto?: string;
+}
+
+export type StatusSolicitacaoCliente =
+  | 'SOLICITACAO_GERADA'
+  | 'ENVIADA_PELO_USUARIO'
+  | 'AGUARDANDO_CLIENTE'
+  | 'RECEBIDA'
+  | 'CONFIRMADA_VIGENTE'
+  | 'NOVA_REVISAO_RECEBIDA'
+  | 'EM_ANALISE'
+  | 'VALIDADA'
+  | 'REJEITADA'
+  | 'ENCERRADA';
+
+export type IdiomaSolicitacao = 'EN' | 'PT' | 'ES';
+
+export interface SolicitacaoRevisaoCliente {
+  id: string;
+  organizationId: string;
+  clienteNome: string;
+  destinatarioNome?: string;
+  destinatarioEmail?: string;
+  documentoId: string;
+  documentoCodigo: string;
+  documentoTitulo: string;
+  revisaoAtualArmazenada: string;
+  motivoSolicitacao: string;
+  prazoDesejadoDias?: number;
+  dataLimiteResposta?: string;
+  idioma: IdiomaSolicitacao;
+  assuntoGerado: string;
+  corpoEmailGerado: string;
+  status: StatusSolicitacaoCliente;
+  geradoPorNome: string;
+  geradoPorUid: string;
+  geradoEm: string;
+  enviadoPeloUsuarioEm?: string;
+  respostaRecebidaEm?: string;
+  novaRevisaoRecebidaNumero?: string;
+  observacoes?: string;
+  historicoStatus: Array<{ status: StatusSolicitacaoCliente; data: string; usuario: string; observacao?: string }>;
+}
+
+export interface ResultadoComparacaoRevisoes {
+  revisaoAnteriorId: string;
+  revisaoAnteriorNumero: string;
+  revisaoNovaId: string;
+  revisaoNovaNumero: string;
+  secoesAlteradas: Array<{
+    secao: string;
+    tipoModificacao: 'ADICIONADO' | 'REMOVIDO' | 'MODIFICADO' | 'SEM_ALTERACAO';
+    resumo?: string;
+  }>;
+  camposMetadadosModificados: Array<{ campo: string; anterior: string; novo: string }>;
+  resumoDiferencas: string;
+  nivelPrecisao: 'ALTA' | 'ESTIMADA' | 'PARCIAL_NAO_DETERMINADA';
+  dataComparacao: string;
+}
+
+export interface ImpactoRevisaoItem {
+  id: string;
+  organizationId: string;
+  documentoId: string;
+  codigoDocumento: string;
+  revisaoId: string;
+  numeroRevisao: string;
+  areaAfetada: 'PROCEDIMENTO' | 'INSTRUCAO' | 'TREINAMENTO' | 'COMPETENCIA' | 'PESSOA' | 'AUDITORIA' | 'RNC' | 'RISCO' | 'PROCESSO';
+  itemAfetadoId?: string;
+  itemAfetadoTitulo: string;
+  descricaoImpacto: string;
+  acaoSugerida: string;
+  statusValidacaoHumana: 'SUGESTAO_PENDENTE' | 'CONFIRMADO_EM_TRATATIVA' | 'DESCONSIDERADO_NAO_APLICAVEL';
+  validadoPorNome?: string;
+  dataValidacao?: string;
+  createdAt: string;
+}
+
+export interface RegistroEvidenciaConsultaDocumento {
+  id: string;
+  organizationId: string;
+  documentoId: string;
+  codigoDocumento: string;
+  revisaoId: string;
+  numeroRevisao: string;
+  usuarioNome: string;
+  usuarioUid: string;
+  dataHora: string;
+  finalidadeConsulta: 'EXECUCAO_MANUTENCAO' | 'AUDITORIA' | 'INVESTIGACAO_RNC' | 'TREINAMENTO' | 'CONSULTA_GERAL';
+  referenciaOperacional?: string;
+  declaracaoLeituraConfirmada: boolean;
+}
+
+export interface ResultadoVigenciaTemporal {
+  dataReferencia: string;
+  documentoId: string;
+  codigoDocumento: string;
+  tituloDocumento: string;
+  revisaoVigenteNaData?: RevisaoDocumental;
+  revisaoVigenteHoje?: RevisaoDocumental;
+  statusDeterminacao: 'DETERMINADO' | 'NAO_DETERMINADO_REQUER_VALIDACAO_HUMANA' | 'DOCUMENTO_NAO_EXISTIA_NA_DATA';
+  justificativaRastreavel: string;
+  revisaoVigenteNaDataDiferenteDeHoje: boolean;
+}
+
+export interface DocumentosDashboardMetrics {
+  totalDocumentosControlados: number;
+  documentosVigentes: number;
+  documentosObsoletos: number;
+  documentosEmAnalise: number;
+  documentosAguardandoAprovacao: number;
+  revisoesExternasIdentificadasNaoValidadas: number;
+  solicitacoesClientesPendentes: number;
+  documentosSemVerificacaoRecente: number;
+  distribuicaoPorCategoria: Record<CategoriaDocumental, number>;
+  distribuicaoPorSetor: Record<string, number>;
+  distribuicaoPorOrigem: Record<string, number>;
+  totalRevisoesArmazenadas: number;
+  semDados: boolean;
+}
+

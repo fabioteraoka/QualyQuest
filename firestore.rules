@@ -1,0 +1,395 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default Deny All Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ----------------------------------------------------
+    // Hardened Global Helpers
+    // ----------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function getUserRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : (isSignedIn() && request.auth.token.email == 'fteraoka@gmail.com' ? 'ADMIN' : 'CONSULTA');
+    }
+
+    function getUserOrgId() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId
+        : '';
+    }
+
+    function isSuperPlatformAdmin() {
+      return isSignedIn() && request.auth.token.email == 'fteraoka@gmail.com';
+    }
+
+    function isSystemAdmin() {
+      return isSignedIn() && (
+        isSuperPlatformAdmin() ||
+        getUserRole() == 'ADMIN'
+      );
+    }
+
+    function isGestorSGQ() {
+      return isSignedIn() && (
+        isSystemAdmin() ||
+        getUserRole() == 'GESTOR_SGQ'
+      );
+    }
+
+    function isAuditor() {
+      return isSignedIn() && (
+        isGestorSGQ() ||
+        getUserRole() == 'AUDITOR'
+      );
+    }
+
+    function isUserActive() {
+      return isSignedIn() && (
+        isSuperPlatformAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         (!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE') &&
+         (!('ativo' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ativo != false))
+      );
+    }
+
+    function userBelongsToOrg(orgId) {
+      return isSignedIn() && isUserActive() && (
+        isSuperPlatformAdmin() ||
+        getUserOrgId() == orgId
+      );
+    }
+
+    // ----------------------------------------------------
+    // User Profile Rules (users/{userId})
+    // Prevents self-privilege escalation and arbitrary tenant hopping
+    // ----------------------------------------------------
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isSuperPlatformAdmin() || (isGestorSGQ() && getUserOrgId() == resource.data.organizationId));
+      allow list: if isSuperPlatformAdmin() || (isGestorSGQ() && isUserActive());
+      allow create: if isSignedIn() && request.auth.uid == userId && (
+        (request.resource.data.role != 'ADMIN') || 
+        isSuperPlatformAdmin() || 
+        (request.resource.data.role == 'ADMIN' && 
+         request.resource.data.organizationId != 'org_impacto_aviation' &&
+         exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)) &&
+         get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.createdByUserUid == request.auth.uid)
+      );
+      allow update: if isSignedIn() && (
+        isSuperPlatformAdmin() || 
+        (isSystemAdmin() && isUserActive() && getUserOrgId() == resource.data.organizationId) ||
+        (request.auth.uid == userId && 
+         isUserActive() &&
+         request.resource.data.role == resource.data.role && 
+         request.resource.data.organizationId == resource.data.organizationId)
+      );
+      allow delete: if (isSuperPlatformAdmin() || (isSystemAdmin() && isUserActive() && getUserOrgId() == resource.data.organizationId)) && isValidId(userId);
+    }
+
+    // ----------------------------------------------------
+    // Organizations Collection (organizations/{organizationId})
+    // ----------------------------------------------------
+    match /organizations/{organizationId} {
+      allow get: if userBelongsToOrg(organizationId);
+      allow list: if isSuperPlatformAdmin() || (isSignedIn() && isUserActive());
+      allow create: if isSignedIn() && isUserActive() && (
+        isSuperPlatformAdmin() || 
+        (organizationId != 'org_impacto_aviation' && request.resource.data.createdByUserUid == request.auth.uid)
+      );
+      allow update: if isSuperPlatformAdmin() || (userBelongsToOrg(organizationId) && (isGestorSGQ() || getUserRole() == 'ADMIN'));
+      allow delete: if isSuperPlatformAdmin() && isValidId(organizationId);
+
+      // ----------------------------------------------------
+      // Non-Conformities Subcollection (organizations/{orgId}/nonConformities/{ncId})
+      // ----------------------------------------------------
+      match /nonConformities/{ncId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(ncId) &&
+                                 (!('organizationId' in request.resource.data) || request.resource.data.organizationId == organizationId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(ncId);
+      }
+
+      // ----------------------------------------------------
+      // Manuals Subcollection (organizations/{orgId}/manuals/{manualId})
+      // ----------------------------------------------------
+      match /manuals/{manualId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) &&
+                                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(manualId);
+      }
+
+      // ----------------------------------------------------
+      // Audit Trails Subcollection (organizations/{orgId}/auditTrails/{auditId})
+      // Strictly Write-Once / Append-Only / Immutable
+      // ----------------------------------------------------
+      match /auditTrails/{auditId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId) && isValidId(organizationId) && isValidId(auditId) &&
+                         !exists(/databases/$(database)/documents/organizations/$(organizationId)/auditTrails/$(auditId));
+        allow update, delete: if false; // STRICT IMMUTABILITY: Cannot update or delete any audit log
+      }
+
+      // ----------------------------------------------------
+      // RNC Comparisons Subcollection (organizations/{orgId}/rncComparisons/{comparisonId})
+      // ----------------------------------------------------
+      match /rncComparisons/{comparisonId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(comparisonId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(comparisonId);
+      }
+
+      // ----------------------------------------------------
+      // Validated Knowledge Base (organizations/{orgId}/validatedKnowledge/{knowledgeId})
+      // Segregation of Duties: N5 promotion cannot be self-approved by the same author
+      // ----------------------------------------------------
+      match /validatedKnowledge/{knowledgeId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId) &&
+                         getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(knowledgeId) &&
+                         // N5 can only be created directly if approved by Gestor or Admin
+                         (request.resource.data.nivelMaturidade != 5 || isGestorSGQ());
+        allow update: if userBelongsToOrg(organizationId) &&
+                         getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(knowledgeId) &&
+                         (
+                           (request.resource.data.nivelMaturidade != 5 && request.resource.data.status != 'PADRAO_SGQ') ||
+                           (isGestorSGQ() && (!('criadoPorUid' in resource.data) || resource.data.criadoPorUid != request.auth.uid))
+                         );
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(knowledgeId);
+      }
+
+      // ----------------------------------------------------
+      // External Audits Subcollection (organizations/{orgId}/externalAudits/{auditId})
+      // ----------------------------------------------------
+      match /externalAudits/{auditId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(auditId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(auditId);
+      }
+
+      // ----------------------------------------------------
+      // Audit Findings Subcollection (organizations/{orgId}/auditFindings/{findingId})
+      // ----------------------------------------------------
+      match /auditFindings/{findingId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(findingId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(findingId);
+      }
+
+      // ----------------------------------------------------
+      // Audit Lessons Learned Subcollection (organizations/{orgId}/auditLessonsLearned/{lessonId})
+      // ----------------------------------------------------
+      match /auditLessonsLearned/{lessonId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(lessonId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(lessonId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Pessoas & Colaboradores (organizations/{orgId}/persons/{personId})
+      // ----------------------------------------------------
+      match /persons/{personId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(personId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(personId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Competências (organizations/{orgId}/competencies/{competencyId})
+      // ----------------------------------------------------
+      match /competencies/{competencyId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(competencyId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(competencyId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Vínculos de Competências (organizations/{orgId}/personCompetencies/{personCompetencyId})
+      // ----------------------------------------------------
+      match /personCompetencies/{personCompetencyId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(personCompetencyId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(personCompetencyId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Cursos de Treinamento (organizations/{orgId}/trainingCourses/{courseId})
+      // ----------------------------------------------------
+      match /trainingCourses/{courseId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(courseId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(courseId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Registros de Treinamentos (organizations/{orgId}/trainingRecords/{trainingRecordId})
+      // ----------------------------------------------------
+      match /trainingRecords/{trainingRecordId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(trainingRecordId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(trainingRecordId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Qualificações e Habilitações (organizations/{orgId}/qualifications/{qualificationId})
+      // ----------------------------------------------------
+      match /qualifications/{qualificationId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(qualificationId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(qualificationId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Documentos & Evidências de Pessoas (organizations/{orgId}/personDocuments/{documentId})
+      // ----------------------------------------------------
+      match /personDocuments/{documentId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(documentId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(documentId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Requisitos de Atividades (organizations/{orgId}/activityRequirements/{activityId})
+      // ----------------------------------------------------
+      match /activityRequirements/{activityId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(activityId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(activityId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 9: Sugestões de IA para Competências (organizations/{orgId}/aiCompetencySuggestions/{suggestionId})
+      // ----------------------------------------------------
+      match /aiCompetencySuggestions/{suggestionId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(suggestionId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(suggestionId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 10: Documentos Controlados (organizations/{orgId}/controlled_documents/{documentId})
+      // ----------------------------------------------------
+      match /controlled_documents/{documentId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(documentId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         isSystemAdmin() && isValidId(organizationId) && isValidId(documentId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 10: Revisões Documentais (organizations/{orgId}/document_revisions/{revisionId})
+      // Imutabilidade: Revisões aprovadas / vigentes protegidas contra edição arbitrária
+      // ----------------------------------------------------
+      match /document_revisions/{revisionId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(revisionId);
+        allow update: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(revisionId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         isSystemAdmin() && isValidId(organizationId) && isValidId(revisionId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 10: Fontes Externas (organizations/{orgId}/external_document_sources/{sourceId})
+      // ----------------------------------------------------
+      match /external_document_sources/{sourceId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) &&
+                                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(sourceId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 10: Solicitações a Clientes (organizations/{orgId}/client_revision_requests/{requestId})
+      // ----------------------------------------------------
+      match /client_revision_requests/{requestId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(requestId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(requestId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 10: Logs de Verificação Externa (organizations/{orgId}/external_verification_logs/{logId})
+      // ----------------------------------------------------
+      match /external_verification_logs/{logId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId) && isValidId(organizationId) && isValidId(logId);
+        allow update: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(logId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         isSystemAdmin() && isValidId(organizationId) && isValidId(logId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 10: Evidências de Consulta Documental (organizations/{orgId}/document_consult_evidences/{evidenceId})
+      // ----------------------------------------------------
+      match /document_consult_evidences/{evidenceId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId) && isValidId(organizationId) && isValidId(evidenceId);
+        allow update, delete: if userBelongsToOrg(organizationId) &&
+                                 isSystemAdmin() && isValidId(organizationId) && isValidId(evidenceId);
+      }
+    }
+
+    // ----------------------------------------------------
+    // System Diagnostics Collection (systemDiagnostics/{diagnosticId})
+    // ----------------------------------------------------
+    match /systemDiagnostics/{diagnosticId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(diagnosticId);
+      allow delete: if isSystemAdmin() && isValidId(diagnosticId);
+    }
+  }
+}
