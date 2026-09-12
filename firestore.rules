@@ -79,7 +79,7 @@ service cloud.firestore {
     function userBelongsToOrg(orgId) {
       return isSignedIn() && isUserActive() && (
         isSuperPlatformAdmin() ||
-        getUserOrgId() == orgId
+        (getUserOrgId() != '' && orgId != '' && getUserOrgId() == orgId)
       );
     }
 
@@ -97,6 +97,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == userId && (
         (request.resource.data.role != 'ADMIN' && request.resource.data.role != 'ADMINISTRADOR') || 
         isSuperPlatformAdmin() || 
+        // User accepting an invitation with verified role
+        (('invitationId' in request.resource.data) &&
+         exists(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)) &&
+         get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.email.lower() == request.auth.token.email.lower() &&
+         get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.organizationId == request.resource.data.organizationId &&
+         get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == request.resource.data.role) ||
+        // User creating an organization and becoming its admin
         ((request.resource.data.role == 'ADMIN' || request.resource.data.role == 'ADMINISTRADOR') && 
          request.resource.data.organizationId != 'org_impacto_aviation' &&
          exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)) &&
@@ -106,9 +113,23 @@ service cloud.firestore {
         isSuperPlatformAdmin() || 
         (isSystemAdmin() && isUserActive() && getUserOrgId() == resource.data.organizationId) ||
         // User accepting invitation to join org
+        (request.auth.uid == userId && (
+          // Non-admin roles can be accepted if user was pending/unassigned
+          ((('status' in resource.data && resource.data.status == 'PENDENTE') || 
+            (!('organizationId' in resource.data) || resource.data.organizationId == '')) &&
+           request.resource.data.role != 'ADMIN' && request.resource.data.role != 'ADMINISTRADOR') ||
+          // Any role backed by a valid verified invitation
+          (('invitationId' in request.resource.data) &&
+           exists(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)) &&
+           get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.email.lower() == request.auth.token.email.lower() &&
+           get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.organizationId == request.resource.data.organizationId &&
+           get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == request.resource.data.role)
+        )) ||
+        // User creating an organization and becoming its initial admin
         (request.auth.uid == userId && 
-         (('status' in resource.data && resource.data.status == 'PENDENTE') || 
-          (!('organizationId' in resource.data) || resource.data.organizationId == ''))) ||
+         request.resource.data.organizationId != 'org_impacto_aviation' &&
+         exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)) &&
+         get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.createdByUserUid == request.auth.uid) ||
         // User updating profile information without modifying role or organization
         (request.auth.uid == userId && 
          isUserActive() &&
@@ -125,7 +146,7 @@ service cloud.firestore {
     match /userInvitations/{invitationId} {
       allow get: if isSignedIn() && (
         isSuperPlatformAdmin() ||
-        (resource.data.email == request.auth.token.email) ||
+        (resource.data.email.lower() == request.auth.token.email.lower()) ||
         (userBelongsToOrg(resource.data.organizationId) && isGestorSGQ())
       );
       allow list: if isSignedIn();
@@ -137,9 +158,13 @@ service cloud.firestore {
         isSuperPlatformAdmin() ||
         (userBelongsToOrg(resource.data.organizationId) && isGestorSGQ()) ||
         // User accepting the invitation for their authenticated email
-        (request.auth.token.email == resource.data.email && 
+        (request.auth.token.email.lower() == resource.data.email.lower() && 
+         resource.data.status == 'PENDENTE' &&
          request.resource.data.status == 'ACEITO' &&
-         request.resource.data.acceptedByUserUid == request.auth.uid)
+         (
+           ('acceptedByUid' in request.resource.data && request.resource.data.acceptedByUid == request.auth.uid) ||
+           ('acceptedByUserUid' in request.resource.data && request.resource.data.acceptedByUserUid == request.auth.uid)
+         ))
       );
       allow delete: if isSignedIn() && (
         isSuperPlatformAdmin() ||

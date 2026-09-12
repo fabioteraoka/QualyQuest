@@ -742,6 +742,7 @@ export interface UserProfile {
   lastLoginAt?: string;
   createdByUid?: string;
   createdByEmail?: string;
+  invitationId?: string;
 }
 
 export interface SystemDiagnosticRecord {

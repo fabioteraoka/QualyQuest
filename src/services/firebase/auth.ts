@@ -109,9 +109,10 @@ export class AuthService {
             uid: firebaseUser.uid,
             email: firebaseUser.email || '',
             displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuário',
-            role: 'AUDITOR',
+            role: 'CONSULTA',
             organizationId: '',
-            status: 'ACTIVE',
+            setor: '',
+            status: 'PENDENTE',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });
