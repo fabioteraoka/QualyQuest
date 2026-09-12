@@ -8,6 +8,10 @@ interface OrganizationBrandLogoProps {
   width?: number | string;
   height?: number | string;
   variant?: 'full' | 'compact' | 'badge';
+  logoUrl?: string;
+  orgName?: string;
+  siglaAeronautica?: string;
+  size?: 'sm' | 'md' | 'lg';
 }
 
 /**
@@ -22,12 +26,17 @@ export const OrganizationBrandLogo: React.FC<OrganizationBrandLogoProps> = ({
   width = 220,
   height = 60,
   variant = 'full',
+  logoUrl: propLogoUrl,
+  orgName: propOrgName,
+  siglaAeronautica: propSigla,
+  size,
 }) => {
   const isImpacto = Boolean(
-    organization && (
+    (organization && (
       organization.id === 'org_impacto_aviation' || 
       (organization.name && organization.name.toLowerCase().includes('impacto'))
-    )
+    )) ||
+    (propOrgName && propOrgName.toLowerCase().includes('impacto'))
   );
 
   // 1. If Impacto Aviation, render the Impacto logo
@@ -35,12 +44,13 @@ export const OrganizationBrandLogo: React.FC<OrganizationBrandLogoProps> = ({
     return <ImpactoLogo className={className} width={width} height={height} />;
   }
 
-  // 2. If organization has custom logoUrl (e.g. image uploaded or provided via URL)
-  if (organization?.logoUrl) {
+  // 2. If organization or prop has custom logoUrl (e.g. image uploaded or provided via URL)
+  const effectiveLogoUrl = propLogoUrl || organization?.logoUrl;
+  if (effectiveLogoUrl) {
     return (
       <img
-        src={organization.logoUrl}
-        alt={organization.name || 'Logotipo da Organização'}
+        src={effectiveLogoUrl}
+        alt={propOrgName || organization?.name || 'Logotipo da Organização'}
         className={className}
         style={{ width, height, objectFit: 'contain' }}
         referrerPolicy="no-referrer"
@@ -49,11 +59,16 @@ export const OrganizationBrandLogo: React.FC<OrganizationBrandLogoProps> = ({
   }
 
   // 3. Dynamic Aeronautical Vector Insignia for New Organizations or neutral fallback
-  const sigla = organization?.configuration?.identidadeVisual?.siglaAeronautica || 
-                (organization?.name ? organization.name.substring(0, 3).toUpperCase() : 'SGQ');
+  const sigla = propSigla ||
+                organization?.configuration?.identidadeVisual?.siglaAeronautica || 
+                (propOrgName ? propOrgName.substring(0, 3).toUpperCase() : 
+                 (organization?.name ? organization.name.substring(0, 3).toUpperCase() : 'SGQ'));
   const primaryColor = organization?.configuration?.identidadeVisual?.corPrimaria || '#1e3a8a';
-  const orgName = organization?.name || 'QualiGest SGQ';
+  const orgName = propOrgName || organization?.name || 'QualiGest SGQ';
   const legalName = organization?.legalName || 'Gestão da Qualidade Aeronáutica';
+
+  // Safe unique gradient ID that never throws if organization or organization.id is undefined
+  const safeId = organization?.id || `brand-${(sigla || 'sgq').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
   return (
     <div 
@@ -69,7 +84,7 @@ export const OrganizationBrandLogo: React.FC<OrganizationBrandLogoProps> = ({
         aria-hidden="true"
       >
         <defs>
-          <linearGradient id={`grad-${organization.id}`} x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id={`grad-${safeId}`} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor={primaryColor} />
             <stop offset="100%" stopColor="#0f172a" />
           </linearGradient>
@@ -77,7 +92,7 @@ export const OrganizationBrandLogo: React.FC<OrganizationBrandLogoProps> = ({
         {/* Shield background */}
         <path
           d="M 50 5 L 88 20 C 88 65, 50 92, 50 95 C 50 92, 12 65, 12 20 Z"
-          fill={`url(#grad-${organization.id})`}
+          fill={`url(#grad-${safeId})`}
           stroke="#e2e8f0"
           strokeWidth="2"
         />

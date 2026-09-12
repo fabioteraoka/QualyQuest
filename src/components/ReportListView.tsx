@@ -51,7 +51,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   onAuditNC,
   initialStatusFilter,
 }) => {
-  const safeRecords = records || [];
+  const safeRecords = useMemo(() => (records || []).filter((r): r is NCRecord => Boolean(r && r.id)), [records]);
   const [viewMode, setViewMode] = useState<'tabela' | 'kanban'>('tabela');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter || 'ALL');
@@ -146,7 +146,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
     if (selectedIds.length === filteredRecords.length && filteredRecords.length > 0) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(filteredRecords.map(r => r.id));
+      setSelectedIds(filteredRecords.map(r => r?.id).filter(Boolean) as string[]);
     }
   };
 

@@ -263,7 +263,7 @@ export default function App() {
         // Auto-select first NC if currently selected is null or deleted
         setSelectedNC((prev) => {
           if (!prev) return firestoreNCs[0] || null;
-          const found = firestoreNCs.find((r) => r.id === prev.id);
+          const found = firestoreNCs.find((r) => r?.id === prev?.id);
           return found || firestoreNCs[0] || null;
         });
       },

@@ -487,6 +487,7 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
               <div className="text-sm font-semibold text-white">{organization?.name || 'QualiGest SGQ'}</div>
             </div>
             <OrganizationBrandLogo
+              organization={organization}
               logoUrl={organization?.logoUrl || currentConfig.identidadeVisual?.logoUrl}
               orgName={organization?.name || 'QualiGest SGQ'}
               siglaAeronautica={currentConfig.identidadeVisual?.siglaAeronautica}
@@ -1288,6 +1289,11 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
               {/* Preview Card */}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800/80 flex items-center gap-4">
                 <OrganizationBrandLogo
+                  organization={organization ? {
+                    ...organization,
+                    name: orgName || organization.name,
+                    logoUrl: orgLogoUrl || organization.logoUrl,
+                  } : null}
                   logoUrl={orgLogoUrl}
                   orgName={orgName}
                   siglaAeronautica={orgSigla}
