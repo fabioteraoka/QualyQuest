@@ -84,6 +84,9 @@ import { LocalDataMigrationModal } from './components/LocalDataMigrationModal';
 import { detectLocalMaterial } from './services/localDataMigration';
 import { NoTenantAssignedView } from './components/NoTenantAssignedView';
 import { UserDeactivatedView } from './components/UserDeactivatedView';
+import { CentralAdministrationView } from './components/CentralAdministrationView';
+import { UserPendingOrganizationView } from './components/UserPendingOrganizationView';
+import { UserBlockedOrInactiveView } from './components/UserBlockedOrInactiveView';
 import { UserManualView } from './components/UserManualView';
 import { AuditsManagementView } from './components/AuditsManagementView';
 import { AuditFindingsView } from './components/AuditFindingsView';
@@ -148,6 +151,7 @@ export default function App() {
     | 'comparacaoRNC'
     | 'validacaoQueue'
     | 'knowledgeBase'
+    | 'admin-central'
     | 'configuracoes-org'
     | 'onboarding-novo-cliente'
     | 'manual-utilizacao'
@@ -644,6 +648,7 @@ export default function App() {
       case 'conhecaQualigest': return 'Conheça o QualiGest SGQ (Tour & Homologação)';
       case 'apresentacao': return 'Apresentação Gerencial da Qualidade';
       case 'arquitetura': return 'Arquitetura do Sistema SGQ';
+      case 'admin-central': return 'Gestão Central de Organizações, Usuários & Permissões (FASE 11)';
       case 'configuracoes-org': return 'Configurações da Organização & Identidade';
       case 'onboarding-novo-cliente': return 'Onboarding & Implantação de Nova Organização';
       case 'manual-utilizacao': return 'Manual de Utilização & Governança da Qualidade';
@@ -764,19 +769,13 @@ export default function App() {
         {/* Main Content View with responsive padding and mobile bottom clearance */}
         <main className="flex-1 p-3 sm:p-6 lg:p-8 pb-24 lg:pb-8 max-w-7xl w-full mx-auto overflow-x-hidden">
           {/* Deactivated User Check: Revogação de acesso em tempo real */}
-          {userProfile?.status === 'INACTIVE' ? (
-            <UserDeactivatedView
-              user={user}
-              userProfile={userProfile}
-              onLogout={logout}
-            />
-          ) : user && !activeOrgId && activeTab !== 'onboarding-novo-cliente' ? (
-            <NoTenantAssignedView
-              user={user}
-              userProfile={userProfile}
-              onStartOnboarding={() => setActiveTab('onboarding-novo-cliente')}
-              onLogout={logout}
-              onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
+          {(userProfile?.status === 'INACTIVE' || userProfile?.status === 'INATIVO' || userProfile?.status === 'BLOQUEADO') ? (
+            <UserBlockedOrInactiveView />
+          ) : user && (!activeOrgId || userProfile?.status === 'PENDENTE') && activeTab !== 'onboarding-novo-cliente' ? (
+            <UserPendingOrganizationView
+              onInvitationAccepted={() => {
+                setActiveTab('dashboard');
+              }}
             />
           ) : loadingRecords && records.length === 0 ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3 text-slate-500">
@@ -970,6 +969,14 @@ export default function App() {
                   userProfile={userProfile}
                   records={records}
                   onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
+                />
+              )}
+
+              {/* FASE 11: GESTÃO CENTRALIZADA DE ORGANIZAÇÕES, USUÁRIOS E PERMISSÕES */}
+              {activeTab === 'admin-central' && (
+                <CentralAdministrationView
+                  organization={activeOrganization}
+                  onOrganizationUpdated={(updated) => setActiveOrganization(updated)}
                 />
               )}
 

@@ -259,6 +259,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Administração & Multi-Tenant',
       items: [
         {
+          id: 'admin-central',
+          label: 'Gestão Central & Usuários',
+          icon: <ShieldCheck className="w-4 h-4 text-blue-400" />,
+          tag: 'FASE 11',
+        },
+        {
           id: 'configuracoes-org',
           label: 'Configurações da Org',
           icon: <Sliders className="w-4 h-4" />,

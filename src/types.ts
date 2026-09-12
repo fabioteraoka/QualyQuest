@@ -611,11 +611,69 @@ export interface AuditoriaPertinenciaResultado {
 }
 
 // ----------------------------------------------------
-// FASE 1 & FASE 2: INFRAESTRUTURA FIREBASE MULTIUSUÁRIO & MULTI-TENANT
+// FASE 11: INFRAESTRUTURA DE ORGANIZAÇÕES, USUÁRIOS, PERFIS E PERMISSÕES
 // ----------------------------------------------------
 
-export type UserRole = 'ADMIN' | 'GESTOR_SGQ' | 'AUDITOR' | 'CONSULTA';
-export type UserStatus = 'ACTIVE' | 'INACTIVE';
+export type UserRole = 
+  | 'ADMIN' 
+  | 'ADMINISTRADOR'
+  | 'GESTOR_SGQ' 
+  | 'QUALIDADE' 
+  | 'AUDITOR' 
+  | 'MANUTENCAO' 
+  | 'TREINAMENTO' 
+  | 'CONSULTA';
+
+export type UserStatus = 'ATIVO' | 'INATIVO' | 'PENDENTE' | 'BLOQUEADO' | 'ACTIVE' | 'INACTIVE';
+
+export type StatusConviteUsuario = 'PENDENTE' | 'ACEITO' | 'CANCELADO' | 'EXPIRADO';
+
+export interface UserInvitation {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  email: string;
+  nome?: string;
+  role: UserRole;
+  setor?: string;
+  code: string; // Código de convite curto legível (ex: IMP-7294)
+  status: StatusConviteUsuario;
+  createdByUid: string;
+  createdByEmail: string;
+  createdAt: string;
+  updatedAt?: string;
+  acceptedAt?: string;
+  acceptedByUid?: string;
+  notas?: string;
+}
+
+export type ModuloSistema = 
+  | 'DASHBOARD'
+  | 'RNC'
+  | 'AUDITORIAS'
+  | 'DOCUMENTOS'
+  | 'TREINAMENTOS'
+  | 'USUARIOS'
+  | 'CONFIGURACOES';
+
+export type AcaoPermissao = 
+  | 'visualizar'
+  | 'criar'
+  | 'editar'
+  | 'excluir'
+  | 'aprovar'
+  | 'encerrar'
+  | 'revisar'
+  | 'cadastrar'
+  | 'inativar';
+
+export interface ItemPermissaoModulo {
+  modulo: ModuloSistema;
+  nomeModulo: string;
+  acoesPermitidas: AcaoPermissao[];
+}
+
+export type MapaPermissoesPerfil = Record<UserRole, Record<ModuloSistema, AcaoPermissao[]>>;
 
 export interface OrganizationSLAConfig {
   p1Horas: number; // Crítico - SLA interno de contenção/tratativa (ex: 24h)
@@ -676,9 +734,14 @@ export interface UserProfile {
   displayName: string;
   role: UserRole;
   organizationId: string; // ID da organização à qual o usuário pertence
+  sectorId?: string;
+  setor?: string; // Setor do usuário (ex: 'Qualidade', 'Manutenção')
   status: UserStatus;
   createdAt: string; // ISO string ou Timestamp serializado
   updatedAt: string;
+  lastLoginAt?: string;
+  createdByUid?: string;
+  createdByEmail?: string;
 }
 
 export interface SystemDiagnosticRecord {

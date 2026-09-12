@@ -1,6 +1,6 @@
 {
   "name": "QualiGest - Gestão de Não Conformidades (SGQ)",
-  "description": "Sistema Integrado de Gestão da Qualidade (SGQ) da Impacto Aviation MRO (ANAC & EASA 145) para controle de Não Conformidades (RNC F 001-29), Auditorias Externas, Pessoas, Competências, Controle Documental, Revisões Técnicas, Fontes Oficiais e Conhecimento Temporal.",
+  "description": "Sistema Integrado de Gestão da Qualidade (SGQ) da Impacto Aviation MRO (ANAC & EASA 145) para controle de Não Conformidades (RNC F 001-29), Auditorias Externas, Pessoas, Competências, Controle Documental, Revisões Técnicas, Fontes Oficiais, Conhecimento Temporal e Gestão Centralizada Multiusuário e Multiorganização (FASE 11).",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

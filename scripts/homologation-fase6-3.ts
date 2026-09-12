@@ -97,8 +97,12 @@ console.log('\n--- TESTANDO RBAC E PREVENÇÃO DE ESCALAÇÃO DE PRIVILÉGIOS --
 
 const rbacMatrix: Record<UserRole, { canEdit: boolean; canValidateN5: boolean; canDeleteAudit: boolean }> = {
   ADMIN: { canEdit: true, canValidateN5: true, canDeleteAudit: false },
+  ADMINISTRADOR: { canEdit: true, canValidateN5: true, canDeleteAudit: false },
   GESTOR_SGQ: { canEdit: true, canValidateN5: true, canDeleteAudit: false },
+  QUALIDADE: { canEdit: true, canValidateN5: false, canDeleteAudit: false },
   AUDITOR: { canEdit: true, canValidateN5: false, canDeleteAudit: false },
+  MANUTENCAO: { canEdit: true, canValidateN5: false, canDeleteAudit: false },
+  TREINAMENTO: { canEdit: true, canValidateN5: false, canDeleteAudit: false },
   CONSULTA: { canEdit: false, canValidateN5: false, canDeleteAudit: false },
 };
 

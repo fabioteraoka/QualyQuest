@@ -68,7 +68,9 @@ service cloud.firestore {
         isSuperPlatformAdmin() ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          (!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE') &&
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INATIVO' &&
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'BLOQUEADO')) &&
          (!('ativo' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ativo != false))
       );
@@ -86,12 +88,16 @@ service cloud.firestore {
     // Prevents self-privilege escalation and arbitrary tenant hopping
     // ----------------------------------------------------
     match /users/{userId} {
-      allow get: if isSignedIn() && (request.auth.uid == userId || isSuperPlatformAdmin() || (isGestorSGQ() && getUserOrgId() == resource.data.organizationId));
+      allow get: if isSignedIn() && (
+        request.auth.uid == userId || 
+        isSuperPlatformAdmin() || 
+        (isGestorSGQ() && getUserOrgId() == resource.data.organizationId)
+      );
       allow list: if isSuperPlatformAdmin() || (isGestorSGQ() && isUserActive());
       allow create: if isSignedIn() && request.auth.uid == userId && (
-        (request.resource.data.role != 'ADMIN') || 
+        (request.resource.data.role != 'ADMIN' && request.resource.data.role != 'ADMINISTRADOR') || 
         isSuperPlatformAdmin() || 
-        (request.resource.data.role == 'ADMIN' && 
+        ((request.resource.data.role == 'ADMIN' || request.resource.data.role == 'ADMINISTRADOR') && 
          request.resource.data.organizationId != 'org_impacto_aviation' &&
          exists(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)) &&
          get(/databases/$(database)/documents/organizations/$(request.resource.data.organizationId)).data.createdByUserUid == request.auth.uid)
@@ -99,12 +105,46 @@ service cloud.firestore {
       allow update: if isSignedIn() && (
         isSuperPlatformAdmin() || 
         (isSystemAdmin() && isUserActive() && getUserOrgId() == resource.data.organizationId) ||
+        // User accepting invitation to join org
+        (request.auth.uid == userId && 
+         (('status' in resource.data && resource.data.status == 'PENDENTE') || 
+          (!('organizationId' in resource.data) || resource.data.organizationId == ''))) ||
+        // User updating profile information without modifying role or organization
         (request.auth.uid == userId && 
          isUserActive() &&
          request.resource.data.role == resource.data.role && 
          request.resource.data.organizationId == resource.data.organizationId)
       );
       allow delete: if (isSuperPlatformAdmin() || (isSystemAdmin() && isUserActive() && getUserOrgId() == resource.data.organizationId)) && isValidId(userId);
+    }
+
+    // ----------------------------------------------------
+    // User Invitations Collection (userInvitations/{invitationId})
+    // Bridging multi-user linking to organizations safely
+    // ----------------------------------------------------
+    match /userInvitations/{invitationId} {
+      allow get: if isSignedIn() && (
+        isSuperPlatformAdmin() ||
+        (resource.data.email == request.auth.token.email) ||
+        (userBelongsToOrg(resource.data.organizationId) && isGestorSGQ())
+      );
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isSuperPlatformAdmin() ||
+        (userBelongsToOrg(request.resource.data.organizationId) && isGestorSGQ())
+      ) && isValidId(invitationId);
+      allow update: if isSignedIn() && (
+        isSuperPlatformAdmin() ||
+        (userBelongsToOrg(resource.data.organizationId) && isGestorSGQ()) ||
+        // User accepting the invitation for their authenticated email
+        (request.auth.token.email == resource.data.email && 
+         request.resource.data.status == 'ACEITO' &&
+         request.resource.data.acceptedByUserUid == request.auth.uid)
+      );
+      allow delete: if isSignedIn() && (
+        isSuperPlatformAdmin() ||
+        (userBelongsToOrg(resource.data.organizationId) && isSystemAdmin())
+      ) && isValidId(invitationId);
     }
 
     // ----------------------------------------------------

@@ -21,6 +21,7 @@ import {
   SystemDiagnosticRecord,
   UserRole,
   UserStatus,
+  UserInvitation,
   NCRecord,
   ManualRecord,
   OrganizationRecord,
@@ -586,33 +587,115 @@ export async function ensureUserProfile(
   const path = `users/${uid}`;
   try {
     const existing = await getUserProfile(uid);
+    const now = new Date().toISOString();
     if (existing) {
+      // Atualiza data do último acesso de forma não bloqueante
+      try {
+        const docRef = doc(db, 'users', uid);
+        await updateDoc(docRef, {
+          lastLoginAt: now,
+        });
+      } catch {
+        // não bloqueante
+      }
       return existing;
     }
 
-    // Default first user rule: if project owner email, initialize role as ADMIN and assign to pilot organization
-    const isProjectOwner = email.toLowerCase() === 'fteraoka@gmail.com';
-    const finalOrgId = organizationId || (isProjectOwner ? DEFAULT_ORGANIZATION_ID : '');
-    const role: UserRole = isProjectOwner ? 'ADMIN' : 'AUDITOR';
-    const now = new Date().toISOString();
+    const cleanEmail = (email || '').toLowerCase().trim();
+    const isProjectOwner = cleanEmail === 'fteraoka@gmail.com';
 
-    if (finalOrgId) {
+    // 1. Verifica se há convite pendente emitido pela administração para este e-mail
+    let matchedInvitation: UserInvitation | null = null;
+    if (cleanEmail) {
+      try {
+        const invQuery = query(
+          collection(db, 'userInvitations'),
+          where('email', '==', cleanEmail),
+          where('status', '==', 'PENDENTE')
+        );
+        const invSnap = await getDocs(invQuery);
+        if (!invSnap.empty) {
+          const invDoc = invSnap.docs[0];
+          matchedInvitation = { id: invDoc.id, ...invDoc.data() } as UserInvitation;
+        }
+      } catch (invErr) {
+        console.warn('Verificação de convite pré-existente (não-bloqueante):', invErr);
+      }
+    }
+
+    let finalOrgId = '';
+    let finalRole: UserRole = 'CONSULTA';
+    let finalSector = '';
+    let finalStatus: UserStatus = 'PENDENTE';
+
+    if (matchedInvitation) {
+      // Caso A — Possui convite/vínculo válido da organização:
+      finalOrgId = matchedInvitation.organizationId;
+      finalRole = matchedInvitation.role;
+      finalSector = matchedInvitation.setor || '';
+      finalStatus = 'ATIVO';
+
+      try {
+        const invDocRef = doc(db, 'userInvitations', matchedInvitation.id);
+        await updateDoc(invDocRef, {
+          status: 'ACEITO',
+          acceptedAt: now,
+          acceptedByUid: uid,
+        });
+
+        await recordOrganizationAudit(finalOrgId, {
+          entity: 'USER',
+          entityId: uid,
+          action: 'CREATE',
+          changedByUid: uid,
+          changedByEmail: cleanEmail,
+          summary: `Usuário ${displayName || cleanEmail} ingressou na organização via convite (${matchedInvitation.role}, setor: ${matchedInvitation.setor || 'N/A'}).`,
+          details: JSON.stringify({
+            invitationId: matchedInvitation.id,
+            role: matchedInvitation.role,
+            setor: matchedInvitation.setor,
+            code: matchedInvitation.code,
+          }),
+        });
+      } catch (markErr) {
+        console.warn('Aviso ao marcar convite como aceito:', markErr);
+      }
+    } else if (isProjectOwner) {
+      // Caso Piloto / Admin Fundador: vincula à organização piloto com perfil ADMIN
+      finalOrgId = organizationId || DEFAULT_ORGANIZATION_ID;
+      finalRole = 'ADMIN';
+      finalSector = 'Qualidade';
+      finalStatus = 'ATIVO';
+
       try {
         await ensureOrganization(finalOrgId);
       } catch (orgErr) {
-        console.warn('ensureOrganization non-blocking note:', orgErr);
+        console.warn('ensureOrganization não bloqueante:', orgErr);
       }
+    } else if (organizationId) {
+      // Se fornecido explicitamente pela aplicação
+      finalOrgId = organizationId;
+      finalRole = 'CONSULTA';
+      finalStatus = 'PENDENTE';
+    } else {
+      // Caso B — Usuário comum sem convite:
+      // Conta criada identificando a pessoa, MAS NÃO cria organização corporativa indevidamente.
+      finalOrgId = '';
+      finalRole = 'CONSULTA';
+      finalStatus = 'PENDENTE';
     }
 
     const profileData: UserProfile = {
       uid,
-      email,
-      displayName: displayName || (email.split('@')[0] || 'Usuário SGQ'),
-      role,
+      email: cleanEmail,
+      displayName: displayName || (cleanEmail.split('@')[0] || 'Usuário SGQ'),
+      role: finalRole,
       organizationId: finalOrgId,
-      status: 'ACTIVE',
+      setor: finalSector,
+      status: finalStatus,
       createdAt: now,
       updatedAt: now,
+      lastLoginAt: now,
     };
 
     const docRef = doc(db, 'users', uid);
@@ -624,7 +707,7 @@ export async function ensureUserProfile(
   }
 }
 
-export async function updateUserProfile(uid: string, data: Partial<Pick<UserProfile, 'displayName' | 'organizationId' | 'role' | 'status'>>): Promise<void> {
+export async function updateUserProfile(uid: string, data: Partial<Pick<UserProfile, 'displayName' | 'organizationId' | 'role' | 'status' | 'setor'>>): Promise<void> {
   const path = `users/${uid}`;
   try {
     const docRef = doc(db, 'users', uid);
@@ -660,13 +743,19 @@ export function subscribeToOrganizationUsers(
           uid: docSnap.id,
           email: d.email || '',
           displayName: d.displayName || d.email || 'Usuário',
-          role: (d.role as UserRole) || 'AUDITOR',
+          role: (d.role as UserRole) || 'CONSULTA',
           organizationId: d.organizationId || '',
-          status: (d.status as UserStatus) || 'ACTIVE',
+          setor: d.setor || d.sectorId || '',
+          status: (d.status as UserStatus) || 'ATIVO',
           createdAt: d.createdAt || '',
           updatedAt: d.updatedAt || '',
+          lastLoginAt: d.lastLoginAt || '',
+          createdByUid: d.createdByUid || '',
+          createdByEmail: d.createdByEmail || '',
         });
       });
+      // Ordena por nome
+      users.sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email));
       onUpdate(users);
     },
     (err) => {
@@ -677,7 +766,7 @@ export function subscribeToOrganizationUsers(
 }
 
 /**
- * Updates a user's role in the organization (restricted by Firestore rules to ADMIN).
+ * Updates a user's role in the organization with audit trail.
  */
 export async function updateUserRole(uid: string, role: UserRole): Promise<void> {
   const path = `users/${uid}`;
@@ -693,20 +782,363 @@ export async function updateUserRole(uid: string, role: UserRole): Promise<void>
 }
 
 /**
- * Updates a user's status (ACTIVE / INACTIVE) in the organization (restricted by Firestore rules to ADMIN).
+ * Updates a user's status (ACTIVE / INACTIVE / BLOQUEADO) in the organization.
  */
-export async function updateUserStatus(uid: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+export async function updateUserStatus(uid: string, status: UserStatus): Promise<void> {
   const path = `users/${uid}`;
   try {
     const docRef = doc(db, 'users', uid);
     await updateDoc(docRef, {
       status,
-      ativo: status === 'ACTIVE',
+      ativo: status === 'ACTIVE' || status === 'ATIVO',
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
+}
+
+/**
+ * Atualiza perfil e setor de um usuário com validações e gravação imutável no Audit Trail.
+ */
+export async function updateUserRoleAndSector(
+  targetUid: string,
+  targetUserEmail: string,
+  newRole: UserRole,
+  newSector: string,
+  actorProfile: UserProfile | null,
+  orgId: string
+): Promise<void> {
+  if (actorProfile?.uid === targetUid && actorProfile?.role !== 'ADMIN') {
+    throw new Error('Segurança: Você não possui autorização para alterar seu próprio perfil.');
+  }
+
+  const userRef = doc(db, 'users', targetUid);
+  const currentSnap = await getDoc(userRef);
+  const currentData = currentSnap.data();
+
+  const oldRole = currentData?.role || 'N/A';
+  const oldSector = currentData?.setor || 'N/A';
+
+  await updateDoc(userRef, {
+    role: newRole,
+    setor: newSector,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await recordOrganizationAudit(orgId, {
+    entity: 'USER',
+    entityId: targetUid,
+    action: 'UPDATE',
+    changedByUid: actorProfile?.uid || auth.currentUser?.uid || 'admin',
+    changedByEmail: actorProfile?.email || auth.currentUser?.email || 'admin@qualigest',
+    summary: `Alteração de perfil/setor do usuário ${targetUserEmail}. Perfil: ${oldRole} → ${newRole} | Setor: ${oldSector} → ${newSector}.`,
+    details: JSON.stringify({
+      targetUid,
+      targetEmail: targetUserEmail,
+      oldRole,
+      newRole,
+      oldSector,
+      newSector,
+    }),
+  });
+}
+
+/**
+ * Modifica o status da conta do usuário (ATIVO, INATIVO, BLOQUEADO) com justificativa e Audit Trail.
+ */
+export async function setUserAccountStatus(
+  targetUid: string,
+  targetUserEmail: string,
+  newStatus: UserStatus,
+  reason: string,
+  actorProfile: UserProfile | null,
+  orgId: string
+): Promise<void> {
+  if (actorProfile?.uid === targetUid) {
+    throw new Error('Segurança: Você não pode inativar ou bloquear sua própria conta de administrador.');
+  }
+
+  const userRef = doc(db, 'users', targetUid);
+  const currentSnap = await getDoc(userRef);
+  const currentData = currentSnap.data();
+  const oldStatus = currentData?.status || 'ATIVO';
+
+  await updateDoc(userRef, {
+    status: newStatus,
+    ativo: newStatus === 'ATIVO' || newStatus === 'ACTIVE',
+    updatedAt: new Date().toISOString(),
+  });
+
+  const actionName = newStatus === 'BLOQUEADO' ? 'BLOQUEIO_USUARIO' : newStatus === 'INATIVO' ? 'INATIVACAO_USUARIO' : 'ATIVACAO_USUARIO';
+
+  await recordOrganizationAudit(orgId, {
+    entity: 'USER',
+    entityId: targetUid,
+    action: 'STATUS_CHANGE',
+    changedByUid: actorProfile?.uid || auth.currentUser?.uid || 'admin',
+    changedByEmail: actorProfile?.email || auth.currentUser?.email || 'admin@qualigest',
+    summary: `${actionName}: Status da conta ${targetUserEmail} alterado de ${oldStatus} para ${newStatus}. Motivo: ${reason || 'Ação administrativa'}.`,
+    details: JSON.stringify({
+      targetUid,
+      targetEmail: targetUserEmail,
+      oldStatus,
+      newStatus,
+      reason,
+    }),
+  });
+}
+
+/**
+ * Criação de Convite de Usuário para ingresso na Organização (Fase 11)
+ */
+export async function createUserInvitation(
+  orgId: string,
+  data: {
+    email: string;
+    nome?: string;
+    role: UserRole;
+    setor?: string;
+    notas?: string;
+  },
+  actorProfile?: UserProfile | null,
+  orgName?: string
+): Promise<UserInvitation> {
+  const cleanEmail = data.email.toLowerCase().trim();
+  const invitationId = `inv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const prefix = orgId.replace('org_', '').substring(0, 3).toUpperCase() || 'QG';
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  const code = `${prefix}-${randomNum}`;
+  const now = new Date().toISOString();
+
+  const invitation: UserInvitation = {
+    id: invitationId,
+    organizationId: orgId,
+    organizationName: orgName || 'QualiGest SGQ',
+    email: cleanEmail,
+    nome: data.nome?.trim() || '',
+    role: data.role,
+    setor: data.setor || '',
+    code,
+    status: 'PENDENTE',
+    createdByUid: actorProfile?.uid || auth.currentUser?.uid || 'admin',
+    createdByEmail: actorProfile?.email || auth.currentUser?.email || 'admin@qualigest',
+    createdAt: now,
+    notas: data.notas || '',
+  };
+
+  const invRef = doc(db, 'userInvitations', invitationId);
+  await setDoc(invRef, sanitizeForFirestore(invitation));
+
+  await recordOrganizationAudit(orgId, {
+    entity: 'USER',
+    entityId: invitationId,
+    action: 'CREATE',
+    changedByUid: invitation.createdByUid,
+    changedByEmail: invitation.createdByEmail,
+    summary: `Convite de acesso gerado para ${cleanEmail} com perfil ${data.role} (Setor: ${data.setor || 'N/A'}, Código: ${code}).`,
+    details: JSON.stringify({ email: cleanEmail, role: data.role, setor: data.setor, code }),
+  });
+
+  return invitation;
+}
+
+/**
+ * Assinatura em tempo real aos convites emitidos para uma organização.
+ */
+export function subscribeToOrganizationInvitations(
+  orgId: string,
+  onUpdate: (invitations: UserInvitation[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  if (!orgId) {
+    onUpdate([]);
+    return () => {};
+  }
+  const q = query(collection(db, 'userInvitations'), where('organizationId', '==', orgId));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const list: UserInvitation[] = [];
+      snap.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as UserInvitation);
+      });
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      onUpdate(list);
+    },
+    (err) => {
+      console.warn('Aviso na sincronização de convites:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
+/**
+ * Busca convites pendentes associados ao e-mail do usuário autenticado.
+ */
+export async function getPendingInvitationsForEmail(email: string): Promise<UserInvitation[]> {
+  const cleanEmail = email.toLowerCase().trim();
+  if (!cleanEmail) return [];
+  try {
+    const q = query(
+      collection(db, 'userInvitations'),
+      where('email', '==', cleanEmail),
+      where('status', '==', 'PENDENTE')
+    );
+    const snap = await getDocs(q);
+    const list: UserInvitation[] = [];
+    snap.forEach((d) => {
+      list.push({ id: d.id, ...d.data() } as UserInvitation);
+    });
+    return list;
+  } catch (err) {
+    console.warn('Erro ao consultar convites por email:', err);
+    return [];
+  }
+}
+
+/**
+ * Aceitação de convite por código ou ID pelo próprio usuário logado.
+ */
+export async function acceptUserInvitation(
+  invitationIdOrCode: string,
+  userUid: string,
+  userEmail: string,
+  displayName?: string
+): Promise<{ success: boolean; message: string; invitation?: UserInvitation }> {
+  const cleanInput = invitationIdOrCode.trim().toUpperCase();
+  const cleanEmail = userEmail.toLowerCase().trim();
+
+  let targetDocSnap: any = null;
+  const docDirectRef = doc(db, 'userInvitations', invitationIdOrCode.trim());
+  const directSnap = await getDoc(docDirectRef);
+  if (directSnap.exists()) {
+    targetDocSnap = directSnap;
+  } else {
+    const q = query(
+      collection(db, 'userInvitations'),
+      where('code', '==', cleanInput),
+      where('status', '==', 'PENDENTE')
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      targetDocSnap = snap.docs[0];
+    }
+  }
+
+  if (!targetDocSnap || !targetDocSnap.exists()) {
+    return { success: false, message: 'Código de convite não encontrado ou já expirado.' };
+  }
+
+  const invitation = { id: targetDocSnap.id, ...targetDocSnap.data() } as UserInvitation;
+
+  if (invitation.status !== 'PENDENTE') {
+    return { success: false, message: `Este convite já se encontra com status ${invitation.status}.` };
+  }
+
+  if (invitation.email && invitation.email !== cleanEmail) {
+    return {
+      success: false,
+      message: `Este convite foi emitido para o endereço ${invitation.email}. Você está conectado como ${cleanEmail}.`,
+    };
+  }
+
+  const now = new Date().toISOString();
+
+  // 1. Marca convite como ACEITO
+  const invRef = doc(db, 'userInvitations', invitation.id);
+  await updateDoc(invRef, {
+    status: 'ACEITO',
+    acceptedAt: now,
+    acceptedByUid: userUid,
+  });
+
+  // 2. Atualiza perfil do usuário vinculando à organização com perfil e setor
+  const userRef = doc(db, 'users', userUid);
+  await updateDoc(userRef, {
+    organizationId: invitation.organizationId,
+    role: invitation.role,
+    setor: invitation.setor || '',
+    status: 'ATIVO',
+    updatedAt: now,
+  });
+
+  // 3. Registra no Audit Trail imutável
+  await recordOrganizationAudit(invitation.organizationId, {
+    entity: 'USER',
+    entityId: userUid,
+    action: 'CREATE',
+    changedByUid: userUid,
+    changedByEmail: cleanEmail,
+    summary: `Usuário ${displayName || cleanEmail} aceitou convite (${invitation.code}) e ingressou na organização como ${invitation.role} (Setor: ${invitation.setor || 'N/A'}).`,
+    details: JSON.stringify({
+      invitationId: invitation.id,
+      code: invitation.code,
+      role: invitation.role,
+      setor: invitation.setor,
+    }),
+  });
+
+  return { success: true, message: 'Vínculo realizado com sucesso!', invitation };
+}
+
+/**
+ * Cancelamento de convite pendente.
+ */
+export async function cancelUserInvitation(
+  invitationId: string,
+  actorProfile: UserProfile | null
+): Promise<void> {
+  const invRef = doc(db, 'userInvitations', invitationId);
+  const snap = await getDoc(invRef);
+  if (!snap.exists()) return;
+  const data = snap.data() as UserInvitation;
+
+  await updateDoc(invRef, {
+    status: 'CANCELADO',
+    updatedAt: new Date().toISOString(),
+  });
+
+  await recordOrganizationAudit(data.organizationId, {
+    entity: 'USER',
+    entityId: invitationId,
+    action: 'STATUS_CHANGE',
+    changedByUid: actorProfile?.uid || auth.currentUser?.uid || 'admin',
+    changedByEmail: actorProfile?.email || auth.currentUser?.email || 'admin@qualigest',
+    summary: `Convite ${data.code} para ${data.email} foi CANCELADO pelo administrador.`,
+    details: JSON.stringify({ invitationId, code: data.code, targetEmail: data.email }),
+  });
+}
+
+/**
+ * Reenvio / renovação de convite pendente.
+ */
+export async function resendUserInvitation(
+  invitationId: string,
+  actorProfile: UserProfile | null
+): Promise<UserInvitation | null> {
+  const invRef = doc(db, 'userInvitations', invitationId);
+  const snap = await getDoc(invRef);
+  if (!snap.exists()) return null;
+  const data = snap.data() as UserInvitation;
+
+  const now = new Date().toISOString();
+  await updateDoc(invRef, {
+    status: 'PENDENTE',
+    updatedAt: now,
+  });
+
+  await recordOrganizationAudit(data.organizationId, {
+    entity: 'USER',
+    entityId: invitationId,
+    action: 'UPDATE',
+    changedByUid: actorProfile?.uid || auth.currentUser?.uid || 'admin',
+    changedByEmail: actorProfile?.email || auth.currentUser?.email || 'admin@qualigest',
+    summary: `Convite ${data.code} para ${data.email} foi revalidado/reenviado pelo administrador.`,
+    details: JSON.stringify({ invitationId, code: data.code, targetEmail: data.email }),
+  });
+
+  return { ...data, status: 'PENDENTE', updatedAt: now };
 }
 
 // ----------------------------------------------------
