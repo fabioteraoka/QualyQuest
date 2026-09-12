@@ -21,10 +21,12 @@ import { UserInvitation } from '../types';
 
 interface UserPendingOrganizationViewProps {
   onInvitationAccepted?: () => void;
+  onOpenOnboarding?: () => void;
 }
 
 export const UserPendingOrganizationView: React.FC<UserPendingOrganizationViewProps> = ({
   onInvitationAccepted,
+  onOpenOnboarding,
 }) => {
   const { user, userProfile, logout } = useAuth();
   const [invitationCode, setInvitationCode] = useState('');
@@ -70,11 +72,10 @@ export const UserPendingOrganizationView: React.FC<UserPendingOrganizationViewPr
       );
 
       if (res.success) {
-        setSuccessMessage('Vínculo aprovado com sucesso! Redirecionando...');
+        setSuccessMessage('Vínculo aprovado com sucesso! Carregando painel da organização...');
         setTimeout(() => {
           if (onInvitationAccepted) onInvitationAccepted();
-          window.location.reload();
-        }, 1200);
+        }, 1000);
       } else {
         setErrorMessage(res.message || 'Código de convite inválido ou expirado.');
       }
@@ -100,11 +101,10 @@ export const UserPendingOrganizationView: React.FC<UserPendingOrganizationViewPr
       );
 
       if (res.success) {
-        setSuccessMessage(`Bem-vindo à ${invitation.organizationName || 'Organização'}! Redirecionando...`);
+        setSuccessMessage(`Bem-vindo à ${invitation.organizationName || 'Organização'}! Carregando painel...`);
         setTimeout(() => {
           if (onInvitationAccepted) onInvitationAccepted();
-          window.location.reload();
-        }, 1200);
+        }, 1000);
       } else {
         setErrorMessage(res.message || 'Falha ao aceitar convite.');
       }
@@ -303,6 +303,20 @@ export const UserPendingOrganizationView: React.FC<UserPendingOrganizationViewPr
               </p>
             </form>
           </div>
+
+          {onOpenOnboarding && (
+            <div className="mt-6 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+              <span className="text-slate-400">É gestor de uma nova oficina ou operador aéreo?</span>
+              <button
+                type="button"
+                onClick={onOpenOnboarding}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium transition-colors cursor-pointer text-xs flex items-center gap-1.5"
+              >
+                <Building2 className="w-3.5 h-3.5 text-blue-400" />
+                <span>Cadastrar Nova Organização SGQ</span>
+              </button>
+            </div>
+          )}
 
           {/* Governance Footer Info */}
           <div className="mt-8 pt-4 border-t border-slate-800/60 flex items-start gap-2.5 text-[11px] text-slate-400 leading-normal">

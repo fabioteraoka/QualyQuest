@@ -102,7 +102,9 @@ service cloud.firestore {
          exists(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)) &&
          get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.email.lower() == request.auth.token.email.lower() &&
          get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.organizationId == request.resource.data.organizationId &&
-         get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == request.resource.data.role) ||
+         (get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == request.resource.data.role ||
+          (request.resource.data.role == 'ADMIN' && get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == 'ADMINISTRADOR') ||
+          (request.resource.data.role == 'ADMINISTRADOR' && get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == 'ADMIN'))) ||
         // User creating an organization and becoming its admin
         ((request.resource.data.role == 'ADMIN' || request.resource.data.role == 'ADMINISTRADOR') && 
          request.resource.data.organizationId != 'org_impacto_aviation' &&
@@ -123,7 +125,9 @@ service cloud.firestore {
            exists(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)) &&
            get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.email.lower() == request.auth.token.email.lower() &&
            get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.organizationId == request.resource.data.organizationId &&
-           get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == request.resource.data.role)
+           (get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == request.resource.data.role ||
+            (request.resource.data.role == 'ADMIN' && get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == 'ADMINISTRADOR') ||
+            (request.resource.data.role == 'ADMINISTRADOR' && get(/databases/$(database)/documents/userInvitations/$(request.resource.data.invitationId)).data.role == 'ADMIN')))
         )) ||
         // User creating an organization and becoming its initial admin
         (request.auth.uid == userId && 
@@ -146,8 +150,8 @@ service cloud.firestore {
     match /userInvitations/{invitationId} {
       allow get: if isSignedIn() && (
         isSuperPlatformAdmin() ||
-        (resource.data.email.lower() == request.auth.token.email.lower()) ||
-        (userBelongsToOrg(resource.data.organizationId) && isGestorSGQ())
+        (resource != null && 'email' in resource.data && resource.data.email.lower() == request.auth.token.email.lower()) ||
+        (resource != null && 'organizationId' in resource.data && userBelongsToOrg(resource.data.organizationId) && isGestorSGQ())
       );
       allow list: if isSignedIn();
       allow create: if isSignedIn() && (
@@ -176,8 +180,15 @@ service cloud.firestore {
     // Organizations Collection (organizations/{organizationId})
     // ----------------------------------------------------
     match /organizations/{organizationId} {
-      allow get: if userBelongsToOrg(organizationId);
-      allow list: if isSuperPlatformAdmin() || (isSignedIn() && isUserActive());
+      allow get: if isSignedIn() && (
+        userBelongsToOrg(organizationId) ||
+        isSuperPlatformAdmin() ||
+        // Allow pending users or newly registered users to validate organization existence & status during invitation acceptance
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'PENDENTE') ||
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid))
+      );
+      allow list: if isSuperPlatformAdmin();
       allow create: if isSignedIn() && isUserActive() && (
         isSuperPlatformAdmin() || 
         (organizationId != 'org_impacto_aviation' && request.resource.data.createdByUserUid == request.auth.uid)
@@ -212,8 +223,10 @@ service cloud.firestore {
       // ----------------------------------------------------
       match /auditTrails/{auditId} {
         allow get, list: if userBelongsToOrg(organizationId);
-        allow create: if userBelongsToOrg(organizationId) && isValidId(organizationId) && isValidId(auditId) &&
-                         !exists(/databases/$(database)/documents/organizations/$(organizationId)/auditTrails/$(auditId));
+        allow create: if isSignedIn() && isValidId(organizationId) && isValidId(auditId) &&
+                         !exists(/databases/$(database)/documents/organizations/$(organizationId)/auditTrails/$(auditId)) &&
+                         (userBelongsToOrg(organizationId) || 
+                          (request.resource.data.entity == 'USER' && request.resource.data.changedByUid == request.auth.uid));
         allow update, delete: if false; // STRICT IMMUTABILITY: Cannot update or delete any audit log
       }
 

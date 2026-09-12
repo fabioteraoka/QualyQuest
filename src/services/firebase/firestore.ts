@@ -40,6 +40,7 @@ import {
   INITIAL_AUDIT_FINDINGS, 
   INITIAL_AUDIT_LESSONS 
 } from '../../data/initialAudits';
+import { normalizeUserRole } from '../security/authorization';
 
 export const DEFAULT_ORGANIZATION_ID = 'org_impacto_aviation';
 
@@ -616,66 +617,12 @@ export async function ensureUserProfile(
     const cleanEmail = (email || '').toLowerCase().trim();
     const isProjectOwner = cleanEmail === 'fteraoka@gmail.com';
 
-    // 1. Verifica se há convite pendente emitido pela administração para este e-mail
-    let matchedInvitation: UserInvitation | null = null;
-    if (cleanEmail) {
-      try {
-        const invQuery = query(
-          collection(db, 'userInvitations'),
-          where('email', '==', cleanEmail),
-          where('status', '==', 'PENDENTE')
-        );
-        const invSnap = await getDocs(invQuery);
-        if (!invSnap.empty) {
-          const invDoc = invSnap.docs[0];
-          matchedInvitation = { id: invDoc.id, ...invDoc.data() } as UserInvitation;
-        }
-      } catch (invErr) {
-        console.warn('Verificação de convite pré-existente (não-bloqueante):', invErr);
-      }
-    }
-
     let finalOrgId = '';
     let finalRole: UserRole = 'CONSULTA';
     let finalSector = '';
     let finalStatus: UserStatus = 'PENDENTE';
 
-    if (matchedInvitation) {
-      // Caso A — Possui convite/vínculo válido da organização:
-      finalOrgId = matchedInvitation.organizationId;
-      finalRole = matchedInvitation.role;
-      finalSector = matchedInvitation.setor || '';
-      finalStatus = 'ATIVO';
-
-      try {
-        const invDocRef = doc(db, 'userInvitations', matchedInvitation.id);
-        await updateDoc(invDocRef, {
-          status: 'ACEITO',
-          acceptedAt: now,
-          acceptedByUid: uid,
-          acceptedByUserUid: uid,
-          acceptedByEmail: cleanEmail,
-          updatedAt: now,
-        });
-
-        await recordOrganizationAudit(finalOrgId, {
-          entity: 'USER',
-          entityId: uid,
-          action: 'CREATE',
-          changedByUid: uid,
-          changedByEmail: cleanEmail,
-          summary: `Usuário ${displayName || cleanEmail} ingressou na organização via convite (${matchedInvitation.role}, setor: ${matchedInvitation.setor || 'N/A'}).`,
-          details: JSON.stringify({
-            invitationId: matchedInvitation.id,
-            role: matchedInvitation.role,
-            setor: matchedInvitation.setor,
-            code: matchedInvitation.code,
-          }),
-        });
-      } catch (markErr) {
-        console.warn('Aviso ao marcar convite como aceito:', markErr);
-      }
-    } else if (isProjectOwner) {
+    if (isProjectOwner) {
       // Caso Piloto / Admin Fundador: vincula à organização piloto com perfil ADMIN
       finalOrgId = organizationId || DEFAULT_ORGANIZATION_ID;
       finalRole = 'ADMIN';
@@ -687,16 +634,13 @@ export async function ensureUserProfile(
       } catch (orgErr) {
         console.warn('ensureOrganization não bloqueante:', orgErr);
       }
-    } else if (organizationId) {
-      // Se fornecido explicitamente pela aplicação
-      finalOrgId = organizationId;
-      finalRole = 'CONSULTA';
-      finalStatus = 'PENDENTE';
     } else {
-      // Caso B — Usuário comum sem convite:
-      // Conta criada identificando a pessoa, MAS NÃO cria organização corporativa indevidamente.
+      // Regra FASE 11.2: Novos usuários iniciam SEMPRE em menor privilégio (CONSULTA / PENDENTE / sem organização).
+      // Convites NÃO são aceitos silenciosamente em background durante o login.
+      // O fluxo oficial único e auditado de aceitação é exclusivamente através de acceptUserInvitation.
       finalOrgId = '';
       finalRole = 'CONSULTA';
+      finalSector = '';
       finalStatus = 'PENDENTE';
     }
 
@@ -711,7 +655,7 @@ export async function ensureUserProfile(
       createdAt: now,
       updatedAt: now,
       lastLoginAt: now,
-      invitationId: matchedInvitation?.id || '',
+      invitationId: '',
     };
 
     const docRef = doc(db, 'users', uid);
@@ -1089,19 +1033,34 @@ export async function acceptUserInvitation(
   const cleanEmail = userEmail.toLowerCase().trim();
 
   let targetDocSnap: any = null;
-  const docDirectRef = doc(db, 'userInvitations', invitationIdOrCode.trim());
-  const directSnap = await getDoc(docDirectRef);
-  if (directSnap.exists()) {
-    targetDocSnap = directSnap;
-  } else {
-    const q = query(
-      collection(db, 'userInvitations'),
-      where('code', '==', cleanInput),
-      where('status', '==', 'PENDENTE')
-    );
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      targetDocSnap = snap.docs[0];
+
+  // 1. Busca direta por ID se a entrada tiver formato de ID de convite
+  if (invitationIdOrCode.trim().startsWith('inv_')) {
+    try {
+      const docDirectRef = doc(db, 'userInvitations', invitationIdOrCode.trim());
+      const directSnap = await getDoc(docDirectRef);
+      if (directSnap.exists()) {
+        targetDocSnap = directSnap;
+      }
+    } catch (err) {
+      console.warn('Busca direta por ID de convite falhou, tentando por código:', err);
+    }
+  }
+
+  // 2. Busca por código de convite (alfanumérico, ex: QG-1234)
+  if (!targetDocSnap) {
+    try {
+      const q = query(
+        collection(db, 'userInvitations'),
+        where('code', '==', cleanInput),
+        where('status', '==', 'PENDENTE')
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        targetDocSnap = snap.docs[0];
+      }
+    } catch (err) {
+      console.warn('Erro ao consultar convite por código:', err);
     }
   }
 
@@ -1111,6 +1070,7 @@ export async function acceptUserInvitation(
 
   const invitation = { id: targetDocSnap.id, ...targetDocSnap.data() } as UserInvitation;
 
+  // 3. Validação do status do convite
   if (invitation.status === 'ACEITO') {
     return { success: false, message: 'Este convite já foi utilizado e não pode ser aceito novamente.' };
   }
@@ -1124,6 +1084,7 @@ export async function acceptUserInvitation(
     return { success: false, message: `Este convite está com status ${invitation.status} e não pode ser aceito.` };
   }
 
+  // 4. Validação estrita do e-mail do destinatário
   if (invitation.email && invitation.email.toLowerCase().trim() !== cleanEmail) {
     return {
       success: false,
@@ -1131,7 +1092,7 @@ export async function acceptUserInvitation(
     };
   }
 
-  // Verifica se a organização vinculada existe e está ativa
+  // 5. Validação da organização: deve existir e estar ATIVA
   const orgRef = doc(db, 'organizations', invitation.organizationId);
   const orgSnap = await getDoc(orgRef);
   if (!orgSnap.exists()) {
@@ -1142,11 +1103,43 @@ export async function acceptUserInvitation(
     return { success: false, message: 'A organização vinculada a este convite encontra-se inativa ou suspensa.' };
   }
 
-  const now = new Date().toISOString();
+  // 6. Impede vínculo se o usuário já pertencer a outra organização ativa
+  const userRef = doc(db, 'users', userUid);
+  const userSnap = await getDoc(userRef);
+  const existingData = userSnap.exists() ? userSnap.data() : null;
 
-  // 1. Marca convite como ACEITO
+  if (existingData && existingData.organizationId && existingData.organizationId !== invitation.organizationId) {
+    const isAlreadyActive = existingData.status === 'ATIVO' || existingData.status === 'ACTIVE';
+    if (isAlreadyActive) {
+      return {
+        success: false,
+        message: 'Operação bloqueada: Sua conta já está vinculada e ativa em outra organização. É necessário desvincular ou solicitar cancelamento antes de ingressar em nova organização.',
+      };
+    }
+  }
+
+  const now = new Date().toISOString();
+  const canonicalRole = normalizeUserRole(invitation.role);
+
+  const updatedProfile: UserProfile = {
+    uid: userUid,
+    email: cleanEmail,
+    displayName: displayName || existingData?.displayName || cleanEmail.split('@')[0] || 'Usuário SGQ',
+    role: canonicalRole,
+    organizationId: invitation.organizationId,
+    setor: invitation.setor || existingData?.setor || '',
+    status: 'ATIVO',
+    createdAt: existingData?.createdAt || now,
+    updatedAt: now,
+    lastLoginAt: now,
+    invitationId: invitation.id,
+  };
+
+  // 7. Transação Atômica via WriteBatch: atualiza o convite e o perfil simultaneamente
+  const batch = writeBatch(db);
   const invRef = doc(db, 'userInvitations', invitation.id);
-  await updateDoc(invRef, {
+
+  batch.update(invRef, {
     status: 'ACEITO',
     acceptedAt: now,
     acceptedByUid: userUid,
@@ -1155,28 +1148,11 @@ export async function acceptUserInvitation(
     updatedAt: now,
   });
 
-  // 2. Cria ou atualiza perfil do usuário atomicamente com setDoc merge
-  const userRef = doc(db, 'users', userUid);
-  const userSnap = await getDoc(userRef);
-  const existingData = userSnap.exists() ? userSnap.data() : {};
+  batch.set(userRef, sanitizeForFirestore(updatedProfile), { merge: true });
 
-  const updatedProfile: UserProfile = {
-    uid: userUid,
-    email: cleanEmail,
-    displayName: displayName || existingData.displayName || cleanEmail.split('@')[0] || 'Usuário SGQ',
-    role: invitation.role,
-    organizationId: invitation.organizationId,
-    setor: invitation.setor || existingData.setor || '',
-    status: 'ATIVO',
-    createdAt: existingData.createdAt || now,
-    updatedAt: now,
-    lastLoginAt: now,
-    invitationId: invitation.id,
-  };
+  await batch.commit();
 
-  await setDoc(userRef, sanitizeForFirestore(updatedProfile), { merge: true });
-
-  // 3. Registra no Audit Trail imutável da organização vinculada
+  // 8. Trilha de Auditoria Imutável no Tenant vinculado
   try {
     await recordOrganizationAudit(invitation.organizationId, {
       entity: 'USER',
@@ -1184,11 +1160,11 @@ export async function acceptUserInvitation(
       action: 'CREATE',
       changedByUid: userUid,
       changedByEmail: cleanEmail,
-      summary: `Usuário ${updatedProfile.displayName} aceitou convite (${invitation.code}) e ingressou na organização "${invitation.organizationName || orgData.name}" com perfil ${invitation.role} (Setor: ${invitation.setor || 'Geral'}).`,
+      summary: `Usuário ${updatedProfile.displayName} (${cleanEmail}) aceitou convite (${invitation.code}) e ingressou na organização "${invitation.organizationName || orgData.name}" com perfil ${canonicalRole} (Setor: ${invitation.setor || 'Geral'}).`,
       details: JSON.stringify({
         invitationId: invitation.id,
         code: invitation.code,
-        role: invitation.role,
+        role: canonicalRole,
         setor: invitation.setor,
         acceptedAt: now,
       }),

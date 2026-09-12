@@ -116,7 +116,7 @@ import {
   subscribeToLogsVerificacao,
   subscribeToEvidenciasConsulta,
 } from './services/firebase/documentControlFirestore';
-import { RefreshCw, Sparkles, UploadCloud, Database, ShieldAlert, LayoutDashboard, FileText, Bell, Plus, Menu } from 'lucide-react';
+import { RefreshCw, Sparkles, UploadCloud, Database, ShieldAlert, LayoutDashboard, FileText, Bell, Plus, Menu, Building2 } from 'lucide-react';
 
 export default function App() {
   const { user, userProfile, loading: authLoading, logout } = useAuth();
@@ -668,6 +668,79 @@ export default function App() {
     }
   };
 
+  // Estado 1: Carregamento inicial de autenticação e perfil
+  if (authLoading || (user && userProfile === null)) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-slate-100 selection:bg-blue-600">
+        <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+          <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/20 animate-pulse">
+            <Building2 className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h2 className="text-base font-semibold text-white tracking-wide">QUALIGEST SGQ</h2>
+            <p className="text-xs text-slate-400">Resolvendo perfil de usuário e credenciais aeronáuticas...</p>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-blue-400 bg-slate-800/80 px-3.5 py-1.5 rounded-full border border-slate-700/60 font-mono">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+            <span>Autenticando sessão segura</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado 2: Usuário inativo ou bloqueado
+  if (user && (userProfile?.status === 'INACTIVE' || userProfile?.status === 'INATIVO' || userProfile?.status === 'BLOQUEADO')) {
+    return <UserBlockedOrInactiveView />;
+  }
+
+  // Estado 3: Usuário pendente de vínculo com organização
+  if (user && (!activeOrgId || userProfile?.status === 'PENDENTE')) {
+    if (activeTab === 'onboarding-novo-cliente') {
+      return (
+        <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between selection:bg-blue-600">
+          <header className="max-w-5xl w-full mx-auto flex items-center justify-between p-4 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/20">
+                <Building2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold tracking-wide text-white">QUALIGEST SGQ</div>
+                <div className="text-xs text-slate-400">Onboarding de Nova Organização Aeronáutica</div>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition-colors"
+            >
+              ← Voltar para Convites
+            </button>
+          </header>
+          <main className="max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1">
+            <NewOrganizationOnboardingView
+              onOrganizationCreated={(newOrg) => {
+                setActiveOrganization(newOrg);
+                setActiveTab('dashboard');
+              }}
+              onCancel={() => setActiveTab('dashboard')}
+            />
+          </main>
+        </div>
+      );
+    }
+
+    return (
+      <UserPendingOrganizationView
+        onInvitationAccepted={() => {
+          setActiveTab('dashboard');
+        }}
+        onOpenOnboarding={() => {
+          setActiveTab('onboarding-novo-cliente');
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-800 flex font-sans antialiased selection:bg-blue-600 selection:text-white">
       {/* Enterprise Sidebar (Desktop Persistent & Mobile Slide-Out Drawer) */}
@@ -768,16 +841,7 @@ export default function App() {
 
         {/* Main Content View with responsive padding and mobile bottom clearance */}
         <main className="flex-1 p-3 sm:p-6 lg:p-8 pb-24 lg:pb-8 max-w-7xl w-full mx-auto overflow-x-hidden">
-          {/* Deactivated User Check: Revogação de acesso em tempo real */}
-          {(userProfile?.status === 'INACTIVE' || userProfile?.status === 'INATIVO' || userProfile?.status === 'BLOQUEADO') ? (
-            <UserBlockedOrInactiveView />
-          ) : user && (!activeOrgId || userProfile?.status === 'PENDENTE') && activeTab !== 'onboarding-novo-cliente' ? (
-            <UserPendingOrganizationView
-              onInvitationAccepted={() => {
-                setActiveTab('dashboard');
-              }}
-            />
-          ) : loadingRecords && records.length === 0 ? (
+          {loadingRecords && records.length === 0 ? (
             <div className="py-24 flex flex-col items-center justify-center space-y-3 text-slate-500">
               <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
               <p className="text-sm font-medium text-slate-700">Sincronizando registros com o Cloud Firestore...</p>
