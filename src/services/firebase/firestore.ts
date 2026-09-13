@@ -621,6 +621,7 @@ export async function ensureUserProfile(
     let finalRole: UserRole = 'CONSULTA';
     let finalSector = '';
     let finalStatus: UserStatus = 'PENDENTE';
+    let linkedInvitationId = '';
 
     if (isProjectOwner) {
       // Caso Piloto / Admin Fundador: vincula à organização piloto com perfil ADMIN
@@ -635,13 +636,27 @@ export async function ensureUserProfile(
         console.warn('ensureOrganization não bloqueante:', orgErr);
       }
     } else {
-      // Regra FASE 11.2: Novos usuários iniciam SEMPRE em menor privilégio (CONSULTA / PENDENTE / sem organização).
-      // Convites NÃO são aceitos silenciosamente em background durante o login.
-      // O fluxo oficial único e auditado de aceitação é exclusivamente através de acceptUserInvitation.
-      finalOrgId = '';
-      finalRole = 'CONSULTA';
-      finalSector = '';
-      finalStatus = 'PENDENTE';
+      // Verifica se o administrador já aprovou previamente um convite para este endereço de e-mail
+      if (cleanEmail) {
+        try {
+          const qApproved = query(
+            collection(db, 'userInvitations'),
+            where('email', '==', cleanEmail),
+            where('status', '==', 'ACEITO')
+          );
+          const appSnap = await getDocs(qApproved);
+          if (!appSnap.empty) {
+            const invData = appSnap.docs[0].data() as UserInvitation;
+            finalOrgId = invData.organizationId || '';
+            finalRole = normalizeUserRole(invData.role);
+            finalSector = invData.setor || '';
+            finalStatus = 'ATIVO';
+            linkedInvitationId = appSnap.docs[0].id;
+          }
+        } catch (checkErr) {
+          console.warn('Aviso ao consultar convites pré-aprovados:', checkErr);
+        }
+      }
     }
 
     const profileData: UserProfile = {
@@ -655,7 +670,7 @@ export async function ensureUserProfile(
       createdAt: now,
       updatedAt: now,
       lastLoginAt: now,
-      invitationId: '',
+      invitationId: linkedInvitationId,
     };
 
     const docRef = doc(db, 'users', uid);
@@ -1093,14 +1108,19 @@ export async function acceptUserInvitation(
   }
 
   // 5. Validação da organização: deve existir e estar ATIVA
-  const orgRef = doc(db, 'organizations', invitation.organizationId);
-  const orgSnap = await getDoc(orgRef);
-  if (!orgSnap.exists()) {
-    return { success: false, message: 'A organização vinculada a este convite não foi encontrada no sistema.' };
-  }
-  const orgData = orgSnap.data();
-  if (orgData.status && orgData.status !== 'ACTIVE' && orgData.status !== 'ATIVO') {
-    return { success: false, message: 'A organização vinculada a este convite encontra-se inativa ou suspensa.' };
+  let orgName = invitation.organizationName || 'Organização SGQ';
+  try {
+    const orgRef = doc(db, 'organizations', invitation.organizationId);
+    const orgSnap = await getDoc(orgRef);
+    if (orgSnap.exists()) {
+      const orgData = orgSnap.data();
+      orgName = orgData.name || orgName;
+      if (orgData.status && orgData.status !== 'ACTIVE' && orgData.status !== 'ATIVO') {
+        return { success: false, message: 'A organização vinculada a este convite encontra-se inativa ou suspensa.' };
+      }
+    }
+  } catch (orgErr) {
+    console.warn('Aviso ao consultar organização vinculada:', orgErr);
   }
 
   // 6. Impede vínculo se o usuário já pertencer a outra organização ativa
@@ -1160,7 +1180,7 @@ export async function acceptUserInvitation(
       action: 'CREATE',
       changedByUid: userUid,
       changedByEmail: cleanEmail,
-      summary: `Usuário ${updatedProfile.displayName} (${cleanEmail}) aceitou convite (${invitation.code}) e ingressou na organização "${invitation.organizationName || orgData.name}" com perfil ${canonicalRole} (Setor: ${invitation.setor || 'Geral'}).`,
+      summary: `Usuário ${updatedProfile.displayName} (${cleanEmail}) aceitou convite (${invitation.code}) e ingressou na organização "${orgName}" com perfil ${canonicalRole} (Setor: ${invitation.setor || 'Geral'}).`,
       details: JSON.stringify({
         invitationId: invitation.id,
         code: invitation.code,
@@ -1175,13 +1195,109 @@ export async function acceptUserInvitation(
 
   return {
     success: true,
-    message: `Vínculo aprovado com sucesso! Bem-vindo(a) à organização ${invitation.organizationName || orgData.name}.`,
+    message: `Vínculo aprovado com sucesso! Bem-vindo(a) à organização ${orgName}.`,
     invitation: {
       ...invitation,
       status: 'ACEITO',
       acceptedAt: now,
       acceptedByUid: userUid,
     },
+  };
+}
+
+/**
+ * Aprovação administrativa direta de convite pelo Gestor/Admin.
+ * Se o usuário com o e-mail do convite já possuir conta no sistema,
+ * ele é imediatamente ativado e vinculado à organização.
+ * Caso ainda não tenha se cadastrado, o convite é mantido pronto para liberação imediata.
+ */
+export async function approveUserInvitation(
+  invitationId: string,
+  actorProfile: UserProfile | null,
+  orgId: string
+): Promise<{ success: boolean; message: string; userActivated: boolean }> {
+  const invRef = doc(db, 'userInvitations', invitationId);
+  const snap = await getDoc(invRef);
+  if (!snap.exists()) {
+    return { success: false, message: 'Convite não encontrado no sistema.', userActivated: false };
+  }
+  const invitation = snap.data() as UserInvitation;
+  const now = new Date().toISOString();
+  const canonicalRole = normalizeUserRole(invitation.role);
+  const cleanEmail = (invitation.email || '').toLowerCase().trim();
+
+  // 1. Verifica se já existe documento em 'users' com este e-mail
+  let targetUserUid: string | null = null;
+  let targetUserData: any = null;
+
+  if (cleanEmail) {
+    try {
+      const q = query(collection(db, 'users'), where('email', '==', cleanEmail));
+      const uSnap = await getDocs(q);
+      if (!uSnap.empty) {
+        targetUserUid = uSnap.docs[0].id;
+        targetUserData = uSnap.docs[0].data();
+      }
+    } catch (findErr) {
+      console.warn('Aviso ao buscar usuário registrado por email:', findErr);
+    }
+  }
+
+  const batch = writeBatch(db);
+
+  batch.update(invRef, {
+    status: 'ACEITO',
+    acceptedAt: now,
+    acceptedByUid: targetUserUid || actorProfile?.uid || 'admin',
+    acceptedByUserUid: targetUserUid || actorProfile?.uid || 'admin',
+    acceptedByEmail: cleanEmail || actorProfile?.email || 'admin@qualigest',
+    approvedByAdminUid: actorProfile?.uid || 'admin',
+    approvedByAdminEmail: actorProfile?.email || 'admin@qualigest',
+    updatedAt: now,
+  });
+
+  if (targetUserUid) {
+    const userRef = doc(db, 'users', targetUserUid);
+    const updatedProfile: UserProfile = {
+      uid: targetUserUid,
+      email: cleanEmail,
+      displayName: targetUserData?.displayName || cleanEmail.split('@')[0] || 'Usuário SGQ',
+      role: canonicalRole,
+      organizationId: orgId || invitation.organizationId,
+      setor: invitation.setor || targetUserData?.setor || '',
+      status: 'ATIVO',
+      createdAt: targetUserData?.createdAt || now,
+      updatedAt: now,
+      lastLoginAt: targetUserData?.lastLoginAt || now,
+      invitationId: invitation.id,
+    };
+    batch.set(userRef, sanitizeForFirestore(updatedProfile), { merge: true });
+  }
+
+  await batch.commit();
+
+  try {
+    await recordOrganizationAudit(orgId || invitation.organizationId, {
+      entity: 'USER',
+      entityId: invitationId,
+      action: 'UPDATE',
+      changedByUid: actorProfile?.uid || 'admin',
+      changedByEmail: actorProfile?.email || 'admin@qualigest',
+      summary: `Convite ${invitation.code} (${cleanEmail}) foi aprovado pelo administrador. ${
+        targetUserUid ? 'Usuário ativado imediatamente na organização.' : 'Vínculo pré-aprovado para primeiro login.'
+      }`,
+      details: JSON.stringify({ invitationId, code: invitation.code, email: cleanEmail, role: canonicalRole, targetUserUid }),
+    });
+  } catch (auditErr) {
+    console.warn('Aviso ao registrar auditoria de aprovação de convite:', auditErr);
+  }
+
+  return {
+    success: true,
+    message: targetUserUid
+      ? `Usuário (${cleanEmail}) aprovado e ativado com sucesso na organização com perfil ${canonicalRole}!`
+      : `Convite aprovado com sucesso! Assim que o usuário entrar com ${cleanEmail}, seu acesso estará liberado.`,
+    userActivated: !!targetUserUid,
   };
 }
 
@@ -1215,6 +1331,39 @@ export async function cancelUserInvitation(
     summary: `Convite ${data.code} para ${data.email} foi CANCELADO pelo administrador.`,
     details: JSON.stringify({ invitationId, code: data.code, targetEmail: data.email }),
   });
+}
+
+/**
+ * Exclusão definitiva de um convite do sistema (apagar convite).
+ */
+export async function deleteUserInvitation(
+  invitationId: string,
+  actorProfile?: UserProfile | null,
+  orgId?: string
+): Promise<void> {
+  const invRef = doc(db, 'userInvitations', invitationId);
+  const snap = await getDoc(invRef);
+  if (!snap.exists()) return;
+  const data = snap.data() as UserInvitation;
+  const targetOrgId = data.organizationId || orgId || '';
+
+  await deleteDoc(invRef);
+
+  try {
+    if (targetOrgId) {
+      await recordOrganizationAudit(targetOrgId, {
+        entity: 'USER',
+        entityId: invitationId,
+        action: 'DELETE',
+        changedByUid: actorProfile?.uid || auth.currentUser?.uid || 'admin',
+        changedByEmail: actorProfile?.email || auth.currentUser?.email || 'admin@qualigest',
+        summary: `Convite ${data.code} (${data.email || 'sem email'}) foi APAGADO definitivamente do sistema pelo administrador.`,
+        details: JSON.stringify({ invitationId, code: data.code, targetEmail: data.email, previousStatus: data.status }),
+      });
+    }
+  } catch (auditErr) {
+    console.warn('Aviso de auditoria ao excluir convite:', auditErr);
+  }
 }
 
 /**

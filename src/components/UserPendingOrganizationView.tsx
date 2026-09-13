@@ -75,6 +75,7 @@ export const UserPendingOrganizationView: React.FC<UserPendingOrganizationViewPr
         setSuccessMessage('Vínculo aprovado com sucesso! Carregando painel da organização...');
         setTimeout(() => {
           if (onInvitationAccepted) onInvitationAccepted();
+          window.location.reload();
         }, 1000);
       } else {
         setErrorMessage(res.message || 'Código de convite inválido ou expirado.');
@@ -104,6 +105,7 @@ export const UserPendingOrganizationView: React.FC<UserPendingOrganizationViewPr
         setSuccessMessage(`Bem-vindo à ${invitation.organizationName || 'Organização'}! Carregando painel...`);
         setTimeout(() => {
           if (onInvitationAccepted) onInvitationAccepted();
+          window.location.reload();
         }, 1000);
       } else {
         setErrorMessage(res.message || 'Falha ao aceitar convite.');

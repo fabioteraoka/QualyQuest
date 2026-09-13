@@ -34,7 +34,8 @@ import {
   ChevronRight,
   Shield,
   Layers,
-  Save
+  Save,
+  Ban
 } from 'lucide-react';
 import { 
   OrganizationRecord, 
@@ -52,6 +53,8 @@ import {
   subscribeToOrganizationInvitations, 
   createUserInvitation, 
   cancelUserInvitation, 
+  deleteUserInvitation,
+  approveUserInvitation,
   resendUserInvitation, 
   updateUserRoleAndSector, 
   setUserAccountStatus, 
@@ -180,6 +183,13 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
   const [statusChangeReason, setStatusChangeReason] = useState('');
   const [isSavingStatusChange, setIsSavingStatusChange] = useState(false);
 
+  // Modal: Action on Invitation (Cancel, Delete, Approve)
+  const [invitationActionTarget, setInvitationActionTarget] = useState<{
+    type: 'cancel' | 'delete' | 'approve';
+    invitation: UserInvitation;
+  } | null>(null);
+  const [isProcessingInvitationAction, setIsProcessingInvitationAction] = useState(false);
+
   // ----------------------------------------------------
   // ORGANIZATION FORM STATE
   // ----------------------------------------------------
@@ -289,13 +299,42 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
     }
   };
 
-  const handleCancelInvite = async (invitationId: string) => {
-    if (!window.confirm('Tem certeza que deseja cancelar este convite? O código perderá a validade imediatamente.')) return;
+  const handlePromptCancelInvite = (invitation: UserInvitation) => {
+    setInvitationActionTarget({ type: 'cancel', invitation });
+  };
+
+  const handlePromptDeleteInvite = (invitation: UserInvitation) => {
+    setInvitationActionTarget({ type: 'delete', invitation });
+  };
+
+  const handlePromptApproveInvite = (invitation: UserInvitation) => {
+    setInvitationActionTarget({ type: 'approve', invitation });
+  };
+
+  const handleExecuteInvitationAction = async () => {
+    if (!invitationActionTarget || !currentOrgId) return;
+    const { type, invitation } = invitationActionTarget;
+    setIsProcessingInvitationAction(true);
     try {
-      await cancelUserInvitation(invitationId, userProfile);
-      showFeedback('success', 'Convite cancelado com sucesso.');
+      if (type === 'delete') {
+        await deleteUserInvitation(invitation.id, userProfile, currentOrgId);
+        showFeedback('success', `Convite (${invitation.code}) foi apagado definitivamente com sucesso.`);
+      } else if (type === 'cancel') {
+        await cancelUserInvitation(invitation.id, userProfile);
+        showFeedback('success', `Convite (${invitation.code}) cancelado com sucesso.`);
+      } else if (type === 'approve') {
+        const res = await approveUserInvitation(invitation.id, userProfile, currentOrgId);
+        if (res.success) {
+          showFeedback('success', res.message);
+        } else {
+          showFeedback('error', res.message);
+        }
+      }
+      setInvitationActionTarget(null);
     } catch (err: any) {
-      showFeedback('error', err?.message || 'Falha ao cancelar convite.');
+      showFeedback('error', err?.message || 'Falha ao executar ação no convite.');
+    } finally {
+      setIsProcessingInvitationAction(false);
     }
   };
 
@@ -888,6 +927,18 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
                             <td className="px-5 py-4 text-right">
                               {hasUserManagementPower ? (
                                 <div className="flex items-center justify-end gap-1.5">
+                                  {/* Direct approve button if user is PENDENTE */}
+                                  {u.status === 'PENDENTE' && (
+                                    <button
+                                      onClick={() => setUserToChangeStatus({ user: u, newStatus: 'ATIVO' })}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 hover:bg-emerald-900 transition-colors text-xs font-semibold mr-1"
+                                      title="Aprovar e Ativar Acesso do Usuário"
+                                    >
+                                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                      <span>Aprovar Acesso</span>
+                                    </button>
+                                  )}
+
                                   {/* Edit Role/Sector */}
                                   <button
                                     onClick={() => handleOpenEditUser(u)}
@@ -1014,6 +1065,14 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
                               {inv.status === 'PENDENTE' && (
                                 <>
                                   <button
+                                    onClick={() => handlePromptApproveInvite(inv)}
+                                    className="p-1.5 rounded-lg text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/60 border border-emerald-800/60 transition-colors"
+                                    title="Aprovar Convite & Ativar Usuário Imediatamente"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
                                     onClick={() => {
                                       navigator.clipboard.writeText(inv.code);
                                       showFeedback('success', `Código ${inv.code} copiado para a área de transferência!`);
@@ -1033,9 +1092,38 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
                                   </button>
 
                                   <button
-                                    onClick={() => handleCancelInvite(inv.id)}
-                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                                    onClick={() => handlePromptCancelInvite(inv)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
                                     title="Cancelar Convite"
+                                  >
+                                    <Ban className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
+                                    onClick={() => handlePromptDeleteInvite(inv)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                                    title="Apagar Convite Definitivamente"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+
+                              {inv.status !== 'PENDENTE' && (
+                                <>
+                                  {(inv.status === 'CANCELADO' || inv.status === 'EXPIRADO') && (
+                                    <button
+                                      onClick={() => handleResendInvite(inv.id)}
+                                      className="p-1.5 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-slate-800 transition-colors"
+                                      title="Reativar Convite"
+                                    >
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handlePromptDeleteInvite(inv)}
+                                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
+                                    title="Apagar Convite Definitivamente"
                                   >
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
@@ -1895,6 +1983,122 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ---------------------------------------------------- */}
+      {/* MODAL: INVITATION ACTION (APPROVE / CANCEL / DELETE) */}
+      {/* ---------------------------------------------------- */}
+      {invitationActionTarget && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                {invitationActionTarget.type === 'approve' && (
+                  <>
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    Aprovar e Ativar Usuário
+                  </>
+                )}
+                {invitationActionTarget.type === 'cancel' && (
+                  <>
+                    <Ban className="w-5 h-5 text-amber-400" />
+                    Cancelar Convite
+                  </>
+                )}
+                {invitationActionTarget.type === 'delete' && (
+                  <>
+                    <Trash2 className="w-5 h-5 text-rose-400" />
+                    Apagar Convite Definitivamente
+                  </>
+                )}
+              </h3>
+              <button
+                onClick={() => setInvitationActionTarget(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Código:</span>
+                  <span className="font-mono font-bold text-blue-400 bg-blue-950 px-2 py-0.5 rounded border border-blue-800">
+                    {invitationActionTarget.invitation.code}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">E-mail:</span>
+                  <span className="font-mono text-white">{invitationActionTarget.invitation.email || 'Não especificado'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Perfil SGQ:</span>
+                  <span className="text-slate-200 font-semibold">{invitationActionTarget.invitation.role}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Setor:</span>
+                  <span className="text-slate-200">{invitationActionTarget.invitation.setor || 'Geral'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Status atual:</span>
+                  <span className="text-amber-400 font-semibold">{invitationActionTarget.invitation.status}</span>
+                </div>
+              </div>
+
+              {invitationActionTarget.type === 'approve' && (
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Ao aprovar este convite, o usuário será vinculado imediatamente à organização com status{' '}
+                  <strong className="text-emerald-400 font-semibold">ATIVO</strong>. Caso o usuário já esteja cadastrado no sistema, seu perfil será liberado no próximo carregamento de página sem necessidade de digitar o código.
+                </p>
+              )}
+
+              {invitationActionTarget.type === 'cancel' && (
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Tem certeza que deseja cancelar o convite? O código{' '}
+                  <strong className="text-white font-mono">{invitationActionTarget.invitation.code}</strong> perderá a validade imediatamente e não poderá mais ser utilizado para ingressar na organização.
+                </p>
+              )}
+
+              {invitationActionTarget.type === 'delete' && (
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-800/80 text-xs text-rose-200 leading-relaxed">
+                  <strong className="text-rose-300 block mb-1">Atenção: Exclusão Permanente</strong>
+                  Este registro será removido em definitivo da base de dados do Firestore. Esta ação é auditada e irreversível.
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setInvitationActionTarget(null)}
+                  disabled={isProcessingInvitationAction}
+                  className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteInvitationAction}
+                  disabled={isProcessingInvitationAction}
+                  className={`px-5 py-2 rounded-xl text-white text-xs font-semibold disabled:opacity-50 transition-colors ${
+                    invitationActionTarget.type === 'approve'
+                      ? 'bg-emerald-600 hover:bg-emerald-500'
+                      : invitationActionTarget.type === 'cancel'
+                      ? 'bg-amber-600 hover:bg-amber-500'
+                      : 'bg-rose-600 hover:bg-rose-500'
+                  }`}
+                >
+                  {isProcessingInvitationAction
+                    ? 'Processando...'
+                    : invitationActionTarget.type === 'approve'
+                    ? 'Confirmar e Ativar Usuário'
+                    : invitationActionTarget.type === 'cancel'
+                    ? 'Confirmar Cancelamento'
+                    : 'Excluir Definitivamente'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
