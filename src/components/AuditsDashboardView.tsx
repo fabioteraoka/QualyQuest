@@ -59,23 +59,31 @@ export const AuditsDashboardView: React.FC<AuditsDashboardViewProps> = ({
 
   // Dados para Gráficos
   const dadosPorTipo = useMemo(() => {
-    return Object.entries(metricas.auditoriasPorTipo).map(([name, value]) => ({
+    const mapaTipo = metricas?.auditoriasPorTipo || metricas?.distribuicaoPorOrigem || {};
+    return Object.entries(mapaTipo).map(([name, value]) => ({
       name,
       value,
     }));
   }, [metricas]);
 
   const dadosPorClassificacao = useMemo(() => {
+    const classif = metricas?.constatacoesPorClassificacao || {
+      MAIOR: 0,
+      MENOR: 0,
+      OBSERVACAO: 0,
+      OPORTUNIDADE_MELHORIA: 0,
+    };
     return [
-      { name: 'Maiores', value: metricas.constatacoesPorClassificacao.MAIOR, color: '#ef4444' },
-      { name: 'Menores', value: metricas.constatacoesPorClassificacao.MENOR, color: '#f59e0b' },
-      { name: 'Observações', value: metricas.constatacoesPorClassificacao.OBSERVACAO, color: '#3b82f6' },
-      { name: 'Oportunidades', value: metricas.constatacoesPorClassificacao.OPORTUNIDADE_MELHORIA, color: '#10b981' },
+      { name: 'Maiores', value: classif.MAIOR || 0, color: '#ef4444' },
+      { name: 'Menores', value: classif.MENOR || 0, color: '#f59e0b' },
+      { name: 'Observações', value: classif.OBSERVACAO || 0, color: '#3b82f6' },
+      { name: 'Oportunidades', value: classif.OPORTUNIDADE_MELHORIA || 0, color: '#10b981' },
     ].filter((item) => item.value > 0);
   }, [metricas]);
 
   const dadosPorSetor = useMemo(() => {
-    return Object.entries(metricas.constatacoesPorSetor).map(([name, count]) => ({
+    const mapaSetor = metricas?.constatacoesPorSetor || metricas?.distribuicaoPorSetor || {};
+    return Object.entries(mapaSetor).map(([name, count]) => ({
       name,
       count,
     }));

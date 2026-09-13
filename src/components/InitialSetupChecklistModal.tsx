@@ -121,7 +121,7 @@ export const InitialSetupChecklistModal: React.FC<InitialSetupChecklistModalProp
     },
   ];
 
-  const completedCount = Object.values(checklist).filter(Boolean).length;
+  const completedCount = Object.values(checklist || {}).filter(Boolean).length;
   const totalCount = checklistItems.length;
   const progressPercent = Math.round((completedCount / totalCount) * 100);
 

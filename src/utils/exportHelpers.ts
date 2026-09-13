@@ -179,7 +179,7 @@ export function exportToCSV(records: NCRecord[], baseFileName = 'banco_dados_sgq
   const fullData = records.map((r, idx) => formatNCForDatabaseExport(r, idx));
   if (!fullData.length) return;
 
-  const headers = Object.keys(fullData[0]);
+  const headers = Object.keys(fullData[0] || {});
   const rows = fullData.map((row) =>
     headers
       .map((header) => {

@@ -1330,6 +1330,23 @@ export interface AuditoriaDashboardMetrics {
   principaisCausas: Array<{ causa: string; total: number }>;
   reincidenciasDetectadas: number;
   semDados: boolean;
+
+  // Aliases e propriedades para compatibilidade com AuditsDashboardView
+  totalConstatacoes?: number;
+  constatacoesAbertas?: number;
+  constatacoesVencidas?: number;
+  constatacoesNoPrazo?: number;
+  constatacoesVencendoEm15Dias?: number;
+  taxaAceitacaoPrimeiraSubmissao?: number | null;
+  tempoMedioRespostaDias?: number | null;
+  auditoriasPorTipo?: Record<string, number>;
+  constatacoesPorClassificacao?: {
+    MAIOR: number;
+    MENOR: number;
+    OBSERVACAO: number;
+    OPORTUNIDADE_MELHORIA: number;
+  };
+  constatacoesPorSetor?: Record<string, number>;
 }
 
 // ============================================================================
@@ -1970,5 +1987,16 @@ export interface DocumentosDashboardMetrics {
   distribuicaoPorOrigem: Record<string, number>;
   totalRevisoesArmazenadas: number;
   semDados: boolean;
+
+  // Aliases e propriedades para compatibilidade direta com DocumentControlCenterView
+  totalDocumentos?: number;
+  totalRevisoesVigentes?: number;
+  fontesExternasAtivas?: number;
+  fontesVerificacaoVencida?: number;
+  discrepanciasPendentesValidacao?: number;
+  solicitacoesClientePendentes?: number;
+  revisoesEmTransicao?: number;
+  taxaConformidadeDocumental?: number;
+  distribuicaoCategorias?: Record<string, number>;
 }
 

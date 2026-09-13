@@ -1571,7 +1571,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 Distribuição do Acervo por Categoria
               </h3>
               <div className="space-y-2 text-xs">
-                {Object.entries(dashboardMetrics.distribuicaoCategorias).map(([cat, qtd]) => (
+                {Object.entries(dashboardMetrics?.distribuicaoCategorias || dashboardMetrics?.distribuicaoPorCategoria || {}).map(([cat, qtd]) => (
                   <div key={cat} className="flex items-center justify-between p-2 rounded bg-slate-950 border border-slate-800">
                     <span className="text-slate-300">{cat.replace('DOCUMENTO_', '')}</span>
                     <span className="font-bold text-white">{qtd} documentos</span>

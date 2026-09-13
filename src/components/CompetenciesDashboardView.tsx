@@ -314,13 +314,13 @@ export const CompetenciesDashboardView: React.FC<CompetenciesDashboardViewProps>
           </div>
 
           <div className="space-y-4">
-            {Object.keys(metricas.distribuicaoPorSetor).length === 0 ? (
+            {Object.keys(metricas?.distribuicaoPorSetor || {}).length === 0 ? (
               <div className="p-8 text-center text-slate-500 bg-slate-50 rounded-xl">
                 SEM DADOS SUFICIENTES
               </div>
             ) : (
               Object.entries(
-                metricas.distribuicaoPorSetor as Record<
+                (metricas?.distribuicaoPorSetor || {}) as Record<
                   string,
                   { totalPessoas: number; qualificados: number; gaps: number; vencidos: number; taxaConformidade: number }
                 >

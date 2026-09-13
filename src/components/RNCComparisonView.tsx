@@ -343,7 +343,7 @@ export const RNCComparisonView: React.FC<RNCComparisonViewProps> = ({
         auditorAprovadorUid: userProfile?.uid || 'anon',
         dataValidacaoAuditor: now,
         parecerAuditorSGQ: auditorNotes,
-        historicoDecisoes: Object.values(campoDecisoes),
+        historicoDecisoes: Object.values(campoDecisoes || {}),
         atualizadoEm: now,
       };
 
@@ -416,7 +416,7 @@ export const RNCComparisonView: React.FC<RNCComparisonViewProps> = ({
         auditorAprovadorUid: userProfile?.uid || 'anon',
         dataValidacaoAuditor: now,
         parecerAuditorSGQ: auditorNotes || 'Validação formal aprovada e aplicada na RNC oficial.',
-        historicoDecisoes: Object.values(campoDecisoes),
+        historicoDecisoes: Object.values(campoDecisoes || {}),
         atualizadoEm: now,
       };
       await saveRNCComparison(organizationId, updatedComp, userProfile);

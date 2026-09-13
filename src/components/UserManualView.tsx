@@ -971,7 +971,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
             <div>
               <span className="text-xs font-bold text-slate-300 block">Progresso do Teste de Usabilidade</span>
               <p className="text-sm font-extrabold text-cyan-400">
-                {Object.values(simuladorConcluidos).filter(Boolean).length} de 12 passos validados
+                {Object.values(simuladorConcluidos || {}).filter(Boolean).length} de 12 passos validados
               </p>
             </div>
             <button

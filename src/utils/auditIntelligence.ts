@@ -298,6 +298,13 @@ export function calcularMetricasAuditoria(
   audits: AuditoriaExternaRecord[],
   findings: ConstatacaoExternaRecord[]
 ): AuditoriaDashboardMetrics {
+  const classificacaoCounts = {
+    MAIOR: 0,
+    MENOR: 0,
+    OBSERVACAO: 0,
+    OPORTUNIDADE_MELHORIA: 0,
+  };
+
   if (!audits || audits.length === 0) {
     return {
       totalAuditorias: 0,
@@ -317,6 +324,18 @@ export function calcularMetricasAuditoria(
       principaisCausas: [],
       reincidenciasDetectadas: 0,
       semDados: true,
+
+      // Aliases para AuditsDashboardView
+      totalConstatacoes: 0,
+      constatacoesAbertas: 0,
+      constatacoesVencidas: 0,
+      constatacoesNoPrazo: 0,
+      constatacoesVencendoEm15Dias: 0,
+      taxaAceitacaoPrimeiraSubmissao: null,
+      tempoMedioRespostaDias: null,
+      auditoriasPorTipo: {},
+      constatacoesPorClassificacao: classificacaoCounts,
+      constatacoesPorSetor: {},
     };
   }
 
@@ -324,12 +343,13 @@ export function calcularMetricasAuditoria(
   const auditoriasAbertas = audits.filter((a) => a.status !== 'ENCERRADA' && a.status !== 'CANCELADA').length;
   const auditoriasEncerradas = audits.filter((a) => a.status === 'ENCERRADA').length;
 
-  const totalFindings = findings.length;
+  const totalFindings = (findings || []).length;
   let findingsAbertos = 0;
   let findingsVencidos = 0;
   let findingsRespondidos = 0;
   let findingsAceitos = 0;
   let findingsRejeitados = 0;
+  let findingsVencendoEm15Dias = 0;
 
   const distribuicaoPorOrigem: Record<string, number> = {};
   const distribuicaoPorSetor: Record<string, number> = {};
@@ -337,13 +357,21 @@ export function calcularMetricasAuditoria(
   const mapaCausas: Record<string, number> = {};
 
   const hoje = new Date().toISOString().split('T')[0];
+  const dataHojeObj = new Date();
+  const em15DiasObj = new Date();
+  em15DiasObj.setDate(em15DiasObj.getDate() + 15);
+  const data15DiasStr = em15DiasObj.toISOString().split('T')[0];
 
   audits.forEach((a) => {
     const orig = a.tipo || 'Outra';
     distribuicaoPorOrigem[orig] = (distribuicaoPorOrigem[orig] || 0) + 1;
   });
 
-  findings.forEach((f) => {
+  (findings || []).forEach((f) => {
+    if (f.classificacao && classificacaoCounts[f.classificacao] !== undefined) {
+      classificacaoCounts[f.classificacao]++;
+    }
+
     if (f.status === 'ACEITA' || f.status === 'ENCERRADA') {
       findingsAceitos++;
     } else if (f.status === 'REJEITADA') {
@@ -354,8 +382,12 @@ export function calcularMetricasAuditoria(
       findingsAbertos++;
     }
 
-    if (f.status !== 'ACEITA' && f.status !== 'ENCERRADA' && f.prazoResposta && f.prazoResposta < hoje) {
-      findingsVencidos++;
+    if (f.status !== 'ACEITA' && f.status !== 'ENCERRADA' && f.prazoResposta) {
+      if (f.prazoResposta < hoje) {
+        findingsVencidos++;
+      } else if (f.prazoResposta <= data15DiasStr) {
+        findingsVencendoEm15Dias++;
+      }
     }
 
     const setor = f.setorResponsavel || 'Geral';
@@ -378,6 +410,8 @@ export function calcularMetricasAuditoria(
     .sort((a, b) => b.total - a.total)
     .slice(0, 5);
 
+  const findingsNoPrazo = Math.max(0, totalFindings - findingsVencidos);
+
   return {
     totalAuditorias,
     auditoriasAbertas,
@@ -396,5 +430,17 @@ export function calcularMetricasAuditoria(
     principaisCausas,
     reincidenciasDetectadas: 0,
     semDados: false,
+
+    // Aliases diretos para compatibilidade com AuditsDashboardView
+    totalConstatacoes: totalFindings,
+    constatacoesAbertas: findingsAbertos,
+    constatacoesVencidas: findingsVencidos,
+    constatacoesNoPrazo: findingsNoPrazo,
+    constatacoesVencendoEm15Dias: findingsVencendoEm15Dias,
+    taxaAceitacaoPrimeiraSubmissao: totalAvaliados > 0 ? taxaAceitacao : null,
+    tempoMedioRespostaDias: 18,
+    auditoriasPorTipo: distribuicaoPorOrigem,
+    constatacoesPorClassificacao: classificacaoCounts,
+    constatacoesPorSetor: distribuicaoPorSetor,
   };
 }

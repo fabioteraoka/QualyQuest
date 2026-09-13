@@ -631,7 +631,16 @@ export function calcularMetricasDashboardDocumental(
   solicitacoes: SolicitacaoRevisaoCliente[],
   logsVerificacao: LogVerificacaoFonteExterna[]
 ): DocumentosDashboardMetrics {
+  const distCategoriaVazia = {
+    DOCUMENTO_INTERNO: 0,
+    DOCUMENTO_AUTORIDADE: 0,
+    DOCUMENTO_FABRICANTE: 0,
+    DOCUMENTO_CLIENTE: 0,
+    OUTRO_CONTROLADO: 0,
+  };
+
   if (!documentos || documentos.length === 0) {
+    const fontesAtivas = (fontes || []).filter((f) => f.status === 'ATIVA').length;
     return {
       totalDocumentosControlados: 0,
       documentosVigentes: 0,
@@ -641,17 +650,22 @@ export function calcularMetricasDashboardDocumental(
       revisoesExternasIdentificadasNaoValidadas: 0,
       solicitacoesClientesPendentes: 0,
       documentosSemVerificacaoRecente: 0,
-      distribuicaoPorCategoria: {
-        DOCUMENTO_INTERNO: 0,
-        DOCUMENTO_AUTORIDADE: 0,
-        DOCUMENTO_FABRICANTE: 0,
-        DOCUMENTO_CLIENTE: 0,
-        OUTRO_CONTROLADO: 0,
-      },
+      distribuicaoPorCategoria: distCategoriaVazia,
       distribuicaoPorSetor: {},
       distribuicaoPorOrigem: {},
       totalRevisoesArmazenadas: 0,
       semDados: true,
+
+      // Aliases diretos para DocumentControlCenterView
+      totalDocumentos: 0,
+      totalRevisoesVigentes: 0,
+      fontesExternasAtivas: fontesAtivas,
+      fontesVerificacaoVencida: 0,
+      discrepanciasPendentesValidacao: 0,
+      solicitacoesClientePendentes: 0,
+      revisoesEmTransicao: 0,
+      taxaConformidadeDocumental: 100,
+      distribuicaoCategorias: distCategoriaVazia,
     };
   }
 
@@ -732,6 +746,9 @@ export function calcularMetricasDashboardDocumental(
     }
   });
 
+  const fontesAtivas = (fontes || []).filter((f) => f.status === 'ATIVA').length;
+  const taxaConformidade = documentos.length > 0 ? Math.round((vigentes / documentos.length) * 100) : 100;
+
   return {
     totalDocumentosControlados: documentos.length,
     documentosVigentes: vigentes,
@@ -746,5 +763,16 @@ export function calcularMetricasDashboardDocumental(
     distribuicaoPorOrigem: distOrigem,
     totalRevisoesArmazenadas: revisoes.length,
     semDados: false,
+
+    // Aliases diretos para DocumentControlCenterView
+    totalDocumentos: documentos.length,
+    totalRevisoesVigentes: vigentes,
+    fontesExternasAtivas: fontesAtivas,
+    fontesVerificacaoVencida: semVerificacao,
+    discrepanciasPendentesValidacao: revisoesExternasNaoValidadas,
+    solicitacoesClientePendentes: solicitacoesPendentes,
+    revisoesEmTransicao: emAnalise + aguardandoAprovacao,
+    taxaConformidadeDocumental: taxaConformidade,
+    distribuicaoCategorias: distCategoria,
   };
 }

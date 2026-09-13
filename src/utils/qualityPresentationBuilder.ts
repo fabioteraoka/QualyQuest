@@ -125,7 +125,7 @@ export function construirApresentacaoQualidade(
     const c5 = r.analiseCausaRaiz?.cincoPorques;
     const ish = r.analiseCausaRaiz?.ishikawa;
     const tem5p = c5 && c5.some(p => p && p.trim().length > 0);
-    const temIsh = ish && Object.values(ish).some(v => v && String(v).trim().length > 0);
+    const temIsh = ish && typeof ish === 'object' && Object.values(ish).some(v => v && String(v).trim().length > 0);
     return !tem5p && !temIsh && !r.analiseCausaRaiz?.detalhes;
   }).length;
 
