@@ -1024,22 +1024,184 @@ export interface SlideMetricaItem {
   status?: 'normal' | 'alerta' | 'critico' | 'sucesso';
 }
 
+export type BlocoApresentacao = 
+  | 'IDENTIDADE'
+  | 'VISAO_EXECUTIVA'
+  | 'GRAFICOS_DASHBOARD'
+  | 'ECOSSISTEMA'
+  | 'CAUSALIDADE'
+  | 'PRIORIZACAO'
+  | 'MATURIDADE_EVOLUCAO'
+  | 'CONCLUSAO';
+
+export type TipoVisualizacaoSlide = 
+  | 'capa'
+  | 'kpis'
+  | 'grafico-barras'
+  | 'grafico-pizza'
+  | 'grafico-linhas'
+  | 'matriz-risco'
+  | 'tabela-executiva'
+  | 'ecossistema'
+  | 'regua-maturidade'
+  | 'roadmap'
+  | 'matriz-decisao'
+  | 'conclusao'
+  | 'rastreabilidade';
+
+export interface SlideGraficoDadoItem {
+  rotulo: string;
+  valor: number;
+  cor?: string;
+  subtitulo?: string;
+  percentual?: number;
+}
+
+export interface SlideGraficoDados {
+  tipo: 'barras' | 'pizza' | 'linhas' | 'matriz-5x5' | 'ishikawa-6m' | 'ecossistema' | 'regua-maturidade' | 'roadmap' | 'nenhum';
+  titulo?: string;
+  unidade?: string;
+  itens: SlideGraficoDadoItem[];
+  matriz5x5?: {
+    contagem: Record<string, number>;
+    totalCriticos: number;
+    totalAltos: number;
+    totalMedios: number;
+    totalBaixos: number;
+  };
+  ishikawa?: {
+    metodo: number;
+    maoDeObra: number;
+    maquina: number;
+    material: number;
+    meioAmbiente: number;
+    medicao: number;
+    total: number;
+  };
+  serieTemporal?: Array<{
+    periodo: string;
+    total: number;
+    encerradas: number;
+  }>;
+}
+
 export interface SlideApresentacao {
   id: number;
   numero: number;
   titulo: string;
   subtitulo: string;
   categoria: string;
+  bloco?: BlocoApresentacao;
+  tipoVisualizacao?: TipoVisualizacaoSlide;
   metricasPrincipais: SlideMetricaItem[];
   pontosChave: string[];
   tabelaDados?: {
     colunas: string[];
     linhas: (string | number)[][];
+    destaques?: Record<number, string>;
   };
-  graficoDados?: any;
+  graficoDados?: SlideGraficoDados;
+  dadosGrafico?: {
+    tipo: 'barras' | 'pizza' | 'linhas' | 'dispersao' | 'matriz';
+    itens: any[];
+    config?: Record<string, any>;
+  };
+  explicacaoGrafico?: {
+    oQueMostra: string;
+    porQueImportante: string;
+    oQueGestaoIdentifica: string;
+    dadosInsuficientes?: boolean;
+  };
+  blocoEvolucao?: boolean;
+  imagemDestaque?: string;
+  decisaoSugerida?: string;
   alertaOuNota?: string;
   semDados?: boolean;
   origemRastreabilidade: string;
+}
+
+// ----------------------------------------------------
+// ESTABILIZAÇÃO GEOMÉTRICA E AUTO-FIT (FASE 12.3)
+// ----------------------------------------------------
+export interface BoundingBox {
+  id: string;
+  tipo: 'HEADER' | 'CARD_KPI' | 'GRAFICO' | 'TABELA' | 'TEXTO_ANALISE' | 'BANNER_SEM_DADOS' | 'FOOTER' | 'IMAGEM' | 'CONTAINER';
+  x: number; // Em polegadas
+  y: number; // Em polegadas
+  w: number; // Largura em polegadas
+  h: number; // Altura em polegadas
+}
+
+export interface SafeBounds {
+  slideWidth: number;
+  slideHeight: number;
+  safeLeft: number;
+  safeRight: number;
+  safeTop: number;
+  safeBottom: number;
+  headerBottom: number;
+  footerTop: number;
+  guardMarginBottom: number;
+}
+
+export type TipoInfracaoGeometrica =
+  | 'OVERFLOW_HORIZONTAL'
+  | 'OVERFLOW_VERTICAL'
+  | 'FORA_DA_SAFE_AREA'
+  | 'SOBREPOSICAO'
+  | 'COLISAO_RODAPE'
+  | 'COLISAO_CABECALHO';
+
+export interface InfracaoGeometrica {
+  slideNumero: number;
+  elementoId: string;
+  tipoInfracao: TipoInfracaoGeometrica;
+  detalhes: string;
+  envelope: BoundingBox;
+}
+
+export type ClassificacaoDensidadeSlide = 'ADEQUADO' | 'ALTA_DENSIDADE' | 'OVERFLOW';
+
+export interface ResultadoIntegridadeVisualSlide {
+  slideId: number;
+  numero: number;
+  titulo: string;
+  aprovado: boolean;
+  scoreDensidade: number; // 0 a 100%
+  classificacaoDensidade: ClassificacaoDensidadeSlide;
+  margemInferiorRodape: number; // Em polegadas
+  infracoes: InfracaoGeometrica[];
+  elementosInspecionados: BoundingBox[];
+}
+
+export interface RelatorioIntegridadeVisual {
+  aprovado: boolean;
+  timestamp: string;
+  totalSlidesAuditados: number;
+  totalElementosAuditados: number;
+  slidesComInfracao: number;
+  infracoesDetectadas: InfracaoGeometrica[];
+  densidadeGeral: ClassificacaoDensidadeSlide;
+  margemSegurancaRodapeMinima: number;
+  safeBoundsUtilizados: SafeBounds;
+  detalhesPorSlide: ResultadoIntegridadeVisualSlide[];
+}
+
+export interface RelatorioCertificacaoIntegrada {
+  homologado: boolean;
+  timestamp: string;
+  paridadeDados: {
+    status: 'APROVADO' | 'REPROVADO';
+    totalVerificacoesCruzadas: number;
+    divergencias: string[];
+  };
+  integridadeVisual: {
+    status: 'APROVADO' | 'REPROVADO';
+    totalElementosAuditados: number;
+    infracoes: InfracaoGeometrica[];
+    densidadeGeral: ClassificacaoDensidadeSlide;
+    margemSegurancaRodapeMinima: number;
+  };
 }
 
 export interface RelatorioApresentacaoQualidade {

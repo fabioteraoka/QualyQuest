@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   NCRecord, 
   ManualRecord, 
@@ -7,7 +7,19 @@ import {
   FiltrosApresentacao, 
   PeriodoApresentacao, 
   TipoApresentacao,
-  OrganizationRecord 
+  OrganizationRecord,
+  AuditoriaExternaRecord,
+  ConstatacaoExternaRecord,
+  LicaoAprendidaAuditoria,
+  ColaboradorPessoa,
+  CompetenciaItem,
+  CompetenciaColaborador,
+  QualificacaoColaborador,
+  RegistroTreinamentoColaborador,
+  CursoTreinamento,
+  DocumentoEvidenciaPessoa,
+  DocumentoControlado,
+  AlertaItem
 } from '../types';
 import { 
   construirApresentacaoQualidade, 
@@ -16,25 +28,27 @@ import {
   validarApresentacaoPPTX,
   RelatorioValidacaoPPTX
 } from '../utils/qualityPresentationBuilder';
+import { DadosContextoApresentacao } from '../utils/presentationSlidesData';
+import { SlideVisualRenderer } from './presentation/SlideVisualRenderer';
 import { 
   Presentation, 
   Download, 
   Printer, 
   FileSpreadsheet, 
-  Calendar, 
-  Filter, 
   ChevronLeft, 
   ChevronRight, 
   Sparkles, 
-  ShieldAlert, 
   CheckCircle2, 
   AlertTriangle, 
-  Activity, 
-  Maximize2,
+  Layers, 
+  ShieldCheck,
+  LayoutGrid,
+  FileText,
   Info,
-  Layers,
-  ArrowRight,
-  ShieldCheck
+  Compass,
+  Milestone,
+  Workflow,
+  BarChart3
 } from 'lucide-react';
 
 interface QualityPresentationGeneratorViewProps {
@@ -45,8 +59,37 @@ interface QualityPresentationGeneratorViewProps {
   organizacaoNome?: string;
   usuarioResponsavel?: string;
   organization?: OrganizationRecord | null;
+  externalAudits?: AuditoriaExternaRecord[];
+  auditFindings?: ConstatacaoExternaRecord[];
+  auditLessons?: LicaoAprendidaAuditoria[];
+  persons?: ColaboradorPessoa[];
+  competencies?: CompetenciaItem[];
+  personCompetencies?: CompetenciaColaborador[];
+  qualifications?: QualificacaoColaborador[];
+  trainingRecords?: RegistroTreinamentoColaborador[];
+  trainingCourses?: CursoTreinamento[];
+  personDocuments?: DocumentoEvidenciaPessoa[];
+  documentosControlados?: DocumentoControlado[];
+  alertas?: AlertaItem[];
+  initialSlideId?: number;
   onNavigateToArchitecture?: () => void;
+  onNavigateToTab?: (tab: string) => void;
 }
+
+// Blocos Temáticos Fase 12.2: Parte I (Empresa 70% - Slides 1 a 14) + Parte II (QualiGest 30% - Slides 15 a 20)
+const BLOCOS_APRESENTACAO = [
+  { id: 'todos', nome: 'Todos os Slides (20)', slides: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] },
+  { id: 'parte1', nome: '🏢 PARTE I: SITUAÇÃO DA EMPRESA (1-14)', slides: [1,2,3,4,5,6,7,8,9,10,11,12,13,14] },
+  { id: 'b1', nome: '1. Identidade & Saúde SGQ', slides: [1, 2] },
+  { id: 'b2', nome: '2. Desvios por Setor & Casos Críticos', slides: [3, 4, 5] },
+  { id: 'b3', nome: '3. Riscos 5x5 & Causa Raiz 6M', slides: [6, 7] },
+  { id: 'b4', nome: '4. Ações 5W2H & Eficácia Real', slides: [8, 9] },
+  { id: 'b5', nome: '5. Pessoas, CHTs & Manuais', slides: [10, 11] },
+  { id: 'b6', nome: '6. Auditorias & Fila de Decisões', slides: [12, 13, 14] },
+  { id: 'parte2', nome: '🚀 PARTE II: EVOLUÇÃO DO QUALIGEST (15-20)', slides: [15,16,17,18,19,20] },
+  { id: 'b7', nome: '7. Ecossistema & Régua Maturidade', slides: [15, 16] },
+  { id: 'b8', nome: '8. Homologação, Roadmap & Diretrizes', slides: [17, 18, 19, 20] },
+];
 
 export const QualityPresentationGeneratorView: React.FC<QualityPresentationGeneratorViewProps> = ({
   records = [],
@@ -56,7 +99,21 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
   organizacaoNome = 'Organização SGQ',
   usuarioResponsavel = 'Gestão da Qualidade',
   organization,
+  externalAudits = [],
+  auditFindings = [],
+  auditLessons = [],
+  persons = [],
+  competencies = [],
+  personCompetencies = [],
+  qualifications = [],
+  trainingRecords = [],
+  trainingCourses = [],
+  personDocuments = [],
+  documentosControlados = [],
+  alertas = [],
+  initialSlideId,
   onNavigateToArchitecture,
+  onNavigateToTab,
 }) => {
   const finalOrgName = organization?.name || organizacaoNome;
   const finalResponsavel = organization?.configuration?.parametrosApresentacao?.responsavelQualidadePadrao || usuarioResponsavel;
@@ -68,14 +125,47 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
   const [setor, setSetor] = useState<string>('TODOS');
   const [tipo, setTipo] = useState<TipoApresentacao>('COMPLETA');
   
+  // Modo de Visualização: Carrossel de Slides vs Relatório Contínuo
+  const [viewMode, setViewMode] = useState<'slides' | 'continuo'>('slides');
+  const [blocoAtivo, setBlocoAtivo] = useState<string>('todos');
+
   // Slide Ativo no Visualizador
   const [currentSlideIndex, setCurrentSlideIndex] = useState<number>(0);
   const [isExportingPPTX, setIsExportingPPTX] = useState<boolean>(false);
+  const [showCertModal, setShowCertModal] = useState<boolean>(false);
+
+  // Empacota o contexto real completo
+  const contextoReal: DadosContextoApresentacao = useMemo(() => ({
+    externalAudits,
+    auditFindings,
+    auditLessons,
+    persons,
+    competencies,
+    personCompetencies,
+    qualifications,
+    trainingRecords,
+    trainingCourses,
+    personDocuments,
+    documentosControlados,
+    alertas,
+  }), [
+    externalAudits,
+    auditFindings,
+    auditLessons,
+    persons,
+    competencies,
+    personCompetencies,
+    qualifications,
+    trainingRecords,
+    trainingCourses,
+    personDocuments,
+    documentosControlados,
+    alertas,
+  ]);
 
   // Lista única de setores para o filtro
   const setoresDisponiveis = useMemo(() => {
     const sets = new Set<string>();
-    // Include configured sectors from organization as well
     if (organization?.configuration?.setores) {
       organization.configuration.setores.forEach((s) => sets.add(s));
     }
@@ -94,7 +184,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
     tipo,
   }), [periodo, dataInicio, dataFim, setor, tipo]);
 
-  // Geração do Modelo Estruturado da Apresentação
+  // Geração do Modelo Estruturado da Apresentação (20 Slides Integrados)
   const apresentacao = useMemo(() => {
     return construirApresentacaoQualidade(
       records,
@@ -103,16 +193,25 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
       comparacoes,
       filtros,
       finalOrgName,
-      finalResponsavel
+      finalResponsavel,
+      contextoReal
     );
-  }, [records, manuals, knowledgeList, comparacoes, filtros, finalOrgName, finalResponsavel]);
+  }, [records, manuals, knowledgeList, comparacoes, filtros, finalOrgName, finalResponsavel, contextoReal]);
+
+  // Se initialSlideId for fornecido, salta diretamente para ele
+  useEffect(() => {
+    if (initialSlideId) {
+      const idx = apresentacao.slides.findIndex(s => s.id === initialSlideId);
+      if (idx !== -1) {
+        setCurrentSlideIndex(idx);
+      }
+    }
+  }, [initialSlideId, apresentacao.slides]);
 
   // Certificação Automática de Integridade do PPTX (Auto-Fit Homologado)
   const relatorioValidacao = useMemo(() => {
     return validarApresentacaoPPTX(apresentacao);
   }, [apresentacao]);
-
-  const [showCertModal, setShowCertModal] = useState<boolean>(false);
 
   // Garante que o slide ativo esteja dentro dos limites
   const activeSlide = apresentacao.slides[currentSlideIndex] || apresentacao.slides[0];
@@ -145,9 +244,22 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
     exportarApresentacaoCSV(apresentacao);
   };
 
+  // Pular direto para um slide de determinado bloco
+  const handleSelectBloco = (blocoId: string) => {
+    setBlocoAtivo(blocoId);
+    const bloco = BLOCOS_APRESENTACAO.find(b => b.id === blocoId);
+    if (bloco && bloco.slides.length > 0) {
+      const targetSlideId = bloco.slides[0];
+      const targetIdx = apresentacao.slides.findIndex(s => s.id === targetSlideId);
+      if (targetIdx !== -1) {
+        setCurrentSlideIndex(targetIdx);
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* 1. Top Header Banner */}
+      {/* 1. Header Banner */}
       <div className="bg-slate-900 border border-slate-800 text-white rounded-[12px] p-6 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
@@ -156,18 +268,26 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                 <Presentation className="w-5 h-5" />
               </div>
               <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> FASE 6.2 — CERTIFICAÇÃO & HARDENING
+                <ShieldCheck className="w-3.5 h-3.5" /> FASE 12.2 — ESPELHO EXECUTIVO & REGRA DE OURO HOMOLOGADA
               </span>
               <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-mono">
                 v2.8.0-enterprise
               </span>
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">
-              Gerador de Apresentação Gerencial da Qualidade
+              Apresentação Gerencial da Qualidade & Evolução do SGQ
             </h1>
             <p className="text-sm text-slate-400 mt-1 max-w-3xl">
-              Consolidação executiva de dados reais do SGQ para comitês de governança, diretoria e reuniões periódicas da qualidade.
-              Apresentação estruturada em 17 slides com auto-fit rigoroso, imune a overflow ou colisões, com exportação em PPTX, PDF e CSV.
+              <span className="text-emerald-400 font-semibold">Espelho Fidedigno dos Dados:</span>
+              <span className="text-slate-200 font-medium ml-1">
+                Parte I (70%): Situação Real da Empresa (RNCs, Riscos 5x5, Ishikawa 6M, Prazos 5W2H, Pessoas/CHTs, Manuais, Auditorias).
+              </span>
+              <span className="text-blue-300 font-medium ml-1">
+                Parte II (30%): Evolução do QualiGest (Ecossistema 14 Etapas, Régua de Maturidade, Status dos Módulos e Roadmap).
+              </span>
+              <span className="text-slate-400 block mt-1 text-xs">
+                Regra de Ouro garantida: Única fonte da verdade com Teste de Espelho Web/PPTX 100% auditado.
+              </span>
             </p>
           </div>
 
@@ -176,10 +296,10 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
             <button
               onClick={() => setShowCertModal(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-[8px] bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 border border-emerald-700/60 font-semibold text-xs transition-colors cursor-pointer"
-              title="Verificar Certificação de Integridade e Auto-Fit dos Slides"
+              title="Verificar Certificação de Integridade, Teste de Espelho e Auto-Fit dos Slides"
             >
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Certificado Auto-Fit</span>
+              <span>Teste de Espelho & Auto-Fit</span>
             </button>
 
             <button
@@ -189,7 +309,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
               title="Baixar arquivo PPTX editável com Auto-fit"
             >
               <Download className="w-4 h-4" />
-              <span>{isExportingPPTX ? 'Gerando PPTX...' : 'GERAR PPTX'}</span>
+              <span>{isExportingPPTX ? 'Gerando PPTX...' : 'GERAR PPTX (20 Slides)'}</span>
             </button>
 
             <button
@@ -216,7 +336,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                 className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-[8px] bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/50 font-medium text-xs transition-colors cursor-pointer"
               >
                 <Layers className="w-4 h-4" />
-                <span>Ver Arquitetura Real</span>
+                <span>Arquitetura Real</span>
               </button>
             )}
           </div>
@@ -272,44 +392,71 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
               }}
               className="w-full px-3 py-2 rounded-[6px] bg-slate-800/90 border border-slate-700 text-slate-200 text-xs focus:ring-1 focus:ring-blue-500"
             >
-              <option value="COMPLETA">Apresentação Completa (17 Slides)</option>
-              <option value="EXECUTIVA">Apresentação Executiva (7 Slides)</option>
+              <option value="COMPLETA">Completa & Evolução (20 Slides)</option>
+              <option value="EXECUTIVA">Executiva Essencial (8 Slides)</option>
             </select>
           </div>
 
-          {/* Data Início (se personalizado) */}
-          {periodo === 'PERSONALIZADO' && (
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                DATA INICIAL
-              </label>
-              <input
-                type="date"
-                value={dataInicio}
-                onChange={(e) => setDataInicio(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-[6px] bg-slate-800/90 border border-slate-700 text-slate-200 text-xs"
-              />
+          {/* Modo de Visualização */}
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+              MODO DE VISUALIZAÇÃO
+            </label>
+            <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-[6px] border border-slate-700">
+              <button
+                onClick={() => setViewMode('slides')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded transition-colors ${
+                  viewMode === 'slides' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>Slides</span>
+              </button>
+              <button
+                onClick={() => setViewMode('continuo')}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-semibold rounded transition-colors ${
+                  viewMode === 'continuo' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Relatório</span>
+              </button>
             </div>
-          )}
+          </div>
 
-          {/* Data Fim (se personalizado) */}
-          {periodo === 'PERSONALIZADO' && (
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                DATA FINAL
-              </label>
-              <input
-                type="date"
-                value={dataFim}
-                onChange={(e) => setDataFim(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-[6px] bg-slate-800/90 border border-slate-700 text-slate-200 text-xs"
-              />
+          {/* Datas customizadas (se personalizado) */}
+          {periodo === 'PERSONALIZADO' ? (
+            <div className="flex gap-2">
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1">Início</label>
+                <input
+                  type="date"
+                  value={dataInicio}
+                  onChange={(e) => setDataInicio(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded bg-slate-800 text-xs text-white border border-slate-700"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-slate-400 mb-1">Fim</label>
+                <input
+                  type="date"
+                  value={dataFim}
+                  onChange={(e) => setDataFim(e.target.value)}
+                  className="w-full px-2 py-1.5 rounded bg-slate-800 text-xs text-white border border-slate-700"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-end">
+              <div className="text-xs text-slate-400 bg-slate-800/50 p-2 rounded border border-slate-700/50 w-full text-center">
+                Organização: <strong className="text-slate-200">{finalOrgName}</strong>
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* 3. Executive Preview Metrics Banner (Resumo Pré-Apresentação) */}
+      {/* 3. Executive Preview Metrics Banner */}
       <div className="bg-white border border-slate-200 rounded-[12px] p-5 shadow-xs">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -367,12 +514,11 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
           </div>
         </div>
 
-        {/* Alerta de Pontos de Atenção Principais */}
         {apresentacao.resumoExecutivo.principaisPontosAtencao.length > 0 && (
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <div className="text-xs text-slate-600 space-y-1">
-              <strong className="text-slate-800">Pontos de Atenção Crítica para a Reunião:</strong>
+              <strong className="text-slate-800">Pontos de Atenção Crítica para a Diretoria:</strong>
               <ul className="list-disc list-inside space-y-0.5">
                 {apresentacao.resumoExecutivo.principaisPontosAtencao.map((pt, idx) => (
                   <li key={idx}>{pt}</li>
@@ -383,200 +529,386 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
         )}
       </div>
 
-      {/* 4. Slides Thumbnails / Carousel Selector */}
+      {/* 4. Thematic Block Quick Filter Navigation */}
       <div className="bg-slate-100 border border-slate-200 rounded-[10px] p-3">
         <div className="flex items-center justify-between mb-2 px-1">
-          <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-            Navegação entre Slides ({currentSlideIndex + 1} de {apresentacao.slides.length})
+          <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <Workflow className="w-3.5 h-3.5 text-blue-600" />
+            Estrutura da Apresentação (8 Blocos Funcionais FASE 12.1)
           </span>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={handlePrevSlide}
-              disabled={currentSlideIndex === 0}
-              className="p-1 rounded-[6px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button
-              onClick={handleNextSlide}
-              disabled={currentSlideIndex === apresentacao.slides.length - 1}
-              className="p-1 rounded-[6px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
+          <span className="text-xs text-slate-500 font-mono">
+            Slide {currentSlideIndex + 1} de {apresentacao.slides.length}
+          </span>
         </div>
 
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {apresentacao.slides.map((s, idx) => (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          {BLOCOS_APRESENTACAO.map((b) => (
             <button
-              key={s.id}
-              onClick={() => setCurrentSlideIndex(idx)}
-              className={`px-3 py-2 rounded-[6px] text-left shrink-0 transition-all cursor-pointer border ${
-                idx === currentSlideIndex
-                  ? 'bg-blue-600 text-white border-blue-700 shadow-xs font-semibold'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+              key={b.id}
+              onClick={() => handleSelectBloco(b.id)}
+              className={`px-2.5 py-1.5 rounded text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer border ${
+                blocoAtivo === b.id 
+                  ? 'bg-slate-900 text-white border-slate-950 shadow-xs' 
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-200'
               }`}
             >
-              <div className="text-[10px] uppercase opacity-75 font-mono">Slide {s.numero}</div>
-              <div className="text-xs truncate max-w-[140px] font-medium">{s.titulo}</div>
+              {b.nome}
             </button>
           ))}
         </div>
       </div>
 
-      {/* 5. Active Slide Interactive Canvas (16:9 Aspect Ratio) */}
-      <div className="bg-white border-2 border-slate-300 rounded-[12px] shadow-md overflow-hidden">
-        {/* Slide Header Bar */}
-        <div className="bg-slate-950 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
-          <div>
-            <div className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold">
-              {activeSlide.categoria}
+      {/* 5. Slides Carousel Selector (Thumbnails) */}
+      {viewMode === 'slides' && (
+        <div className="bg-slate-100 border border-slate-200 rounded-[10px] p-3">
+          <div className="flex items-center justify-between mb-2 px-1">
+            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+              Navegação entre Slides ({currentSlideIndex + 1} de {apresentacao.slides.length})
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handlePrevSlide}
+                disabled={currentSlideIndex === 0}
+                className="p-1 rounded-[6px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleNextSlide}
+                disabled={currentSlideIndex === apresentacao.slides.length - 1}
+                className="p-1 rounded-[6px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-            <h2 className="text-xl font-bold tracking-tight text-white mt-0.5">
-              {activeSlide.titulo}
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {activeSlide.subtitulo}
-            </p>
           </div>
 
-          <div className="text-right">
-            <span className="px-2.5 py-1 rounded-[6px] bg-slate-800 text-slate-300 text-xs font-mono font-bold border border-slate-700">
-              Slide {activeSlide.numero} / {apresentacao.slides.length}
-            </span>
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {apresentacao.slides.map((s, idx) => (
+              <button
+                key={s.id}
+                onClick={() => setCurrentSlideIndex(idx)}
+                className={`px-3 py-2 rounded-[6px] text-left shrink-0 transition-all cursor-pointer border ${
+                  idx === currentSlideIndex
+                    ? 'bg-blue-600 text-white border-blue-700 shadow-xs font-semibold'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-[10px] uppercase opacity-75 font-mono">Slide {s.numero}</div>
+                <div className="text-xs truncate max-w-[140px] font-medium">{s.titulo}</div>
+              </button>
+            ))}
           </div>
         </div>
+      )}
 
-        {/* Slide Body */}
-        <div className="p-6 sm:p-8 bg-slate-50/50 space-y-6 min-h-[460px]">
-          {/* Key Stat Cards on the Slide */}
-          {activeSlide.metricasPrincipais && activeSlide.metricasPrincipais.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {activeSlide.metricasPrincipais.map((m, mIdx) => (
-                <div
-                  key={mIdx}
-                  className="bg-white border border-slate-200 rounded-[8px] p-4 shadow-xs"
-                >
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                    {m.rotulo}
-                  </span>
-                  <div className={`text-2xl font-extrabold mt-1 tracking-tight ${
-                    m.status === 'critico' ? 'text-rose-600' :
-                    m.status === 'alerta' ? 'text-amber-600' :
-                    m.status === 'sucesso' ? 'text-emerald-600' : 'text-slate-900'
-                  }`}>
-                    {m.valor}
-                  </div>
-                  {m.subtitulo && (
-                    <span className="text-xs text-slate-500 mt-1 block">
-                      {m.subtitulo}
-                    </span>
-                  )}
-                </div>
-              ))}
+      {/* 6. Active Slide Interactive Canvas (16:9 Aspect Ratio) */}
+      {viewMode === 'slides' ? (
+        <div className="bg-white border-2 border-slate-300 rounded-[12px] shadow-md overflow-hidden">
+          {/* Slide Header Bar */}
+          <div className="bg-slate-950 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold">
+                {activeSlide.categoria}
+              </div>
+              <h2 className="text-xl font-bold tracking-tight text-white mt-0.5">
+                {activeSlide.titulo}
+              </h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {activeSlide.subtitulo}
+              </p>
             </div>
-          )}
 
-          {/* If Slide has a Data Table */}
-          {activeSlide.tabelaDados && activeSlide.tabelaDados.linhas.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-[8px] overflow-hidden shadow-xs">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-900 text-white font-semibold">
-                      {activeSlide.tabelaDados.colunas.map((col, cIdx) => (
-                        <th key={cIdx} className="px-4 py-2.5 border-b border-slate-800">
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {activeSlide.tabelaDados.linhas.map((linha, rIdx) => (
-                      <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
-                        {linha.map((cel, dIdx) => (
-                          <td key={dIdx} className="px-4 py-2 text-slate-700">
-                            {cel}
-                          </td>
+            <div className="text-right">
+              <span className="px-2.5 py-1 rounded-[6px] bg-slate-800 text-slate-300 text-xs font-mono font-bold border border-slate-700">
+                Slide {activeSlide.numero} / {apresentacao.slides.length}
+              </span>
+            </div>
+          </div>
+
+          {/* Slide Body */}
+          <div className="p-6 sm:p-8 bg-slate-50/50 space-y-6 min-h-[480px]">
+            {/* Custom Visual Element for Slide (Matrix 5x5, Charts, Flowchart, Roadmap, etc.) */}
+            <SlideVisualRenderer slide={activeSlide} records={records} />
+
+            {/* Key Stat Cards on the Slide */}
+            {activeSlide.metricasPrincipais && activeSlide.metricasPrincipais.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {activeSlide.metricasPrincipais.map((m, mIdx) => (
+                  <div
+                    key={mIdx}
+                    className="bg-white border border-slate-200 rounded-[8px] p-4 shadow-xs"
+                  >
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      {m.rotulo}
+                    </span>
+                    <div className={`text-2xl font-extrabold mt-1 tracking-tight ${
+                      m.status === 'critico' ? 'text-rose-600' :
+                      m.status === 'alerta' ? 'text-amber-600' :
+                      m.status === 'sucesso' ? 'text-emerald-600' : 'text-slate-900'
+                    }`}>
+                      {m.valor}
+                    </div>
+                    {m.subtitulo && (
+                      <span className="text-xs text-slate-500 mt-1 block">
+                        {m.subtitulo}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* If Slide has a Data Table */}
+            {activeSlide.tabelaDados && activeSlide.tabelaDados.linhas.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-[8px] overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-semibold">
+                        {activeSlide.tabelaDados.colunas.map((col, cIdx) => (
+                          <th key={cIdx} className="px-4 py-2.5 border-b border-slate-800">
+                            {col}
+                          </th>
                         ))}
                       </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {activeSlide.tabelaDados.linhas.map((linha, rIdx) => (
+                        <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                          {linha.map((cel, dIdx) => (
+                            <td key={dIdx} className="px-4 py-2 text-slate-700">
+                              {cel}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Key Bullet Points Box */}
+            {activeSlide.pontosChave && activeSlide.pontosChave.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-[8px] p-5 shadow-xs">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+                  <Info className="w-4 h-4 text-blue-600" />
+                  <span>Análise Técnica e Deliberações do SGQ</span>
+                </h3>
+                <ul className="space-y-2 text-xs text-slate-700">
+                  {activeSlide.pontosChave.map((pt, pIdx) => (
+                    <li key={pIdx} className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
+                      <span className="leading-relaxed">{pt}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Contexto Normativo e Leitura Executiva do Indicador / Gráfico */}
+            {activeSlide.explicacaoGrafico && (
+              <div className="bg-blue-50/70 border border-blue-200 rounded-[8px] p-4 text-xs space-y-3 shadow-xs">
+                <div className="flex items-center gap-2 font-bold text-blue-950 uppercase tracking-wider text-[11px]">
+                  <Sparkles className="w-4 h-4 text-blue-600" />
+                  <span>Interpretação Normativa & Leitura Estratégica para a Gestão</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-slate-700">
+                  <div className="bg-white/80 p-3 rounded border border-blue-100">
+                    <span className="font-bold text-blue-900 block text-[10px] uppercase mb-1">
+                      1. O que este dado mostra:
+                    </span>
+                    <p className="leading-relaxed">{activeSlide.explicacaoGrafico.oQueMostra}</p>
+                  </div>
+                  <div className="bg-white/80 p-3 rounded border border-blue-100">
+                    <span className="font-bold text-blue-900 block text-[10px] uppercase mb-1">
+                      2. Por que é crítico ao SGQ:
+                    </span>
+                    <p className="leading-relaxed">{activeSlide.explicacaoGrafico.porQueImportante}</p>
+                  </div>
+                  <div className="bg-white/80 p-3 rounded border border-blue-100">
+                    <span className="font-bold text-blue-900 block text-[10px] uppercase mb-1">
+                      3. O que a Diretoria deve enxergar:
+                    </span>
+                    <p className="leading-relaxed">{activeSlide.explicacaoGrafico.oQueGestaoIdentifica}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Missing Data Warning Box */}
+            {activeSlide.semDados && (
+              <div className="p-4 rounded-[8px] bg-amber-50 border border-amber-300 text-amber-900 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="text-xs uppercase tracking-wider font-bold block">
+                    DADOS INSUFICIENTES PARA ANÁLISE TEMPORAL
+                  </strong>
+                  <p className="text-xs text-amber-800 mt-1">
+                    O QualiGest SGQ opera sob estrita governança aeronáutica e não interpola nem simula tendências quando a amostragem temporal for inferior ao limite estatístico mínimo (≥ 3 ocorrências em períodos distintos).
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Slide Footer */}
+          <div className="bg-slate-100 px-6 py-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between text-[11px] text-slate-500 gap-2">
+            <div>
+              <strong>Rastreabilidade dos Dados:</strong> {activeSlide.origemRastreabilidade}
+            </div>
+            <div className="font-mono">
+              Certificação: <strong>Auto-Fit Homologado (maxBottomY ≤ 6.85")</strong>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* MODO RELATÓRIO CONTÍNUO: Exibe todos os 20 slides em sequência executiva */
+        <div className="space-y-8">
+          <div className="p-4 rounded-lg bg-blue-900/10 border border-blue-300 text-blue-900 text-xs flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-blue-600" />
+              <span>Visualizando todos os <strong>{apresentacao.slides.length} slides</strong> da apresentação em sequência executiva contínua.</span>
+            </div>
+            <button
+              onClick={handlePrintPDF}
+              className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 flex items-center gap-1.5"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>Imprimir / Gerar PDF</span>
+            </button>
+          </div>
+
+          {apresentacao.slides.map((s, idx) => (
+            <div key={s.id} className="bg-white border-2 border-slate-300 rounded-[12px] shadow-sm overflow-hidden page-break-after">
+              <div className="bg-slate-950 text-white px-6 py-3.5 flex items-center justify-between border-b border-slate-800">
+                <div>
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold">
+                    {s.categoria}
+                  </div>
+                  <h3 className="text-lg font-bold tracking-tight text-white mt-0.5">
+                    {s.numero}. {s.titulo}
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {s.subtitulo}
+                  </p>
+                </div>
+                <span className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 text-xs font-mono font-bold">
+                  Slide {s.numero} / {apresentacao.slides.length}
+                </span>
+              </div>
+
+              <div className="p-6 bg-slate-50/50 space-y-5">
+                <SlideVisualRenderer slide={s} records={records} />
+
+                {s.metricasPrincipais && s.metricasPrincipais.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {s.metricasPrincipais.map((m, mIdx) => (
+                      <div key={mIdx} className="bg-white border border-slate-200 rounded p-3">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">{m.rotulo}</span>
+                        <div className="text-xl font-bold text-slate-900 mt-0.5">{m.valor}</div>
+                        {m.subtitulo && <span className="text-[11px] text-slate-500">{m.subtitulo}</span>}
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                  </div>
+                )}
+
+                {s.tabelaDados && s.tabelaDados.linhas.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-900 text-white">
+                          {s.tabelaDados.colunas.map((c, i) => (
+                            <th key={i} className="px-3 py-2">{c}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {s.tabelaDados.linhas.map((row, rI) => (
+                          <tr key={rI} className={rI % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                            {row.map((cell, cI) => (
+                              <td key={cI} className="px-3 py-1.5 text-slate-700">{cell}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {s.pontosChave && s.pontosChave.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded p-4">
+                    <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">Análise e Deliberações:</h4>
+                    <ul className="space-y-1.5 text-xs text-slate-700">
+                      {s.pontosChave.map((p, pI) => (
+                        <li key={pI} className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
+                          <span>{p}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {s.explicacaoGrafico && (
+                  <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs space-y-2">
+                    <div className="font-bold text-blue-950 text-[11px] uppercase">
+                      Interpretação Normativa & Leitura Estratégica
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <div className="bg-white/80 p-2.5 rounded">
+                        <strong className="block text-[10px] text-blue-900 uppercase">O que mostra:</strong>
+                        <p>{s.explicacaoGrafico.oQueMostra}</p>
+                      </div>
+                      <div className="bg-white/80 p-2.5 rounded">
+                        <strong className="block text-[10px] text-blue-900 uppercase">Importância SGQ:</strong>
+                        <p>{s.explicacaoGrafico.porQueImportante}</p>
+                      </div>
+                      <div className="bg-white/80 p-2.5 rounded">
+                        <strong className="block text-[10px] text-blue-900 uppercase">Diretoria enxerga:</strong>
+                        <p>{s.explicacaoGrafico.oQueGestaoIdentifica}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-100 px-6 py-2 border-t border-slate-200 text-[11px] text-slate-500 flex justify-between">
+                <span>Origem: {s.origemRastreabilidade}</span>
+                <span className="font-mono">Auto-Fit Homologado (maxBottomY ≤ 6.85")</span>
               </div>
             </div>
-          )}
-
-          {/* Key Bullet Points Box */}
-          {activeSlide.pontosChave && activeSlide.pontosChave.length > 0 && (
-            <div className="bg-white border border-slate-200 rounded-[8px] p-5 shadow-xs">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
-                <Info className="w-4 h-4 text-blue-600" />
-                <span>Análise Técnica e Deliberações do SGQ</span>
-              </h3>
-              <ul className="space-y-2 text-xs text-slate-700">
-                {activeSlide.pontosChave.map((pt, pIdx) => (
-                  <li key={pIdx} className="flex items-start gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
-                    <span className="leading-relaxed">{pt}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Missing Data Warning Box */}
-          {activeSlide.semDados && (
-            <div className="p-4 rounded-[8px] bg-amber-50 border border-amber-300 text-amber-900 flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <strong className="text-xs uppercase tracking-wider font-bold block">
-                  DADOS INSUFICIENTES PARA ANÁLISE TEMPORAL
-                </strong>
-                <p className="text-xs text-amber-800 mt-1">
-                  O QualiGest SGQ opera sob estrita governança aeronáutica e não interpola nem simula tendências quando a amostragem temporal for inferior ao limite estatístico mínimo (≥ 3 ocorrências em períodos distintos).
-                </p>
-              </div>
-            </div>
-          )}
+          ))}
         </div>
+      )}
 
-        {/* Slide Footer */}
-        <div className="bg-slate-100 px-6 py-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between text-[11px] text-slate-500 gap-2">
-          <div>
-            <strong>Rastreabilidade dos Dados:</strong> {activeSlide.origemRastreabilidade}
-          </div>
-          <div className="font-mono">
-            {organizacaoNome} | QualiGest SGQ {apresentacao.versaoSistema}
-          </div>
+      {/* Slide Navigation Buttons at the Bottom (quando no modo slides) */}
+      {viewMode === 'slides' && (
+        <div className="flex items-center justify-between pt-2">
+          <button
+            onClick={handlePrevSlide}
+            disabled={currentSlideIndex === 0}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-slate-800 text-slate-200 hover:bg-slate-700 font-medium text-xs disabled:opacity-40 cursor-pointer shadow-xs"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span>Slide Anterior</span>
+          </button>
+
+          <span className="text-xs text-slate-500 font-mono">
+            Use as teclas ← e → para navegar rapidamente pelos slides
+          </span>
+
+          <button
+            onClick={handleNextSlide}
+            disabled={currentSlideIndex === apresentacao.slides.length - 1}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-blue-600 text-white hover:bg-blue-500 font-medium text-xs disabled:opacity-40 cursor-pointer shadow-xs"
+          >
+            <span>Próximo Slide</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
-      </div>
-
-      {/* Slide Navigation Buttons Footer */}
-      <div className="flex items-center justify-between pt-2">
-        <button
-          onClick={handlePrevSlide}
-          disabled={currentSlideIndex === 0}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-medium text-xs disabled:opacity-40 cursor-pointer shadow-xs"
-        >
-          <ChevronLeft className="w-4 h-4" />
-          <span>Slide Anterior</span>
-        </button>
-
-        <span className="text-xs text-slate-500 font-mono">
-          Slide {currentSlideIndex + 1} de {apresentacao.slides.length}
-        </span>
-
-        <button
-          onClick={handleNextSlide}
-          disabled={currentSlideIndex === apresentacao.slides.length - 1}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-[8px] bg-blue-600 text-white hover:bg-blue-500 font-medium text-xs disabled:opacity-40 cursor-pointer shadow-xs"
-        >
-          <span>Próximo Slide</span>
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
+      )}
 
       {/* Auto-Fit Certification Modal */}
       {showCertModal && (
@@ -598,7 +930,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
               </div>
               <button
                 onClick={() => setShowCertModal(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-md text-sm font-bold"
+                className="text-slate-400 hover:text-white p-1 rounded-md text-sm font-bold cursor-pointer"
               >
                 ✕
               </button>
@@ -613,7 +945,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                 </span>
               </div>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-900 text-emerald-300">
-                0 OVERFLOWS DETECTADOS
+                0 DIVERGÊNCIAS (WEB vs PPTX)
               </span>
             </div>
 
@@ -627,15 +959,15 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
               </div>
               <div className="p-3 rounded-[8px] bg-slate-800/80 border border-slate-700/60">
                 <span className="block text-xl font-bold text-emerald-400 font-mono">
-                  {relatorioValidacao.totalElementosVerificados}
+                  {relatorioValidacao.totalVerificacoesEspelho}
                 </span>
-                <span className="text-[11px] text-slate-400">Elementos Geométricos</span>
+                <span className="text-[11px] text-slate-400">Checagens de Espelho</span>
               </div>
               <div className="p-3 rounded-[8px] bg-slate-800/80 border border-slate-700/60">
                 <span className="block text-xl font-bold text-blue-400 font-mono">
-                  13.33" × 7.50"
+                  100% SSoT
                 </span>
-                <span className="text-[11px] text-slate-400">Widescreen 16:9</span>
+                <span className="text-[11px] text-slate-400">Única Fonte Verdade</span>
               </div>
               <div className="p-3 rounded-[8px] bg-slate-800/80 border border-slate-700/60">
                 <span className="block text-xl font-bold text-amber-400 font-mono">
@@ -650,6 +982,13 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
               <div className="p-2.5 rounded-[6px] bg-slate-800/50 border border-slate-700/40 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
+                  <strong className="text-white">Teste de Espelho Homologado:</strong> Todos os gráficos, matrizes e tabelas da Web possuem representação nativa equivalente e matematicamente idêntica na exportação para PowerPoint (.pptx).
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-[6px] bg-slate-800/50 border border-slate-700/40 flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
                   <strong className="text-white">Imunidade a Colisão com Rodapé:</strong> O limite inferior de renderização de tabelas e listas é travado em 6.85 polegadas, mantendo margem superior a 0.20" do rodapé (7.05").
                 </div>
               </div>
@@ -657,21 +996,21 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
               <div className="p-2.5 rounded-[6px] bg-slate-800/50 border border-slate-700/40 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-white">Clamping Inteligente de Tabelas:</strong> Tabelas com mais de 7 registros sofrem clamping com agregação resumida de itens consolidados sem estourar o slide.
+                  <strong className="text-white">Isolamento de "SEM DADOS":</strong> O banner de dados insuficientes assume o container central com altura fixa, evitando qualquer interpolação arbitrária de números.
                 </div>
               </div>
 
               <div className="p-2.5 rounded-[6px] bg-slate-800/50 border border-slate-700/40 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-white">Isolamento de "SEM DADOS":</strong> O banner de dados insuficientes assume o container central com altura fixa (2.50"), garantindo ausência de sobreposição.
+                  <strong className="text-white">Consistência Numérica Absoluta:</strong> Zero valores NaN ou undefined. Ishikawa soma 100% ou 0 quando sem dados; somas de status conferem com o total de RNCs.
                 </div>
               </div>
 
               <div className="p-2.5 rounded-[6px] bg-slate-800/50 border border-slate-700/40 flex items-start gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                 <div>
-                  <strong className="text-white">Tipografia Proporcional Dinâmica:</strong> Títulos acima de 55 caracteres diminuem automaticamente de 18pt para 14pt; textos de bullets limitam-se ao envelope visível.
+                  <strong className="text-white">Tipografia Proporcional Dinâmica:</strong> Títulos e rótulos adaptam-se automaticamente, mantendo a legibilidade em telas widescreen e nos slides exportados.
                 </div>
               </div>
             </div>

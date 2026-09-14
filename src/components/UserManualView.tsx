@@ -558,6 +558,68 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
         </div>
       ),
     },
+    {
+      id: 28,
+      title: '28. Visão Mestre, Arquitetura e Roadmap Estratégico (Fase 12)',
+      category: 'Estratégia & Futuro',
+      summary: 'A trajetória de maturidade em 5 níveis, governança de IA copiloto e horizonte evolutivo.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-blue-900 text-sm flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+              <span>O Futuro Planejado do QualiGest SGQ</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              O QualiGest SGQ foi projetado como um sistema vivo que amadurece junto com a organização de manutenção ou operador aéreo, percorrendo 5 níveis de excelência:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 pt-2">
+              <div className="p-2 bg-white rounded border border-blue-200">
+                <span className="font-bold text-blue-800 block text-[11px]">N1 — Básico</span>
+                <p className="text-[10px] text-slate-600">Formulários oficiais F 001-29 e registro digital.</p>
+              </div>
+              <div className="p-2 bg-white rounded border border-blue-200">
+                <span className="font-bold text-blue-800 block text-[11px]">N2 — Digitalizado</span>
+                <p className="text-[10px] text-slate-600">Ishikawa 6M, 5 Porquês, 5W2H e Matriz de Risco 5x5.</p>
+              </div>
+              <div className="p-2 bg-white rounded border border-blue-200 bg-blue-100/50">
+                <span className="font-bold text-blue-900 block text-[11px]">N3 — Integrado ★</span>
+                <p className="text-[10px] text-slate-700 font-medium">Saúde SGQ, Manuais e Matriz de Competências (Atual).</p>
+              </div>
+              <div className="p-2 bg-white rounded border border-blue-200">
+                <span className="font-bold text-blue-800 block text-[11px]">N4 — Inteligente</span>
+                <p className="text-[10px] text-slate-600">Copiloto IA assistido com supervisão humana 100%.</p>
+              </div>
+              <div className="p-2 bg-white rounded border border-blue-200">
+                <span className="font-bold text-blue-800 block text-[11px]">N5 — Preditivo</span>
+                <p className="text-[10px] text-slate-600">Antecipação de riscos sistêmicos e benchmarking.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <h4 className="font-bold text-slate-900">Princípios Inegociáveis:</h4>
+            <ul className="list-disc list-inside space-y-1 text-slate-600">
+              <li><strong>IA como Copiloto:</strong> A inteligência artificial nunca toma decisões de conformidade de forma autônoma. O parecer e a assinatura de engenharia/SGQ são sempre humanos.</li>
+              <li><strong>Zero Regressão:</strong> Nenhuma evolução tecnológica quebra fluxos ou requisitos regulatórios já homologados.</li>
+              <li><strong>Dados Reais:</strong> O sistema não projeta ou interpola métricas quando a amostragem for insuficiente, preservando a idoneidade do SGQ.</li>
+            </ul>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2">
+              <button
+                onClick={() => onNavigateToTab('apresentacao')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-500 cursor-pointer shadow-xs"
+              >
+                <Compass className="w-4 h-4" />
+                <span>Explorar Apresentação Gerencial & Evolução Integrada</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
   ], [organization, orgName, orgSigla]);
 
   // Filtro de capítulos por busca
@@ -630,7 +692,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
             }`}
           >
-            Manual de Utilização (27 Capítulos)
+            Manual de Utilização (28 Capítulos)
           </button>
           <button
             onClick={() => setActiveSection('manual-admin')}
@@ -651,6 +713,16 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
             }`}
           >
             Implantação de Novo Cliente
+          </button>
+          <button
+            onClick={() => setActiveSection('manual-tecnico')}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer border ${
+              activeSection === 'manual-tecnico'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            Manual Técnico & Arquitetura (Fase 12)
           </button>
           <button
             onClick={() => setActiveSection('simulador-usuario')}
@@ -819,6 +891,26 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 Configure a URL do logotipo da empresa, sigla aeronáutica ({orgSigla}), cor primária institucional e texto padrão do rodapé que constará na Ficha Oficial F 001-29 e nas apresentações executivas.
               </p>
             </div>
+
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <Scale className="w-4 h-4 text-purple-600" />
+                <span>5. Governança da Evolução & Matriz de Decisão (Fase 12)</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Utilize os 10 critérios objetivos da Matriz de Decisão Estratégica (Segurança de Voo, Conformidade ANAC/EASA, Redução de Carga de Trabalho, etc.) para aprovar personalizações e priorizar novas demandas do comitê SGQ.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <Sparkles className="w-4 h-4 text-purple-600" />
+                <span>6. Supervisão de Inteligência Artificial</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Como administrador, assegure que todo parecer analítico gerado por IA atue estritamente como copiloto consultivo, exigindo validação, revisão e assinatura de um responsável técnico credenciado (Human-in-the-Loop).
+              </p>
+            </div>
           </div>
 
           <div className="pt-3 flex justify-end">
@@ -859,7 +951,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                 <span>Sequência Oficial de Ativação do Tenant</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-xs">
                 <div className="p-3 bg-white border border-emerald-200 rounded">
                   <span className="font-bold text-emerald-800 block mb-1">Passo 1: Onboarding</span>
                   <p className="text-slate-600 text-[11px]">Acessar "Novo Cliente / Onboarding", preencher Nome da Empresa, Razão Social, E-mail do Administrador e Sigla.</p>
@@ -875,6 +967,10 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 <div className="p-3 bg-white border border-emerald-200 rounded">
                   <span className="font-bold text-emerald-800 block mb-1">Passo 4: Homologação</span>
                   <p className="text-slate-600 text-[11px]">Criar a primeira RNC de teste no formulário oficial, verificar geração da ficha F 001-29 e liberar para a equipe.</p>
+                </div>
+                <div className="p-3 bg-white border border-emerald-200 rounded">
+                  <span className="font-bold text-emerald-800 block mb-1">Passo 5: Maturidade</span>
+                  <p className="text-slate-600 text-[11px]">Avaliar o nível inicial na Régua N1 a N5 para traçar a evolução contínua da organização.</p>
                 </div>
               </div>
             </div>
@@ -898,6 +994,80 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* SECTION 4: MANUAL TÉCNICO & ARQUITETURA DO SISTEMA (FASE 12) */}
+      {activeSection === 'manual-tecnico' && (
+        <div className="bg-white border border-slate-200 rounded-[12px] p-6 shadow-xs space-y-6">
+          <div className="border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-2 mb-1">
+              <Layers className="w-5 h-5 text-amber-600" />
+              <span className="text-xs font-mono font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                MANUAL TÉCNICO & DIRETRIZES DE ENGENHARIA (FASE 12)
+              </span>
+            </div>
+            <h2 className="text-xl font-bold text-slate-900">
+              Arquitetura, Segurança Zero-Trust e Padrões de Código
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Referência definitiva para desenvolvedores, arquitetos e auditores de segurança do QualiGest SGQ.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-slate-700">
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <ShieldCheck className="w-4 h-4 text-amber-600" />
+                <span>1. Multi-Tenancy Estrito e Isolamento de Dados</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Todas as entidades sensíveis (RNCs, auditorias, membros, configurações) são segregadas na raiz pelo identificador da organização (<code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">organizationId</code>). Consultas transversais sem filtro de organização são terminantemente proibidas tanto no cliente quanto no Firestore Security Rules.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <Lock className="w-4 h-4 text-amber-600" />
+                <span>2. Trilha de Auditoria Append-Only</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                A subcoleção <code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">auditTrails</code> é imutável: operações de exclusão ou alteração são bloqueadas por regra de segurança (<code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">allow update, delete: if false</code>). Qualquer mutação de RNC ou configuração gera hash e registro de autoria irrefutável.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <Sparkles className="w-4 h-4 text-amber-600" />
+                <span>3. Governança de IA com Chaves Server-Side</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Todas as integrações cognitivas e chamadas a modelos fundacionais (Gemini) utilizam rotas seguras backend (<code className="bg-slate-200 px-1 py-0.5 rounded text-slate-800">/api/*</code>). Nenhuma chave de API reside no front-end. Toda sugestão analítica passa por enriquecimento de contexto baseado nos manuais normativos vigentes do tenant.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-2">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <Scale className="w-4 h-4 text-amber-600" />
+                <span>4. Política de Tolerância Zero para Dados Fictícios</span>
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Relatórios executivos e apresentações PPTX não inventam dados ou extrapolam tendências sem base fática. Quando a amostragem for escassa ou nula, o sistema expressa claramente a condição de dados insuficientes com as recomendações de amostragem cabíveis.
+              </p>
+            </div>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex justify-end">
+              <button
+                onClick={() => onNavigateToTab('apresentacao')}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-amber-600 text-white font-bold text-xs hover:bg-amber-500 cursor-pointer shadow-xs"
+              >
+                <Compass className="w-4 h-4" />
+                <span>Abrir Apresentação Gerencial & Evolução Integrada</span>
+              </button>
+            </div>
+          )}
         </div>
       )}
 

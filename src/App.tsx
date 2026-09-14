@@ -108,6 +108,7 @@ import {
   subscribeToAiCompetencySuggestions,
 } from './services/firebase/competenciesFirestore';
 import { DocumentControlCenterView } from './components/DocumentControlCenterView';
+import { VisionAndRoadmapView } from './components/VisionAndRoadmapView';
 import {
   subscribeToDocumentosControlados,
   subscribeToRevisoesDocumentais,
@@ -137,6 +138,7 @@ export default function App() {
   // Active Tab navigation
   const [activeTab, setActiveTab] = useState<
     | 'dashboard'
+    | 'visao-evolucao'
     | 'conhecaQualigest'
     | 'saudeSGQ'
     | 'apresentacao'
@@ -634,6 +636,7 @@ export default function App() {
   const getTitleForTab = (tab: string) => {
     switch (tab) {
       case 'dashboard': return 'Dashboard Executivo';
+      case 'visao-evolucao': return 'Visão Mestre, Arquitetura & Roadmap Estratégico (FASE 12)';
       case 'saudeSGQ': return 'Saúde & Integridade do SGQ';
       case 'relatorio': return 'Registros de Não Conformidade (RNC)';
       case 'manuais': return 'Biblioteca de Manuais & Normas SGQ';
@@ -869,6 +872,39 @@ export default function App() {
                 />
               )}
 
+              {/* FASE 12.1: REDIRECIONAMENTO INTEGRADO DE VISÃO E EVOLUÇÃO PARA A APRESENTAÇÃO GERENCIAL (BLOCO 7) */}
+              {activeTab === 'visao-evolucao' && (
+                <QualityPresentationGeneratorView
+                  records={records}
+                  manuals={manuals}
+                  knowledgeList={knowledgeList}
+                  comparacoes={comparacoes}
+                  organization={activeOrganization}
+                  organizacaoNome={
+                    activeOrganization?.name ||
+                    (userProfile?.organizationId === 'org_impacto_aviation'
+                      ? 'Impacto Aviation MRO'
+                      : 'Organização SGQ')
+                  }
+                  usuarioResponsavel={userProfile?.displayName || user?.email || 'Gestão da Qualidade'}
+                  externalAudits={externalAudits}
+                  auditFindings={auditFindings}
+                  auditLessons={auditLessons}
+                  persons={persons}
+                  competencies={competencies}
+                  personCompetencies={personCompetencies}
+                  qualifications={qualifications}
+                  trainingRecords={trainingRecords}
+                  trainingCourses={trainingCourses}
+                  personDocuments={personDocuments}
+                  documentosControlados={documentosControlados}
+                  alertas={alertas}
+                  initialSlideId={15}
+                  onNavigateToArchitecture={() => setActiveTab('arquitetura')}
+                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
+                />
+              )}
+
               {/* FASE 6.2: TOUR INTERATIVO & HOMOLOGAÇÃO "CONHEÇA O QUALIGEST" */}
               {activeTab === 'conhecaQualigest' && (
                 <InteractiveTourView
@@ -894,7 +930,7 @@ export default function App() {
                 />
               )}
 
-              {/* TAB: APRESENTAÇÃO GERENCIAL DA QUALIDADE (FASE 6.1) */}
+              {/* TAB: APRESENTAÇÃO GERENCIAL DA QUALIDADE & EVOLUÇÃO (FASE 12.1) */}
               {activeTab === 'apresentacao' && (
                 <QualityPresentationGeneratorView
                   records={records}
@@ -909,7 +945,20 @@ export default function App() {
                       : 'Organização SGQ')
                   }
                   usuarioResponsavel={userProfile?.displayName || user?.email || 'Gestão da Qualidade'}
+                  externalAudits={externalAudits}
+                  auditFindings={auditFindings}
+                  auditLessons={auditLessons}
+                  persons={persons}
+                  competencies={competencies}
+                  personCompetencies={personCompetencies}
+                  qualifications={qualifications}
+                  trainingRecords={trainingRecords}
+                  trainingCourses={trainingCourses}
+                  personDocuments={personDocuments}
+                  documentosControlados={documentosControlados}
+                  alertas={alertas}
                   onNavigateToArchitecture={() => setActiveTab('arquitetura')}
+                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 />
               )}
 

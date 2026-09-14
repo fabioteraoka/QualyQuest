@@ -125,10 +125,18 @@ export const InteractiveTourView: React.FC<InteractiveTourViewProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => onNavigateToTab('apresentacao')}
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[8px] bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+            >
+              <Compass className="w-4 h-4" />
+              <span>Apresentação Gerencial & Evolução</span>
+            </button>
+
             <button
               onClick={() => onNavigateToTab('formulario')}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[8px] bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-colors shadow-sm cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-[8px] bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs transition-colors cursor-pointer"
             >
               <FileText className="w-4 h-4" />
               <span>Nova RNC Oficial</span>

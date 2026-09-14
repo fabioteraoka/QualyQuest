@@ -26,7 +26,8 @@ import {
   GraduationCap,
   Clock,
   History,
-  Globe
+  Globe,
+  Milestone
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
@@ -105,9 +106,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'apresentacao',
-          label: 'Apresentação Gerencial',
-          icon: <Presentation className="w-4 h-4" />,
-          tag: 'FASE 6.1',
+          label: 'Apresentação Gerencial & Evolução',
+          icon: <Presentation className="w-4 h-4 text-sky-400" />,
+          tag: 'FASE 12.1',
         },
         {
           id: 'arquitetura',

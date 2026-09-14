@@ -130,11 +130,30 @@ QualiGest SGQ Enterprise
 │   ├── Comparador de Revisões com Diagnóstico de Impacto
 │   ├── Monitoramento de Fontes Regulatórias e de Fabricantes
 │   └── Evidências de Consulta Operacional de Mecânicos
-└── 6. Governança Multi-Tenant & Manual Integrado
-    ├── Particionamento Total por Organização
+├── 6. Apresentação Gerencial & Espelho Executivo Fidedigno (Fase 12.2)
+│   ├── Arquitetura de Fonte Única da Verdade (SSoT Centralizado)
+│   ├── Estrutura Proporcional 70/30: 14 Slides da Empresa + 6 Slides de Evolução
+│   ├── Teste de Espelho Automático (100% de Fidelidade Web vs Exportação PPTX)
+│   ├── Gráficos Reais Sincronizados (Tendências, Pareto de Setores, 6M, Matriz 5x5)
+│   ├── Auto-Fit Geométrico Imune a Transbordamentos (maxBottomY = 6.85")
+│   ├── Régua de Maturidade do SGQ (Básico → Reativo → Preventivo → Integrado → Preditivo)
+│   └── Exportação Nativa em PPTX Widescreen 16:9, Impressão/PDF e CSV
+└── 7. Governança Multi-Tenant & Documentação Técnica Completa
+    ├── Particionamento Total por Organização no Firestore
     ├── Assistente de Onboarding de Novas Bases/Clientes
-    └── Manual Interativo com 27 Capítulos Regulamentares
+    └── Manuais Oficiais de Operação, Administração, Engenharia e Implantação
 ```
+
+---
+
+## 📚 Manuais e Documentação Técnica
+
+Para guias aprofundados e especificações arquiteturais, consulte a documentação oficial na pasta `/docs`:
+
+- **[Manual do Usuário](./docs/MANUAL_USUARIO.md):** Guia prático de navegação executiva, atalhos de teclado, filtros e interpretação dos 20 slides gerenciais.
+- **[Manual do Administrador](./docs/MANUAL_ADMINISTRADOR.md):** Governança de acessos (RBAC), isolamento multi-tenant, auditorias e homologação de conhecimento N5.
+- **[Manual Técnico & Arquitetura](./docs/MANUAL_TECNICO.md):** Especificação do motor SSoT (`presentationSlidesData.ts`), renderizador visual Web, gerador PPTX e Teste de Espelho.
+- **[Manual de Implantação & Homologação](./docs/MANUAL_IMPLANTACAO.md):** Procedimentos de deploy, variáveis de ambiente, regras de segurança e suíte de homologação contínua.
 
 ---
 
