@@ -117,6 +117,24 @@ import {
   subscribeToLogsVerificacao,
   subscribeToEvidenciasConsulta,
 } from './services/firebase/documentControlFirestore';
+import { ClientAuditsManagementView } from './components/ClientAuditsManagementView';
+import {
+  subscribeToClientesExternos,
+  subscribeToBasesOperacionais,
+  subscribeToProgramasClientes,
+  subscribeToControlesCentrais,
+  subscribeToRequisitosClientes,
+  subscribeToAvaliacoesRequisitos,
+  saveAvaliacaoRequisito,
+} from './services/firebase/clientRequirementsFirestore';
+import {
+  ClienteExterno,
+  BaseEstacaoOperacao,
+  ProgramaChecklistCliente,
+  ControleCentralSGQ,
+  RequisitoClienteItem,
+  AvaliacaoRequisitoCliente,
+} from './types';
 import { RefreshCw, Sparkles, UploadCloud, Database, ShieldAlert, LayoutDashboard, FileText, Bell, Plus, Menu, Building2 } from 'lucide-react';
 
 export default function App() {
@@ -169,6 +187,9 @@ export default function App() {
     | 'consulta-temporal'
     | 'fontes-externas'
     | 'documentos-dashboard'
+    | 'clientes-requisitos'
+    | 'clientes-matriz'
+    | 'clientes-cockpit'
   >('dashboard');
 
   // FASE 8: State de Auditorias Externas
@@ -195,6 +216,14 @@ export default function App() {
   const [solicitacoesCliente, setSolicitacoesCliente] = useState<SolicitacaoRevisaoCliente[]>([]);
   const [logsVerificacaoFontes, setLogsVerificacaoFontes] = useState<LogVerificacaoFonteExterna[]>([]);
   const [evidenciasConsultaDoc, setEvidenciasConsultaDoc] = useState<RegistroEvidenciaConsultaDocumento[]>([]);
+
+  // FASE 13: State de Auditorias, Requisitos e Controles de Clientes ("Um Controle, Vários Requisitos")
+  const [clientesExternos, setClientesExternos] = useState<ClienteExterno[]>([]);
+  const [basesOperacionais, setBasesOperacionais] = useState<BaseEstacaoOperacao[]>([]);
+  const [programasClientes, setProgramasClientes] = useState<ProgramaChecklistCliente[]>([]);
+  const [controlesCentrais, setControlesCentrais] = useState<ControleCentralSGQ[]>([]);
+  const [requisitosClientes, setRequisitosClientes] = useState<RequisitoClienteItem[]>([]);
+  const [avaliacoesRequisitos, setAvaliacoesRequisitos] = useState<AvaliacaoRequisitoCliente[]>([]);
 
   // Multi-Tenant Setup Checklist Modal & Welcome Banner State
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
@@ -374,6 +403,14 @@ export default function App() {
     const unsubscribeLogsFontes = subscribeToLogsVerificacao(activeOrgId, (list) => setLogsVerificacaoFontes(list));
     const unsubscribeEvidencias = subscribeToEvidenciasConsulta(activeOrgId, (list) => setEvidenciasConsultaDoc(list));
 
+    // 11. Subscribe to Phase 13: Auditorias, Requisitos e Controles de Clientes
+    const unsubscribeClientes = subscribeToClientesExternos(activeOrgId, (list) => setClientesExternos(list));
+    const unsubscribeBases = subscribeToBasesOperacionais(activeOrgId, (list) => setBasesOperacionais(list));
+    const unsubscribeProgramas = subscribeToProgramasClientes(activeOrgId, (list) => setProgramasClientes(list));
+    const unsubscribeControles = subscribeToControlesCentrais(activeOrgId, (list) => setControlesCentrais(list));
+    const unsubscribeRequisitos = subscribeToRequisitosClientes(activeOrgId, (list) => setRequisitosClientes(list));
+    const unsubscribeAvaliacoes = subscribeToAvaliacoesRequisitos(activeOrgId, (list) => setAvaliacoesRequisitos(list));
+
     return () => {
       unsubscribeNCs();
       unsubscribeManuals();
@@ -398,6 +435,12 @@ export default function App() {
       unsubscribeSolicitacoes();
       unsubscribeLogsFontes();
       unsubscribeEvidencias();
+      unsubscribeClientes();
+      unsubscribeBases();
+      unsubscribeProgramas();
+      unsubscribeControles();
+      unsubscribeRequisitos();
+      unsubscribeAvaliacoes();
     };
   }, [activeOrgId, user?.uid]);
 
@@ -633,6 +676,17 @@ export default function App() {
     }
   };
 
+  // FASE 13 Handlers: Auditorias, Requisitos e Controles de Clientes
+  const handleSaveAvaliacaoCliente = async (avaliacao: Partial<AvaliacaoRequisitoCliente>) => {
+    await saveAvaliacaoRequisito(activeOrgId, avaliacao, userProfile);
+  };
+
+  const handleCriarRNCDeRequisito = (rncPayload: Partial<NCRecord>) => {
+    setSelectedNC(rncPayload as NCRecord);
+    setFormInitialTab('dados');
+    setActiveTab('formulario');
+  };
+
   const getTitleForTab = (tab: string) => {
     switch (tab) {
       case 'dashboard': return 'Dashboard Executivo';
@@ -667,6 +721,9 @@ export default function App() {
       case 'consulta-temporal': return 'Conhecimento Temporal & RAG Auditável';
       case 'fontes-externas': return 'Fontes Oficiais Externas & Verificação';
       case 'documentos-dashboard': return 'Dashboard Executivo de Controle Documental';
+      case 'clientes-requisitos': return 'Auditorias & Requisitos de Clientes (FASE 13)';
+      case 'clientes-matriz': return 'Matriz de Cobertura SGQ — Um Controle, Vários Requisitos';
+      case 'clientes-cockpit': return 'Cockpit & Estações de Clientes';
       default: return 'Sistema de Qualidade';
     }
   };
@@ -1279,6 +1336,32 @@ export default function App() {
                   onOpenNCFormWithDoc={() => {
                     setActiveTab('formulario');
                   }}
+                />
+              )}
+
+              {/* FASE 13: AUDITORIAS, REQUISITOS E CONTROLES DE CLIENTES */}
+              {(activeTab === 'clientes-requisitos' ||
+                activeTab === 'clientes-matriz' ||
+                activeTab === 'clientes-cockpit') && (
+                <ClientAuditsManagementView
+                  clientes={clientesExternos}
+                  bases={basesOperacionais}
+                  programas={programasClientes}
+                  controles={controlesCentrais}
+                  requisitos={requisitosClientes}
+                  avaliacoes={avaliacoesRequisitos}
+                  activeOrganization={activeOrganization}
+                  userProfile={userProfile}
+                  initialTab={
+                    activeTab === 'clientes-matriz'
+                      ? 'matriz'
+                      : activeTab === 'clientes-cockpit'
+                      ? 'cockpit'
+                      : 'requisitos'
+                  }
+                  onSaveAvaliacao={handleSaveAvaliacaoCliente}
+                  onCriarRNCDeRequisito={handleCriarRNCDeRequisito}
+                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 />
               )}
             </>

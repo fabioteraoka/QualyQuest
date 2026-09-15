@@ -913,10 +913,10 @@ export const VisionAndRoadmapView: React.FC<VisionAndRoadmapViewProps> = ({
               },
               {
                 fase: 'Fase 13',
-                title: 'Auditoria e Assurance Avançados',
-                status: '🔵 PLANEJADO',
-                badge: 'bg-blue-50 text-blue-700 border-blue-300',
-                desc: 'Planejamento dinâmico de auditorias internas, checklists por setor e correlação preditiva de findings.',
+                title: 'Auditorias, Requisitos e Controles de Clientes',
+                status: '🟢 IMPLEMENTADO',
+                badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+                desc: 'Arquitetura "Um Controle, Vários Requisitos", cockpit multi-cliente por bases operacionais, pré-avaliação IA sob supervisão e geração de RNC com vínculo rastreável.',
               },
               {
                 fase: 'Fase 14',

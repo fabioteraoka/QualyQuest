@@ -403,6 +403,87 @@ service cloud.firestore {
         allow update, delete: if userBelongsToOrg(organizationId) &&
                                  isSystemAdmin() && isValidId(organizationId) && isValidId(evidenceId);
       }
+
+      // ----------------------------------------------------
+      // FASE 13: Clientes Externos (organizations/{orgId}/external_clients/{clientId})
+      // ----------------------------------------------------
+      match /external_clients/{clientId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(clientId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(clientId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 13: Programas e Checklists de Clientes (organizations/{orgId}/client_programs/{programId})
+      // ----------------------------------------------------
+      match /client_programs/{programId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(programId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(programId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 13: Controles Centrais SGQ (organizations/{orgId}/central_controls/{controlId})
+      // ----------------------------------------------------
+      match /central_controls/{controlId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(controlId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(controlId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 13: Requisitos de Clientes (organizations/{orgId}/client_requirements/{requirementId})
+      // ----------------------------------------------------
+      match /client_requirements/{requirementId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(requirementId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(requirementId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 13: Avaliações Periódicas (organizations/{orgId}/client_evaluations/{evaluationId})
+      // ----------------------------------------------------
+      match /client_evaluations/{evaluationId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(evaluationId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(evaluationId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 13: Bases e Estações Operacionais (organizations/{orgId}/operational_bases/{baseId})
+      // ----------------------------------------------------
+      match /operational_bases/{baseId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(baseId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(baseId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 14: Importações Inteligentes e Rastreabilidade (organizations/{orgId}/smart_imports/{importId})
+      // ----------------------------------------------------
+      match /smart_imports/{importId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(importId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(importId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 14: Modelos de Mapeamento Aprovados (organizations/{orgId}/import_templates/{templateId})
+      // ----------------------------------------------------
+      match /import_templates/{templateId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(templateId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(templateId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 14: Ferramentas e Instrumentos Calibrados Metrologia (organizations/{orgId}/calibrated_tools/{toolId})
+      // ----------------------------------------------------
+      match /calibrated_tools/{toolId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(toolId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(toolId);
+      }
     }
 
     // ----------------------------------------------------

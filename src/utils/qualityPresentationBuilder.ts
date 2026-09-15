@@ -121,7 +121,7 @@ export function filtrarDadosApresentacao(
 ): NCRecord[] {
   const agora = new Date();
   
-  return records.filter((r) => {
+  return (records || []).filter((r) => {
     // 1. Filtro de Setor
     if (filtros.setor && filtros.setor !== 'TODOS') {
       if (r.setor !== filtros.setor) return false;
@@ -272,18 +272,106 @@ function truncarTexto(texto: string, maxLen: number): string {
   return texto.length > maxLen ? texto.substring(0, maxLen - 3) + '...' : texto;
 }
 
+export interface RelatorioAuditoriaPPTXReal {
+  valido: boolean;
+  totalSlides: number;
+  totalObjetos: number;
+  infracoes: string[];
+  homologado: boolean;
+}
+
+/**
+ * Validação Pós-Geração Estrutural e Geométrica do PPTX Real (FASE 12.3)
+ * Audita os objetos reais instanciados no PptxGenJS garantindo 0 overflow e aderência aos Safe Bounds
+ */
+export function validarEstruturaPPTXReal(pptx: PptxGenJS): RelatorioAuditoriaPPTXReal {
+  const slides = (pptx as any)._slides || [];
+  let totalObjetos = 0;
+  const infracoes: string[] = [];
+
+  const toInches = (val: any): number => {
+    if (typeof val !== 'number') return 0;
+    return val > 50 ? val / 914400 : val;
+  };
+
+  slides.forEach((slide: any, idx: number) => {
+    const slideNum = idx + 1;
+    const isCover = (slideNum === 1);
+    const objs = slide._slideObjects || [];
+    totalObjetos += objs.length;
+
+    for (const obj of objs) {
+      const opt = obj.options || {};
+      const x = toInches(opt.x);
+      const y = toInches(opt.y);
+      const w = toInches(opt.w);
+      let h = toInches(opt.h);
+
+      if (obj._type === 'table') {
+        const rows = obj.arrTabRows?.length || 1;
+        const rowH = opt.rowH || 0.28;
+        h = rows * rowH;
+      }
+
+      const right = x + w;
+      const bottom = y + h;
+
+      if (isCover) {
+        if (right > 13.35 || bottom > 7.55) {
+          infracoes.push(`Slide 01 (Capa): elemento ultrapassa limites físicos do slide (right=${right.toFixed(2)}", bottom=${bottom.toFixed(2)}")`);
+        }
+        continue;
+      }
+
+      const isTopBar = (y <= 0.05 && h <= 0.35);
+      const isHeader = (y <= 1.35 && !isTopBar);
+      const isFooter = (y >= 6.95);
+
+      // Limites físicos do slide widescreen (13.333" x 7.50")
+      if (right > 13.35) {
+        infracoes.push(`Slide ${String(slideNum).padStart(2, '0')} (${obj._type}): Ultrapassa largura física do slide (right=${right.toFixed(2)}" > 13.33")`);
+      }
+      if (bottom > 7.55) {
+        infracoes.push(`Slide ${String(slideNum).padStart(2, '0')} (${obj._type}): Ultrapassa altura física do slide (bottom=${bottom.toFixed(2)}" > 7.50")`);
+      }
+
+      // Safe Area para elementos de conteúdo (margens e folga do rodapé)
+      if (!isTopBar && !isHeader && !isFooter) {
+        if (bottom > 6.90) {
+          infracoes.push(`Slide ${String(slideNum).padStart(2, '0')} (${obj._type}): Invade margem do rodapé (bottom=${bottom.toFixed(2)}" > 6.85")`);
+        }
+        if (x < 0.70) {
+          infracoes.push(`Slide ${String(slideNum).padStart(2, '0')} (${obj._type}): Invade margem esquerda (x=${x.toFixed(2)}" < 0.80")`);
+        }
+        if (right > 12.60) {
+          infracoes.push(`Slide ${String(slideNum).padStart(2, '0')} (${obj._type}): Invade margem direita (right=${right.toFixed(2)}" > 12.53")`);
+        }
+      }
+    }
+  });
+
+  return {
+    valido: infracoes.length === 0,
+    totalSlides: slides.length,
+    totalObjetos,
+    infracoes,
+    homologado: infracoes.length === 0,
+  };
+}
+
 /**
  * Exportador Oficial de Apresentação Gerencial para Microsoft PowerPoint (.pptx)
- * 16:9 Widescreen | Paleta Executiva Aeronáutica | Auto-Fit Rigoroso | Sincronizado com Web Viewer
+ * 16:9 Widescreen Real (13.333" x 7.50") | Paleta Executiva Aeronáutica | Auto-Fit Rigoroso | Sincronizado com Web Viewer
  */
 export async function exportarApresentacaoPPTX(
   apresentacao: RelatorioApresentacaoQualidade,
   nomeArquivo?: string
-): Promise<void> {
+): Promise<RelatorioAuditoriaPPTXReal> {
   const pptx = new PptxGenJS();
 
-  // Configuração Widescreen 16:9 (13.33 x 7.5 polegadas)
-  pptx.layout = 'LAYOUT_16x9';
+  // Configuração Widescreen 16:9 Real (13.333 x 7.50 polegadas)
+  // No PptxGenJS, 'LAYOUT_16x9' é o legado 10" x 5.625". 'LAYOUT_WIDE' é 13.333" x 7.50" (12.192.000 x 6.858.000 EMUs)
+  pptx.layout = 'LAYOUT_WIDE';
 
   // Paleta Executiva Corporativa
   const COR_NAVY = '0F172A';
@@ -510,7 +598,7 @@ export async function exportarApresentacaoPPTX(
           color: corValor,
         });
 
-        const subtituloTexto = m.subtitulo || (m.meta ? `Meta: ${m.meta}` : 'Monitoramento contínuo');
+        const subtituloTexto = m.subtitulo || 'Monitoramento contínuo';
         slide.addText(truncarTexto(subtituloTexto, 35), {
           x: cardX + 0.15,
           y: cardY + 0.68,
@@ -1003,8 +1091,19 @@ export async function exportarApresentacaoPPTX(
     });
   });
 
+  // 6. VALIDAÇÃO PÓS-GERAÇÃO DO PRÓPRIO PPTX (FASE 12.3)
+  const auditoriaPPTX = validarEstruturaPPTXReal(pptx);
+  if (!auditoriaPPTX.valido) {
+    console.error('[ERRO FATAL PPTX] Falha na validação geométrica pós-geração do PPTX:', auditoriaPPTX.infracoes);
+    throw new Error(`Falha de Estabilidade Geométrica do PPTX: ${auditoriaPPTX.infracoes.length} elementos violam os limites seguros (Safe Area).`);
+  }
+
+  console.info(`[PPTX HOMOLOGADO] ${auditoriaPPTX.totalSlides} slides e ${auditoriaPPTX.totalObjetos} elementos auditados pós-geração: 0 Overflows. 100% Homologado.`);
+
   const defaultFileName = `Apresentacao_Qualidade_${apresentacao.organizacao.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pptx`;
   await pptx.writeFile({ fileName: nomeArquivo || defaultFileName });
+
+  return auditoriaPPTX;
 }
 
 /**

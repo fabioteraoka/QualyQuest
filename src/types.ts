@@ -345,6 +345,19 @@ export interface NCRecord {
   explicacoesIA?: Record<string, ExplicacaoIAItem>;
   analiseSetor?: AnaliseSetorResponsavel;
   origemAuditoriaExterna?: VinculoAuditoriaExterna;
+  origemRequisitoCliente?: VinculoRequisitoCliente;
+}
+
+export interface VinculoRequisitoCliente {
+  clienteId: string;
+  clienteNome: string;
+  programaId: string;
+  programaCodigo: string;
+  requisitoId: string;
+  numeroItem: string;
+  baseId?: string;
+  baseCodigo?: string;
+  dataVinculo: string;
 }
 
 // ----------------------------------------------------
@@ -2161,4 +2174,398 @@ export interface DocumentosDashboardMetrics {
   taxaConformidadeDocumental?: number;
   distribuicaoCategorias?: Record<string, number>;
 }
+
+// ==========================================
+// FASE 13: AUDITORIAS, REQUISITOS E CONTROLES DE CLIENTES
+// ==========================================
+
+export type StatusClienteExterno = 'ATIVO' | 'INATIVO' | 'EM_HOMOLOGACAO';
+export type PeriodicidadeAvaliacao = 'MENSAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'ANUAL' | 'EVENTUAL' | 'PERSONALIZADA';
+export type MetodoVerificacaoRequisito = 'AUTOMATICO' | 'ASSISTIDO' | 'MANUAL' | 'DOCUMENTAL';
+export type CriticidadeRequisito = 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO';
+export type ResultadoAvaliacaoRequisito = 'CONFORME' | 'ATENCAO' | 'NAO_CONFORME' | 'NA' | 'PENDENTE';
+export type StatusDeterminacaoPrevia = 'VERDE' | 'AMARELO' | 'VERMELHO' | 'CINZA';
+
+export interface BaseEstacaoOperacao {
+  id: string;
+  organizationId: string;
+  codigo: string; // Ex: 'SOD', 'GRU', 'VCP', 'GIG', 'CNF'
+  nome: string; // Ex: 'Base Principal Sorocaba', 'Estação Linha Guarulhos'
+  tipo: 'BASE_PRINCIPAL' | 'ESTACAO_LINHA' | 'SUBCONTRATADA';
+  cidade: string;
+  estado: string;
+  pais: string;
+  clientesAtendidosIds: string[];
+  ativo: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClienteExterno {
+  id: string;
+  organizationId: string;
+  codigo: string; // Ex: 'ATLAS', 'KALITTA', 'SWISS'
+  nome: string; // Ex: 'Atlas Air, Inc.', 'Kalitta Air, LLC', 'SWISS International Air Lines'
+  sigla: string;
+  status: StatusClienteExterno;
+  contatoPrincipal?: {
+    nome: string;
+    cargo: string;
+    email: string;
+    telefone?: string;
+  };
+  idiomaPadrao?: 'PT' | 'EN';
+  basesRelacionadasIds: string[];
+  observacoes?: string;
+  responsavelInterno: string;
+  programasAtivosCount?: number;
+  totalRequisitosCount?: number;
+  taxaConformidade?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProgramaChecklistCliente {
+  id: string;
+  organizationId: string;
+  clienteId: string;
+  clienteNome: string;
+  codigo: string; // Ex: 'Q2059', 'QA-14'
+  nome: string; // Ex: 'Station Audit Checklist Q2059', 'Quality Assurance Checklist QA-14'
+  revisao: string; // Ex: 'Vigente', 'Rev. 4'
+  dataEmissao?: string;
+  dataVigencia: string;
+  status: 'VIGENTE' | 'EM_REVISAO' | 'OBSOLETO';
+  periodicidadePadrao: PeriodicidadeAvaliacao;
+  escopoAplicabilidade: string;
+  documentoFonteNome?: string;
+  observacoes?: string;
+  totalItens: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ControleCentralSGQ {
+  id: string;
+  organizationId: string;
+  codigo: string; // Ex: 'CTRL-TREIN-01', 'CTRL-FERRAM-01', 'CTRL-DOCS-01'
+  nome: string; // Ex: 'Qualificação e Treinamento Periódico de Técnicos'
+  moduloOrigem: 'PessoasTreinamentos' | 'ControleDocumental' | 'Auditorias' | 'RNC' | 'Manuais' | 'OperacionalSGQ';
+  descricao: string;
+  responsavelPadrao: string;
+  evidenciasTipicas: string[];
+  status: 'ATIVO' | 'EM_REVISAO';
+  requisitosVinculadosCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RequisitoClienteItem {
+  id: string;
+  organizationId: string;
+  clienteId: string;
+  clienteNome: string;
+  programaId: string;
+  programaCodigo: string;
+  numeroItem: string; // Ex: 'Q2059-01', 'QA-14-1.2'
+  tituloCurto: string;
+  textoOriginal: string;
+  categoria: string; // Ex: 'Housekeeping', 'Tooling / Calibration', 'Training', etc.
+  aplicabilidadeRegras: {
+    basesAplicaveis?: string[];
+    tiposEstacao?: string[];
+    requerRII?: boolean;
+    requerETOPS?: boolean;
+    justificativaNaoAplicavelPadrao?: string;
+  };
+  periodicidade: PeriodicidadeAvaliacao;
+  metodoVerificacao: MetodoVerificacaoRequisito;
+  evidenciaEsperada: string;
+  controleCentralId?: string; // SSoT: Vínculo com Controle Central SGQ ("Um controle, vários requisitos")
+  controleCentralCodigo?: string;
+  controleCentralNome?: string;
+  moduloOrigemSugerido?: string;
+  criticidade: CriticidadeRequisito;
+  status: 'ATIVO' | 'INATIVO' | 'EM_REVISAO';
+  observacoes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EvidenciaRequisitoItem {
+  id: string;
+  tipo: 'DOCUMENTO' | 'REGISTRO_TREINAMENTO' | 'CERTIFICADO_CALIBRACAO' | 'RNC' | 'AUDITORIA' | 'FOTO' | 'LINK';
+  titulo: string;
+  descricao?: string;
+  referenciaId?: string; // id do treinamento, documento, ou RNC
+  numeroReferencia?: string; // ex: 'RNC-2026-004', 'AMM B747 Rev 42'
+  dataEvidencia: string;
+  responsavel: string;
+  urlOuArquivo?: string;
+  organizationId: string;
+}
+
+export interface AuditoriaRequisitoLog {
+  dataHora: string;
+  usuarioUid: string;
+  usuarioNome: string;
+  acao: string;
+  resultadoAnterior?: ResultadoAvaliacaoRequisito;
+  resultadoNovo?: ResultadoAvaliacaoRequisito;
+  justificativa?: string;
+}
+
+export interface AvaliacaoRequisitoCliente {
+  id: string;
+  organizationId: string;
+  clienteId: string;
+  clienteNome: string;
+  programaId: string;
+  programaCodigo: string;
+  requisitoId: string;
+  numeroItem: string;
+  tituloRequisito: string;
+  baseId: string;
+  baseCodigo: string;
+  baseNome: string;
+  dataAvaliacao: string;
+  dataValidade?: string;
+  proximaAvaliacao?: string;
+  resultado: ResultadoAvaliacaoRequisito;
+  metodoVerificacao: MetodoVerificacaoRequisito;
+  
+  // Determinação Automática / Assistida (Human-in-the-Loop)
+  determinacaoAutomatica?: {
+    status: StatusDeterminacaoPrevia; // VERDE, AMARELO, VERMELHO, CINZA
+    justificativa: string;
+    evidenciasIdentificadas: string[];
+    confiancaScore: number; // 0 a 100
+    analisadoEm: string;
+  };
+  
+  avaliadorUid: string;
+  avaliadorNome: string;
+  aprovadorUid?: string;
+  aprovadorNome?: string;
+  
+  justificativa?: string;
+  comentario?: string;
+  
+  // Vínculo bidirecional com RNC (F 001-29)
+  rncGeradaId?: string;
+  numeroRNCGerada?: string;
+  
+  evidencias: EvidenciaRequisitoItem[];
+  historicoAlteracoes: AuditoriaRequisitoLog[];
+  
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MatrizCoberturaItem {
+  controleCentralId: string;
+  controleCodigo: string;
+  controleNome: string;
+  moduloOrigem: string;
+  requisitosAtendidos: {
+    requisitoId: string;
+    numeroItem: string;
+    clienteId: string;
+    clienteNome: string;
+    programaCodigo: string;
+    criticidade: CriticidadeRequisito;
+  }[];
+  totalClientesAtendidos: number;
+}
+
+export interface RequisitoSemControleLacuna {
+  requisitoId: string;
+  clienteId: string;
+  clienteNome: string;
+  programaCodigo: string;
+  numeroItem: string;
+  titulo: string;
+  criticidade: CriticidadeRequisito;
+  recomendacaoAcao: string;
+}
+
+export interface ClientesControlesDashboardMetrics {
+  totalClientes: number;
+  totalProgramas: number;
+  totalRequisitos: number;
+  totalBases: number;
+  totalAvaliacoesRealizadas: number;
+  conformesCount: number;
+  atencaoCount: number;
+  naoConformesCount: number;
+  pendentesCount: number;
+  naCount: number;
+  taxaConformidadeGeral: number; // %
+  requisitosComControleCount: number;
+  requisitosSemControleCount: number; // Lacunas
+  taxaCoberturaControles: number; // %
+  rncsVinculadasCount: number;
+  distribuicaoPorCliente: Record<string, { total: number; conformes: number; naoConformes: number; pendentes: number; taxa: number }>;
+  distribuicaoPorBase: Record<string, { total: number; conformes: number; naoConformes: number; pendentes: number; taxa: number }>;
+  semDados: boolean;
+}
+
+// ============================================================================
+// FASE 14 — IMPORTAÇÃO INTELIGENTE E MIGRAÇÃO DE CONTROLES EXISTENTES
+// ============================================================================
+
+export type TipoControleImportacao = 
+  | 'TREINAMENTOS'
+  | 'CALIBRACAO_FERRAMENTAL'
+  | 'CONTROLE_DOCUMENTAL'
+  | 'NAO_CONFORMIDADES'
+  | 'REQUISITOS_CLIENTES'
+  | 'OUTROS';
+
+export type FormatoArquivoSuportado = 'XLSX' | 'XLS' | 'CSV' | 'DOCX' | 'PDF' | 'JSON';
+
+export type StatusImportacao = 'RASCUNHO' | 'ANALISADO' | 'VALIDADO' | 'IMPORTADO' | 'COM_ERROS' | 'CANCELADO';
+
+export type NivelAlertaQualidade = 'OK' | 'ATENCAO' | 'ERRO';
+
+export type AcaoConflitoDuplicidade = 'CRIAR_NOVO' | 'ATUALIZAR' | 'MANTER_EXISTENTE' | 'IGNORAR';
+
+export interface MapeamentoCampoItem {
+  colunaOrigem: string;
+  campoQualigest: string;
+  campoLabel: string;
+  obrigatorio: boolean;
+  tipoDado: 'string' | 'date' | 'number' | 'boolean' | 'enum';
+  confiancaIA: number; // 0 a 100
+  exemploValor?: string;
+  descricao?: string;
+}
+
+export interface TemplateMapeamentoAprovado {
+  id: string;
+  organizationId: string;
+  nomeTemplate: string;
+  tipoControle: TipoControleImportacao;
+  colunasDetectadas: string[];
+  mapeamentos: Record<string, string>; // colunaOrigem -> campoQualigest
+  criadoPor: string;
+  dataAprovacao: string;
+  totalVezesUsado: number;
+}
+
+export interface RegistroLinhaImportacao {
+  indiceLinha: number;
+  dadosOriginais: Record<string, any>;
+  dadosMapeados: Record<string, any>;
+  statusQualidade: NivelAlertaQualidade;
+  mensagensValidacao: string[];
+  duplicidadeDetectada: boolean;
+  acaoDuplicidade: AcaoConflitoDuplicidade;
+  registroExistenteId?: string;
+  registroExistenteResumo?: string;
+  selecionadoParaImportar: boolean;
+}
+
+export interface ResumoPreviaImportacao {
+  totalLinhas: number;
+  registrosNovos: number;
+  registrosAtualizacoes: number;
+  registrosDuplicados: number;
+  registrosComErro: number;
+  registrosComAtencao: number;
+  registrosIgnorados: number;
+  evidenciasIdentificadas: number;
+}
+
+export type TipoOportunidadeMelhoria = 
+  | 'VALIDADE_AUSENTE'
+  | 'TREINAMENTO_OBRIGATORIO_FALTANTE'
+  | 'EVIDENCIA_AUSENTE'
+  | 'CURSO_DUPLICADO'
+  | 'NOMENCLATURA_DIVERGENTE'
+  | 'CALIBRACAO_VENCIDA_OU_PROXIMA'
+  | 'DOCUMENTO_SEM_REVISAO'
+  | 'EQUIPAMENTO_SEM_IDENTIFICACAO'
+  | 'PESSOA_NAO_CADASTRADA'
+  | 'LACUNA_REQUISITO_CLIENTE'
+  | 'OUTRA';
+
+export interface OportunidadeMelhoriaImportacao {
+  id: string;
+  tipo: TipoOportunidadeMelhoria;
+  titulo: string;
+  descricao: string;
+  severidade: 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA';
+  registrosAfetados: number;
+  detalhesLinhas?: string[];
+  acoesDisponiveis: ('CRIAR_ACAO' | 'CRIAR_RNC' | 'CORRIGIR_DADOS' | 'IGNORAR')[];
+  status: 'PENDENTE' | 'ACAO_CRIADA' | 'RNC_CRIADA' | 'CORRIGIDO' | 'IGNORADO';
+  rncIdGerada?: string;
+  acaoPlanoTexto?: string;
+}
+
+export interface RegistroImportacaoCompleto {
+  id: string;
+  organizationId: string;
+  nomeArquivo: string;
+  tipoArquivo: FormatoArquivoSuportado;
+  tamanhoBytes: number;
+  hashSha256?: string;
+  dataUpload: string;
+  usuarioUid: string;
+  usuarioEmail: string;
+  tipoControleIdentificado: TipoControleImportacao;
+  confiancaIdentificacaoIA: number;
+  finalidadeProvavel: string;
+  status: StatusImportacao;
+  resumo: ResumoPreviaImportacao;
+  registrosGeradosIds: string[];
+  registrosAtualizadosIds: string[];
+  oportunidadesDetectadas: OportunidadeMelhoriaImportacao[];
+  templateIdUtilizado?: string;
+  templateNomeUtilizado?: string;
+  arquivoBase64Preview?: string;
+  origem: 'UPLOAD_HUMANO' | 'MIGRACAO_LEGADA';
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+/**
+ * Ferramenta / Instrumento Calibrado (Metrologia Aeronáutica RBAC 145.109 / EASA)
+ */
+export interface FerramentaCalibracao {
+  id: string;
+  organizationId: string;
+  codigoPatrimonio: string; // Ex: 'TQ-023', 'MULT-004'
+  descricao: string; // Ex: 'Torquímetro de Estalo 20-100 Nm'
+  fabricante: string;
+  modelo?: string;
+  numeroSerie: string;
+  setor: string; // Ex: 'REC - Manutenção / Hangar'
+  baseOperacionalId?: string;
+  baseOperacionalNome?: string;
+  status: 'CALIBRADA' | 'VENCIDA' | 'PROXIMA_VENCIMENTO' | 'EM_CALIBRACAO' | 'QUARANTENA' | 'DESCARTE';
+  dataUltimaCalibracao: string; // YYYY-MM-DD
+  dataProximaCalibracao: string; // YYYY-MM-DD
+  frequenciaMeses: number;
+  laboratorioCalibrador: string;
+  numeroCertificado: string;
+  evidenciaCertificadoUrl?: string;
+  tolerancia?: string;
+  observacoes?: string;
+  origemImportacaoId?: string;
+  origemArquivoNome?: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface FiltrosImportacao {
+  termoBusca?: string;
+  tipoControle?: TipoControleImportacao | 'TODOS';
+  status?: StatusImportacao | 'TODOS';
+  dataInicio?: string;
+  dataFim?: string;
+}
+
+
 

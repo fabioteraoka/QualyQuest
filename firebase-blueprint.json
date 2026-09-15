@@ -541,6 +541,150 @@
         "status": { "type": "string" }
       },
       "required": ["id", "organizationId", "clienteNome", "documentoCodigo", "idioma", "status"]
+    },
+    "ExternalClient": {
+      "title": "External Client",
+      "description": "External airline customer profile with operational bases and audit programs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "codigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "sigla": { "type": "string" },
+        "status": { "type": "string" },
+        "responsavelInterno": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "codigo", "nome", "status"]
+    },
+    "ClientProgram": {
+      "title": "Client Audit Program",
+      "description": "Client-specific checklist or quality audit program",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "clienteId": { "type": "string" },
+        "codigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "revisao": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "clienteId", "codigo", "nome"]
+    },
+    "CentralControl": {
+      "title": "SGQ Central Control",
+      "description": "Organizational central control fulfilling one or more client requirements",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "codigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "moduloOrigem": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "codigo", "nome", "moduloOrigem"]
+    },
+    "ClientRequirement": {
+      "title": "Client Requirement Item",
+      "description": "Single requirement item from a client audit checklist mapped to central control",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "clienteId": { "type": "string" },
+        "programaId": { "type": "string" },
+        "numeroItem": { "type": "string" },
+        "tituloCurto": { "type": "string" },
+        "criticidade": { "type": "string" },
+        "controleCentralId": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "clienteId", "programaId", "numeroItem", "tituloCurto"]
+    },
+    "ClientEvaluation": {
+      "title": "Client Requirement Evaluation",
+      "description": "Periodic evaluation record for a requirement in a specific station/base with objective evidence and RNC linkage",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "clienteId": { "type": "string" },
+        "programaId": { "type": "string" },
+        "requisitoId": { "type": "string" },
+        "baseId": { "type": "string" },
+        "resultado": { "type": "string" },
+        "dataAvaliacao": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "clienteId", "requisitoId", "baseId", "resultado", "dataAvaliacao"]
+    },
+    "OperationalBase": {
+      "title": "Operational Station/Base",
+      "description": "Maintenance base or line station operated by the organization",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "codigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "tipo": { "type": "string" },
+        "ativo": { "type": "boolean" }
+      },
+      "required": ["id", "organizationId", "codigo", "nome", "tipo", "ativo"]
+    },
+    "SmartImportRecord": {
+      "title": "Smart Import Record",
+      "description": "Historical track of imported spreadsheets, documents, and migrated quality controls",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "nomeArquivo": { "type": "string" },
+        "tipoArquivo": { "type": "string" },
+        "tamanhoBytes": { "type": "number" },
+        "usuarioUid": { "type": "string" },
+        "usuarioEmail": { "type": "string" },
+        "tipoControleIdentificado": { "type": "string" },
+        "status": { "type": "string" },
+        "criadoEm": { "type": "string", "format": "date-time" },
+        "atualizadoEm": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "organizationId", "nomeArquivo", "tipoArquivo", "usuarioUid", "tipoControleIdentificado", "status", "criadoEm", "atualizadoEm"]
+    },
+    "ImportTemplate": {
+      "title": "Import Mapping Template",
+      "description": "Approved column mapping template learned from organization spreadsheet formats",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "nomeTemplate": { "type": "string" },
+        "tipoControle": { "type": "string" },
+        "criadoPor": { "type": "string" },
+        "dataAprovacao": { "type": "string" },
+        "totalVezesUsado": { "type": "number" }
+      },
+      "required": ["id", "organizationId", "nomeTemplate", "tipoControle", "criadoPor", "dataAprovacao"]
+    },
+    "CalibratedTool": {
+      "title": "Calibrated Tool and Measuring Equipment",
+      "description": "Aeronautical tooling and precision instruments under calibration and metrology controls (RBAC 145.109)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "codigoPatrimonio": { "type": "string" },
+        "descricao": { "type": "string" },
+        "fabricante": { "type": "string" },
+        "numeroSerie": { "type": "string" },
+        "status": { "type": "string" },
+        "dataUltimaCalibracao": { "type": "string" },
+        "dataProximaCalibracao": { "type": "string" },
+        "numeroCertificado": { "type": "string" },
+        "criadoEm": { "type": "string", "format": "date-time" },
+        "atualizadoEm": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "organizationId", "codigoPatrimonio", "descricao", "numeroSerie", "status", "dataUltimaCalibracao", "dataProximaCalibracao", "criadoEm", "atualizadoEm"]
     }
   },
   "firestore": {
@@ -619,6 +763,42 @@
     "/organizations/{organizationId}/client_revision_requests/{requestId}": {
       "schema": "ClientRevisionRequest",
       "description": "Customer manual revision confirmation requests and verification tracking"
+    },
+    "/organizations/{organizationId}/external_clients/{clientId}": {
+      "schema": "ExternalClient",
+      "description": "External customer airlines and audit programs"
+    },
+    "/organizations/{organizationId}/client_programs/{programId}": {
+      "schema": "ClientProgram",
+      "description": "Customer audit checklists and evaluation programs"
+    },
+    "/organizations/{organizationId}/central_controls/{controlId}": {
+      "schema": "CentralControl",
+      "description": "SGQ central controls mapped to client requirements"
+    },
+    "/organizations/{organizationId}/client_requirements/{requirementId}": {
+      "schema": "ClientRequirement",
+      "description": "Individual requirements from client checklists"
+    },
+    "/organizations/{organizationId}/client_evaluations/{evaluationId}": {
+      "schema": "ClientEvaluation",
+      "description": "Station evaluations of client requirements with evidence"
+    },
+    "/organizations/{organizationId}/operational_bases/{baseId}": {
+      "schema": "OperationalBase",
+      "description": "Operational maintenance stations and bases"
+    },
+    "/organizations/{organizationId}/smart_imports/{importId}": {
+      "schema": "SmartImportRecord",
+      "description": "Smart import jobs, audits and traceability records"
+    },
+    "/organizations/{organizationId}/import_templates/{templateId}": {
+      "schema": "ImportTemplate",
+      "description": "Learned mapping templates for organization spreadsheets"
+    },
+    "/organizations/{organizationId}/calibrated_tools/{toolId}": {
+      "schema": "CalibratedTool",
+      "description": "Aeronautical tooling and precision instruments under calibration and metrology controls"
     },
     "/users/{userId}": {
       "schema": "UserProfile",

@@ -620,6 +620,70 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
         </div>
       ),
     },
+    {
+      id: 29,
+      title: '29. Auditorias, Requisitos e Controles de Clientes (Fase 13)',
+      category: 'Auditorias & Clientes',
+      summary: 'Arquitetura "Um Controle, Vários Requisitos", Cockpit por Base Operacional e Pré-avaliação IA supervisionada.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-sky-900 text-sm flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-sky-600" />
+              <span>Princípio Central: "Um Controle, Vários Requisitos"</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              Diferentes clientes (Ex: Petrobras, Shell, CHC, Vale) e autoridades podem auditar os mesmos processos da organização (Treinamentos, Calibração, Ferramental, FDM). O QualiGest não cria silos ou checklists redundantes: um único Controle Central SGQ alimenta evidências para múltiplos requisitos contratuais simultaneamente.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">1. Cockpit & Bases</span>
+              <p className="text-slate-600 text-[11px]">
+                Monitoramento da taxa de conformidade geral e individualizada por estação operacional (ex: SBRJ, SBME, SBPS).
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">2. Pré-Avaliação com IA</span>
+              <p className="text-slate-600 text-[11px]">
+                A IA analisa as evidências anexadas e sugere probabilidade de conformidade e lacunas. O Auditor Humano valida obrigatoriamente.
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">3. Geração Direta de RNC</span>
+              <p className="text-slate-600 text-[11px]">
+                Qualquer não conformidade identificada em auditoria de cliente gera automaticamente uma RNC F 001-29 com vínculo rastreável.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] space-y-1">
+            <span className="font-bold block">Importante — Diretrizes Aeronáuticas de Conformidade:</span>
+            <p>
+              A IA do QualiGest atua exclusivamente como assistente consultivo. Toda aprovação formal de conformidade, classificação de severidade e encerramento de plano de ação permanecem sob a responsabilidade nominal de auditores e gestores qualificados.
+            </p>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('clientes-requisitos')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-sky-600 text-white font-bold text-xs hover:bg-sky-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Requisitos & Avaliações</span>
+              </button>
+              <button
+                onClick={() => onNavigateToTab('clientes-matriz')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500 cursor-pointer shadow-xs"
+              >
+                <span>Ver Matriz de Cobertura SGQ</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
   ], [organization, orgName, orgSigla]);
 
   // Filtro de capítulos por busca

@@ -12,13 +12,13 @@ const mockRecords: NCRecord[] = [
     descricaoNC: 'Trinca identificada na longarina esquerda durante inspeção de 100h',
     statusGeral: 'Encerrada',
     dataIdentificacao: '2026-02-10',
-    avaliacaoRiscoInicial: { severidade: 5, probabilidade: 3, nivel: 'Crítico' },
+    avaliacaoRiscoInicial: { codigo: '5C', severidade: '5', probabilidade: '3', nivel: 'Crítico' },
     ishikawa: { categoriaPrincipal: 'Máquina', causaRaiz: 'Fadiga prematura do material' },
-    acaoCorretiva: { descricao: 'Substituição do componente e reforço estrutural', status: 'Concluída', dataPrazo: '2026-02-20' },
-    verificacaoEficacia: { encerrado: 'SIM', dataVerificacao: '2026-03-01' },
+    acaoCorretiva: { descricao: 'Substituição do componente e reforço estrutural', responsavel: 'Inspetor Chefe', status: 'Concluída', dataPrazo: '2026-02-20' },
+    verificacaoEficacia: { encerrado: 'SIM', dataVerificacao: '2026-03-01', metodo: 'Visual' },
     criadoEm: '2026-02-10T08:00:00Z',
     atualizadoEm: '2026-03-01T10:00:00Z',
-  },
+  } as any,
   {
     id: 'rnc-002',
     numeroNC: 'RNC-2026-002',
@@ -28,12 +28,12 @@ const mockRecords: NCRecord[] = [
     descricaoNC: 'Erro intermitente no barramento ARINC 429 durante teste de bancada',
     statusGeral: 'Ação em Andamento',
     dataIdentificacao: '2026-02-15',
-    avaliacaoRiscoInicial: { severidade: 4, probabilidade: 2, nivel: 'Alto' },
+    avaliacaoRiscoInicial: { codigo: '4B', severidade: '4', probabilidade: '2', nivel: 'Alto' },
     ishikawa: { categoriaPrincipal: 'Método', causaRaiz: 'Procedimento de teste com impedância incorreta' },
-    acaoCorretiva: { descricao: 'Revisão da instrução de trabalho IT-AV-012', status: 'Em Andamento', dataPrazo: '2026-03-25' },
+    acaoCorretiva: { descricao: 'Revisão da instrução de trabalho IT-AV-012', responsavel: 'Eng. Aviônica', status: 'Em Andamento', dataPrazo: '2026-03-25' },
     criadoEm: '2026-02-15T09:00:00Z',
     atualizadoEm: '2026-02-15T09:00:00Z',
-  },
+  } as any,
   {
     id: 'rnc-003',
     numeroNC: 'RNC-2026-003',
@@ -43,13 +43,13 @@ const mockRecords: NCRecord[] = [
     descricaoNC: 'Torquímetro com calibração vencida em uso no setor de montagem de motores',
     statusGeral: 'Encerrada',
     dataIdentificacao: '2026-01-20',
-    avaliacaoRiscoInicial: { severidade: 4, probabilidade: 3, nivel: 'Alto' },
+    avaliacaoRiscoInicial: { codigo: '4C', severidade: '4', probabilidade: '3', nivel: 'Alto' },
     ishikawa: { categoriaPrincipal: 'Medição', causaRaiz: 'Falha no alerta de calibração periódica' },
-    acaoCorretiva: { descricao: 'Envio para laboratório acreditado RBC e recalibração', status: 'Concluída', dataPrazo: '2026-01-25' },
-    verificacaoEficacia: { encerrado: 'SIM', dataVerificacao: '2026-02-05' },
+    acaoCorretiva: { descricao: 'Envio para laboratório acreditado RBC e recalibração', responsavel: 'Líder Ferramentaria', status: 'Concluída', dataPrazo: '2026-01-25' },
+    verificacaoEficacia: { encerrado: 'SIM', dataVerificacao: '2026-02-05', metodo: 'Documental' },
     criadoEm: '2026-01-20T10:00:00Z',
     atualizadoEm: '2026-02-05T14:00:00Z',
-  },
+  } as any,
   {
     id: 'rnc-004',
     numeroNC: 'RNC-2026-004',
@@ -59,13 +59,13 @@ const mockRecords: NCRecord[] = [
     descricaoNC: 'Revisão do manual de manutenção (AMM) desatualizada na bancada técnica',
     statusGeral: 'Encerrada',
     dataIdentificacao: '2026-01-15',
-    avaliacaoRiscoInicial: { severidade: 3, probabilidade: 2, nivel: 'Médio' },
+    avaliacaoRiscoInicial: { codigo: '3B', severidade: '3', probabilidade: '2', nivel: 'Médio' },
     ishikawa: { categoriaPrincipal: 'Método', causaRaiz: 'Atraso na distribuição controlada de manuais' },
-    acaoCorretiva: { descricao: 'Distribuição digital sincronizada e recolhimento de cópias físicas', status: 'Concluída', dataPrazo: '2026-01-22' },
-    verificacaoEficacia: { encerrado: 'SIM', dataVerificacao: '2026-02-10' },
+    acaoCorretiva: { descricao: 'Distribuição digital sincronizada e recolhimento de cópias físicas', responsavel: 'Biblioteca Técnica', status: 'Concluída', dataPrazo: '2026-01-22' },
+    verificacaoEficacia: { encerrado: 'SIM', dataVerificacao: '2026-02-10', metodo: 'Documental' },
     criadoEm: '2026-01-15T11:00:00Z',
     atualizadoEm: '2026-02-10T16:00:00Z',
-  }
+  } as any
 ];
 
 const mockManuals: ManualRecord[] = [
@@ -73,13 +73,13 @@ const mockManuals: ManualRecord[] = [
     id: 'man-01',
     codigo: 'MOE-145',
     titulo: 'Manual da Organização de Manutenção',
-    versao: 'Rev 14',
+    revisao: 'Rev 14',
     status: 'Vigente',
-    dataPublicacao: '2025-11-01',
+    dataVigencia: '2025-11-01',
     dataValidade: '2026-11-01',
     criadoEm: '2025-11-01T00:00:00Z',
     atualizadoEm: '2025-11-01T00:00:00Z',
-  }
+  } as any
 ];
 
 const filtros: FiltrosApresentacao = {

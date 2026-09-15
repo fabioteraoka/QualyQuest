@@ -27,7 +27,9 @@ import {
   Clock,
   History,
   Globe,
-  Milestone
+  Milestone,
+  Layers,
+  ClipboardCheck
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
@@ -158,6 +160,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'auditorias-dashboard',
           label: 'Dashboard de Auditorias',
           icon: <BarChart3 className="w-4 h-4 text-purple-400" />,
+        },
+      ],
+    },
+    {
+      label: 'Auditorias & Requisitos de Clientes',
+      items: [
+        {
+          id: 'clientes-requisitos',
+          label: 'Requisitos & Avaliações',
+          icon: <ClipboardCheck className="w-4 h-4 text-sky-400" />,
+          tag: 'FASE 13',
+        },
+        {
+          id: 'clientes-matriz',
+          label: 'Matriz de Cobertura SGQ',
+          icon: <Layers className="w-4 h-4 text-emerald-400" />,
+        },
+        {
+          id: 'clientes-cockpit',
+          label: 'Cockpit & Bases Clientes',
+          icon: <Building2 className="w-4 h-4 text-indigo-400" />,
         },
       ],
     },
