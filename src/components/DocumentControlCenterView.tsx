@@ -935,31 +935,31 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                       <span className="text-slate-400 block mb-1">Status Geral:</span>
                       <span
                         className={`font-semibold ${
-                          temporalResult.aplicabilidade.aplicavel ? 'text-emerald-400' : 'text-amber-400'
+                          temporalResult.aplicabilidade?.aplicavel ? 'text-emerald-400' : 'text-amber-400'
                         }`}
                       >
-                        {temporalResult.aplicabilidade.aplicavel ? 'APLICÁVEL' : 'NÃO APLICÁVEL'}
+                        {temporalResult.aplicabilidade?.aplicavel ? 'APLICÁVEL' : 'NÃO APLICÁVEL'}
                       </span>
                     </div>
 
                     <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
                       <span className="text-slate-400 block mb-1">Escopo Técnico:</span>
                       <span className="text-slate-200">
-                        {temporalResult.aplicabilidade.detalhes.aeronaveAplicavel ? 'Conforme aeronave' : 'N/A modelo'}
+                        {temporalResult.aplicabilidade?.detalhes?.aeronaveAplicavel ? 'Conforme aeronave' : 'Geral / N/A modelo'}
                       </span>
                     </div>
 
                     <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
                       <span className="text-slate-400 block mb-1">Setor & Processo:</span>
                       <span className="text-slate-200">
-                        {temporalResult.aplicabilidade.detalhes.setorAplicavel ? 'Setor abrangido' : 'Geral'}
+                        {temporalResult.aplicabilidade?.detalhes?.setorAplicavel ? 'Setor abrangido' : 'Geral'}
                       </span>
                     </div>
 
                     <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
                       <span className="text-slate-400 block mb-1">Justificativa:</span>
                       <span className="text-slate-300 text-[11px] line-clamp-2">
-                        {temporalResult.aplicabilidade.justificativa}
+                        {temporalResult.aplicabilidade?.justificativa || 'Análise automática de aplicabilidade.'}
                       </span>
                     </div>
                   </div>

@@ -1572,6 +1572,8 @@ export interface ColaboradorPessoa {
   criadoPorUid: string;
 }
 
+export type Person = ColaboradorPessoa;
+
 export type CriticidadeCompetencia = 'BAIXA' | 'MEDIA' | 'ALTA' | 'CRITICA';
 
 export interface NivelCompetenciaDefinicao {
@@ -1682,10 +1684,12 @@ export interface RegistroTreinamentoColaborador {
   treinamentoId: string;
   treinamentoCodigo: string;
   treinamentoTitulo: string;
+  treinamentoNome?: string;
   colaboradorId: string;
   colaboradorNome: string;
   colaboradorMatricula: string;
   dataRealizacao: string; // YYYY-MM-DD
+  dataConclusao?: string;
   dataValidade?: string; // YYYY-MM-DD
   cargaHoraria: number;
   instrutor: string;
@@ -1970,6 +1974,10 @@ export interface DocumentoControlado {
   exigeEvidenciaLeitura: boolean;
   aplicabilidadePadrao: AplicabilidadeDocumental;
   statusGeral: 'ATIVO' | 'INATIVO' | 'CANCELADO';
+  status?: string;
+  revisaoAtual?: string;
+  dataAprovacao?: string;
+  aprovadorNome?: string;
   tags?: string[];
   createdAt: string;
   updatedAt: string;
@@ -2183,8 +2191,8 @@ export type StatusClienteExterno = 'ATIVO' | 'INATIVO' | 'EM_HOMOLOGACAO';
 export type PeriodicidadeAvaliacao = 'MENSAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'ANUAL' | 'EVENTUAL' | 'PERSONALIZADA';
 export type MetodoVerificacaoRequisito = 'AUTOMATICO' | 'ASSISTIDO' | 'MANUAL' | 'DOCUMENTAL';
 export type CriticidadeRequisito = 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO';
-export type ResultadoAvaliacaoRequisito = 'CONFORME' | 'ATENCAO' | 'NAO_CONFORME' | 'NA' | 'PENDENTE';
-export type StatusDeterminacaoPrevia = 'VERDE' | 'AMARELO' | 'VERMELHO' | 'CINZA';
+export type ResultadoAvaliacaoRequisito = 'CONFORME' | 'ATENCAO' | 'NAO_CONFORME' | 'NA' | 'PENDENTE' | 'VERIFICACAO_NECESSARIA';
+export type StatusDeterminacaoPrevia = 'VERDE' | 'AMARELO' | 'VERMELHO' | 'CINZA' | 'AZUL';
 
 export interface BaseEstacaoOperacao {
   id: string;
@@ -2281,6 +2289,7 @@ export interface RequisitoClienteItem {
   periodicidade: PeriodicidadeAvaliacao;
   metodoVerificacao: MetodoVerificacaoRequisito;
   evidenciaEsperada: string;
+  criterioAceitacao?: string;
   controleCentralId?: string; // SSoT: Vínculo com Controle Central SGQ ("Um controle, vários requisitos")
   controleCentralCodigo?: string;
   controleCentralNome?: string;
@@ -2302,7 +2311,52 @@ export interface EvidenciaRequisitoItem {
   dataEvidencia: string;
   responsavel: string;
   urlOuArquivo?: string;
+  fotoBase64?: string; // Foto de evidência física de pátio / hangar
+  arquivoNome?: string;
+  arquivoTamanho?: number;
+  arquivoTipo?: string;
   organizationId: string;
+  // Rastreabilidade estrita: Cliente -> Programa -> Requisito -> Controle -> Evidência -> Data -> Usuário
+  clienteId?: string;
+  clienteNome?: string;
+  programaId?: string;
+  programaCodigo?: string;
+  requisitoId?: string;
+  numeroItem?: string;
+  controleId?: string;
+  controleCodigo?: string;
+  usuarioUid?: string;
+  usuarioNome?: string;
+}
+
+export interface PerguntaInteligenteResolucao {
+  id: string;
+  pergunta: string;
+  contexto: string;
+  opcaoSim: string;
+  acaoSimTipo: 'ANEXAR_CERTIFICADO' | 'VINCULAR_DADO' | 'CONFIRMAR_USO';
+  opcaoNao: string;
+  acaoNaoTipo: 'REGISTRAR_SEGREGAÇÃO' | 'ABRIR_RNC' | 'BLOQUEAR_ESCALA' | 'VINCULAR_DADO';
+  respondida?: boolean;
+  respostaEscolhida?: 'SIM' | 'NAO';
+  justificativaResposta?: string;
+  respondidoPor?: string;
+  respondidoEm?: string;
+}
+
+export interface SugestaoResolucaoIA {
+  oQueFalta: string;
+  porQueImpedeConformidade: string;
+  evidenciasQuePoderiamSolucionar?: string[];
+  evidenciasPossiveis?: string[];
+  controleSugeridoMelhorar: string;
+  procedimentoRelacionado: string;
+  sugestaoAcao: string;
+  sugestaoRespostaCliente: string;
+  statusDecisao?: 'PENDENTE' | 'ACEITO' | 'EDITADO' | 'REJEITADO';
+  respostaEditada?: string;
+  decididoPor?: string;
+  decididoEm?: string;
 }
 
 export interface AuditoriaRequisitoLog {
@@ -2336,12 +2390,21 @@ export interface AvaliacaoRequisitoCliente {
   
   // Determinação Automática / Assistida (Human-in-the-Loop)
   determinacaoAutomatica?: {
-    status: StatusDeterminacaoPrevia; // VERDE, AMARELO, VERMELHO, CINZA
+    status: StatusDeterminacaoPrevia; // VERDE, AMARELO, VERMELHO, CINZA, AZUL
     justificativa: string;
     evidenciasIdentificadas: string[];
     confiancaScore: number; // 0 a 100
     analisadoEm: string;
+    fonteEvidencia?: string;
+    dataEvidencia?: string;
+    controleUtilizado?: string;
   };
+  
+  // Fase 15: Auditoria Inteligente e Resolução por Exceção
+  isExcecao?: boolean; // True se requer intervenção (NÃO CONFORME, ATENÇÃO, VERIFICAÇÃO NECESSÁRIA)
+  resolvidoAutomaticamente?: boolean;
+  perguntaInteligente?: PerguntaInteligenteResolucao;
+  sugestaoResolucao?: SugestaoResolucaoIA;
   
   avaliadorUid: string;
   avaliadorNome: string;
@@ -2445,12 +2508,18 @@ export interface TemplateMapeamentoAprovado {
   id: string;
   organizationId: string;
   nomeTemplate: string;
+  nome?: string; // alias conveniente para nomeTemplate
   tipoControle: TipoControleImportacao;
   colunasDetectadas: string[];
   mapeamentos: Record<string, string>; // colunaOrigem -> campoQualigest
   criadoPor: string;
+  criadoPorNome?: string;
+  criadoPorUid?: string;
   dataAprovacao: string;
+  criadoEm?: string;
+  atualizadoEm?: string;
   totalVezesUsado: number;
+  vezesUtilizado?: number;
 }
 
 export interface RegistroLinhaImportacao {
@@ -2514,20 +2583,31 @@ export interface RegistroImportacaoCompleto {
   dataUpload: string;
   usuarioUid: string;
   usuarioEmail: string;
-  tipoControleIdentificado: TipoControleImportacao;
-  confiancaIdentificacaoIA: number;
-  finalidadeProvavel: string;
+  usuarioNome?: string;
+  tipoControleIdentificado?: TipoControleImportacao;
+  tipoControle?: TipoControleImportacao;
+  confiancaIdentificacaoIA?: number;
+  confiancaPercentual?: number;
+  finalidadeProvavel?: string;
+  finalidadeIdentificada?: string;
   status: StatusImportacao;
-  resumo: ResumoPreviaImportacao;
+  totalLinhas?: number;
+  registrosCriadosQtd?: number;
+  registrosAtualizadosQtd?: number;
+  registrosIgnoradosQtd?: number;
+  oportunidadesGeradasQtd?: number;
+  mapeamentoUtilizado?: Record<string, string>;
+  colunasDetectadas?: string[];
+  resumo?: ResumoPreviaImportacao;
   registrosGeradosIds: string[];
-  registrosAtualizadosIds: string[];
-  oportunidadesDetectadas: OportunidadeMelhoriaImportacao[];
+  registrosAtualizadosIds?: string[];
+  oportunidadesDetectadas?: OportunidadeMelhoriaImportacao[];
   templateIdUtilizado?: string;
   templateNomeUtilizado?: string;
   arquivoBase64Preview?: string;
-  origem: 'UPLOAD_HUMANO' | 'MIGRACAO_LEGADA';
-  criadoEm: string;
-  atualizadoEm: string;
+  origem?: 'UPLOAD_HUMANO' | 'MIGRACAO_LEGADA';
+  criadoEm?: string;
+  atualizadoEm?: string;
 }
 
 /**
@@ -2565,6 +2645,78 @@ export interface FiltrosImportacao {
   status?: StatusImportacao | 'TODOS';
   dataInicio?: string;
   dataFim?: string;
+}
+
+// ==========================================
+// FASE 15: SYSTEM DESIGNER DO QUALIGEST & ADRs
+// ==========================================
+
+export interface ArchitectureDecisionRecord {
+  id: string; // Ex: 'ADR-001'
+  numero: number;
+  titulo: string;
+  status: 'PROPOSTO' | 'ACEITO' | 'SUPERSEDED' | 'DEPRECATED';
+  dataDecisao: string;
+  versaoSistema: string;
+  contextoProblema: string;
+  decisao: string;
+  motivoJustificativa: string;
+  impactoArquitetural: string;
+  modulosAfetados: string[];
+  regrasAssociadas: string[];
+  autor: string;
+}
+
+export interface SystemDesignerModule {
+  id: string;
+  nome: string;
+  faseOrigem: string;
+  descricao: string;
+  icone: string;
+  categoria: 'GOVERNANCA' | 'OPERACAO' | 'COMPLIANCE' | 'PESSOAS' | 'INTELIGENCIA';
+  colecoesFirestore: string[];
+  rotasOuTabs: string[];
+  dependenciasModulosIds: string[];
+  modulosConsumidoresIds: string[];
+  regrasSegurancaAplicaveis: string[];
+  recursosIA: string[];
+}
+
+export interface SystemDesignerCollection {
+  nomeColecao: string;
+  caminhoFirestore: string;
+  descricao: string;
+  multiTenantCampo: string; // 'organizationId'
+  indicesObrigatorios: string[];
+  regrasPermissaoRBAC: string;
+  entidadeTypeScript: string;
+  origemDados: string;
+  volumeEstimado: string;
+}
+
+export interface SystemDesignerFlow {
+  id: string;
+  titulo: string;
+  descricao: string;
+  etapas: {
+    ordem: number;
+    nome: string;
+    modulo: string;
+    ator: 'USUARIO' | 'IA_GEMINI' | 'SISTEMA_FIRESTORE' | 'AUDITOR_EXTERNO';
+    descricao: string;
+    evidenciaGerada?: string;
+  }[];
+}
+
+export interface SystemDesignerRule {
+  id: string;
+  codigo: string;
+  titulo: string;
+  categoria: 'SEGURANCA_RBAC' | 'ISOLAMENTO_TENANT' | 'GOVERNANCA_IA' | 'AUDIT_TRAIL' | 'INTEGRIDADE_DADOS';
+  descricao: string;
+  inviolavel: boolean;
+  consequenciaViolacao: string;
+  exemploPratico: string;
 }
 
 

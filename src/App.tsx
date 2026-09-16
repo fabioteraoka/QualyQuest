@@ -134,7 +134,18 @@ import {
   ControleCentralSGQ,
   RequisitoClienteItem,
   AvaliacaoRequisitoCliente,
+  FerramentaCalibracao,
+  RegistroImportacaoCompleto,
+  TemplateMapeamentoAprovado,
 } from './types';
+import { SmartImportMigrationView } from './components/SmartImportMigrationView';
+import { SmartAuditView } from './components/SmartAuditView';
+import { SystemDesignerOfficialView } from './components/SystemDesignerOfficialView';
+import {
+  subscribeToCalibratedTools,
+  subscribeToSmartImportRecords,
+  subscribeToImportTemplates,
+} from './services/firebase/smartImportFirestore';
 import { RefreshCw, Sparkles, UploadCloud, Database, ShieldAlert, LayoutDashboard, FileText, Bell, Plus, Menu, Building2 } from 'lucide-react';
 
 export default function App() {
@@ -190,6 +201,9 @@ export default function App() {
     | 'clientes-requisitos'
     | 'clientes-matriz'
     | 'clientes-cockpit'
+    | 'smart-audit'
+    | 'system-designer'
+    | 'importacao-inteligente'
   >('dashboard');
 
   // FASE 8: State de Auditorias Externas
@@ -224,6 +238,11 @@ export default function App() {
   const [controlesCentrais, setControlesCentrais] = useState<ControleCentralSGQ[]>([]);
   const [requisitosClientes, setRequisitosClientes] = useState<RequisitoClienteItem[]>([]);
   const [avaliacoesRequisitos, setAvaliacoesRequisitos] = useState<AvaliacaoRequisitoCliente[]>([]);
+
+  // FASE 14: State de Importação Inteligente, Metrologia e Modelos Homologados
+  const [ferramentasCalibradas, setFerramentasCalibradas] = useState<FerramentaCalibracao[]>([]);
+  const [smartImports, setSmartImports] = useState<RegistroImportacaoCompleto[]>([]);
+  const [templatesAprovados, setTemplatesAprovados] = useState<TemplateMapeamentoAprovado[]>([]);
 
   // Multi-Tenant Setup Checklist Modal & Welcome Banner State
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
@@ -411,6 +430,11 @@ export default function App() {
     const unsubscribeRequisitos = subscribeToRequisitosClientes(activeOrgId, (list) => setRequisitosClientes(list));
     const unsubscribeAvaliacoes = subscribeToAvaliacoesRequisitos(activeOrgId, (list) => setAvaliacoesRequisitos(list));
 
+    // 12. Subscribe to Phase 14: Importação Inteligente, Metrologia e Modelos Homologados
+    const unsubscribeTools = subscribeToCalibratedTools(activeOrgId, (list) => setFerramentasCalibradas(list));
+    const unsubscribeImports = subscribeToSmartImportRecords(activeOrgId, (list) => setSmartImports(list));
+    const unsubscribeTemplates = subscribeToImportTemplates(activeOrgId, (list) => setTemplatesAprovados(list));
+
     return () => {
       unsubscribeNCs();
       unsubscribeManuals();
@@ -441,6 +465,9 @@ export default function App() {
       unsubscribeControles();
       unsubscribeRequisitos();
       unsubscribeAvaliacoes();
+      unsubscribeTools();
+      unsubscribeImports();
+      unsubscribeTemplates();
     };
   }, [activeOrgId, user?.uid]);
 
@@ -724,6 +751,8 @@ export default function App() {
       case 'clientes-requisitos': return 'Auditorias & Requisitos de Clientes (FASE 13)';
       case 'clientes-matriz': return 'Matriz de Cobertura SGQ — Um Controle, Vários Requisitos';
       case 'clientes-cockpit': return 'Cockpit & Estações de Clientes';
+      case 'smart-audit': return 'Auditoria Inteligente por Requisitos & Resolução por Exceção (FASE 15)';
+      case 'system-designer': return 'System Designer Oficial do QualiGest (Arquitetura, Coleções & ADRs)';
       default: return 'Sistema de Qualidade';
     }
   };
@@ -1363,6 +1392,55 @@ export default function App() {
                   onCriarRNCDeRequisito={handleCriarRNCDeRequisito}
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 />
+              )}
+
+              {/* FASE 14: IMPORTAÇÃO INTELIGENTE E MIGRAÇÃO DE CONTROLES EXISTENTES */}
+              {activeTab === 'importacao-inteligente' && (
+                <SmartImportMigrationView
+                  organization={activeOrganization}
+                  user={userProfile}
+                  pessoas={persons}
+                  treinamentos={trainingCourses}
+                  registrosTreinamento={trainingRecords}
+                  documentos={documentosControlados}
+                  ferramentasCalibradas={ferramentasCalibradas}
+                  smartImports={smartImports}
+                  templatesAprovados={templatesAprovados}
+                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
+                  onAdicionarPessoa={(p) => setPersons((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}
+                  onAdicionarCurso={(c) => setTrainingCourses((prev) => [c, ...prev.filter((x) => x.id !== c.id)])}
+                  onAdicionarRegistroTreinamento={(r) => setTrainingRecords((prev) => [r, ...prev.filter((x) => x.id !== r.id)])}
+                  onAdicionarFerramenta={(f) => setFerramentasCalibradas((prev) => [f, ...prev.filter((x) => x.id !== f.id)])}
+                  onCriarRncSugerida={(dadosRnc) => {
+                    handleNewNC();
+                  }}
+                />
+              )}
+
+              {/* FASE 15: AUDITORIA INTELIGENTE POR REQUISITOS E RESOLUÇÃO POR EXCEÇÃO */}
+              {activeTab === 'smart-audit' && (
+                <SmartAuditView
+                  clientes={clientesExternos}
+                  bases={basesOperacionais}
+                  programas={programasClientes}
+                  controles={controlesCentrais}
+                  requisitos={requisitosClientes}
+                  avaliacoes={avaliacoesRequisitos}
+                  ferramentas={ferramentasCalibradas}
+                  treinamentos={trainingRecords}
+                  documentos={documentosControlados}
+                  pessoas={persons}
+                  activeOrganization={activeOrganization}
+                  userProfile={userProfile}
+                  onSaveAvaliacao={handleSaveAvaliacaoCliente}
+                  onCriarRNCDeRequisito={handleCriarRNCDeRequisito}
+                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
+                />
+              )}
+
+              {/* FASE 15: SYSTEM DESIGNER DO QUALIGEST */}
+              {activeTab === 'system-designer' && (
+                <SystemDesignerOfficialView />
               )}
             </>
           )}

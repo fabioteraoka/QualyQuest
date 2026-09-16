@@ -27,7 +27,8 @@ import {
   Link as LinkIcon,
   Tag,
   BookOpen,
-  ArrowUpRight
+  ArrowUpRight,
+  Cpu
 } from 'lucide-react';
 import {
   ClienteExterno,
@@ -286,7 +287,21 @@ export const ClientAuditsManagementView: React.FC<ClientAuditsManagementViewProp
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={() => onNavigateToTab?.('smart-audit')}
+              className="px-3.5 py-2 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors flex items-center gap-2 shadow-xs cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-amber-200" />
+              Auditoria Inteligente (Exceções)
+            </button>
+            <button
+              onClick={() => onNavigateToTab?.('system-designer')}
+              className="px-3.5 py-2 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg border border-purple-200 transition-colors flex items-center gap-2 cursor-pointer"
+            >
+              <Cpu className="w-4 h-4 text-purple-600" />
+              System Designer
+            </button>
             <button
               onClick={() => setSubTab('matriz')}
               className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg border border-slate-200 transition-colors flex items-center gap-2 cursor-pointer"

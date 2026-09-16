@@ -29,7 +29,8 @@ import {
   Globe,
   Milestone,
   Layers,
-  ClipboardCheck
+  ClipboardCheck,
+  UploadCloud
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
@@ -167,6 +168,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Auditorias & Requisitos de Clientes',
       items: [
         {
+          id: 'smart-audit',
+          label: 'Auditoria Inteligente (Exceções)',
+          icon: <Sparkles className="w-4 h-4 text-amber-400" />,
+          tag: 'FASE 15',
+        },
+        {
           id: 'clientes-requisitos',
           label: 'Requisitos & Avaliações',
           icon: <ClipboardCheck className="w-4 h-4 text-sky-400" />,
@@ -181,6 +188,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'clientes-cockpit',
           label: 'Cockpit & Bases Clientes',
           icon: <Building2 className="w-4 h-4 text-indigo-400" />,
+        },
+        {
+          id: 'system-designer',
+          label: 'System Designer Oficial',
+          icon: <Cpu className="w-4 h-4 text-purple-400" />,
+          tag: 'ADR',
         },
       ],
     },
@@ -282,6 +295,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       label: 'Administração & Multi-Tenant',
       items: [
+        {
+          id: 'importacao-inteligente',
+          label: 'Importação Inteligente',
+          icon: <UploadCloud className="w-4 h-4 text-sky-400" />,
+          tag: 'FASE 14',
+        },
         {
           id: 'admin-central',
           label: 'Gestão Central & Usuários',
