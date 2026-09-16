@@ -773,14 +773,18 @@ export interface SystemDiagnosticRecord {
 export interface OrganizationAuditEntry {
   id: string;
   organizationId: string;
-  entity: 'NON_CONFORMITY' | 'MANUAL' | 'USER' | 'ORGANIZATION' | 'RNC_COMPARISON' | 'VALIDATED_KNOWLEDGE' | string;
+  entity: 'NON_CONFORMITY' | 'MANUAL' | 'USER' | 'ORGANIZATION' | 'RNC_COMPARISON' | 'VALIDATED_KNOWLEDGE' | 'PERSON' | 'COMPETENCY' | 'DOCUMENT_CONTROL' | string;
   entityId: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'BOOTSTRAP' | 'STATUS_CHANGE' | 'VALIDATE_DECISION' | 'APPLY_TO_RNC' | 'PROMOTE_PATTERN';
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'INACTIVATE' | 'REACTIVATE' | 'BOOTSTRAP' | 'STATUS_CHANGE' | 'VALIDATE_DECISION' | 'APPLY_TO_RNC' | 'PROMOTE_PATTERN' | string;
   changedAt: string;
   changedByUid: string;
   changedByEmail: string;
   details?: string;
   summary?: string;
+  previousValue?: string;
+  newValue?: string;
+  reason?: string;
+  origin?: string;
 }
 
 // ----------------------------------------------------
@@ -1566,6 +1570,12 @@ export interface ColaboradorPessoa {
   contatoCorporativo?: string;
   observacoes?: string;
   restricaoOperacional?: RestricaoOperacional;
+  inativadoEm?: string;
+  inativadoPor?: string;
+  motivoInativacao?: string;
+  reativadoEm?: string;
+  reativadoPor?: string;
+  motivoReativacao?: string;
   createdAt: string;
   updatedAt: string;
   criadoPor: string;
@@ -1975,6 +1985,12 @@ export interface DocumentoControlado {
   aplicabilidadePadrao: AplicabilidadeDocumental;
   statusGeral: 'ATIVO' | 'INATIVO' | 'CANCELADO';
   status?: string;
+  inativadoEm?: string;
+  inativadoPor?: string;
+  motivoInativacao?: string;
+  reativadoEm?: string;
+  reativadoPor?: string;
+  motivoReativacao?: string;
   revisaoAtual?: string;
   dataAprovacao?: string;
   aprovadorNome?: string;

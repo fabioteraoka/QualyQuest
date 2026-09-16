@@ -1424,6 +1424,10 @@ export async function recordOrganizationAudit(
       changedByEmail: entry.changedByEmail || auth.currentUser?.email || 'anon@qualigest',
       details: entry.details,
       summary: entry.summary,
+      previousValue: entry.previousValue,
+      newValue: entry.newValue,
+      reason: entry.reason,
+      origin: entry.origin || 'QUALIGEST_SGQ',
     };
     await setDoc(docRef, sanitizeForFirestore(fullEntry));
   } catch (e) {

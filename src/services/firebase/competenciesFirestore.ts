@@ -92,15 +92,70 @@ export function subscribeToPersons(
   );
 }
 
+export interface DependenciasPessoaResult {
+  podeExcluir: boolean;
+  totalTreinamentos: number;
+  totalCompetencias: number;
+  totalQualificacoes: number;
+  totalDocumentos: number;
+  totalRNCs: number;
+  motivosBloqueio: string[];
+}
+
+/**
+ * Verifica se uma pessoa possui dependências e histórico vinculados no SGQ
+ * Conforme RBAC 145 / EASA, a exclusão física é terminantemente proibida se houver histórico.
+ */
+export function verificarDependenciasPessoa(
+  personId: string,
+  trainingRecords: RegistroTreinamentoColaborador[] = [],
+  personCompetencies: CompetenciaColaborador[] = [],
+  qualifications: QualificacaoColaborador[] = [],
+  documents: DocumentoEvidenciaPessoa[] = [],
+  nonConformities: any[] = []
+): DependenciasPessoaResult {
+  const treinos = trainingRecords.filter((t) => t.colaboradorId === personId);
+  const comps = personCompetencies.filter((c) => c.colaboradorId === personId);
+  const quals = qualifications.filter((q) => q.colaboradorId === personId);
+  const docs = documents.filter((d) => d.colaboradorId === personId);
+  const rncs = nonConformities.filter(
+    (nc) =>
+      nc.responsavelImplementacaoId === personId ||
+      nc.auditorId === personId ||
+      (nc.responsavelImplementacao &&
+        typeof nc.responsavelImplementacao === 'string' &&
+        nc.responsavelImplementacao.toLowerCase().includes(personId.toLowerCase()))
+  );
+
+  const motivosBloqueio: string[] = [];
+  if (treinos.length > 0) motivosBloqueio.push(`${treinos.length} registro(s) de treinamento concluído/em andamento`);
+  if (comps.length > 0) motivosBloqueio.push(`${comps.length} competência(s) atribuída(s) na matriz`);
+  if (quals.length > 0) motivosBloqueio.push(`${quals.length} habilitação(ões) ou qualificação(ões) técnica(s)`);
+  if (docs.length > 0) motivosBloqueio.push(`${docs.length} documento(s) ou certificado(s) de evidência`);
+  if (rncs.length > 0) motivosBloqueio.push(`${rncs.length} RNC(s) vinculada(s)`);
+
+  return {
+    podeExcluir: motivosBloqueio.length === 0,
+    totalTreinamentos: treinos.length,
+    totalCompetencias: comps.length,
+    totalQualificacoes: quals.length,
+    totalDocumentos: docs.length,
+    totalRNCs: rncs.length,
+    motivosBloqueio,
+  };
+}
+
 export async function savePerson(
   organizationId: string,
   person: ColaboradorPessoa,
-  userProfile?: UserProfile | null
+  userProfile?: UserProfile | null,
+  previousPerson?: ColaboradorPessoa | null
 ): Promise<void> {
   if (userProfile?.role === 'CONSULTA') {
-    throw new Error('Permissão negada: Perfil CONSULTA não pode alterar colaboradores.');
+    throw new Error('Permissão negada: Perfil CONSULTA não pode cadastrar ou alterar colaboradores.');
   }
 
+  const isNew = !previousPerson && !person.createdAt;
   const path = `organizations/${organizationId}/persons/${person.id}`;
   const now = new Date().toISOString();
   const payload: ColaboradorPessoa = {
@@ -117,25 +172,158 @@ export async function savePerson(
     await setDoc(docRef, sanitizeForFirestore(payload), { merge: true });
 
     await recordOrganizationAudit(organizationId, {
-      entity: 'ORGANIZATION' as any,
+      entity: 'PERSON',
       entityId: person.id,
-      action: 'UPDATE',
+      action: isNew ? 'CREATE' : 'UPDATE',
       changedByUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
       changedByEmail: userProfile?.email || auth.currentUser?.email || 'anon@qualigest',
-      summary: `Atualização de Colaborador: ${person.nome} (${person.matricula}) - Setor: ${person.setor}`,
+      summary: isNew
+        ? `Cadastro de Colaborador: ${person.nome} (${person.matricula}) - Setor: ${person.setor}`
+        : `Atualização de Colaborador: ${person.nome} (${person.matricula}) - Setor: ${person.setor}`,
+      previousValue: previousPerson
+        ? JSON.stringify({
+            nome: previousPerson.nome,
+            matricula: previousPerson.matricula,
+            funcao: previousPerson.funcao,
+            setor: previousPerson.setor,
+            cargoOperacional: previousPerson.cargoOperacional,
+            status: previousPerson.status,
+            restricao: previousPerson.restricaoOperacional?.possuiRestricao,
+          })
+        : undefined,
+      newValue: JSON.stringify({
+        nome: person.nome,
+        matricula: person.matricula,
+        funcao: person.funcao,
+        setor: person.setor,
+        cargoOperacional: person.cargoOperacional,
+        status: person.status,
+        restricao: person.restricaoOperacional?.possuiRestricao,
+      }),
+      reason: isNew ? 'Cadastro inicial de colaborador no SGQ' : 'Atualização cadastral/operacional',
+      origin: 'PESSOAS_COMPETENCIAS',
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 }
 
+/**
+ * Inativação Lógica de Colaborador (preserva histórico e rastreabilidade integral)
+ */
+export async function inactivatePerson(
+  organizationId: string,
+  personId: string,
+  motivo: string,
+  userProfile?: UserProfile | null
+): Promise<void> {
+  if (userProfile?.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil CONSULTA não pode inativar colaboradores.');
+  }
+
+  const path = `organizations/${organizationId}/persons/${personId}`;
+  const now = new Date().toISOString();
+
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'persons', personId);
+    await setDoc(
+      docRef,
+      sanitizeForFirestore({
+        status: 'INATIVO',
+        updatedAt: now,
+        inativadoEm: now,
+        inativadoPor: userProfile?.displayName || auth.currentUser?.displayName || 'SGQ',
+        motivoInativacao: motivo || 'Inativação administrativa com preservação de histórico',
+      }),
+      { merge: true }
+    );
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'PERSON',
+      entityId: personId,
+      action: 'INACTIVATE',
+      changedByUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
+      changedByEmail: userProfile?.email || auth.currentUser?.email || 'anon@qualigest',
+      summary: `Inativação de colaborador: ID ${personId}. Motivo: ${motivo}`,
+      previousValue: 'status: ATIVO',
+      newValue: 'status: INATIVO',
+      reason: motivo,
+      origin: 'PESSOAS_COMPETENCIAS',
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
+/**
+ * Reativação Lógica de Colaborador
+ */
+export async function reactivatePerson(
+  organizationId: string,
+  personId: string,
+  motivo: string,
+  userProfile?: UserProfile | null
+): Promise<void> {
+  if (userProfile?.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil CONSULTA não pode reativar colaboradores.');
+  }
+
+  const path = `organizations/${organizationId}/persons/${personId}`;
+  const now = new Date().toISOString();
+
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'persons', personId);
+    await setDoc(
+      docRef,
+      sanitizeForFirestore({
+        status: 'ATIVO',
+        updatedAt: now,
+        reativadoEm: now,
+        reativadoPor: userProfile?.displayName || auth.currentUser?.displayName || 'SGQ',
+        motivoReativacao: motivo || 'Reativação de colaborador no SGQ ativo',
+      }),
+      { merge: true }
+    );
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'PERSON',
+      entityId: personId,
+      action: 'REACTIVATE',
+      changedByUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
+      changedByEmail: userProfile?.email || auth.currentUser?.email || 'anon@qualigest',
+      summary: `Reativação de colaborador: ID ${personId}. Motivo: ${motivo}`,
+      previousValue: 'status: INATIVO',
+      newValue: 'status: ATIVO',
+      reason: motivo,
+      origin: 'PESSOAS_COMPETENCIAS',
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
+/**
+ * Exclusão Física de Colaborador (Somente se não possuir qualquer dependência ou histórico)
+ */
 export async function deletePerson(
   organizationId: string,
   personId: string,
-  userProfile?: UserProfile | null
+  userProfile?: UserProfile | null,
+  motivoExclusao?: string,
+  dependencias?: DependenciasPessoaResult
 ): Promise<void> {
   if (userProfile?.role && userProfile.role !== 'ADMIN' && userProfile.role !== 'GESTOR_SGQ') {
-    throw new Error('Permissão negada: Exclusão restrita a GESTOR_SGQ e ADMIN.');
+    throw new Error('Permissão negada: Exclusão física é estritamente restrita a GESTOR_SGQ e ADMIN.');
+  }
+
+  if (dependencias && !dependencias.podeExcluir) {
+    throw new Error(
+      `Exclusão física bloqueada: este colaborador possui ${dependencias.motivosBloqueio.join(
+        ', '
+      )}. Conforme normas aeronáuticas (RBAC 145 / EASA), utilize a Inativação Lógica para preservar a rastreabilidade.`
+    );
   }
 
   const path = `organizations/${organizationId}/persons/${personId}`;
@@ -144,15 +332,18 @@ export async function deletePerson(
     await deleteDoc(docRef);
 
     await recordOrganizationAudit(organizationId, {
-      entity: 'ORGANIZATION' as any,
+      entity: 'PERSON',
       entityId: personId,
       action: 'DELETE',
       changedByUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
       changedByEmail: userProfile?.email || auth.currentUser?.email || 'anon@qualigest',
-      summary: `Exclusão do colaborador ${personId}`,
+      summary: `Exclusão definitiva de colaborador sem vínculos históricos: ID ${personId}`,
+      reason: motivoExclusao || 'Exclusão física de cadastro órfão sem histórico vinculado',
+      origin: 'PESSOAS_COMPETENCIAS',
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
   }
 }
 

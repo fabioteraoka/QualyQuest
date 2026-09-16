@@ -83,10 +83,60 @@ export function subscribeToDocumentosControlados(
   );
 }
 
+export interface DependenciasDocumentoResult {
+  podeExcluir: boolean;
+  totalRevisoes: number;
+  totalConsultas: number;
+  totalSolicitacoes: number;
+  totalRNCs: number;
+  motivosBloqueio: string[];
+}
+
+/**
+ * Verifica se um documento controlado possui revisões, consultas, solicitações ou RNCs vinculadas.
+ * Conforme regulamentações aeronáuticas (RBAC 145 / MOMQ / EASA), documentos com histórico
+ * não podem ser excluídos fisicamente, devendo ser inativados/obsoletados.
+ */
+export function verificarDependenciasDocumento(
+  documentoId: string,
+  codigoDoc: string,
+  revisoes: RevisaoDocumental[] = [],
+  evidenciasConsulta: RegistroEvidenciaConsultaDocumento[] = [],
+  solicitacoes: SolicitacaoRevisaoCliente[] = [],
+  nonConformities: any[] = []
+): DependenciasDocumentoResult {
+  const revs = revisoes.filter((r) => r.documentoId === documentoId);
+  const consultas = evidenciasConsulta.filter((e) => e.documentoId === documentoId);
+  const solics = solicitacoes.filter((s) => s.documentoId === documentoId);
+  const rncs = nonConformities.filter(
+    (nc) =>
+      nc.documentoId === documentoId ||
+      (nc.documentoReferencia &&
+        typeof nc.documentoReferencia === 'string' &&
+        nc.documentoReferencia.toLowerCase().includes(codigoDoc.toLowerCase()))
+  );
+
+  const motivosBloqueio: string[] = [];
+  if (revs.length > 0) motivosBloqueio.push(`${revs.length} revisão(ões) cronológica(s) vinculada(s)`);
+  if (consultas.length > 0) motivosBloqueio.push(`${consultas.length} registro(s) de evidência de consulta`);
+  if (solics.length > 0) motivosBloqueio.push(`${solics.length} solicitação(ões) de cliente vinculada(s)`);
+  if (rncs.length > 0) motivosBloqueio.push(`${rncs.length} RNC(s) referenciando este documento`);
+
+  return {
+    podeExcluir: motivosBloqueio.length === 0,
+    totalRevisoes: revs.length,
+    totalConsultas: consultas.length,
+    totalSolicitacoes: solics.length,
+    totalRNCs: rncs.length,
+    motivosBloqueio,
+  };
+}
+
 export async function saveDocumentoControlado(
   organizationId: string,
   documento: DocumentoControlado,
-  currentUser?: UserProfile | null
+  currentUser?: UserProfile | null,
+  previousDocument?: DocumentoControlado | null
 ): Promise<void> {
   const user = currentUser || {
     displayName: auth.currentUser?.displayName || 'Sistema SGQ',
@@ -95,10 +145,18 @@ export async function saveDocumentoControlado(
     role: 'ADMIN',
   };
 
+  if (user.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil CONSULTA não pode cadastrar ou editar documentos controlados.');
+  }
+
+  const isNew = !previousDocument && !documento.createdAt;
+  const now = new Date().toISOString();
   const payload: DocumentoControlado = {
     ...documento,
     organizationId,
-    updatedAt: new Date().toISOString(),
+    updatedAt: now,
+    createdAt: documento.createdAt || now,
+    statusGeral: documento.statusGeral || 'ATIVO',
   };
 
   try {
@@ -108,15 +166,34 @@ export async function saveDocumentoControlado(
     await recordOrganizationAudit(organizationId, {
       entity: 'DOCUMENT_CONTROL',
       entityId: documento.id,
-      action: 'UPDATE',
+      action: isNew ? 'CREATE' : 'UPDATE',
       changedByUid: user.uid,
       changedByEmail: user.email,
-      summary: `Documento controlado salvo: ${documento.codigo} — ${documento.titulo}`,
-      details: JSON.stringify({
+      summary: isNew
+        ? `Cadastro de documento controlado: ${documento.codigo} — ${documento.titulo}`
+        : `Edição de metadados do documento: ${documento.codigo} — ${documento.titulo}`,
+      previousValue: previousDocument
+        ? JSON.stringify({
+            codigo: previousDocument.codigo,
+            titulo: previousDocument.titulo,
+            categoria: previousDocument.categoria,
+            emissor: previousDocument.emissor,
+            responsavelNome: previousDocument.responsavelNome,
+            statusGeral: previousDocument.statusGeral,
+            exigeEvidenciaLeitura: previousDocument.exigeEvidenciaLeitura,
+          })
+        : undefined,
+      newValue: JSON.stringify({
         codigo: documento.codigo,
+        titulo: documento.titulo,
         categoria: documento.categoria,
-        revisaoVigenteNumero: documento.revisaoVigenteNumero,
+        emissor: documento.emissor,
+        responsavelNome: documento.responsavelNome,
+        statusGeral: documento.statusGeral,
+        exigeEvidenciaLeitura: documento.exigeEvidenciaLeitura,
       }),
+      reason: isNew ? 'Novo documento inserido no Acervo SGQ' : 'Atualização de metadados documentais',
+      origin: 'CONTROLE_DOCUMENTAL',
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'controlled_documents');
@@ -124,10 +201,14 @@ export async function saveDocumentoControlado(
   }
 }
 
-export async function deleteDocumentoControlado(
+/**
+ * Inativação Lógica / Obsolescência de Documento Controlado
+ * Remove o documento do acervo ativo mas preserva integralmente revisões e evidências.
+ */
+export async function inactivateDocumentoControlado(
   organizationId: string,
   documentoId: string,
-  codigoDocumento: string,
+  motivo: string,
   currentUser?: UserProfile | null
 ): Promise<void> {
   const user = currentUser || {
@@ -136,6 +217,126 @@ export async function deleteDocumentoControlado(
     uid: auth.currentUser?.uid || 'system',
     role: 'ADMIN',
   };
+
+  if (user.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil CONSULTA não pode inativar documentos.');
+  }
+
+  const now = new Date().toISOString();
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
+    await setDoc(
+      docRef,
+      sanitizeForFirestore({
+        statusGeral: 'INATIVO',
+        updatedAt: now,
+        inativadoEm: now,
+        inativadoPor: user.displayName,
+        motivoInativacao: motivo || 'Inativação/Obsolescência com preservação de acervo histórico',
+      }),
+      { merge: true }
+    );
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'DOCUMENT_CONTROL',
+      entityId: documentoId,
+      action: 'INACTIVATE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `Inativação/Obsolescência de Documento: ID ${documentoId}. Motivo: ${motivo}`,
+      previousValue: 'statusGeral: ATIVO',
+      newValue: 'statusGeral: INATIVO',
+      reason: motivo,
+      origin: 'CONTROLE_DOCUMENTAL',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'controlled_documents');
+    throw err;
+  }
+}
+
+/**
+ * Reativação Lógica de Documento Controlado no Acervo Vigente
+ */
+export async function reactivateDocumentoControlado(
+  organizationId: string,
+  documentoId: string,
+  motivo: string,
+  currentUser?: UserProfile | null
+): Promise<void> {
+  const user = currentUser || {
+    displayName: auth.currentUser?.displayName || 'Sistema SGQ',
+    email: auth.currentUser?.email || 'sgq@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+  };
+
+  if (user.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil CONSULTA não pode reativar documentos.');
+  }
+
+  const now = new Date().toISOString();
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
+    await setDoc(
+      docRef,
+      sanitizeForFirestore({
+        statusGeral: 'ATIVO',
+        updatedAt: now,
+        reativadoEm: now,
+        reativadoPor: user.displayName,
+        motivoReativacao: motivo || 'Reativação para acervo documental vigente',
+      }),
+      { merge: true }
+    );
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'DOCUMENT_CONTROL',
+      entityId: documentoId,
+      action: 'REACTIVATE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `Reativação de Documento no Acervo Vigente: ID ${documentoId}. Motivo: ${motivo}`,
+      previousValue: 'statusGeral: INATIVO',
+      newValue: 'statusGeral: ATIVO',
+      reason: motivo,
+      origin: 'CONTROLE_DOCUMENTAL',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'controlled_documents');
+    throw err;
+  }
+}
+
+/**
+ * Exclusão Física de Documento Controlado (Apenas se não possuir histórico ou revisões)
+ */
+export async function deleteDocumentoControlado(
+  organizationId: string,
+  documentoId: string,
+  codigoDocumento: string,
+  currentUser?: UserProfile | null,
+  motivoExclusao?: string,
+  dependencias?: DependenciasDocumentoResult
+): Promise<void> {
+  const user = currentUser || {
+    displayName: auth.currentUser?.displayName || 'Sistema SGQ',
+    email: auth.currentUser?.email || 'sgq@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+  };
+
+  if (user.role !== 'ADMIN' && user.role !== 'GESTOR_SGQ') {
+    throw new Error('Permissão negada: Exclusão física de documentos é restrita a GESTOR_SGQ e ADMIN.');
+  }
+
+  if (dependencias && !dependencias.podeExcluir) {
+    throw new Error(
+      `Exclusão física bloqueada: este documento possui ${dependencias.motivosBloqueio.join(
+        ', '
+      )}. Para manter conformidade aeronáutica (RBAC 145 / MOMQ / EASA), utilize a Inativação/Obsolescência para preservar o histórico documental.`
+    );
+  }
 
   try {
     const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
@@ -147,8 +348,9 @@ export async function deleteDocumentoControlado(
       action: 'DELETE',
       changedByUid: user.uid,
       changedByEmail: user.email,
-      summary: `Exclusão controlada de documento: ${codigoDocumento}`,
-      details: JSON.stringify({ documentoId, codigoDocumento }),
+      summary: `Exclusão definitiva de documento órfão sem revisões: ${codigoDocumento} (${documentoId})`,
+      reason: motivoExclusao || 'Exclusão física de cadastro órfão sem revisões ou histórico',
+      origin: 'CONTROLE_DOCUMENTAL',
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, 'controlled_documents');
