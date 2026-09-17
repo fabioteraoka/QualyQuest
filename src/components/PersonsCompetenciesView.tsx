@@ -24,6 +24,10 @@ import {
   Calendar,
   Lock,
   Unlock,
+  PowerOff,
+  RotateCcw,
+  AlertOctagon,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -40,6 +44,9 @@ import {
 import {
   savePerson,
   deletePerson,
+  inactivatePerson,
+  reactivatePerson,
+  verificarDependenciasPessoa,
   saveCompetency,
   savePersonCompetency,
 } from '../services/firebase/competenciesFirestore';
@@ -58,6 +65,7 @@ interface PersonsCompetenciesViewProps {
   trainingRecords: RegistroTreinamentoColaborador[];
   documents: DocumentoEvidenciaPessoa[];
   activities: AtividadeCompetenciaRequerida[];
+  nonConformities?: any[];
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
 }
@@ -65,13 +73,14 @@ interface PersonsCompetenciesViewProps {
 export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = ({
   organizationId,
   userProfile,
-  persons,
-  competencies,
-  personCompetencies,
-  qualifications,
-  trainingRecords,
-  documents,
-  activities,
+  persons = [],
+  competencies = [],
+  personCompetencies = [],
+  qualifications = [],
+  trainingRecords = [],
+  documents = [],
+  activities = [],
+  nonConformities = [],
   onNavigateToTrainings,
   onNavigateToExpirations,
 }) => {
@@ -85,6 +94,27 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [selectedColaborador, setSelectedColaborador] = useState<ColaboradorPessoa | null>(null);
   const [modalColaboradorOpen, setModalColaboradorOpen] = useState(false);
   const [colaboradorParaEditar, setColaboradorParaEditar] = useState<ColaboradorPessoa | null>(null);
+
+  // Modais de Governança de Ciclo de Vida: Inativação, Reativação, Exclusão
+  const [colaboradorParaInativar, setColaboradorParaInativar] = useState<ColaboradorPessoa | null>(null);
+  const [modalInativarOpen, setModalInativarOpen] = useState(false);
+  const [motivoInativacao, setMotivoInativacao] = useState('');
+
+  const [colaboradorParaReativar, setColaboradorParaReativar] = useState<ColaboradorPessoa | null>(null);
+  const [modalReativarOpen, setModalReativarOpen] = useState(false);
+  const [motivoReativacao, setMotivoReativacao] = useState('');
+
+  const [colaboradorParaExcluir, setColaboradorParaExcluir] = useState<ColaboradorPessoa | null>(null);
+  const [modalExcluirOpen, setModalExcluirOpen] = useState(false);
+  const [motivoExclusao, setMotivoExclusao] = useState('');
+  const [analiseDependenciasColab, setAnaliseDependenciasColab] = useState<{
+    podeExcluir: boolean;
+    totalVinculos: number;
+    motivosBloqueio?: string[];
+    detalhes?: string[];
+  } | null>(null);
+
+  const [isSubmittingAcao, setIsSubmittingAcao] = useState(false);
 
   // Modal de Nova / Editar Competência
   const [modalCompetenciaOpen, setModalCompetenciaOpen] = useState(false);
@@ -213,7 +243,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     };
 
     try {
-      await savePerson(organizationId, colab, userProfile);
+      await savePerson(organizationId, colab, userProfile, colaboradorParaEditar || undefined);
       setModalColaboradorOpen(false);
       setColaboradorParaEditar(null);
       if (selectedColaborador?.id === colab.id) {
@@ -224,18 +254,123 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     }
   };
 
-  const handleDeleteColaborador = async (colab: ColaboradorPessoa) => {
-    if (!confirm(`Tem certeza que deseja excluir ${colab.nome} (${colab.matricula})? Esta ação não pode ser desfeita.`)) {
+  // Abrir Modal de Inativação Lógica
+  const handleOpenInativar = (colab: ColaboradorPessoa) => {
+    setColaboradorParaInativar(colab);
+    setMotivoInativacao('');
+    setModalInativarOpen(true);
+  };
+
+  // Confirmar Inativação Lógica
+  const handleConfirmInativar = async () => {
+    if (!colaboradorParaInativar) return;
+    if (!motivoInativacao.trim()) {
+      alert('Por favor, informe a justificativa ou motivo para a inativação do colaborador.');
       return;
     }
+
     try {
-      await deletePerson(organizationId, colab.id, userProfile);
-      if (selectedColaborador?.id === colab.id) {
-        setSelectedColaborador(null);
+      setIsSubmittingAcao(true);
+      await inactivatePerson(organizationId, colaboradorParaInativar.id, motivoInativacao.trim(), userProfile);
+      setModalInativarOpen(false);
+      setColaboradorParaInativar(null);
+      setMotivoInativacao('');
+      if (selectedColaborador?.id === colaboradorParaInativar.id) {
+        setSelectedColaborador({
+          ...selectedColaborador,
+          status: 'INATIVO',
+          inativadoEm: new Date().toISOString(),
+          inativadoPor: userProfile?.displayName || 'SGQ',
+          motivoInativacao: motivoInativacao.trim(),
+        });
       }
     } catch (err: any) {
-      alert(`Erro ao excluir colaborador: ${err.message}`);
+      alert(`Erro ao inativar colaborador: ${err.message}`);
+    } finally {
+      setIsSubmittingAcao(false);
     }
+  };
+
+  // Abrir Modal de Reativação
+  const handleOpenReativar = (colab: ColaboradorPessoa) => {
+    setColaboradorParaReativar(colab);
+    setMotivoReativacao('Retorno às atividades operacionais e revalidação de requisitos SGQ');
+    setModalReativarOpen(true);
+  };
+
+  // Confirmar Reativação
+  const handleConfirmReativar = async () => {
+    if (!colaboradorParaReativar) return;
+    try {
+      setIsSubmittingAcao(true);
+      await reactivatePerson(organizationId, colaboradorParaReativar.id, motivoReativacao.trim(), userProfile);
+      setModalReativarOpen(false);
+      setColaboradorParaReativar(null);
+      setMotivoReativacao('');
+      if (selectedColaborador?.id === colaboradorParaReativar.id) {
+        setSelectedColaborador({
+          ...selectedColaborador,
+          status: 'ATIVO',
+          reativadoEm: new Date().toISOString(),
+          reativadoPor: userProfile?.displayName || 'SGQ',
+          motivoReativacao: motivoReativacao.trim(),
+        });
+      }
+    } catch (err: any) {
+      alert(`Erro ao reativar colaborador: ${err.message}`);
+    } finally {
+      setIsSubmittingAcao(false);
+    }
+  };
+
+  // Abrir Modal de Exclusão Segura com Checagem Prévia de Dependências
+  const handleOpenExcluir = (colab: ColaboradorPessoa) => {
+    const analise = verificarDependenciasPessoa(
+      colab.id,
+      trainingRecords || [],
+      personCompetencies || [],
+      qualifications || [],
+      documents || [],
+      nonConformities || []
+    );
+    setColaboradorParaExcluir(colab);
+    setAnaliseDependenciasColab(analise);
+    setMotivoExclusao('');
+    setModalExcluirOpen(true);
+  };
+
+  // Confirmar Exclusão Física (se permitido)
+  const handleConfirmExcluir = async () => {
+    if (!colaboradorParaExcluir) return;
+    if (!analiseDependenciasColab?.podeExcluir) {
+      alert('Exclusão não permitida devido a vínculos ativos no SGQ. Utilize a Inativação.');
+      return;
+    }
+
+    try {
+      setIsSubmittingAcao(true);
+      await deletePerson(
+        organizationId,
+        colaboradorParaExcluir.id,
+        userProfile,
+        motivoExclusao.trim() || 'Exclusão de cadastro sem dependências vinculadas',
+        analiseDependenciasColab
+      );
+      setModalExcluirOpen(false);
+      if (selectedColaborador?.id === colaboradorParaExcluir.id) {
+        setSelectedColaborador(null);
+      }
+      setColaboradorParaExcluir(null);
+      setAnaliseDependenciasColab(null);
+    } catch (err: any) {
+      alert(`Erro ao excluir colaborador: ${err.message}`);
+    } finally {
+      setIsSubmittingAcao(false);
+    }
+  };
+
+  const handleDeleteColaborador = async (colab: ColaboradorPessoa) => {
+    handleOpenExcluir(colab);
   };
 
   const handleSaveCompetencia = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -526,7 +661,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                       </div>
 
                       <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                           <span>
                             <strong>
                               {personCompetencies.filter((c) => c.colaboradorId === colab.id).length}
@@ -546,9 +681,54 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                             treinos
                           </span>
                         </div>
-                        <div className="flex items-center gap-1 text-blue-600 font-medium">
-                          <span>Visão 360°</span>
-                          <ChevronRight className="w-3.5 h-3.5" />
+
+                        {/* Botões de Ação Direta no Card */}
+                        <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => {
+                              setColaboradorParaEditar(colab);
+                              setModalColaboradorOpen(true);
+                            }}
+                            className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition"
+                            title="Editar Cadastro"
+                          >
+                            <Edit className="w-3.5 h-3.5" />
+                          </button>
+
+                          {colab.status === 'INATIVO' || colab.status === 'DESLIGADO' ? (
+                            <button
+                              onClick={() => handleOpenReativar(colab)}
+                              className="p-1 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded transition"
+                              title="Reativar Colaborador"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleOpenInativar(colab)}
+                              className="p-1 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded transition"
+                              title="Inativar Colaborador (Lógica)"
+                            >
+                              <PowerOff className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => handleOpenExcluir(colab)}
+                            className="p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                            title="Excluir Registro (com verificação de vínculos)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => setSelectedColaborador(colab)}
+                            className="ml-1 px-1.5 py-0.5 text-blue-600 hover:bg-blue-50 rounded flex items-center gap-0.5 font-medium text-[11px]"
+                            title="Abrir Visão 360°"
+                          >
+                            <span>360°</span>
+                            <ChevronRight className="w-3 h-3" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -562,18 +742,20 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
           {selectedColaborador && (
             <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
               {/* Header 360° */}
-              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div className="flex flex-col md:flex-row md:items-start justify-between border-b border-slate-100 pb-4 gap-4">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-xl font-bold text-slate-900">{selectedColaborador.nome}</h2>
-                    <span className="font-mono text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded">
+                    <span className="font-mono text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-semibold">
                       {selectedColaborador.matricula}
                     </span>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
                         selectedColaborador.status === 'ATIVO'
                           ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-800'
+                          : selectedColaborador.status === 'AFASTADO'
+                          ? 'bg-amber-100 text-amber-800'
+                          : 'bg-slate-200 text-slate-700'
                       }`}
                     >
                       {selectedColaborador.status}
@@ -588,33 +770,88 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                {/* Barra de Ações do Colaborador Selecionado */}
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     onClick={() => {
                       setColaboradorParaEditar(selectedColaborador);
                       setModalColaboradorOpen(true);
                     }}
-                    className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition"
-                    title="Editar Colaborador"
+                    className="px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 rounded-lg transition flex items-center gap-1.5 border border-slate-200"
+                    title="Editar Cadastro do Colaborador"
                   >
-                    <Edit className="w-4 h-4" />
+                    <Edit className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Editar</span>
                   </button>
+
+                  {selectedColaborador.status === 'INATIVO' || selectedColaborador.status === 'DESLIGADO' ? (
+                    <button
+                      onClick={() => handleOpenReativar(selectedColaborador)}
+                      className="px-2.5 py-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition flex items-center gap-1.5 border border-emerald-200"
+                      title="Reativar Colaborador"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Reativar</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => handleOpenInativar(selectedColaborador)}
+                      className="px-2.5 py-1.5 text-xs font-semibold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-lg transition flex items-center gap-1.5 border border-amber-200"
+                      title="Inativar Colaborador (Lógica)"
+                    >
+                      <PowerOff className="w-3.5 h-3.5" />
+                      <span>Inativar</span>
+                    </button>
+                  )}
+
                   <button
-                    onClick={() => handleDeleteColaborador(selectedColaborador)}
-                    className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
-                    title="Excluir Colaborador"
+                    onClick={() => handleOpenExcluir(selectedColaborador)}
+                    className="px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-lg transition flex items-center gap-1.5 border border-rose-200"
+                    title="Excluir Registro"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Excluir</span>
                   </button>
+
                   <button
                     onClick={() => setSelectedColaborador(null)}
-                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition"
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition hover:bg-slate-100 ml-1"
                     title="Fechar painel 360°"
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
+
+              {/* Banner de Colaborador Inativo (Histórico Preservado) */}
+              {(selectedColaborador.status === 'INATIVO' || selectedColaborador.status === 'DESLIGADO') && (
+                <div className="p-4 rounded-xl border bg-slate-50 border-slate-300 text-slate-800 flex items-start gap-3">
+                  <PowerOff className="w-5 h-5 shrink-0 mt-0.5 text-slate-500" />
+                  <div className="text-xs space-y-1">
+                    <p className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                      Colaborador Inativo / Desligado
+                      <span className="font-normal text-xs text-slate-500">(Preservação Histórica Ativa)</span>
+                    </p>
+                    {selectedColaborador.inativadoEm && (
+                      <p className="text-slate-600">
+                        Inativado em{' '}
+                        <strong>{new Date(selectedColaborador.inativadoEm).toLocaleString('pt-BR')}</strong> por{' '}
+                        <strong>{selectedColaborador.inativadoPor || 'SGQ'}</strong>.
+                      </p>
+                    )}
+                    {selectedColaborador.motivoInativacao && (
+                      <p className="text-slate-700 bg-white/70 p-2 rounded border border-slate-200">
+                        <span className="font-semibold text-slate-800">Motivo registrado:</span>{' '}
+                        {selectedColaborador.motivoInativacao}
+                      </p>
+                    )}
+                    <p className="text-[11px] text-slate-500 pt-0.5">
+                      ⚠️ Conforme RBAC 145.161 e EASA Part 145, o histórico de treinamentos, CHTs e assinaturas
+                      deste colaborador é permanente e imutável para fins de auditoria regulatória.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Alerta de Restrição Operacional se houver */}
               {selectedColaborador.restricaoOperacional?.possuiRestricao && (
@@ -1571,6 +1808,331 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: INATIVAÇÃO LÓGICA DE COLABORADOR                                 */}
+      {/* ========================================================================= */}
+      {modalInativarOpen && colaboradorParaInativar && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200 animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-100 text-amber-700 rounded-lg">
+                  <PowerOff className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Inativar Colaborador (Lógica)</h3>
+                  <p className="text-xs text-slate-500">Preservação Histórica Conforme RBAC 145</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalInativarOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <p className="font-semibold text-slate-800 text-sm">{colaboradorParaInativar.nome}</p>
+              <p className="text-slate-600">
+                Matrícula: <strong className="font-mono">{colaboradorParaInativar.matricula}</strong> • Setor:{' '}
+                <strong>{colaboradorParaInativar.setor}</strong> • Função:{' '}
+                <strong>{colaboradorParaInativar.funcao}</strong>
+              </p>
+              <div className="pt-2 border-t border-slate-200 flex items-center gap-3 text-slate-500">
+                <span>
+                  <strong>{personCompetencies.filter((c) => c.colaboradorId === colaboradorParaInativar.id).length}</strong> comps
+                </span>
+                <span>
+                  <strong>{qualifications.filter((q) => q.colaboradorId === colaboradorParaInativar.id).length}</strong> qualifs
+                </span>
+                <span>
+                  <strong>{trainingRecords.filter((t) => t.colaboradorId === colaboradorParaInativar.id).length}</strong> treinos
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                O que acontece na inativação?
+              </p>
+              <p className="text-[11px] leading-relaxed text-amber-800">
+                O colaborador terá seu status alterado para <strong>INATIVO</strong> e não poderá ser escalado para
+                atividades técnicas operacionais. <strong>Todo o histórico passado</strong> de qualificações, horas de
+                treinamento e registros de manutenção permanecerá intacto para fins de rastreabilidade e auditoria da ANAC.
+              </p>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="font-semibold text-slate-700 block">
+                Motivo / Justificativa da Inativação *
+              </label>
+              <textarea
+                rows={3}
+                value={motivoInativacao}
+                onChange={(e) => setMotivoInativacao(e.target.value)}
+                placeholder="Ex: Desligamento formal da empresa, transferência de unidade, afastamento definitivo..."
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setModalInativarOpen(false)}
+                disabled={isSubmittingAcao}
+                className="px-3.5 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmInativar}
+                disabled={isSubmittingAcao || !motivoInativacao.trim()}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSubmittingAcao ? (
+                  <span>Processando...</span>
+                ) : (
+                  <>
+                    <PowerOff className="w-3.5 h-3.5" />
+                    <span>Confirmar Inativação</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: REATIVAÇÃO DE COLABORADOR                                        */}
+      {/* ========================================================================= */}
+      {modalReativarOpen && colaboradorParaReativar && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200 animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Reativar Colaborador</h3>
+                  <p className="text-xs text-slate-500">Retorno ao Quadro Ativo de Pessoal Técnico</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalReativarOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
+              <p className="font-semibold text-slate-800 text-sm">{colaboradorParaReativar.nome}</p>
+              <p className="text-slate-600">
+                Matrícula: <strong className="font-mono">{colaboradorParaReativar.matricula}</strong> • Setor:{' '}
+                <strong>{colaboradorParaReativar.setor}</strong>
+              </p>
+              {colaboradorParaReativar.inativadoEm && (
+                <p className="text-slate-500 text-[11px]">
+                  Inativado anteriormente em:{' '}
+                  {new Date(colaboradorParaReativar.inativadoEm).toLocaleString('pt-BR')}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="font-semibold text-slate-700 block">
+                Justificativa / Observação da Reativação
+              </label>
+              <textarea
+                rows={2}
+                value={motivoReativacao}
+                onChange={(e) => setMotivoReativacao(e.target.value)}
+                placeholder="Ex: Retorno de afastamento médico, recontratação, reativação de escopo..."
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setModalReativarOpen(false)}
+                disabled={isSubmittingAcao}
+                className="px-3.5 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReativar}
+                disabled={isSubmittingAcao}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSubmittingAcao ? (
+                  <span>Processando...</span>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Confirmar Reativação</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: EXCLUSÃO SEGURA COM ANÁLISE DE DEPENDÊNCIAS                       */}
+      {/* ========================================================================= */}
+      {modalExcluirOpen && colaboradorParaExcluir && analiseDependenciasColab && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200 animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div
+                  className={`p-2 rounded-lg ${
+                    analiseDependenciasColab.podeExcluir
+                      ? 'bg-rose-100 text-rose-700'
+                      : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {analiseDependenciasColab.podeExcluir ? (
+                    <Trash2 className="w-5 h-5" />
+                  ) : (
+                    <AlertOctagon className="w-5 h-5" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    {analiseDependenciasColab.podeExcluir
+                      ? 'Confirmar Exclusão de Registro'
+                      : 'Exclusão Bloqueada por Requisito RBAC 145'}
+                  </h3>
+                  <p className="text-xs text-slate-500">Verificação de Integridade e Histórico SGQ</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setModalExcluirOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-1">
+              <p className="font-semibold text-slate-800 text-sm">{colaboradorParaExcluir.nome}</p>
+              <p className="text-slate-600">
+                Matrícula: <strong className="font-mono">{colaboradorParaExcluir.matricula}</strong> • Setor:{' '}
+                <strong>{colaboradorParaExcluir.setor}</strong> • Status:{' '}
+                <strong>{colaboradorParaExcluir.status}</strong>
+              </p>
+            </div>
+
+            {!analiseDependenciasColab.podeExcluir ? (
+              <div className="space-y-3 text-xs">
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-rose-900 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-sm text-rose-700">
+                    <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                    Exclusão Física Não Permitida
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    Este colaborador possui <strong>{analiseDependenciasColab.totalVinculos || analiseDependenciasColab.motivosBloqueio?.length || analiseDependenciasColab.detalhes?.length || 0} vínculo(s) histórico(s)</strong> no SGQ
+                    que impedem a exclusão física definitiva, pois causariam quebra de rastreabilidade regulatória:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] font-medium text-rose-800">
+                    {(analiseDependenciasColab.detalhes || analiseDependenciasColab.motivosBloqueio || []).map((det, idx) => (
+                      <li key={idx}>{det}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-rose-700 pt-1 border-t border-rose-200/60">
+                    💡 <strong>Solução Normativa:</strong> Utilize a <strong>Inativação Lógica</strong>. O colaborador
+                    deixará de figurar nas escalas ativas, mas todos os registros permanecerão válidos perante a autoridade.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setModalExcluirOpen(false)}
+                    className="px-3.5 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setModalExcluirOpen(false);
+                      handleOpenInativar(colaboradorParaExcluir);
+                    }}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5"
+                  >
+                    <PowerOff className="w-3.5 h-3.5" />
+                    <span>Inativar em vez de Excluir</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    Atenção: Ação Irreversível
+                  </p>
+                  <p className="text-[11px] text-amber-800">
+                    Nenhum vínculo ou histórico foi encontrado para este colaborador (registro sem treinamentos ou qualificações).
+                    A exclusão removerá definitivamente o cadastro.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 block">
+                    Motivo da Exclusão Definitiva *
+                  </label>
+                  <input
+                    type="text"
+                    value={motivoExclusao}
+                    onChange={(e) => setMotivoExclusao(e.target.value)}
+                    placeholder="Ex: Cadastro duplicado por engano de digitação"
+                    className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setModalExcluirOpen(false)}
+                    disabled={isSubmittingAcao}
+                    className="px-3.5 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmExcluir}
+                    disabled={isSubmittingAcao}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {isSubmittingAcao ? (
+                      <span>Excluindo...</span>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Confirmar Exclusão</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

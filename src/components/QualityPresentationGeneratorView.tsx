@@ -549,13 +549,13 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
           </div>
         </div>
 
-        {apresentacao.resumoExecutivo.principaisPontosAtencao.length > 0 && (
+        {(apresentacao.resumoExecutivo?.principaisPontosAtencao || []).length > 0 && (
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
             <div className="text-xs text-slate-600 space-y-1">
               <strong className="text-slate-800">Pontos de Atenção Crítica para a Diretoria:</strong>
               <ul className="list-disc list-inside space-y-0.5">
-                {apresentacao.resumoExecutivo.principaisPontosAtencao.map((pt, idx) => (
+                {(apresentacao.resumoExecutivo?.principaisPontosAtencao || []).map((pt, idx) => (
                   <li key={idx}>{pt}</li>
                 ))}
               </ul>
@@ -694,7 +694,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
             {/* Key Stat Cards on the Slide */}
             {activeSlide.metricasPrincipais && activeSlide.metricasPrincipais.length > 0 && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {activeSlide.metricasPrincipais.map((m, mIdx) => (
+                {(activeSlide.metricasPrincipais || []).map((m, mIdx) => (
                   <div
                     key={mIdx}
                     className="bg-white border border-slate-200 rounded-[8px] p-4 shadow-xs"
@@ -720,13 +720,13 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
             )}
 
             {/* If Slide has a Data Table */}
-            {activeSlide.tabelaDados && activeSlide.tabelaDados.linhas.length > 0 && (
+            {activeSlide.tabelaDados && (activeSlide.tabelaDados.linhas || []).length > 0 && (
               <div className="bg-white border border-slate-200 rounded-[8px] overflow-hidden shadow-xs">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-900 text-white font-semibold">
-                        {activeSlide.tabelaDados.colunas.map((col, cIdx) => (
+                        {(activeSlide.tabelaDados.colunas || []).map((col, cIdx) => (
                           <th key={cIdx} className="px-4 py-2.5 border-b border-slate-800">
                             {col}
                           </th>
@@ -734,9 +734,9 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {activeSlide.tabelaDados.linhas.slice(0, 6).map((linha, rIdx) => (
+                      {(activeSlide.tabelaDados.linhas || []).slice(0, 6).map((linha, rIdx) => (
                         <tr key={rIdx} className={rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
-                          {linha.map((cel, dIdx) => (
+                          {(linha || []).map((cel, dIdx) => (
                             <td key={dIdx} className="px-4 py-2 text-slate-700">
                               {cel}
                             </td>
@@ -746,7 +746,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                     </tbody>
                   </table>
                 </div>
-                {activeSlide.tabelaDados.linhas.length > 6 && (
+                {(activeSlide.tabelaDados.linhas || []).length > 6 && (
                   <div className="bg-slate-50 px-4 py-2 border-t border-slate-200 text-[11px] text-slate-500 flex items-center justify-between">
                     <span>
                       Exibindo 6 de {activeSlide.tabelaDados.linhas.length} registros no slide (+ {activeSlide.tabelaDados.linhas.length - 6} consolidados)
@@ -760,14 +760,14 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
             )}
 
             {/* Key Bullet Points Box */}
-            {activeSlide.pontosChave && activeSlide.pontosChave.length > 0 && (
+            {activeSlide.pontosChave && (activeSlide.pontosChave || []).length > 0 && (
               <div className="bg-white border border-slate-200 rounded-[8px] p-5 shadow-xs">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
                   <Info className="w-4 h-4 text-blue-600" />
                   <span>Análise Técnica e Deliberações do SGQ</span>
                 </h3>
                 <ul className="space-y-2 text-xs text-slate-700">
-                  {activeSlide.pontosChave.map((pt, pIdx) => (
+                  {(activeSlide.pontosChave || []).map((pt, pIdx) => (
                     <li key={pIdx} className="flex items-start gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
                       <span className="leading-relaxed">{pt}</span>
@@ -874,7 +874,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
 
                 {s.metricasPrincipais && s.metricasPrincipais.length > 0 && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {s.metricasPrincipais.map((m, mIdx) => (
+                    {(s.metricasPrincipais || []).map((m, mIdx) => (
                       <div key={mIdx} className="bg-white border border-slate-200 rounded p-3">
                         <span className="text-[10px] font-bold text-slate-500 uppercase block">{m.rotulo}</span>
                         <div className="text-xl font-bold text-slate-900 mt-0.5">{m.valor}</div>
@@ -884,20 +884,20 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                   </div>
                 )}
 
-                {s.tabelaDados && s.tabelaDados.linhas.length > 0 && (
+                {s.tabelaDados && (s.tabelaDados.linhas || []).length > 0 && (
                   <div className="bg-white border border-slate-200 rounded overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
                         <tr className="bg-slate-900 text-white">
-                          {s.tabelaDados.colunas.map((c, i) => (
+                          {(s.tabelaDados.colunas || []).map((c, i) => (
                             <th key={i} className="px-3 py-2">{c}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {s.tabelaDados.linhas.map((row, rI) => (
+                        {(s.tabelaDados.linhas || []).map((row, rI) => (
                           <tr key={rI} className={rI % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                            {row.map((cell, cI) => (
+                            {(row || []).map((cell, cI) => (
                               <td key={cI} className="px-3 py-1.5 text-slate-700">{cell}</td>
                             ))}
                           </tr>
@@ -907,11 +907,11 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                   </div>
                 )}
 
-                {s.pontosChave && s.pontosChave.length > 0 && (
+                {s.pontosChave && (s.pontosChave || []).length > 0 && (
                   <div className="bg-white border border-slate-200 rounded p-4">
                     <h4 className="text-xs font-bold text-slate-700 uppercase mb-2">Análise e Deliberações:</h4>
                     <ul className="space-y-1.5 text-xs text-slate-700">
-                      {s.pontosChave.map((p, pI) => (
+                      {(s.pontosChave || []).map((p, pI) => (
                         <li key={pI} className="flex items-start gap-2">
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0 mt-1.5"></span>
                           <span>{p}</span>

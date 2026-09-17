@@ -89,7 +89,9 @@ export interface DependenciasDocumentoResult {
   totalConsultas: number;
   totalSolicitacoes: number;
   totalRNCs: number;
+  totalVinculos: number;
   motivosBloqueio: string[];
+  detalhes: string[];
 }
 
 /**
@@ -128,7 +130,9 @@ export function verificarDependenciasDocumento(
     totalConsultas: consultas.length,
     totalSolicitacoes: solics.length,
     totalRNCs: rncs.length,
+    totalVinculos: motivosBloqueio.length,
     motivosBloqueio,
+    detalhes: motivosBloqueio,
   };
 }
 

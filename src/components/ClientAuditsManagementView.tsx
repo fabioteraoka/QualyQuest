@@ -66,12 +66,12 @@ interface ClientAuditsManagementViewProps {
 }
 
 export const ClientAuditsManagementView: React.FC<ClientAuditsManagementViewProps> = ({
-  clientes,
-  bases,
-  programas,
-  controles,
-  requisitos,
-  avaliacoes,
+  clientes = [],
+  bases = [],
+  programas = [],
+  controles = [],
+  requisitos = [],
+  avaliacoes = [],
   activeOrganization,
   userProfile,
   onSaveAvaliacao,

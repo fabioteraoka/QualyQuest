@@ -31,6 +31,10 @@ import {
   atualizarStatusSolicitacaoCliente,
   saveLogVerificacao,
   registrarEvidenciaConsulta,
+  inactivateDocumentoControlado,
+  reactivateDocumentoControlado,
+  deleteDocumentoControlado,
+  verificarDependenciasDocumento,
 } from '../services/firebase/documentControlFirestore';
 import {
   BookOpen,
@@ -63,6 +67,12 @@ import {
   Eye,
   RefreshCw,
   Award,
+  Edit,
+  Trash2,
+  PowerOff,
+  RotateCcw,
+  AlertOctagon,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface DocumentControlCenterViewProps {
@@ -107,7 +117,197 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   // Filtros do Acervo
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoria, setSelectedCategoria] = useState<string>('TODAS');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
   const [selectedDocForDetail, setSelectedDocForDetail] = useState<DocumentoControlado | null>(null);
+
+  // Estados de Governança Documental (Edição, Inativação, Reativação, Exclusão Segura)
+  const [docToEdit, setDocToEdit] = useState<DocumentoControlado | null>(null);
+  const [isEditDocModalOpen, setIsEditDocModalOpen] = useState(false);
+  const [editDocForm, setEditDocForm] = useState({
+    titulo: '',
+    categoria: 'DOCUMENTO_INTERNO' as CategoriaDocumental,
+    emissor: '',
+    responsavelNome: '',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: '',
+  });
+
+  const [docToInactivate, setDocToInactivate] = useState<DocumentoControlado | null>(null);
+  const [isDocInactivateModalOpen, setIsDocInactivateModalOpen] = useState(false);
+  const [motivoInativacaoDoc, setMotivoInativacaoDoc] = useState('');
+
+  const [docToReactivate, setDocToReactivate] = useState<DocumentoControlado | null>(null);
+  const [isDocReactivateModalOpen, setIsDocReactivateModalOpen] = useState(false);
+  const [motivoReativacaoDoc, setMotivoReativacaoDoc] = useState('');
+
+  const [docToDelete, setDocToDelete] = useState<DocumentoControlado | null>(null);
+  const [isDocDeleteModalOpen, setIsDocDeleteModalOpen] = useState(false);
+  const [motivoExclusaoDoc, setMotivoExclusaoDoc] = useState('');
+  const [analiseDependenciasDoc, setAnaliseDependenciasDoc] = useState<{
+    podeExcluir: boolean;
+    totalVinculos: number;
+    motivosBloqueio?: string[];
+    detalhes?: string[];
+  } | null>(null);
+  const [isSubmittingDocAction, setIsSubmittingDocAction] = useState(false);
+
+  // Handlers de Governança Documental
+  const handleOpenEditDoc = (doc: DocumentoControlado) => {
+    setDocToEdit(doc);
+    setEditDocForm({
+      titulo: doc.titulo,
+      categoria: doc.categoria,
+      emissor: doc.emissor,
+      responsavelNome: doc.responsavelNome || '',
+      exigeEvidenciaLeitura: !!doc.exigeEvidenciaLeitura,
+      aplicabilidadePadrao: doc.aplicabilidadePadrao || '',
+    });
+    setIsEditDocModalOpen(true);
+  };
+
+  const handleSaveEditDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!docToEdit) return;
+
+    try {
+      setIsSubmittingDocAction(true);
+      const updatedDoc: DocumentoControlado = {
+        ...docToEdit,
+        titulo: editDocForm.titulo,
+        categoria: editDocForm.categoria,
+        emissor: editDocForm.emissor,
+        responsavelNome: editDocForm.responsavelNome,
+        exigeEvidenciaLeitura: editDocForm.exigeEvidenciaLeitura,
+        aplicabilidadePadrao: editDocForm.aplicabilidadePadrao,
+        atualizadoEm: new Date().toISOString(),
+      };
+
+      await saveDocumentoControlado(organizationId, updatedDoc, currentUser, docToEdit);
+      setIsEditDocModalOpen(false);
+      if (selectedDocForDetail?.id === docToEdit.id) {
+        setSelectedDocForDetail(updatedDoc);
+      }
+      setDocToEdit(null);
+      showToast('Documento atualizado com sucesso e registrado no Audit Trail!');
+    } catch (err: any) {
+      alert(`Erro ao atualizar documento: ${err.message}`);
+    } finally {
+      setIsSubmittingDocAction(false);
+    }
+  };
+
+  const handleOpenInactivateDoc = (doc: DocumentoControlado) => {
+    setDocToInactivate(doc);
+    setMotivoInativacaoDoc('');
+    setIsDocInactivateModalOpen(true);
+  };
+
+  const handleConfirmInactivateDoc = async () => {
+    if (!docToInactivate) return;
+    if (!motivoInativacaoDoc.trim()) {
+      alert('Por favor, informe a justificativa regulatória para a inativação deste documento.');
+      return;
+    }
+
+    try {
+      setIsSubmittingDocAction(true);
+      await inactivateDocumentoControlado(organizationId, docToInactivate.id, motivoInativacaoDoc.trim(), currentUser);
+      setIsDocInactivateModalOpen(false);
+      if (selectedDocForDetail?.id === docToInactivate.id) {
+        setSelectedDocForDetail({
+          ...selectedDocForDetail,
+          statusGeral: 'INATIVO',
+          inativadoEm: new Date().toISOString(),
+          inativadoPor: currentUser?.displayName || 'SGQ',
+          motivoInativacao: motivoInativacaoDoc.trim(),
+        });
+      }
+      setDocToInactivate(null);
+      setMotivoInativacaoDoc('');
+      showToast('Documento inativado com sucesso. Histórico de revisões permanece arquivado para auditoria.');
+    } catch (err: any) {
+      alert(`Erro ao inativar documento: ${err.message}`);
+    } finally {
+      setIsSubmittingDocAction(false);
+    }
+  };
+
+  const handleOpenReactivateDoc = (doc: DocumentoControlado) => {
+    setDocToReactivate(doc);
+    setMotivoReativacaoDoc('Revalidação de aplicabilidade operacional e reativação no SGQ');
+    setIsDocReactivateModalOpen(true);
+  };
+
+  const handleConfirmReactivateDoc = async () => {
+    if (!docToReactivate) return;
+
+    try {
+      setIsSubmittingDocAction(true);
+      await reactivateDocumentoControlado(organizationId, docToReactivate.id, motivoReativacaoDoc.trim(), currentUser);
+      setIsDocReactivateModalOpen(false);
+      if (selectedDocForDetail?.id === docToReactivate.id) {
+        setSelectedDocForDetail({
+          ...selectedDocForDetail,
+          statusGeral: 'ATIVO',
+          reativadoEm: new Date().toISOString(),
+          reativadoPor: currentUser?.displayName || 'SGQ',
+          motivoReativacao: motivoReativacaoDoc.trim(),
+        });
+      }
+      setDocToReactivate(null);
+      setMotivoReativacaoDoc('');
+      showToast('Documento reativado no acervo ativo com sucesso!');
+    } catch (err: any) {
+      alert(`Erro ao reativar documento: ${err.message}`);
+    } finally {
+      setIsSubmittingDocAction(false);
+    }
+  };
+
+  const handleOpenDeleteDoc = (doc: DocumentoControlado) => {
+    const analise = verificarDependenciasDocumento(
+      doc.id,
+      doc.codigo,
+      revisoes,
+      evidenciasConsulta,
+      solicitacoes,
+      nonConformities
+    );
+    setDocToDelete(doc);
+    setAnaliseDependenciasDoc(analise);
+    setMotivoExclusaoDoc('');
+    setIsDocDeleteModalOpen(true);
+  };
+
+  const handleConfirmDeleteDoc = async () => {
+    if (!docToDelete) return;
+    if (!analiseDependenciasDoc?.podeExcluir) {
+      alert('Exclusão física bloqueada por requisitos regulatórios. Utilize a Inativação Lógica.');
+      return;
+    }
+
+    try {
+      setIsSubmittingDocAction(true);
+      await deleteDocumentoControlado(
+        organizationId,
+        docToDelete.id,
+        currentUser,
+        motivoExclusaoDoc.trim() || 'Exclusão de rascunho sem revisões vinculadas',
+        analiseDependenciasDoc
+      );
+      setIsDocDeleteModalOpen(false);
+      if (selectedDocForDetail?.id === docToDelete.id) {
+        setSelectedDocForDetail(null);
+      }
+      setDocToDelete(null);
+      setAnaliseDependenciasDoc(null);
+      showToast('Documento excluído com sucesso.');
+    } catch (err: any) {
+      alert(`Erro ao excluir documento: ${err.message}`);
+    } finally {
+      setIsSubmittingDocAction(false);
+    }
+  };
 
   // Modais de Criação
   const [isNewDocModalOpen, setIsNewDocModalOpen] = useState(false);
@@ -165,9 +365,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
         doc.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         doc.emissor.toLowerCase().includes(searchTerm.toLowerCase());
       const matchCategoria = selectedCategoria === 'TODAS' || doc.categoria === selectedCategoria;
-      return matchSearch && matchCategoria;
+      const matchStatus =
+        selectedStatusFilter === 'TODOS' ||
+        (selectedStatusFilter === 'ATIVO' && (doc.statusGeral === 'ATIVO' || !doc.statusGeral)) ||
+        (selectedStatusFilter === 'INATIVO' && doc.statusGeral === 'INATIVO');
+      return matchSearch && matchCategoria && matchStatus;
     });
-  }, [documentos, searchTerm, selectedCategoria]);
+  }, [documentos, searchTerm, selectedCategoria, selectedStatusFilter]);
 
   // Revisões do documento selecionado para detalhe
   const revisoesDoDocSelecionado = useMemo(() => {
@@ -455,7 +659,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               />
             </div>
 
-            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
               <span className="text-xs text-slate-400 font-medium whitespace-nowrap flex items-center gap-1">
                 <Filter className="w-3.5 h-3.5" /> Categoria:
               </span>
@@ -482,6 +686,20 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   </button>
                 )
               )}
+
+              {/* Filtro de Status Geral */}
+              <div className="flex items-center gap-1 ml-auto">
+                <span className="text-xs text-slate-400 font-medium whitespace-nowrap">Status:</span>
+                <select
+                  value={selectedStatusFilter}
+                  onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
+                  className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+                >
+                  <option value="TODOS">Todos os Status</option>
+                  <option value="ATIVO">Apenas Ativos</option>
+                  <option value="INATIVO">Apenas Inativos</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -490,18 +708,34 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
             {filteredDocumentos.map((doc) => {
               const revVigente = revisoes.find((r) => r.id === doc.revisaoVigenteId);
               const totalRevisoes = revisoes.filter((r) => r.documentoId === doc.id).length;
+              const isDocInativo = doc.statusGeral === 'INATIVO';
 
               return (
                 <div
                   key={doc.id}
-                  className="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-xl p-5 flex flex-col justify-between transition-all group hover:shadow-md"
+                  className={`border rounded-xl p-5 flex flex-col justify-between transition-all group hover:shadow-md ${
+                    isDocInativo
+                      ? 'bg-slate-950/60 border-slate-800/60 opacity-80 hover:opacity-100'
+                      : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                  }`}
                 >
                   <div className="space-y-3">
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <span className="text-xs font-mono font-bold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
-                          {doc.codigo}
-                        </span>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-mono font-bold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
+                            {doc.codigo}
+                          </span>
+                          {isDocInativo ? (
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
+                              <PowerOff className="w-2.5 h-2.5" /> Inativo
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Ativo
+                            </span>
+                          )}
+                        </div>
                         <h3 className="text-sm font-semibold text-white mt-1.5 group-hover:text-sky-300 transition-colors line-clamp-2">
                           {doc.titulo}
                         </h3>
@@ -542,24 +776,61 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => {
-                        setConsultTargetDoc(doc);
-                        setIsConsultModalOpen(true);
-                      }}
-                      className="text-xs text-slate-300 hover:text-white flex items-center gap-1 px-2.5 py-1.5 rounded-md hover:bg-slate-800 transition-colors"
-                      title="Registrar evidência formal de consulta para OS ou Auditoria"
-                    >
-                      <Eye className="w-3.5 h-3.5 text-sky-400" />
-                      Consultar
-                    </button>
+                  {/* Ações do Card */}
+                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          setConsultTargetDoc(doc);
+                          setIsConsultModalOpen(true);
+                        }}
+                        className="text-xs text-slate-300 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-800 transition-colors"
+                        title="Registrar consulta formal"
+                      >
+                        <Eye className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Consultar</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleOpenEditDoc(doc)}
+                        className="text-xs text-slate-400 hover:text-sky-300 p-1.5 rounded hover:bg-slate-800 transition-colors"
+                        title="Editar Metadados do Documento"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
+
+                      {isDocInativo ? (
+                        <button
+                          onClick={() => handleOpenReactivateDoc(doc)}
+                          className="text-xs text-slate-400 hover:text-emerald-400 p-1.5 rounded hover:bg-slate-800 transition-colors"
+                          title="Reativar Documento"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleOpenInactivateDoc(doc)}
+                          className="text-xs text-slate-400 hover:text-amber-400 p-1.5 rounded hover:bg-slate-800 transition-colors"
+                          title="Inativar Documento (Lógica)"
+                        >
+                          <PowerOff className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => handleOpenDeleteDoc(doc)}
+                        className="text-xs text-slate-400 hover:text-rose-400 p-1.5 rounded hover:bg-slate-800 transition-colors"
+                        title="Excluir Registro (com verificação prévia)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
                     <button
                       onClick={() => setSelectedDocForDetail(doc)}
-                      className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1 px-2.5 py-1.5 rounded-md hover:bg-sky-500/10 transition-colors"
+                      className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1 px-2 py-1 rounded hover:bg-sky-500/10 transition-colors"
                     >
-                      Ver Linha do Tempo
+                      Linha do Tempo
                       <ChevronRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -573,28 +844,109 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
             <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
                 {/* Cabeçalho do Modal */}
-                <div className="p-5 border-b border-slate-800 flex items-start justify-between bg-slate-950/60">
+                <div className="p-5 border-b border-slate-800 flex items-start justify-between bg-slate-950/60 gap-4">
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="px-2 py-0.5 rounded text-xs font-mono font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">
                         {selectedDocForDetail.codigo}
                       </span>
                       <span className="text-xs text-slate-400 uppercase tracking-wider">
                         {selectedDocForDetail.categoria}
                       </span>
+                      {selectedDocForDetail.statusGeral === 'INATIVO' ? (
+                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
+                          <PowerOff className="w-2.5 h-2.5" /> Inativo
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          Ativo
+                        </span>
+                      )}
                     </div>
                     <h2 className="text-lg font-bold text-white">{selectedDocForDetail.titulo}</h2>
                     <p className="text-xs text-slate-400">
                       Responsável Técnico: {selectedDocForDetail.responsavelNome} • Emissor: {selectedDocForDetail.emissor}
                     </p>
                   </div>
-                  <button
-                    onClick={() => setSelectedDocForDetail(null)}
-                    className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+
+                  {/* Ações no Topo do Detalhe */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      onClick={() => handleOpenEditDoc(selectedDocForDetail)}
+                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                      title="Editar Metadados"
+                    >
+                      <Edit className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Editar</span>
+                    </button>
+
+                    {selectedDocForDetail.statusGeral === 'INATIVO' ? (
+                      <button
+                        onClick={() => handleOpenReactivateDoc(selectedDocForDetail)}
+                        className="px-2.5 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/30 hover:bg-emerald-900/50 text-emerald-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                        title="Reativar Documento"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reativar</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenInactivateDoc(selectedDocForDetail)}
+                        className="px-2.5 py-1.5 rounded-lg bg-amber-950/40 border border-amber-500/30 hover:bg-amber-900/50 text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                        title="Inativar Documento"
+                      >
+                        <PowerOff className="w-3.5 h-3.5" />
+                        <span>Inativar</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => handleOpenDeleteDoc(selectedDocForDetail)}
+                      className="px-2.5 py-1.5 rounded-lg bg-rose-950/40 border border-rose-500/30 hover:bg-rose-900/50 text-rose-300 text-xs font-medium flex items-center gap-1.5 transition-colors"
+                      title="Excluir Documento"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Excluir</span>
+                    </button>
+
+                    <button
+                      onClick={() => setSelectedDocForDetail(null)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 ml-1"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
                 </div>
+
+                {/* Banner Regulatório de Inativação se o documento estiver inativo */}
+                {selectedDocForDetail.statusGeral === 'INATIVO' && (
+                  <div className="mx-6 mt-4 p-4 rounded-xl border bg-slate-950 border-slate-800 text-slate-300 flex items-start gap-3">
+                    <PowerOff className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-1">
+                      <p className="font-bold text-white text-sm">
+                        Documento Inativo / Obsoleto (Histórico e Revisões Preservados)
+                      </p>
+                      {selectedDocForDetail.inativadoEm && (
+                        <p className="text-slate-400">
+                          Inativado em{' '}
+                          <strong>{new Date(selectedDocForDetail.inativadoEm).toLocaleString('pt-BR')}</strong> por{' '}
+                          <strong>{selectedDocForDetail.inativadoPor || 'SGQ'}</strong>.
+                        </p>
+                      )}
+                      {selectedDocForDetail.motivoInativacao && (
+                        <p className="p-2 rounded bg-slate-900 border border-slate-800 text-slate-200">
+                          <span className="font-semibold text-white">Justificativa da Inativação:</span>{' '}
+                          {selectedDocForDetail.motivoInativacao}
+                        </p>
+                      )}
+                      <p className="text-slate-500 text-[11px] pt-1">
+                        ⚠️ Conforme regulamentação ANAC RBAC 145 / EASA Part 145 e diretrizes do MOMQ, documentos inativados
+                        não podem receber novas revisões operacionais, mas todas as revisões históricas e registros de leitura
+                        permanecem disponíveis para fins de auditoria e conformidade temporal.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Conteúdo com a Linha do Tempo Cronológica */}
                 <div className="p-6 overflow-y-auto space-y-6">
@@ -1346,11 +1698,11 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <Layers className="w-4 h-4 text-emerald-400" />
-                    Matriz Sistêmica de Impactos da Nova Revisão ({comparacaoResult.impactos.length} áreas impactadas)
+                    Matriz Sistêmica de Impactos da Nova Revisão ({(comparacaoResult.impactos || []).length} áreas impactadas)
                   </h3>
 
                   <div className="space-y-3">
-                    {comparacaoResult.impactos.map((imp) => (
+                    {(comparacaoResult.impactos || []).map((imp) => (
                       <div
                         key={imp.id}
                         className="p-3.5 rounded-lg bg-slate-900 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
@@ -2171,6 +2523,432 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDITAR METADADOS DO DOCUMENTO CONTROLADO                           */}
+      {/* ========================================================================= */}
+      {isEditDocModalOpen && docToEdit && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-sky-500/10 text-sky-400 rounded-lg border border-sky-500/20">
+                  <Edit className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Editar Documento Controlado</h3>
+                  <p className="text-xs text-slate-400 font-mono">{docToEdit.codigo}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditDocModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditDoc} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-300 mb-1 font-semibold">Título do Documento *</label>
+                <input
+                  type="text"
+                  value={editDocForm.titulo}
+                  onChange={(e) => setEditDocForm({ ...editDocForm, titulo: e.target.value })}
+                  required
+                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Categoria *</label>
+                  <select
+                    value={editDocForm.categoria}
+                    onChange={(e) =>
+                      setEditDocForm({ ...editDocForm, categoria: e.target.value as CategoriaDocumental })
+                    }
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="DOCUMENTO_INTERNO">Manual / Procedimento Interno</option>
+                    <option value="DOCUMENTO_AUTORIDADE">Norma de Autoridade (ANAC/FAA/EASA)</option>
+                    <option value="DOCUMENTO_FABRICANTE">Manual de Fabricante (CMM/AMM/SB/AD)</option>
+                    <option value="DOCUMENTO_CLIENTE">Especificação Técnica de Cliente</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Emissor / Fonte *</label>
+                  <input
+                    type="text"
+                    value={editDocForm.emissor}
+                    onChange={(e) => setEditDocForm({ ...editDocForm, emissor: e.target.value })}
+                    required
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 mb-1 font-semibold">Responsável Técnico / Gestor</label>
+                <input
+                  type="text"
+                  value={editDocForm.responsavelNome}
+                  onChange={(e) => setEditDocForm({ ...editDocForm, responsavelNome: e.target.value })}
+                  placeholder="Ex: Engenharia de Manutenção / Gestor da Qualidade"
+                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 mb-1 font-semibold">Aplicabilidade Padrão</label>
+                <input
+                  type="text"
+                  value={editDocForm.aplicabilidadePadrao}
+                  onChange={(e) => setEditDocForm({ ...editDocForm, aplicabilidadePadrao: e.target.value })}
+                  placeholder="Ex: Todas as frotas Caravan 208B ou Linha de Motores PT6A"
+                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              <div className="pt-1">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={editDocForm.exigeEvidenciaLeitura}
+                    onChange={(e) => setEditDocForm({ ...editDocForm, exigeEvidenciaLeitura: e.target.checked })}
+                    className="rounded bg-slate-950 border-slate-700 text-sky-600 focus:ring-sky-500"
+                  />
+                  <span>Exige evidência formal de leitura e confirmação pelos mecânicos/técnicos</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsEditDocModalOpen(false)}
+                  disabled={isSubmittingDocAction}
+                  className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingDocAction}
+                  className="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-semibold flex items-center gap-1.5"
+                >
+                  {isSubmittingDocAction ? <span>Salvando...</span> : <span>Salvar Alterações</span>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: INATIVAÇÃO LÓGICA DO DOCUMENTO CONTROLADO                           */}
+      {/* ========================================================================= */}
+      {isDocInactivateModalOpen && docToInactivate && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg border border-amber-500/20">
+                  <PowerOff className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Inativar Documento Controlado</h3>
+                  <p className="text-xs text-slate-400">Preservação Histórica e Temporal RBAC 145</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDocInactivateModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
+              <span className="text-sky-400 font-mono font-bold">{docToInactivate.codigo}</span>
+              <p className="font-semibold text-white text-sm">{docToInactivate.titulo}</p>
+              <p className="text-slate-400">
+                Categoria: {docToInactivate.categoria.replace('DOCUMENTO_', '')} • Emissor: {docToInactivate.emissor}
+              </p>
+            </div>
+
+            <div className="bg-amber-950/30 border border-amber-500/30 rounded-lg p-3 text-xs text-amber-200 space-y-1.5">
+              <p className="font-semibold flex items-center gap-1.5 text-amber-300">
+                <AlertTriangle className="w-4 h-4" />
+                Preservação Regulatória do Acervo
+              </p>
+              <p className="text-[11px] leading-relaxed text-amber-200/90">
+                O documento será marcado como <strong>INATIVO / OBSOLETO</strong>. Nenhuma nova revisão operacional
+                poderá ser criada. <strong>Todo o histórico de revisões passadas, assinaturas e consultas técnicas</strong>{' '}
+                permanecerá preservado e pesquisável no módulo de Consulta Temporal e Comparador de Revisões.
+              </p>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="block text-slate-300 font-semibold">
+                Justificativa Regulatória da Inativação *
+              </label>
+              <textarea
+                rows={3}
+                value={motivoInativacaoDoc}
+                onChange={(e) => setMotivoInativacaoDoc(e.target.value)}
+                placeholder="Ex: Documento cancelado por AD/Diretriz de Aeronavegabilidade, encerramento de contrato com o operador, substituição por nova família de manuais..."
+                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsDocInactivateModalOpen(false)}
+                disabled={isSubmittingDocAction}
+                className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmInactivateDoc}
+                disabled={isSubmittingDocAction || !motivoInativacaoDoc.trim()}
+                className="px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {isSubmittingDocAction ? (
+                  <span>Inativando...</span>
+                ) : (
+                  <>
+                    <PowerOff className="w-3.5 h-3.5" />
+                    <span>Confirmar Inativação</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: REATIVAÇÃO DE DOCUMENTO CONTROLADO                                 */}
+      {/* ========================================================================= */}
+      {isDocReactivateModalOpen && docToReactivate && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20">
+                  <RotateCcw className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Reativar Documento no SGQ</h3>
+                  <p className="text-xs text-slate-400 font-mono">{docToReactivate.codigo}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDocReactivateModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
+              <p className="font-semibold text-white text-sm">{docToReactivate.titulo}</p>
+              {docToReactivate.inativadoEm && (
+                <p className="text-slate-400 text-[11px]">
+                  Inativado anteriormente em: {new Date(docToReactivate.inativadoEm).toLocaleString('pt-BR')}
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <label className="block text-slate-300 font-semibold">
+                Justificativa da Reativação
+              </label>
+              <textarea
+                rows={2}
+                value={motivoReativacaoDoc}
+                onChange={(e) => setMotivoReativacaoDoc(e.target.value)}
+                placeholder="Ex: Retomada de homologação de frota ou reabertura do contrato operacional..."
+                className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsDocReactivateModalOpen(false)}
+                disabled={isSubmittingDocAction}
+                className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReactivateDoc}
+                disabled={isSubmittingDocAction}
+                className="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold flex items-center gap-1.5"
+              >
+                {isSubmittingDocAction ? (
+                  <span>Reativando...</span>
+                ) : (
+                  <>
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>Confirmar Reativação</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EXCLUSÃO SEGURA DE DOCUMENTO CONTROLADO COM ANÁLISE DE DEPENDÊNCIAS*/}
+      {/* ========================================================================= */}
+      {isDocDeleteModalOpen && docToDelete && analiseDependenciasDoc && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <div
+                  className={`p-2 rounded-lg border ${
+                    analiseDependenciasDoc.podeExcluir
+                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  }`}
+                >
+                  {analiseDependenciasDoc.podeExcluir ? (
+                    <Trash2 className="w-5 h-5" />
+                  ) : (
+                    <AlertOctagon className="w-5 h-5" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">
+                    {analiseDependenciasDoc.podeExcluir
+                      ? 'Confirmar Exclusão de Documento'
+                      : 'Exclusão Física Bloqueada (RBAC 145 / MOMQ)'}
+                  </h3>
+                  <p className="text-xs text-slate-400 font-mono">{docToDelete.codigo}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDocDeleteModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
+              <p className="font-semibold text-white text-sm">{docToDelete.titulo}</p>
+              <p className="text-slate-400">
+                Categoria: {docToDelete.categoria.replace('DOCUMENTO_', '')} • Emissor: {docToDelete.emissor}
+              </p>
+            </div>
+
+            {!analiseDependenciasDoc.podeExcluir ? (
+              <div className="space-y-3 text-xs">
+                <div className="bg-rose-950/30 border border-rose-500/30 rounded-xl p-4 text-rose-200 space-y-2">
+                  <div className="flex items-center gap-2 font-bold text-sm text-rose-300">
+                    <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
+                    Exclusão Física Proibida por Integridade Técnica
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-rose-200/90">
+                    Este documento possui <strong>{analiseDependenciasDoc.totalVinculos || analiseDependenciasDoc.motivosBloqueio?.length || analiseDependenciasDoc.detalhes?.length || 0} vínculo(s) histórico(s)</strong> no SGQ
+                    que impedem a exclusão física definitiva:
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] font-medium text-rose-300">
+                    {(analiseDependenciasDoc.detalhes || analiseDependenciasDoc.motivosBloqueio || []).map((det, idx) => (
+                      <li key={idx}>{det}</li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-rose-300/80 pt-1 border-t border-rose-500/20">
+                    💡 <strong>Solução Regulatória:</strong> Utilize a <strong>Inativação Lógica</strong>. O documento
+                    deixará o acervo ativo, mas todos os registros de revisões e evidências passadas permanecerão
+                    intactos para auditorias da ANAC/FAA.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsDocDeleteModalOpen(false)}
+                    className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsDocDeleteModalOpen(false);
+                      handleOpenInactivateDoc(docToDelete);
+                    }}
+                    className="px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold flex items-center gap-1.5"
+                  >
+                    <PowerOff className="w-3.5 h-3.5" />
+                    <span>Inativar em vez de Excluir</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div className="bg-amber-950/30 border border-amber-500/30 rounded-xl p-3 text-amber-200 space-y-1">
+                  <p className="font-semibold flex items-center gap-1.5 text-amber-300">
+                    <AlertTriangle className="w-4 h-4" />
+                    Atenção: Ação Irreversível
+                  </p>
+                  <p className="text-[11px] text-amber-200/90">
+                    Nenhuma revisão ou histórico foi encontrado para este documento (cadastro recém-criado sem vínculos).
+                    A exclusão removerá definitivamente o registro.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-slate-300 font-semibold">Motivo da Exclusão Definitiva *</label>
+                  <input
+                    type="text"
+                    value={motivoExclusaoDoc}
+                    onChange={(e) => setMotivoExclusaoDoc(e.target.value)}
+                    placeholder="Ex: Documento cadastrado duplicado por engano"
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setIsDocDeleteModalOpen(false)}
+                    disabled={isSubmittingDocAction}
+                    className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDeleteDoc}
+                    disabled={isSubmittingDocAction}
+                    className="px-4 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isSubmittingDocAction ? (
+                      <span>Excluindo...</span>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Confirmar Exclusão</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

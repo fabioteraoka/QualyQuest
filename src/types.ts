@@ -2503,11 +2503,27 @@ export type TipoControleImportacao =
 
 export type FormatoArquivoSuportado = 'XLSX' | 'XLS' | 'CSV' | 'DOCX' | 'PDF' | 'JSON';
 
-export type StatusImportacao = 'RASCUNHO' | 'ANALISADO' | 'VALIDADO' | 'IMPORTADO' | 'COM_ERROS' | 'CANCELADO';
+export type StatusImportacao = 'RASCUNHO' | 'ANALISADO' | 'VALIDADO' | 'IMPORTADO' | 'COM_ERROS' | 'CANCELADO' | 'REVERTIDA';
 
 export type NivelAlertaQualidade = 'OK' | 'ATENCAO' | 'ERRO';
 
 export type AcaoConflitoDuplicidade = 'CRIAR_NOVO' | 'ATUALIZAR' | 'MANTER_EXISTENTE' | 'IGNORAR';
+
+export type ClassificacaoReconciliacao = 
+  | 'NOVO'
+  | 'EXISTENTE_IGUAL'
+  | 'EXISTENTE_ALTERADO'
+  | 'POSSIVEL_DUPLICIDADE'
+  | 'INVALIDO';
+
+export type DecisaoReconciliacao = 'CRIAR' | 'ATUALIZAR' | 'IGNORAR' | 'REVISAR' | 'CANCELAR';
+
+export interface CampoDivergente {
+  campo: string;
+  label: string;
+  valorAtual: any;
+  valorImportado: any;
+}
 
 export interface MapeamentoCampoItem {
   colunaOrigem: string;
@@ -2518,6 +2534,8 @@ export interface MapeamentoCampoItem {
   confiancaIA: number; // 0 a 100
   exemploValor?: string;
   descricao?: string;
+  classificacaoUso?: 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO';
+  sugestaoIA?: 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO';
 }
 
 export interface TemplateMapeamentoAprovado {
@@ -2528,6 +2546,7 @@ export interface TemplateMapeamentoAprovado {
   tipoControle: TipoControleImportacao;
   colunasDetectadas: string[];
   mapeamentos: Record<string, string>; // colunaOrigem -> campoQualigest
+  classificacaoCampos?: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>;
   criadoPor: string;
   criadoPorNome?: string;
   criadoPorUid?: string;
@@ -2549,6 +2568,32 @@ export interface RegistroLinhaImportacao {
   registroExistenteId?: string;
   registroExistenteResumo?: string;
   selecionadoParaImportar: boolean;
+  classificacaoReconciliacao?: ClassificacaoReconciliacao;
+  camposDivergentes?: CampoDivergente[];
+  dadosExistentesSnapshot?: Record<string, any>;
+  decisaoUsuario?: DecisaoReconciliacao;
+  pessoaAcao?: 'CRIAR_PESSOA' | 'VINCULAR_EXISTENTE' | 'IGNORAR';
+  pessoaIdVinculada?: string;
+  pessoaNomeVinculada?: string;
+  cursoAcao?: 'CRIAR_CURSO' | 'VINCULAR_EXISTENTE' | 'IGNORAR';
+  cursoIdVinculado?: string;
+  documentoAcao?: 'CRIAR_DOCUMENTO' | 'NOVA_REVISAO' | 'IGNORAR';
+  origemSugestao?: 'AI_SUGGESTION';
+  decisaoHumana?: 'HUMAN_APPROVED' | 'HUMAN_EDITED' | 'HUMAN_REJECTED';
+}
+
+export interface PreviaEstruturaArquivo {
+  linhaCabecalho: number;
+  totalLinhasPreambulo: number;
+  linhasPreambulo: string[];
+  totalLinhasDados: number;
+  colunasDetectadas: string[];
+  tipoIdentificado: TipoControleImportacao;
+  confiancaPercentual: number;
+  amostraLinhas: Record<string, any>[];
+  camposObrigatorios: string[];
+  camposOpcionais: string[];
+  totalLinhasProblemas: number;
 }
 
 export interface ResumoPreviaImportacao {
@@ -2560,6 +2605,10 @@ export interface ResumoPreviaImportacao {
   registrosComAtencao: number;
   registrosIgnorados: number;
   evidenciasIdentificadas: number;
+  registrosIguais?: number;
+  registrosAlterados?: number;
+  possiveisDuplicidades?: number;
+  registrosInvalidos?: number;
 }
 
 export type TipoOportunidadeMelhoria = 
@@ -2589,6 +2638,27 @@ export interface OportunidadeMelhoriaImportacao {
   acaoPlanoTexto?: string;
 }
 
+export type ModuloSnapshotImportacao = 
+  | 'CALIBRATED_TOOL' 
+  | 'PERSON' 
+  | 'TRAINING_COURSE' 
+  | 'TRAINING_RECORD' 
+  | 'CONTROLLED_DOCUMENT' 
+  | 'DOCUMENT_REVISION';
+
+export interface SnapshotRegistroCriado {
+  modulo: ModuloSnapshotImportacao;
+  id: string;
+  dados: any;
+}
+
+export interface SnapshotRegistroAtualizado {
+  modulo: ModuloSnapshotImportacao;
+  id: string;
+  dadosAnteriores: any;
+  dadosNovos: any;
+}
+
 export interface RegistroImportacaoCompleto {
   id: string;
   organizationId: string;
@@ -2613,7 +2683,10 @@ export interface RegistroImportacaoCompleto {
   registrosIgnoradosQtd?: number;
   oportunidadesGeradasQtd?: number;
   mapeamentoUtilizado?: Record<string, string>;
+  classificacaoCamposUtilizada?: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>;
   colunasDetectadas?: string[];
+  linhaCabecalhoDetectada?: number;
+  linhasPreambuloDetectadas?: string[];
   resumo?: ResumoPreviaImportacao;
   registrosGeradosIds: string[];
   registrosAtualizadosIds?: string[];
@@ -2622,6 +2695,14 @@ export interface RegistroImportacaoCompleto {
   templateNomeUtilizado?: string;
   arquivoBase64Preview?: string;
   origem?: 'UPLOAD_HUMANO' | 'MIGRACAO_LEGADA';
+  reversivel?: boolean;
+  revertida?: boolean;
+  revertidaEm?: string;
+  revertidaPorNome?: string;
+  revertidaPorUid?: string;
+  motivoReversao?: string;
+  registrosCriadosSnapshot?: SnapshotRegistroCriado[];
+  registrosAtualizadosSnapshot?: SnapshotRegistroAtualizado[];
   criadoEm?: string;
   atualizadoEm?: string;
 }
@@ -2641,6 +2722,7 @@ export interface FerramentaCalibracao {
   baseOperacionalId?: string;
   baseOperacionalNome?: string;
   status: 'CALIBRADA' | 'VENCIDA' | 'PROXIMA_VENCIMENTO' | 'EM_CALIBRACAO' | 'QUARANTENA' | 'DESCARTE';
+  ativo?: boolean;
   dataUltimaCalibracao: string; // YYYY-MM-DD
   dataProximaCalibracao: string; // YYYY-MM-DD
   frequenciaMeses: number;
@@ -2649,6 +2731,15 @@ export interface FerramentaCalibracao {
   evidenciaCertificadoUrl?: string;
   tolerancia?: string;
   observacoes?: string;
+  historicoCalibracoes?: {
+    id: string;
+    data: string;
+    certificado: string;
+    laboratorio: string;
+    validadeAte: string;
+    observacao?: string;
+    registradoPor?: string;
+  }[];
   origemImportacaoId?: string;
   origemArquivoNome?: string;
   criadoEm: string;

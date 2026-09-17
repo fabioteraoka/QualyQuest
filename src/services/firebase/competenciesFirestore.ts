@@ -99,7 +99,9 @@ export interface DependenciasPessoaResult {
   totalQualificacoes: number;
   totalDocumentos: number;
   totalRNCs: number;
+  totalVinculos: number;
   motivosBloqueio: string[];
+  detalhes: string[];
 }
 
 /**
@@ -141,7 +143,9 @@ export function verificarDependenciasPessoa(
     totalQualificacoes: quals.length,
     totalDocumentos: docs.length,
     totalRNCs: rncs.length,
+    totalVinculos: motivosBloqueio.length,
     motivosBloqueio,
+    detalhes: motivosBloqueio,
   };
 }
 

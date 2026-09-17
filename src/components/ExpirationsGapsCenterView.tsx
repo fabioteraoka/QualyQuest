@@ -57,14 +57,14 @@ interface ExpirationsGapsCenterViewProps {
 export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps> = ({
   organizationId,
   userProfile,
-  persons,
-  competencies,
-  personCompetencies,
-  qualifications,
-  trainingRecords,
-  documents,
-  activities,
-  aiSuggestions,
+  persons = [],
+  competencies = [],
+  personCompetencies = [],
+  qualifications = [],
+  trainingRecords = [],
+  documents = [],
+  activities = [],
+  aiSuggestions = [],
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'VENCIMENTOS' | 'GAPS' | 'SIMULADOR' | 'IA_SUGESTOES'>('VENCIMENTOS');
 

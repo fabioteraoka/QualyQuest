@@ -17,6 +17,8 @@ import {
   UserProfile,
   TipoControleImportacao,
   RegistroLinhaImportacao,
+  SnapshotRegistroCriado,
+  SnapshotRegistroAtualizado,
 } from '../../types';
 import {
   DEFAULT_ORGANIZATION_ID,
@@ -261,6 +263,8 @@ export interface ResultadoGravacaoImportacao {
   totalAtualizados: number;
   idsGerados: string[];
   mensagem: string;
+  registrosCriadosSnapshot?: SnapshotRegistroCriado[];
+  registrosAtualizadosSnapshot?: SnapshotRegistroAtualizado[];
 }
 
 export async function efetivarImportacaoNoQualigest(
@@ -275,79 +279,117 @@ export async function efetivarImportacaoNoQualigest(
     adicionarCurso?: (curso: CursoTreinamento) => void;
     adicionarRegistroTreinamento?: (registro: RegistroTreinamentoColaborador) => void;
     adicionarFerramenta?: (ferramenta: FerramentaCalibracao) => void;
+    removerFerramenta?: (toolId: string) => void;
+    removerRegistroTreinamento?: (recordId: string) => void;
+    removerPessoa?: (personId: string) => void;
+    removerCurso?: (courseId: string) => void;
   }
 ): Promise<ResultadoGravacaoImportacao> {
   let totalCriados = 0;
   let totalAtualizados = 0;
   const idsGerados: string[] = [];
+  const registrosCriadosSnapshot: SnapshotRegistroCriado[] = [];
+  const registrosAtualizadosSnapshot: SnapshotRegistroAtualizado[] = [];
 
   const linhasParaImportar = registrosLinhas.filter(
-    (l) => l.selecionadoParaImportar && l.statusQualidade !== 'ERRO' && l.acaoDuplicidade !== 'IGNORAR'
+    (l) =>
+      l.selecionadoParaImportar &&
+      l.statusQualidade !== 'ERRO' &&
+      l.classificacaoReconciliacao !== 'INVALIDO' &&
+      l.decisaoUsuario !== 'IGNORAR' &&
+      l.decisaoUsuario !== 'CANCELAR'
   );
 
   // 1. Processar TREINAMENTOS
   if (tipoControle === 'TREINAMENTOS') {
     for (const linha of linhasParaImportar) {
       const dados = linha.dadosMapeados;
-      const pessoaNome = dados.pessoaNome || 'Colaborador sem Nome';
+      let pessoaId = linha.pessoaIdVinculada;
+      let pessoaNome = linha.pessoaNomeVinculada || dados.pessoaNome || 'Colaborador';
+      let matricula = dados.pessoaMatricula || '';
+
+      // Se a decisão do usuário ou detecção exigir criação de pessoa
+      if (linha.pessoaAcao === 'CRIAR_PESSOA' || !pessoaId) {
+        pessoaId = `person-imp-${Math.random().toString(36).substr(2, 7)}`;
+        matricula = dados.pessoaMatricula || `IMP-${Math.floor(1000 + Math.random() * 9000)}`;
+        const novaPessoa: ColaboradorPessoa = {
+          id: pessoaId,
+          organizationId,
+          nome: pessoaNome,
+          matricula,
+          setor: dados.setor || 'Manutenção / SGQ',
+          funcao: 'TECNICO_MANUTENCAO',
+          cargoOperacional: dados.funcao || 'Técnico de Manutenção Aeronáutica',
+          status: 'ATIVO',
+          dataAdmissao: '2024-01-01',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          criadoPor: user?.displayName || 'Importador SGQ',
+          criadoPorUid: user?.uid || 'system',
+        };
+
+        if (callbacksEstado.adicionarPessoa) {
+          callbacksEstado.adicionarPessoa(novaPessoa);
+        }
+
+        registrosCriadosSnapshot.push({
+          modulo: 'PERSON',
+          id: pessoaId,
+          dados: novaPessoa,
+        });
+      }
+
+      // Se exigir criação de curso
+      let cursoId = linha.cursoIdVinculado;
+      let cursoCodigo = dados.cursoCodigo || `TREIN-${Math.floor(100 + Math.random() * 900)}`;
       const cursoTitulo = dados.cursoTitulo || 'Treinamento Aeronáutico';
 
-      const pessoaId = `person-imp-${Math.random().toString(36).substr(2, 7)}`;
-      const matriculaGerada = dados.pessoaMatricula || `IMP-${Math.floor(1000 + Math.random() * 9000)}`;
-      const novaPessoa: ColaboradorPessoa = {
-        id: pessoaId,
-        organizationId,
-        nome: pessoaNome,
-        matricula: matriculaGerada,
-        setor: dados.setor || 'Manutenção / SGQ',
-        funcao: 'TECNICO_MANUTENCAO',
-        cargoOperacional: dados.funcao || 'Técnico de Manutenção Aeronáutica',
-        status: 'ATIVO',
-        dataAdmissao: '2024-01-01',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        criadoPor: user?.displayName || 'Importador SGQ',
-        criadoPorUid: user?.uid || 'system',
-      };
+      if (linha.cursoAcao === 'CRIAR_CURSO' || !cursoId) {
+        cursoId = `course-imp-${Math.random().toString(36).substr(2, 7)}`;
+        const novoCurso: CursoTreinamento = {
+          id: cursoId,
+          organizationId,
+          codigo: cursoCodigo,
+          titulo: cursoTitulo,
+          tipo: 'AERONAUTICO',
+          modalidade: 'PRESENCIAL',
+          cargaHorariaHoras: Number(dados.cargaHoraria) || 16,
+          ementa: `Capacitação técnica importada via planilha original ${nomeArquivo}`,
+          recorrente: true,
+          periodicidadeMeses: 24,
+          origemPrazo: 'REGULAMENTO',
+          competenciasDesenvolvidasIds: [],
+          status: 'ATIVO',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          criadoPorUid: user?.uid || 'system',
+        };
 
-      if (callbacksEstado.adicionarPessoa) {
-        callbacksEstado.adicionarPessoa(novaPessoa);
+        if (callbacksEstado.adicionarCurso) {
+          callbacksEstado.adicionarCurso(novoCurso);
+        }
+
+        registrosCriadosSnapshot.push({
+          modulo: 'TRAINING_COURSE',
+          id: cursoId,
+          dados: novoCurso,
+        });
       }
 
-      const cursoId = `course-imp-${Math.random().toString(36).substr(2, 7)}`;
-      const novoCurso: CursoTreinamento = {
-        id: cursoId,
-        organizationId,
-        codigo: `TREIN-${Math.floor(100 + Math.random() * 900)}`,
-        titulo: cursoTitulo,
-        tipo: 'AERONAUTICO',
-        modalidade: 'PRESENCIAL',
-        cargaHorariaHoras: Number(dados.cargaHoraria) || 16,
-        ementa: `Capacitação técnica importada via planilha original ${nomeArquivo}`,
-        recorrente: true,
-        periodicidadeMeses: 24,
-        origemPrazo: 'REGULAMENTO',
-        competenciasDesenvolvidasIds: [],
-        status: 'ATIVO',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        criadoPorUid: user?.uid || 'system',
-      };
+      const registroTreinoId =
+        linha.decisaoUsuario === 'ATUALIZAR' && linha.registroExistenteId
+          ? linha.registroExistenteId
+          : `reg-tr-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
-      if (callbacksEstado.adicionarCurso) {
-        callbacksEstado.adicionarCurso(novoCurso);
-      }
-
-      const registroTreinoId = `reg-tr-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
       const novoRegistroTreinamento: RegistroTreinamentoColaborador = {
         id: registroTreinoId,
         organizationId,
-        treinamentoId: cursoId,
-        treinamentoCodigo: novoCurso.codigo,
+        treinamentoId: cursoId || 'curso-gen',
+        treinamentoCodigo: cursoCodigo,
         treinamentoTitulo: cursoTitulo,
         colaboradorId: pessoaId,
         colaboradorNome: pessoaNome,
-        colaboradorMatricula: matriculaGerada,
+        colaboradorMatricula: matricula,
         dataRealizacao: dados.dataRealizacao || new Date().toISOString().split('T')[0],
         dataValidade: dados.dataValidade || undefined,
         cargaHoraria: Number(dados.cargaHoraria) || 16,
@@ -367,19 +409,32 @@ export async function efetivarImportacaoNoQualigest(
       }
 
       idsGerados.push(registroTreinoId);
-      if (linha.duplicidadeDetectada && linha.acaoDuplicidade === 'ATUALIZAR') {
+
+      if (linha.decisaoUsuario === 'ATUALIZAR' && linha.dadosExistentesSnapshot) {
         totalAtualizados++;
+        registrosAtualizadosSnapshot.push({
+          modulo: 'TRAINING_RECORD',
+          id: registroTreinoId,
+          dadosAnteriores: linha.dadosExistentesSnapshot,
+          dadosNovos: novoRegistroTreinamento,
+        });
       } else {
         totalCriados++;
+        registrosCriadosSnapshot.push({
+          modulo: 'TRAINING_RECORD',
+          id: registroTreinoId,
+          dados: novoRegistroTreinamento,
+        });
       }
     }
   }
 
-  // 2. Processar CALIBRAÇÃO / FERRAMENTAL
+  // 2. Processar CALIBRAÇÃO / FERRAMENTAL (RBAC 145.109)
   if (tipoControle === 'CALIBRACAO_FERRAMENTAL') {
     for (const linha of linhasParaImportar) {
       const dados = linha.dadosMapeados;
-      const toolId = linha.duplicidadeDetectada && linha.registroExistenteId && linha.acaoDuplicidade === 'ATUALIZAR'
+      const isAtualizacao = linha.decisaoUsuario === 'ATUALIZAR' && Boolean(linha.registroExistenteId);
+      const toolId = isAtualizacao && linha.registroExistenteId
         ? linha.registroExistenteId
         : `tool-imp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
 
@@ -389,7 +444,6 @@ export async function efetivarImportacaoNoQualigest(
         if (dados.dataProximaCalibracao < hoje) {
           statusFerramenta = 'VENCIDA';
         } else {
-          // Checar se vence em 30 dias
           const em30Dias = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
           if (dados.dataProximaCalibracao <= em30Dias) {
             statusFerramenta = 'PROXIMA_VENCIMENTO';
@@ -397,30 +451,48 @@ export async function efetivarImportacaoNoQualigest(
         }
       }
 
+      const dadosExistentes = isAtualizacao ? linha.dadosExistentesSnapshot : null;
+
       const novaFerramenta: FerramentaCalibracao = {
         id: toolId,
         organizationId,
-        codigoPatrimonio: dados.codigoPatrimonio || 'SEM-PAT',
-        descricao: dados.descricao || 'Instrumento de Medição',
-        fabricante: dados.fabricante || 'Fabricante Homologado',
-        modelo: dados.modelo || '',
-        numeroSerie: dados.numeroSerie || 'S/N',
-        setor: dados.setor || 'Linha de Manutenção Hangar',
-        baseOperacionalId: 'base-rec-hub',
-        baseOperacionalNome: 'REC - Recife / Hub Central',
+        codigoPatrimonio: dados.codigoPatrimonio || dadosExistentes?.codigoPatrimonio || 'SEM-PAT',
+        descricao: dados.descricao || dadosExistentes?.descricao || 'Instrumento de Medição',
+        fabricante: dados.fabricante || dadosExistentes?.fabricante || 'Fabricante Homologado',
+        modelo: dados.modelo || dadosExistentes?.modelo || '',
+        numeroSerie: dados.numeroSerie || dadosExistentes?.numeroSerie || 'S/N',
+        setor: dados.setor || dadosExistentes?.setor || 'Linha de Manutenção Hangar',
+        baseOperacionalId: dadosExistentes?.baseOperacionalId || 'base-rec-hub',
+        baseOperacionalNome: dadosExistentes?.baseOperacionalNome || 'REC - Recife / Hub Central',
         status: statusFerramenta,
-        dataUltimaCalibracao: dados.dataUltimaCalibracao || hoje,
-        dataProximaCalibracao: dados.dataProximaCalibracao || hoje,
-        frequenciaMeses: Number(dados.frequenciaMeses) || 12,
-        laboratorioCalibrador: dados.laboratorioCalibrador || 'Laboratório Metrológico Acreditado RBC',
-        numeroCertificado: dados.numeroCertificado || '',
-        tolerancia: dados.observacoes || '± Conforme Manual de Manutenção',
-        observacoes: dados.observacoes || `Importado da planilha ${nomeArquivo}`,
+        dataUltimaCalibracao: dados.dataUltimaCalibracao || dadosExistentes?.dataUltimaCalibracao || hoje,
+        dataProximaCalibracao: dados.dataProximaCalibracao || dadosExistentes?.dataProximaCalibracao || hoje,
+        frequenciaMeses: Number(dados.frequenciaMeses) || dadosExistentes?.frequenciaMeses || 12,
+        laboratorioCalibrador: dados.laboratorioCalibrador || dadosExistentes?.laboratorioCalibrador || 'Laboratório Metrológico Acreditado RBC',
+        numeroCertificado: dados.numeroCertificado || dadosExistentes?.numeroCertificado || '',
+        tolerancia: dados.tolerancia || dadosExistentes?.tolerancia || '± Conforme Manual de Manutenção',
+        observacoes: dados.observacoes || dadosExistentes?.observacoes || `Importado da planilha ${nomeArquivo}`,
         origemImportacaoId: importId,
         origemArquivoNome: nomeArquivo,
-        criadoEm: new Date().toISOString(),
+        ativo: dadosExistentes?.ativo !== undefined ? dadosExistentes.ativo : true,
+        historicoCalibracoes: dadosExistentes?.historicoCalibracoes || [],
+        criadoEm: dadosExistentes?.criadoEm || new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),
       };
+
+      // Se for atualização com nova data ou certificado, adicionar ao histórico de calibrações
+      if (isAtualizacao && dados.dataUltimaCalibracao && dados.dataUltimaCalibracao !== dadosExistentes?.dataUltimaCalibracao) {
+        const novoEventoCalibracao = {
+          id: `calib-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          data: dados.dataUltimaCalibracao,
+          validadeAte: dados.dataProximaCalibracao || '',
+          laboratorio: dados.laboratorioCalibrador || 'Laboratório RBC',
+          certificado: dados.numeroCertificado || '',
+          observacao: 'Calibração registrada via atualização de importação inteligente',
+          registradoPor: user?.displayName || 'Importador SGQ',
+        };
+        novaFerramenta.historicoCalibracoes = [novoEventoCalibracao, ...(novaFerramenta.historicoCalibracoes || [])];
+      }
 
       if (callbacksEstado.adicionarFerramenta) {
         callbacksEstado.adicionarFerramenta(novaFerramenta);
@@ -430,28 +502,41 @@ export async function efetivarImportacaoNoQualigest(
       await saveCalibratedTool(organizationId, novaFerramenta, user);
 
       idsGerados.push(toolId);
-      if (linha.duplicidadeDetectada && linha.acaoDuplicidade === 'ATUALIZAR') {
+
+      if (isAtualizacao && dadosExistentes) {
         totalAtualizados++;
+        registrosAtualizadosSnapshot.push({
+          modulo: 'CALIBRATED_TOOL',
+          id: toolId,
+          dadosAnteriores: dadosExistentes,
+          dadosNovos: novaFerramenta,
+        });
       } else {
         totalCriados++;
+        registrosCriadosSnapshot.push({
+          modulo: 'CALIBRATED_TOOL',
+          id: toolId,
+          dados: novaFerramenta,
+        });
       }
     }
   }
 
-  // Gravar registro na auditoria
+  // 3. Gravar auditoria geral da operação
   await recordOrganizationAudit(organizationId, {
     entity: 'SMART_IMPORT',
     entityId: importId,
     action: 'CREATE',
     changedByUid: user?.uid || auth.currentUser?.uid || 'system',
     changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
-    summary: `Importação efetivada no QualiGest (${linhasParaImportar.length} registros)`,
+    summary: `Importação Inteligente efetivada (${linhasParaImportar.length} registros processados)`,
     details: JSON.stringify({
       tipoControle,
       nomeArquivo,
       totalProcessados: linhasParaImportar.length,
       totalCriados,
       totalAtualizados,
+      idsGeradosQtd: idsGerados.length,
     }),
   });
 
@@ -461,6 +546,204 @@ export async function efetivarImportacaoNoQualigest(
     totalCriados,
     totalAtualizados,
     idsGerados,
-    mensagem: `Importação de ${linhasParaImportar.length} registros concluída com sucesso (${totalCriados} novos, ${totalAtualizados} atualizações). Rastreabilidade com ${nomeArquivo} formalizada.`,
+    registrosCriadosSnapshot,
+    registrosAtualizadosSnapshot,
+    mensagem: `Importação de ${linhasParaImportar.length} registros concluída com sucesso (${totalCriados} novos cadastros oficiais, ${totalAtualizados} atualizações com histórico preservado). Rastreabilidade com ${nomeArquivo} formalizada.`,
   };
+}
+
+// ============================================================================
+// 5. REVERSÃO DE IMPORTAÇÃO (REVERSIBILIDADE COM SEGURANÇA E AUDIT TRAIL)
+// ============================================================================
+
+export async function reverterImportacaoNoQualigest(
+  organizationId: string,
+  importRecord: RegistroImportacaoCompleto,
+  user: UserProfile | null,
+  motivoReversao?: string,
+  callbacksEstado?: {
+    removerFerramenta?: (toolId: string) => void;
+    removerRegistroTreinamento?: (recordId: string) => void;
+    removerPessoa?: (personId: string) => void;
+    removerCurso?: (courseId: string) => void;
+    adicionarFerramenta?: (tool: FerramentaCalibracao) => void;
+  }
+): Promise<{ sucesso: boolean; mensagem: string }> {
+  if (importRecord.revertida) {
+    return { sucesso: false, mensagem: 'Esta importação já foi revertida anteriormente.' };
+  }
+
+  const batch = writeBatch(db);
+  let criadosExcluidos = 0;
+  let atualizadosRestaurados = 0;
+
+  // 1. Excluir registros criados na importação
+  if (importRecord.registrosCriadosSnapshot && importRecord.registrosCriadosSnapshot.length > 0) {
+    for (const item of importRecord.registrosCriadosSnapshot) {
+      if (item.modulo === 'CALIBRATED_TOOL') {
+        const docRef = doc(db, 'organizations', organizationId, 'calibrated_tools', item.id);
+        batch.delete(docRef);
+        if (callbacksEstado?.removerFerramenta) callbacksEstado.removerFerramenta(item.id);
+        criadosExcluidos++;
+      } else if (item.modulo === 'TRAINING_RECORD') {
+        const docRef = doc(db, 'organizations', organizationId, 'training_records', item.id);
+        batch.delete(docRef);
+        if (callbacksEstado?.removerRegistroTreinamento) callbacksEstado.removerRegistroTreinamento(item.id);
+        criadosExcluidos++;
+      } else if (item.modulo === 'PERSON') {
+        const docRef = doc(db, 'organizations', organizationId, 'persons', item.id);
+        batch.delete(docRef);
+        if (callbacksEstado?.removerPessoa) callbacksEstado.removerPessoa(item.id);
+        criadosExcluidos++;
+      } else if (item.modulo === 'TRAINING_COURSE') {
+        const docRef = doc(db, 'organizations', organizationId, 'training_courses', item.id);
+        batch.delete(docRef);
+        if (callbacksEstado?.removerCurso) callbacksEstado.removerCurso(item.id);
+        criadosExcluidos++;
+      }
+    }
+  } else if (importRecord.registrosGeradosIds && importRecord.registrosGeradosIds.length > 0) {
+    // Fallback por IDs gerados caso o snapshot estivesse vazio
+    for (const id of importRecord.registrosGeradosIds) {
+      if (importRecord.tipoControle === 'CALIBRACAO_FERRAMENTAL') {
+        const docRef = doc(db, 'organizations', organizationId, 'calibrated_tools', id);
+        batch.delete(docRef);
+        if (callbacksEstado?.removerFerramenta) callbacksEstado.removerFerramenta(id);
+        criadosExcluidos++;
+      }
+    }
+  }
+
+  // 2. Restaurar registros que haviam sido atualizados para os dados originais
+  if (importRecord.registrosAtualizadosSnapshot && importRecord.registrosAtualizadosSnapshot.length > 0) {
+    for (const item of importRecord.registrosAtualizadosSnapshot) {
+      if (item.modulo === 'CALIBRATED_TOOL') {
+        const docRef = doc(db, 'organizations', organizationId, 'calibrated_tools', item.id);
+        batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
+        if (callbacksEstado?.adicionarFerramenta) callbacksEstado.adicionarFerramenta(item.dadosAnteriores);
+        atualizadosRestaurados++;
+      }
+    }
+  }
+
+  // 3. Atualizar status da importação para REVERTIDA
+  const importDocRef = doc(db, 'organizations', organizationId, 'smart_imports', importRecord.id);
+  const dataReversao = new Date().toISOString();
+  batch.update(importDocRef, {
+    status: 'REVERTIDA',
+    revertida: true,
+    revertidaEm: dataReversao,
+    revertidaPorUid: user?.uid || auth.currentUser?.uid || 'system',
+    revertidaPorNome: user?.displayName || user?.email || 'Gestor SGQ',
+    motivoReversao: motivoReversao || 'Reversão solicitada pelo usuário no painel SGQ',
+  });
+
+  try {
+    await batch.commit();
+  } catch (err) {
+    console.warn('Fallback Firestore ao reverter batch:', err);
+  }
+
+  // 4. Registrar na Auditoria Oficial
+  await recordOrganizationAudit(organizationId, {
+    entity: 'SMART_IMPORT',
+    entityId: importRecord.id,
+    action: 'REVERT',
+    changedByUid: user?.uid || auth.currentUser?.uid || 'system',
+    changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
+    summary: `Reversão formal da importação ${importRecord.nomeArquivo} (Motivo: ${motivoReversao || 'Não informado'})`,
+    details: JSON.stringify({
+      importId: importRecord.id,
+      nomeArquivo: importRecord.nomeArquivo,
+      criadosExcluidos,
+      atualizadosRestaurados,
+      motivoReversao,
+      revertidoPor: user?.displayName || user?.email || 'Gestor SGQ',
+    }),
+  });
+
+  return {
+    sucesso: true,
+    mensagem: `Importação revertida com sucesso! ${criadosExcluidos} registro(s) criados foram excluídos e ${atualizadosRestaurados} registro(s) atualizados foram restaurados aos valores originais.`,
+  };
+}
+
+// ============================================================================
+// 6. EXCLUSÃO DE HISTÓRICO DE IMPORTAÇÃO (SEM DESTRUIR CADASTROS OFICIAIS)
+// ============================================================================
+
+export async function excluirRegistroImportacaoHistorico(
+  organizationId: string,
+  importId: string,
+  user: UserProfile | null
+): Promise<void> {
+  const docRef = doc(db, 'organizations', organizationId, 'smart_imports', importId);
+  try {
+    await deleteDoc(docRef);
+    await recordOrganizationAudit(organizationId, {
+      entity: 'SMART_IMPORT',
+      entityId: importId,
+      action: 'DELETE',
+      changedByUid: user?.uid || auth.currentUser?.uid || 'system',
+      changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
+      summary: `Registro de histórico de importação ${importId} removido (os cadastros oficiais foram preservados)`,
+    });
+  } catch (err) {
+    console.warn('Erro ao excluir histórico de importação:', err);
+  }
+}
+
+// ============================================================================
+// 7. GESTÃO METROLÓGICA (CALIBRATED TOOLS CRUD & HISTÓRICO)
+// ============================================================================
+
+export async function toggleAtivoFerramenta(
+  organizationId: string,
+  toolId: string,
+  ativo: boolean,
+  user: UserProfile | null
+): Promise<void> {
+  const toolRef = doc(db, 'organizations', organizationId, 'calibrated_tools', toolId);
+  try {
+    await setDoc(
+      toolRef,
+      {
+        ativo,
+        atualizadoEm: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'CALIBRATED_TOOL',
+      entityId: toolId,
+      action: 'UPDATE',
+      changedByUid: user?.uid || auth.currentUser?.uid || 'system',
+      changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
+      summary: `Instrumento ${toolId} ${ativo ? 'reativado' : 'desativado'} no controle de ferramentas`,
+    });
+  } catch (err) {
+    console.warn('Erro ao alternar status da ferramenta:', err);
+  }
+}
+
+export async function deleteFerramentaCalibrada(
+  organizationId: string,
+  toolId: string,
+  user: UserProfile | null
+): Promise<void> {
+  const toolRef = doc(db, 'organizations', organizationId, 'calibrated_tools', toolId);
+  try {
+    await deleteDoc(toolRef);
+    await recordOrganizationAudit(organizationId, {
+      entity: 'CALIBRATED_TOOL',
+      entityId: toolId,
+      action: 'DELETE',
+      changedByUid: user?.uid || auth.currentUser?.uid || 'system',
+      changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
+      summary: `Ferramenta/Instrumento ${toolId} excluído do cadastro oficial`,
+    });
+  } catch (err) {
+    console.warn('Erro ao excluir ferramenta:', err);
+  }
 }

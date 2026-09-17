@@ -11,6 +11,10 @@ import {
   CursoTreinamento,
   RegistroTreinamentoColaborador,
   DocumentoControlado,
+  CampoDivergente,
+  ClassificacaoReconciliacao,
+  DecisaoReconciliacao,
+  AcaoConflitoDuplicidade,
 } from '../types';
 
 // ============================================================================
@@ -606,6 +610,8 @@ export function gerarMapeamentoAutomaticoCampos(
         confiancaIA: maiorScore,
         exemploValor,
         descricao: matchDef.descricao,
+        classificacaoUso: matchDef.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL',
+        sugestaoIA: matchDef.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL',
       });
     } else {
       // Campo não mapeado por padrão
@@ -618,6 +624,8 @@ export function gerarMapeamentoAutomaticoCampos(
         confiancaIA: 40,
         exemploValor,
         descricao: 'Não mapeado automaticamente. Selecione um campo ou mantenha ignorado.',
+        classificacaoUso: 'IGNORADO',
+        sugestaoIA: 'IGNORADO',
       });
     }
   });
@@ -719,19 +727,34 @@ export function validarECompararLinhasImportacao(
   oportunidades: OportunidadeMelhoriaImportacao[];
 } {
   const mapaDePara: Record<string, string> = {};
+  const statusUsoCampo: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'> = {};
+
   mapeamentos.forEach((m) => {
-    if (m.campoQualigest && m.campoQualigest !== 'ignorar') {
+    if (m.campoQualigest && m.campoQualigest !== 'ignorar' && m.classificacaoUso !== 'IGNORADO') {
       mapaDePara[m.colunaOrigem] = m.campoQualigest;
+      statusUsoCampo[m.campoQualigest] = m.classificacaoUso || (m.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
     }
   });
 
   const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
-  const camposObrigatorios = definicoes.filter((d) => d.obrigatorio).map((d) => d.campo);
+  
+  // Campos que devem ser tratados como obrigatórios
+  const camposObrigatorios = definicoes
+    .filter((d) => {
+      const customUso = statusUsoCampo[d.campo];
+      if (customUso === 'IGNORADO') return false;
+      if (customUso === 'OBRIGATORIO') return true;
+      if (customUso === 'OPCIONAL') return false;
+      return d.obrigatorio;
+    })
+    .map((d) => d.campo);
 
   const registrosLinhas: RegistroLinhaImportacao[] = [];
   let totalNovos = 0;
-  let totalAtualizacoes = 0;
-  let totalDuplicados = 0;
+  let totalIguais = 0;
+  let totalAlterados = 0;
+  let totalDuplicidades = 0;
+  let totalInvalidos = 0;
   let totalErros = 0;
   let totalAtencao = 0;
   let totalIgnorados = 0;
@@ -751,8 +774,9 @@ export function validarECompararLinhasImportacao(
     const dadosMapeados: Record<string, any> = {};
     const mensagensValidacao: string[] = [];
     let statusQualidade: 'OK' | 'ATENCAO' | 'ERRO' = 'OK';
+    const camposDivergentes: CampoDivergente[] = [];
 
-    // Mapear campos
+    // Mapear campos respeitando colunas ativas
     Object.entries(linhaOriginal).forEach(([coluna, valor]) => {
       const campoAlvo = mapaDePara[coluna];
       if (campoAlvo) {
@@ -765,7 +789,8 @@ export function validarECompararLinhasImportacao(
       const val = dadosMapeados[campoObrigatorio];
       if (!val || val === '') {
         statusQualidade = 'ERRO';
-        mensagensValidacao.push(`Campo obrigatório ausente: '${campoObrigatorio}'.`);
+        const def = definicoes.find((d) => d.campo === campoObrigatorio);
+        mensagensValidacao.push(`Campo obrigatório ausente: '${def?.label || campoObrigatorio}'.`);
       }
     }
 
@@ -790,45 +815,131 @@ export function validarECompararLinhasImportacao(
       qtdSemEvidencia++;
     }
 
-    // 4. Detecção de Duplicidades e Conflitos com dados existentes no QualiGest
-    let duplicidadeDetectada = false;
-    let acaoDuplicidade: 'CRIAR_NOVO' | 'ATUALIZAR' | 'MANTER_EXISTENTE' | 'IGNORAR' = 'CRIAR_NOVO';
+    // ========================================================================
+    // 4. RECONCILIAÇÃO INTELIGENTE 2.0 COM O BANCO EXISTENTE (5-WAY CLASSIFICATION)
+    // ========================================================================
+    let classificacaoReconciliacao: ClassificacaoReconciliacao = 'NOVO';
+    let decisaoUsuario: DecisaoReconciliacao = 'CRIAR';
+    let acaoDuplicidade: AcaoConflitoDuplicidade = 'CRIAR_NOVO';
     let registroExistenteId: string | undefined = undefined;
     let registroExistenteResumo: string | undefined = undefined;
+    let dadosExistentesSnapshot: Record<string, any> | undefined = undefined;
+    let duplicidadeDetectada = false;
+
+    // Ações complementares para entidades vinculadas
+    let pessoaAcao: 'CRIAR_PESSOA' | 'VINCULAR_EXISTENTE' | 'IGNORAR' | undefined = undefined;
+    let pessoaIdVinculada: string | undefined = undefined;
+    let pessoaNomeVinculada: string | undefined = undefined;
+    let cursoAcao: 'CRIAR_CURSO' | 'VINCULAR_EXISTENTE' | 'IGNORAR' | undefined = undefined;
+    let cursoIdVinculado: string | undefined = undefined;
+    let documentoAcao: 'CRIAR_DOCUMENTO' | 'NOVA_REVISAO' | 'IGNORAR' | undefined = undefined;
 
     if (tipoControle === 'CALIBRACAO_FERRAMENTAL') {
       const pat = normalizarTexto(dadosMapeados.codigoPatrimonio || '');
       const serie = normalizarTexto(dadosMapeados.numeroSerie || '');
-      
-      const ferramentaExistente = (contexto.ferramentasExistentes || []).find((f) => {
-        const fPat = normalizarTexto(f.codigoPatrimonio);
-        const fSerie = normalizarTexto(f.numeroSerie);
-        return (pat && fPat === pat) || (serie && fSerie === serie);
-      });
+      const desc = normalizarTexto(dadosMapeados.descricao || '');
 
-      if (ferramentaExistente) {
-        duplicidadeDetectada = true;
-        registroExistenteId = ferramentaExistente.id;
-        registroExistenteResumo = `Instrumento ${ferramentaExistente.codigoPatrimonio} (${ferramentaExistente.descricao}) já existe. Vencimento cadastrado: ${ferramentaExistente.dataProximaCalibracao}`;
-        
-        // Se a data do arquivo for mais nova, sugere Atualizar; caso contrário, Manter Existente
-        acaoDuplicidade = 'ATUALIZAR';
-        totalDuplicados++;
-        totalAtualizacoes++;
-        if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
-        mensagensValidacao.push(`Ferramenta já cadastrada no sistema (${ferramentaExistente.codigoPatrimonio}). Selecione se deseja Atualizar dados ou Manter existente.`);
+      // Registro inválido se não tiver nem patrimônio, nem série, nem descrição
+      if (!pat && !serie && !desc) {
+        classificacaoReconciliacao = 'INVALIDO';
+        decisaoUsuario = 'IGNORAR';
+        statusQualidade = 'ERRO';
+        mensagensValidacao.push('Registro inválido: Ausência total de identificadores (Código, Série ou Descrição).');
+        totalInvalidos++;
       } else {
-        totalNovos++;
-      }
+        // Busca correspondente no banco oficial de ferramentas
+        const ferramentaExistente = (contexto.ferramentasExistentes || []).find((f) => {
+          const fPat = normalizarTexto(f.codigoPatrimonio);
+          const fSerie = normalizarTexto(f.numeroSerie);
+          return (pat && fPat === pat) || (serie && fSerie === serie);
+        });
 
-      // Checar se ferramenta já entra vencida ou próxima
-      if (dadosMapeados.dataProximaCalibracao) {
-        const hojeIso = new Date().toISOString().split('T')[0];
-        if (dadosMapeados.dataProximaCalibracao < hojeIso) {
-          qtdFerramentaVencida++;
-          ferramentasVencidasNomes.push(`${dadosMapeados.codigoPatrimonio || 'S/ID'} - ${dadosMapeados.descricao || 'Ferramenta'}`);
-          if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
-          mensagensValidacao.push(`Atenção: A calibração desta ferramenta está VENCIDA (${dadosMapeados.dataProximaCalibracao}). Requer quarentena imediata.`);
+        if (ferramentaExistente) {
+          registroExistenteId = ferramentaExistente.id;
+          dadosExistentesSnapshot = { ...ferramentaExistente };
+          registroExistenteResumo = `${ferramentaExistente.codigoPatrimonio} - ${ferramentaExistente.descricao} (S/N: ${ferramentaExistente.numeroSerie || 'N/A'}, Venc: ${ferramentaExistente.dataProximaCalibracao})`;
+
+          // Comparar campos relevantes para detectar diferenças
+          const camposParaComparar = [
+            { campo: 'descricao', label: 'Descrição' },
+            { campo: 'fabricante', label: 'Fabricante' },
+            { campo: 'modelo', label: 'Modelo' },
+            { campo: 'dataProximaCalibracao', label: 'Próxima Calibração' },
+            { campo: 'dataUltimaCalibracao', label: 'Última Calibração' },
+            { campo: 'laboratorioCalibrador', label: 'Laboratório RBC' },
+            { campo: 'numeroCertificado', label: 'Nº Certificado' },
+            { campo: 'setor', label: 'Setor Alocado' },
+          ];
+
+          camposParaComparar.forEach((c) => {
+            const valAtual = (ferramentaExistente as any)[c.campo] || '';
+            const valNovo = dadosMapeados[c.campo] || '';
+            if (valNovo && normalizarTexto(String(valAtual)) !== normalizarTexto(String(valNovo))) {
+              camposDivergentes.push({
+                campo: c.campo,
+                label: c.label,
+                valorAtual: valAtual,
+                valorImportado: valNovo,
+              });
+            }
+          });
+
+          if (camposDivergentes.length === 0) {
+            // Todos os campos relevantes coincidem
+            classificacaoReconciliacao = 'EXISTENTE_IGUAL';
+            decisaoUsuario = 'IGNORAR';
+            acaoDuplicidade = 'MANTER_EXISTENTE';
+            totalIguais++;
+            totalIgnorados++;
+            mensagensValidacao.push(`Registro idêntico já cadastrado no Controle de Ferramentas (${ferramentaExistente.codigoPatrimonio}). Sugestão: Ignorar importação.`);
+          } else {
+            // Existem campos alterados
+            classificacaoReconciliacao = 'EXISTENTE_ALTERADO';
+            decisaoUsuario = 'ATUALIZAR';
+            acaoDuplicidade = 'ATUALIZAR';
+            duplicidadeDetectada = true;
+            totalAlterados++;
+            if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
+            mensagensValidacao.push(
+              `Instrumento existente com divergências (${camposDivergentes.map((c) => c.label).join(', ')}). Sugestão: Atualizar cadastro oficial.`
+            );
+          }
+        } else {
+          // Checar possível duplicidade por similaridade de descrição + fabricante
+          const possivelDuplicata = (contexto.ferramentasExistentes || []).find((f) => {
+            const fDesc = normalizarTexto(f.descricao);
+            const fFab = normalizarTexto(f.fabricante);
+            const fab = normalizarTexto(dadosMapeados.fabricante || '');
+            return desc && fDesc && (desc === fDesc || desc.includes(fDesc) || fDesc.includes(desc)) && (fab && fFab && fab === fFab);
+          });
+
+          if (possivelDuplicata) {
+            classificacaoReconciliacao = 'POSSIVEL_DUPLICIDADE';
+            decisaoUsuario = 'REVISAR';
+            duplicidadeDetectada = true;
+            registroExistenteId = possivelDuplicata.id;
+            dadosExistentesSnapshot = { ...possivelDuplicata };
+            registroExistenteResumo = `Instrumento similar: ${possivelDuplicata.codigoPatrimonio} (${possivelDuplicata.descricao}) - S/N: ${possivelDuplicata.numeroSerie}`;
+            totalDuplicidades++;
+            if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
+            mensagensValidacao.push(`Possível duplicidade com ${possivelDuplicata.codigoPatrimonio} (${possivelDuplicata.descricao}). Confirme antes de criar.`);
+          } else {
+            classificacaoReconciliacao = 'NOVO';
+            decisaoUsuario = 'CRIAR';
+            acaoDuplicidade = 'CRIAR_NOVO';
+            totalNovos++;
+          }
+        }
+
+        // Checar se ferramenta entra com calibração vencida
+        if (dadosMapeados.dataProximaCalibracao) {
+          const hojeIso = new Date().toISOString().split('T')[0];
+          if (dadosMapeados.dataProximaCalibracao < hojeIso) {
+            qtdFerramentaVencida++;
+            ferramentasVencidasNomes.push(`${dadosMapeados.codigoPatrimonio || 'S/ID'} - ${dadosMapeados.descricao || 'Ferramenta'}`);
+            if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
+            mensagensValidacao.push(`Atenção metrológica: Calibração VENCIDA em ${dadosMapeados.dataProximaCalibracao}. O item será colocado em quarentena técnica.`);
+          }
         }
       }
     } else if (tipoControle === 'TREINAMENTOS') {
@@ -836,61 +947,173 @@ export function validarECompararLinhasImportacao(
       const cursoTituloNorm = normalizarTexto(dadosMapeados.cursoTitulo || '');
       const dataRealizacao = dadosMapeados.dataRealizacao || '';
 
-      if (pessoaNomeNorm) pessoasDetectadas.add(pessoaNomeNorm);
-      if (cursoTituloNorm) cursosDetectados.add(cursoTituloNorm);
-
-      // Verificar se pessoa já existe cadastrada no QualiGest
-      const pessoaCadastrada = (contexto.pessoasExistentes || []).find(
-        (p) => normalizarTexto(p.nome) === pessoaNomeNorm || (p.matricula && normalizarTexto(p.matricula) === normalizarTexto(dadosMapeados.pessoaMatricula || ''))
-      );
-
-      if (!pessoaCadastrada && pessoaNomeNorm) {
-        qtdPessoasNaoCadastradas++;
-        if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
-        mensagensValidacao.push(`Colaborador "${dadosMapeados.pessoaNome}" não possui cadastro ativo. O sistema criará o registro de pessoa automaticamente.`);
-      }
-
-      // Verificar se treinamento já existe
-      const treinoExistente = (contexto.registrosTreinamentoExistentes || []).find((r) => {
-        return normalizarTexto(r.colaboradorNome) === pessoaNomeNorm && 
-               normalizarTexto(r.treinamentoTitulo) === cursoTituloNorm &&
-               r.dataRealizacao === dataRealizacao;
-      });
-
-      if (treinoExistente) {
-        duplicidadeDetectada = true;
-        registroExistenteId = treinoExistente.id;
-        registroExistenteResumo = `Treinamento já registrado para ${dadosMapeados.pessoaNome} em ${dataRealizacao}.`;
-        acaoDuplicidade = 'MANTER_EXISTENTE';
-        totalDuplicados++;
-        if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
-        mensagensValidacao.push(`Registro idêntico já cadastrado em ${dataRealizacao}. Manter existente ou Atualizar?`);
+      if (!pessoaNomeNorm || !cursoTituloNorm) {
+        classificacaoReconciliacao = 'INVALIDO';
+        decisaoUsuario = 'IGNORAR';
+        statusQualidade = 'ERRO';
+        mensagensValidacao.push('Registro incompleto: Nome do colaborador ou Título do treinamento não informados.');
+        totalInvalidos++;
       } else {
-        totalNovos++;
-      }
+        if (pessoaNomeNorm) pessoasDetectadas.add(pessoaNomeNorm);
+        if (cursoTituloNorm) cursosDetectados.add(cursoTituloNorm);
 
-      if (!dadosMapeados.dataValidade) {
-        qtdValidadeAusente++;
+        // 1. Reconciliação da Pessoa / Colaborador
+        const pessoaCadastrada = (contexto.pessoasExistentes || []).find(
+          (p) => normalizarTexto(p.nome) === pessoaNomeNorm || (p.matricula && normalizarTexto(p.matricula) === normalizarTexto(dadosMapeados.pessoaMatricula || ''))
+        );
+
+        if (pessoaCadastrada) {
+          pessoaAcao = 'VINCULAR_EXISTENTE';
+          pessoaIdVinculada = pessoaCadastrada.id;
+          pessoaNomeVinculada = pessoaCadastrada.nome;
+        } else {
+          pessoaAcao = 'CRIAR_PESSOA';
+          qtdPessoasNaoCadastradas++;
+          if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
+          mensagensValidacao.push(`Pessoa "${dadosMapeados.pessoaNome}" não localizada. O QualiGest sugere criar a pessoa ou vincular a cadastro existente.`);
+        }
+
+        // 2. Reconciliação do Curso / Treinamento no Catálogo
+        const cursoCadastrado = (contexto.treinamentosExistentes || []).find(
+          (c) => normalizarTexto(c.titulo) === cursoTituloNorm || (c.codigo && normalizarTexto(c.codigo) === normalizarTexto(dadosMapeados.cursoCodigo || ''))
+        );
+
+        if (cursoCadastrado) {
+          cursoAcao = 'VINCULAR_EXISTENTE';
+          cursoIdVinculado = cursoCadastrado.id;
+        } else {
+          cursoAcao = 'CRIAR_CURSO';
+        }
+
+        // 3. Reconciliação do Registro de Treinamento
+        const treinoExistente = (contexto.registrosTreinamentoExistentes || []).find((r) => {
+          return (
+            normalizarTexto(r.colaboradorNome) === pessoaNomeNorm &&
+            normalizarTexto(r.treinamentoTitulo) === cursoTituloNorm &&
+            r.dataRealizacao === dataRealizacao
+          );
+        });
+
+        if (treinoExistente) {
+          registroExistenteId = treinoExistente.id;
+          dadosExistentesSnapshot = { ...treinoExistente };
+          registroExistenteResumo = `Treinamento realizado em ${dataRealizacao} (Validade: ${treinoExistente.dataValidade || 'N/A'}, Cert: ${treinoExistente.numeroCertificado || 'S/N'})`;
+
+          const camposComparacaoTreino = [
+            { campo: 'dataValidade', label: 'Data de Validade' },
+            { campo: 'cargaHoraria', label: 'Carga Horária' },
+            { campo: 'numeroCertificado', label: 'Nº Certificado' },
+            { campo: 'entidadeInstrutora', label: 'Entidade / Instrutor' },
+          ];
+
+          camposComparacaoTreino.forEach((c) => {
+            const valAtual = (treinoExistente as any)[c.campo] || '';
+            const valNovo = dadosMapeados[c.campo] || '';
+            if (valNovo && normalizarTexto(String(valAtual)) !== normalizarTexto(String(valNovo))) {
+              camposDivergentes.push({
+                campo: c.campo,
+                label: c.label,
+                valorAtual: valAtual,
+                valorImportado: valNovo,
+              });
+            }
+          });
+
+          if (camposDivergentes.length === 0) {
+            classificacaoReconciliacao = 'EXISTENTE_IGUAL';
+            decisaoUsuario = 'IGNORAR';
+            acaoDuplicidade = 'MANTER_EXISTENTE';
+            totalIguais++;
+            totalIgnorados++;
+            mensagensValidacao.push(`Capacitação já homologada para este colaborador na mesma data. Sugestão: Manter existente.`);
+          } else {
+            classificacaoReconciliacao = 'EXISTENTE_ALTERADO';
+            decisaoUsuario = 'ATUALIZAR';
+            acaoDuplicidade = 'ATUALIZAR';
+            duplicidadeDetectada = true;
+            totalAlterados++;
+            if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
+            mensagensValidacao.push(`Registro existente com dados complementares (${camposDivergentes.map((c) => c.label).join(', ')}). Sugestão: Atualizar.`);
+          }
+        } else {
+          // Checar se existe treinamento do mesmo curso com data diferente
+          const mesmoCursoOutraData = (contexto.registrosTreinamentoExistentes || []).find((r) => {
+            return normalizarTexto(r.colaboradorNome) === pessoaNomeNorm && normalizarTexto(r.treinamentoTitulo) === cursoTituloNorm;
+          });
+
+          if (mesmoCursoOutraData) {
+            classificacaoReconciliacao = 'NOVO';
+            decisaoUsuario = 'CRIAR';
+            acaoDuplicidade = 'CRIAR_NOVO';
+            totalNovos++;
+            mensagensValidacao.push(`Nova reciclagem do curso "${dadosMapeados.cursoTitulo}" para ${dadosMapeados.pessoaNome}. O histórico anterior será preservado.`);
+          } else {
+            classificacaoReconciliacao = 'NOVO';
+            decisaoUsuario = 'CRIAR';
+            acaoDuplicidade = 'CRIAR_NOVO';
+            totalNovos++;
+          }
+        }
+
+        if (!dadosMapeados.dataValidade) {
+          qtdValidadeAusente++;
+        }
       }
     } else if (tipoControle === 'CONTROLE_DOCUMENTAL') {
       const codNorm = normalizarTexto(dadosMapeados.codigo || '');
-      const docExistente = (contexto.documentosExistentes || []).find(
-        (d) => normalizarTexto(d.codigo) === codNorm
-      );
+      const tituloNorm = normalizarTexto(dadosMapeados.titulo || '');
 
-      if (docExistente) {
-        duplicidadeDetectada = true;
-        registroExistenteId = docExistente.id;
-        registroExistenteResumo = `Documento ${docExistente.codigo} (${docExistente.titulo}) já existe na Master List (Rev. ${docExistente.revisaoVigenteNumero || '0'}).`;
-        acaoDuplicidade = 'ATUALIZAR';
-        totalDuplicados++;
-        totalAtualizacoes++;
-        if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
-        mensagensValidacao.push(`Documento já existente na base. A importação criará uma nova revisão (${dadosMapeados.numeroRevisao || 'Nova'}).`);
+      if (!codNorm && !tituloNorm) {
+        classificacaoReconciliacao = 'INVALIDO';
+        decisaoUsuario = 'IGNORAR';
+        statusQualidade = 'ERRO';
+        mensagensValidacao.push('Documento sem código ou título identificável.');
+        totalInvalidos++;
       } else {
-        totalNovos++;
+        const docExistente = (contexto.documentosExistentes || []).find(
+          (d) => normalizarTexto(d.codigo) === codNorm || (tituloNorm && normalizarTexto(d.titulo) === tituloNorm)
+        );
+
+        if (docExistente) {
+          registroExistenteId = docExistente.id;
+          dadosExistentesSnapshot = { ...docExistente };
+          registroExistenteResumo = `Documento ${docExistente.codigo} (${docExistente.titulo}) - Rev. Vigente: ${docExistente.revisaoVigenteNumero || '0'}`;
+
+          const revImportada = normalizarTexto(dadosMapeados.revisaoNumero || dadosMapeados.numeroRevisao || '');
+          const revVigente = normalizarTexto(docExistente.revisaoVigenteNumero || '');
+
+          if (revImportada && revImportada === revVigente) {
+            classificacaoReconciliacao = 'EXISTENTE_IGUAL';
+            decisaoUsuario = 'IGNORAR';
+            documentoAcao = 'IGNORAR';
+            totalIguais++;
+            totalIgnorados++;
+            mensagensValidacao.push(`Documento ${docExistente.codigo} já está cadastrado exatamente na revisão ${docExistente.revisaoVigenteNumero}.`);
+          } else {
+            classificacaoReconciliacao = 'EXISTENTE_ALTERADO';
+            decisaoUsuario = 'ATUALIZAR';
+            documentoAcao = 'NOVA_REVISAO';
+            duplicidadeDetectada = true;
+            totalAlterados++;
+            camposDivergentes.push({
+              campo: 'revisaoVigenteNumero',
+              label: 'Revisão Vigente',
+              valorAtual: docExistente.revisaoVigenteNumero || 'Sem revisão',
+              valorImportado: dadosMapeados.revisaoNumero || dadosMapeados.numeroRevisao || 'Nova',
+            });
+            if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
+            mensagensValidacao.push(`Documento já existe no Controle Documental. A importação registrará a nova revisão histórica (${dadosMapeados.revisaoNumero || 'Nova'}).`);
+          }
+        } else {
+          classificacaoReconciliacao = 'NOVO';
+          decisaoUsuario = 'CRIAR';
+          documentoAcao = 'CRIAR_DOCUMENTO';
+          totalNovos++;
+        }
       }
     } else {
+      classificacaoReconciliacao = 'NOVO';
+      decisaoUsuario = 'CRIAR';
       totalNovos++;
     }
 
@@ -907,12 +1130,24 @@ export function validarECompararLinhasImportacao(
       acaoDuplicidade,
       registroExistenteId,
       registroExistenteResumo,
-      selecionadoParaImportar: statusQualidade !== 'ERRO',
+      selecionadoParaImportar: statusQualidade !== 'ERRO' && classificacaoReconciliacao !== 'INVALIDO' && decisaoUsuario !== 'IGNORAR',
+      classificacaoReconciliacao,
+      camposDivergentes,
+      dadosExistentesSnapshot,
+      decisaoUsuario,
+      pessoaAcao,
+      pessoaIdVinculada,
+      pessoaNomeVinculada,
+      cursoAcao,
+      cursoIdVinculado,
+      documentoAcao,
+      origemSugestao: 'AI_SUGGESTION',
+      decisaoHumana: 'HUMAN_APPROVED',
     });
   });
 
   // ============================================================================
-  // GERAÇÃO DE OPORTUNIDADES DE MELHORIA PÓS-IMPORTAÇÃO (REQUISITO 11)
+  // GERAÇÃO DE OPORTUNIDADES DE MELHORIA PÓS-IMPORTAÇÃO
   // ============================================================================
 
   if (qtdValidadeAusente > 0) {
@@ -959,8 +1194,8 @@ export function validarECompararLinhasImportacao(
     oportunidades.push({
       id: 'opp-pessoas-novas',
       tipo: 'PESSOA_NAO_CADASTRADA',
-      titulo: `${qtdPessoasNaoCadastradas} colaborador(es) novos detectados para cadastro`,
-      descricao: 'A planilha continha técnicos que ainda não estavam na Matriz de Pessoas. O QualiGest preparou a criação automática com vínculos aeronáuticos.',
+      titulo: `${qtdPessoasNaoCadastradas} colaborador(es) não cadastrados formalmente`,
+      descricao: 'A lista importada possui colaboradores que ainda não integram a Matriz de Pessoas do SGQ. A revisão humana permite criar ou vincular cada um.',
       severidade: 'BAIXA',
       registrosAfetados: qtdPessoasNaoCadastradas,
       acoesDisponiveis: ['CORRIGIR_DADOS', 'IGNORAR'],
@@ -971,12 +1206,16 @@ export function validarECompararLinhasImportacao(
   const resumo: ResumoPreviaImportacao = {
     totalLinhas: linhasOriginais.length,
     registrosNovos: totalNovos,
-    registrosAtualizacoes: totalAtualizacoes,
-    registrosDuplicados: totalDuplicados,
+    registrosAtualizacoes: totalAlterados,
+    registrosDuplicados: totalDuplicidades,
     registrosComErro: totalErros,
     registrosComAtencao: totalAtencao,
     registrosIgnorados: totalIgnorados,
     evidenciasIdentificadas: totalEvidencias,
+    registrosIguais: totalIguais,
+    registrosAlterados: totalAlterados,
+    possiveisDuplicidades: totalDuplicidades,
+    registrosInvalidos: totalInvalidos,
   };
 
   return {
@@ -987,11 +1226,220 @@ export function validarECompararLinhasImportacao(
 }
 
 // ============================================================================
-// PARSER DE ARQUIVOS (XLSX, XLS, CSV, TEXTO/JSON)
+// PARSER INTELIGENTE DE ESTRUTURAS TABULARES & PRÉ-CABEÇALHOS
+// ============================================================================
+
+export function detectarEstruturaTabular(
+  matrizLinhas: any[][],
+  linhaCabecalhoManual?: number
+): {
+  linhaCabecalhoNumero: number; // 1-indexed para o usuário
+  linhaCabecalhoIndex: number; // 0-indexed
+  linhasPreambulo: string[];
+  colunas: string[];
+  linhasDados: Record<string, any>[];
+  linhasRodape: string[];
+} {
+  if (!matrizLinhas || matrizLinhas.length === 0) {
+    return {
+      linhaCabecalhoNumero: 1,
+      linhaCabecalhoIndex: 0,
+      linhasPreambulo: [],
+      colunas: [],
+      linhasDados: [],
+      linhasRodape: [],
+    };
+  }
+
+  // Se o usuário solicitou uma linha específica manualmente (1-indexed)
+  if (linhaCabecalhoManual && linhaCabecalhoManual >= 1 && linhaCabecalhoManual <= matrizLinhas.length) {
+    const idx = linhaCabecalhoManual - 1;
+    const preambulo: string[] = [];
+    for (let i = 0; i < idx; i++) {
+      const textoLinha = matrizLinhas[i]
+        .map((cell) => (cell !== null && cell !== undefined ? String(cell).trim() : ''))
+        .filter(Boolean)
+        .join(' — ');
+      if (textoLinha) preambulo.push(textoLinha);
+    }
+
+    const colunasCruas = matrizLinhas[idx] || [];
+    const colunas: string[] = [];
+    colunasCruas.forEach((val, cIdx) => {
+      const nome = val !== null && val !== undefined ? String(val).trim() : '';
+      colunas.push(nome || `Coluna_${cIdx + 1}`);
+    });
+
+    const linhasDados: Record<string, any>[] = [];
+    const linhasRodape: string[] = [];
+
+    for (let r = idx + 1; r < matrizLinhas.length; r++) {
+      const row = matrizLinhas[r] || [];
+      const nonEmpties = row.filter((c) => c !== null && c !== undefined && String(c).trim() !== '');
+      if (nonEmpties.length === 0) continue;
+
+      // Detecta possíveis rodapés
+      const primeiroTexto = String(nonEmpties[0] || '').toLowerCase();
+      if (
+        nonEmpties.length <= 2 &&
+        (primeiroTexto.startsWith('observa') ||
+          primeiroTexto.startsWith('aprovado') ||
+          primeiroTexto.startsWith('total') ||
+          primeiroTexto.startsWith('assinatura') ||
+          primeiroTexto.startsWith('nota:'))
+      ) {
+        linhasRodape.push(nonEmpties.join(' — '));
+        continue;
+      }
+
+      const item: Record<string, any> = {};
+      colunas.forEach((col, cIdx) => {
+        item[col] = row[cIdx] !== undefined && row[cIdx] !== null ? String(row[cIdx]).trim() : '';
+      });
+      linhasDados.push(item);
+    }
+
+    return {
+      linhaCabecalhoNumero: linhaCabecalhoManual,
+      linhaCabecalhoIndex: idx,
+      linhasPreambulo: preambulo,
+      colunas,
+      linhasDados,
+      linhasRodape,
+    };
+  }
+
+  // Dicionário ampliado de sinônimos para identificação do cabeçalho
+  const sinonimosCabecalho = [
+    'codigo', 'patrimonio', 'descricao', 'instrumento', 'ferramenta', 'modelo', 'fabricante',
+    'serie', 'numero serie', 'n serie', 'validade', 'calibracao', 'proxima calibracao', 'ultima calibracao',
+    'laboratorio', 'rbc', 'certificado', 'tolerancia', 'setor', 'funcionario', 'colaborador', 'pessoa',
+    'nome', 'matricula', 'curso', 'treinamento', 'capacitacao', 'realizacao', 'carga horaria',
+    'documento', 'revisao', 'rev', 'vigencia', 'titulo', 'situacao', 'status'
+  ];
+
+  let melhorScore = -1;
+  let melhorLinhaIndex = 0;
+
+  const limiteVarredura = Math.min(matrizLinhas.length - 1, 25);
+
+  for (let r = 0; r <= limiteVarredura; r++) {
+    const row = matrizLinhas[r] || [];
+    const celulasNaoVazias = row
+      .map((c) => (c !== null && c !== undefined ? String(c).trim() : ''))
+      .filter((s) => s.length > 0);
+
+    if (celulasNaoVazias.length < 2) {
+      // Linhas com 0 ou 1 célula quase certamente são títulos institucionais
+      continue;
+    }
+
+    let matchCount = 0;
+    celulasNaoVazias.forEach((celula) => {
+      const norm = normalizarTexto(celula);
+      if (sinonimosCabecalho.some((sin) => norm === sin || norm.includes(sin) || sin.includes(norm))) {
+        matchCount++;
+      }
+    });
+
+    // Linhas seguintes devem conter dados para confirmar que esta linha é o cabeçalho
+    const proximaLinha = matrizLinhas[r + 1] || [];
+    const celulasProx = proximaLinha.filter((c) => c !== null && c !== undefined && String(c).trim() !== '');
+    const temDadosDepois = celulasProx.length >= 2;
+
+    const score = matchCount * 25 + celulasNaoVazias.length * 4 + (temDadosDepois ? 20 : 0);
+
+    if (score > melhorScore && matchCount >= 1) {
+      melhorScore = score;
+      melhorLinhaIndex = r;
+    }
+  }
+
+  // Fallback: se nenhum sinônimo bateu, procura a primeira linha com >= 2 células distintas
+  if (melhorScore <= 0) {
+    for (let r = 0; r <= limiteVarredura; r++) {
+      const row = matrizLinhas[r] || [];
+      const nonEmpties = row.filter((c) => c !== null && c !== undefined && String(c).trim() !== '');
+      if (nonEmpties.length >= 3) {
+        melhorLinhaIndex = r;
+        break;
+      }
+    }
+  }
+
+  // Coleta preâmbulo (todas as linhas anteriores ao cabeçalho)
+  const linhasPreambulo: string[] = [];
+  for (let i = 0; i < melhorLinhaIndex; i++) {
+    const texto = matrizLinhas[i]
+      .map((cell) => (cell !== null && cell !== undefined ? String(cell).trim() : ''))
+      .filter(Boolean)
+      .join(' — ');
+    if (texto) linhasPreambulo.push(texto);
+  }
+
+  // Extrai colunas
+  const colunasRow = matrizLinhas[melhorLinhaIndex] || [];
+  const colunasContagem: Record<string, number> = {};
+  const colunas: string[] = [];
+
+  colunasRow.forEach((val, idx) => {
+    let col = val !== null && val !== undefined ? String(val).trim().replace(/\r?\n/g, ' ') : '';
+    if (!col) col = `Coluna_${idx + 1}`;
+    if (colunasContagem[col]) {
+      colunasContagem[col]++;
+      col = `${col}_${colunasContagem[col]}`;
+    } else {
+      colunasContagem[col] = 1;
+    }
+    colunas.push(col);
+  });
+
+  // Extrai linhas de dados e rodapés
+  const linhasDados: Record<string, any>[] = [];
+  const linhasRodape: string[] = [];
+
+  for (let r = melhorLinhaIndex + 1; r < matrizLinhas.length; r++) {
+    const row = matrizLinhas[r] || [];
+    const nonEmpties = row.filter((c) => c !== null && c !== undefined && String(c).trim() !== '');
+    if (nonEmpties.length === 0) continue;
+
+    const primeiroTexto = String(nonEmpties[0] || '').toLowerCase();
+    if (
+      nonEmpties.length <= 2 &&
+      (primeiroTexto.startsWith('observa') ||
+        primeiroTexto.startsWith('aprovado') ||
+        primeiroTexto.startsWith('total') ||
+        primeiroTexto.startsWith('assinatura') ||
+        primeiroTexto.startsWith('nota:'))
+    ) {
+      linhasRodape.push(nonEmpties.join(' — '));
+      continue;
+    }
+
+    const item: Record<string, any> = {};
+    colunas.forEach((col, cIdx) => {
+      item[col] = row[cIdx] !== undefined && row[cIdx] !== null ? String(row[cIdx]).trim() : '';
+    });
+    linhasDados.push(item);
+  }
+
+  return {
+    linhaCabecalhoNumero: melhorLinhaIndex + 1,
+    linhaCabecalhoIndex: melhorLinhaIndex,
+    linhasPreambulo,
+    colunas,
+    linhasDados,
+    linhasRodape,
+  };
+}
+
+// ============================================================================
+// PARSER DE ARQUIVOS (XLSX, XLS, CSV, DOCX, PDF, JSON) COM INTELIGÊNCIA DE CABEÇALHOS
 // ============================================================================
 
 export async function processarArquivoBruto(
-  arquivo: File | { name: string; data: Uint8Array | string; type?: string }
+  arquivo: File | { name: string; data: Uint8Array | string; type?: string; linhaCabecalhoManual?: number },
+  linhaCabecalhoManual?: number
 ): Promise<{
   nomeArquivo: string;
   tamanhoBytes: number;
@@ -999,11 +1447,17 @@ export async function processarArquivoBruto(
   colunas: string[];
   linhas: Record<string, any>[];
   hashSha256: string;
+  linhaCabecalhoDetectada: number;
+  linhasPreambuloDetectadas: string[];
+  linhasRodapeDetectadas: string[];
   conteudoTextoBruto?: string;
+  totalLinhasBrutas: number;
+  matrizLinhasBrutas?: any[][];
 }> {
   let nomeArquivo = '';
   let tamanhoBytes = 0;
   let buffer: Uint8Array;
+  const linhaForcada = linhaCabecalhoManual || ('linhaCabecalhoManual' in arquivo ? arquivo.linhaCabecalhoManual : undefined);
 
   if (arquivo instanceof File) {
     nomeArquivo = arquivo.name;
@@ -1036,20 +1490,28 @@ export async function processarArquivoBruto(
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
     const primeiroNomeAba = workbook.SheetNames[0];
     const sheet = workbook.Sheets[primeiroNomeAba];
-    const linhasJson: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, {
+    
+    // Converte a aba inteira para matriz bruta 2D
+    const matrizBruta: any[][] = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
       defval: '',
       raw: false,
     });
 
-    const colunas = linhasJson.length > 0 ? Object.keys(linhasJson[0]) : [];
+    const estrutura = detectarEstruturaTabular(matrizBruta, linhaForcada);
 
     return {
       nomeArquivo,
       tamanhoBytes,
       tipoArquivo,
-      colunas,
-      linhas: linhasJson,
+      colunas: estrutura.colunas,
+      linhas: estrutura.linhasDados,
       hashSha256,
+      linhaCabecalhoDetectada: estrutura.linhaCabecalhoNumero,
+      linhasPreambuloDetectadas: estrutura.linhasPreambulo,
+      linhasRodapeDetectadas: estrutura.linhasRodape,
+      totalLinhasBrutas: matrizBruta.length,
+      matrizLinhasBrutas: matrizBruta.slice(0, 40),
     };
   }
 
@@ -1067,15 +1529,63 @@ export async function processarArquivoBruto(
         colunas,
         linhas: linhasJson,
         hashSha256,
+        linhaCabecalhoDetectada: 1,
+        linhasPreambuloDetectadas: [],
+        linhasRodapeDetectadas: [],
         conteudoTextoBruto: texto,
+        totalLinhasBrutas: linhasJson.length,
       };
     } catch (e) {
       console.warn('JSON parse fallback:', e);
     }
   }
 
-  // 3. Fallback / PDF / DOCX texto simples
+  // 3. Processamento de DOCX / PDF / Arquivos de Texto com tabela
   const textoSimples = new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+  const linhasTexto = textoSimples.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  // Verificar se há linhas tabulares com separadores (pipe, tabulação, ponto-e-vírgula)
+  const matrizTexto: string[][] = [];
+  linhasTexto.forEach((linha) => {
+    if (linha.includes('|')) {
+      // Ex: | Código | Descrição | Nº Série | Validade |
+      const partes = linha.split('|').map((p) => p.trim()).filter((p, idx, arr) => {
+        // Ignora bordas vazias de tabelas markdown
+        if ((idx === 0 || idx === arr.length - 1) && p === '') return false;
+        return true;
+      });
+      // Pular separadores como |---|---|
+      if (partes.length > 1 && !partes.every((p) => /^[-:]+$/.test(p))) {
+        matrizTexto.push(partes);
+      }
+    } else if (linha.includes('\t')) {
+      matrizTexto.push(linha.split('\t').map((p) => p.trim()));
+    } else if (linha.includes(';')) {
+      matrizTexto.push(linha.split(';').map((p) => p.trim()));
+    } else {
+      matrizTexto.push([linha]);
+    }
+  });
+
+  if (matrizTexto.length > 0 && matrizTexto.some((m) => m.length >= 2)) {
+    const estrutura = detectarEstruturaTabular(matrizTexto, linhaForcada);
+    return {
+      nomeArquivo,
+      tamanhoBytes,
+      tipoArquivo,
+      colunas: estrutura.colunas,
+      linhas: estrutura.linhasDados,
+      hashSha256,
+      linhaCabecalhoDetectada: estrutura.linhaCabecalhoNumero,
+      linhasPreambuloDetectadas: estrutura.linhasPreambulo,
+      linhasRodapeDetectadas: estrutura.linhasRodape,
+      conteudoTextoBruto: textoSimples,
+      totalLinhasBrutas: matrizTexto.length,
+      matrizLinhasBrutas: matrizTexto.slice(0, 40),
+    };
+  }
+
+  // Fallback para documento sem tabela detectada
   return {
     nomeArquivo,
     tamanhoBytes,
@@ -1089,6 +1599,10 @@ export async function processarArquivoBruto(
       },
     ],
     hashSha256,
+    linhaCabecalhoDetectada: 1,
+    linhasPreambuloDetectadas: [],
+    linhasRodapeDetectadas: [],
     conteudoTextoBruto: textoSimples,
+    totalLinhasBrutas: 1,
   };
 }

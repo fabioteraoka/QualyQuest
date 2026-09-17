@@ -64,8 +64,15 @@ import {
   efetivarImportacaoNoQualigest,
   saveSmartImportRecord,
   saveImportTemplate,
-  saveCalibratedTool
+  saveCalibratedTool,
+  reverterImportacaoNoQualigest,
+  excluirRegistroImportacaoHistorico,
+  toggleAtivoFerramenta,
+  deleteFerramentaCalibrada
 } from '../services/firebase/smartImportFirestore';
+import { ReconciliationDiffModal } from './smart-import/ReconciliationDiffModal';
+import { ImportReversalModal } from './smart-import/ImportReversalModal';
+import { ToolCalibrationHistoryModal } from './smart-import/ToolCalibrationHistoryModal';
 
 interface SmartImportMigrationViewProps {
   organization: OrganizationRecord | null;
@@ -82,24 +89,32 @@ interface SmartImportMigrationViewProps {
   onAdicionarCurso?: (curso: CursoTreinamento) => void;
   onAdicionarRegistroTreinamento?: (registro: RegistroTreinamentoColaborador) => void;
   onAdicionarFerramenta?: (ferramenta: FerramentaCalibracao) => void;
+  onRemoverFerramenta?: (toolId: string) => void;
+  onRemoverRegistroTreinamento?: (recordId: string) => void;
+  onRemoverPessoa?: (personId: string) => void;
+  onRemoverCurso?: (courseId: string) => void;
   onCriarRncSugerida?: (dadosRnc: any) => void;
 }
 
 export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> = ({
   organization,
   user,
-  pessoas,
-  treinamentos,
-  registrosTreinamento,
-  documentos,
-  ferramentasCalibradas,
-  smartImports,
-  templatesAprovados,
+  pessoas = [],
+  treinamentos = [],
+  registrosTreinamento = [],
+  documentos = [],
+  ferramentasCalibradas = [],
+  smartImports = [],
+  templatesAprovados = [],
   onNavigateToTab,
   onAdicionarPessoa,
   onAdicionarCurso,
   onAdicionarRegistroTreinamento,
   onAdicionarFerramenta,
+  onRemoverFerramenta,
+  onRemoverRegistroTreinamento,
+  onRemoverPessoa,
+  onRemoverCurso,
   onCriarRncSugerida
 }) => {
   const [tabPrincipal, setTabPrincipal] = useState<'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA'>('WIZARD');
@@ -117,6 +132,17 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   const [colunasDetectadas, setColunasDetectadas] = useState<string[]>([]);
   const [linhasOriginais, setLinhasOriginais] = useState<Record<string, any>[]>([]);
 
+  // Suporte a Preâmbulo e Identificação Inteligente de Cabeçalho (Fase 14.1)
+  const [linhaCabecalhoDetectada, setLinhaCabecalhoDetectada] = useState<number>(0);
+  const [linhasPreambuloDetectadas, setLinhasPreambuloDetectadas] = useState<string[]>([]);
+  const [classificacaoCampos, setClassificacaoCampos] = useState<Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>>({});
+
+  // Modais de Reconciliação, Reversão e Histórico Metrológico (Fase 14.1)
+  const [registroDivergenteModal, setRegistroDivergenteModal] = useState<RegistroLinhaImportacao | null>(null);
+  const [reversaoModal, setReversaoModal] = useState<RegistroImportacaoCompleto | null>(null);
+  const [ferramentaHistoricoModal, setFerramentaHistoricoModal] = useState<FerramentaCalibracao | null>(null);
+  const [filtroReconciliacao, setFiltroReconciliacao] = useState<'TODOS' | 'NOVO' | 'EXISTENTE_IGUAL' | 'EXISTENTE_ALTERADO' | 'POSSIVEL_DUPLICIDADE' | 'INVALIDO'>('TODOS');
+
   // Estado da Análise Automática (Etapa 2)
   const [tipoControle, setTipoControle] = useState<TipoControleImportacao>('TREINAMENTOS');
   const [confiancaIA, setConfiancaIA] = useState<number>(95);
@@ -133,7 +159,17 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   // Estado da Validação & Análise de Qualidade (Etapa 4)
   const [registrosValidados, setRegistrosValidados] = useState<RegistroLinhaImportacao[]>([]);
   const [resumoPrevia, setResumoPrevia] = useState<ResumoPreviaImportacao | null>(null);
-  const [filtroQualidade, setFiltroQualidade] = useState<'TODOS' | 'ERROS' | 'ATENCAO' | 'VALIDOS'>('TODOS');
+  const [filtroQualidade, setFiltroQualidade] = useState<
+    | 'TODOS'
+    | 'ERROS'
+    | 'ATENCAO'
+    | 'VALIDOS'
+    | 'NOVO'
+    | 'EXISTENTE_IGUAL'
+    | 'EXISTENTE_ALTERADO'
+    | 'POSSIVEL_DUPLICIDADE'
+    | 'INVALIDO'
+  >('TODOS');
   const [termoBuscaLinha, setTermoBuscaLinha] = useState<string>('');
 
   // Estado da Gravação / Resultado (Etapa 6)
@@ -355,8 +391,32 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
       });
     }
 
+    // Inicializar Classificação dos Campos (Fase 14.1: OBRIGATÓRIO, OPCIONAL, IGNORAR)
+    const classifInicial: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'> = {};
+    mapeamentoGerado.forEach((m) => {
+      if (m.campoQualigest === 'ignorar') {
+        classifInicial[m.colunaOrigem] = 'IGNORADO';
+      } else if (m.obrigatorio) {
+        classifInicial[m.colunaOrigem] = 'OBRIGATORIO';
+      } else {
+        classifInicial[m.colunaOrigem] = 'OPCIONAL';
+      }
+    });
+    setClassificacaoCampos(classifInicial);
+
     setMapeamentos(mapeamentoGerado);
     setNomeTemplateCustom(`Modelo Padrão ${tipo} - ${new Date().toLocaleDateString('pt-BR')}`);
+  };
+
+  // Alteração manual da classificação de um campo (Fase 14.1)
+  const alterarClassificacaoCampo = (
+    colunaOrigem: string,
+    novaClassificacao: 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'
+  ) => {
+    setClassificacaoCampos((prev) => ({ ...prev, [colunaOrigem]: novaClassificacao }));
+    if (novaClassificacao === 'IGNORADO') {
+      alterarCampoMapeado(colunaOrigem, 'ignorar');
+    }
   };
 
   // Alteração manual do campo mapeado pelo usuário
@@ -367,11 +427,18 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     setMapeamentos((prev) =>
       prev.map((m) => {
         if (m.colunaOrigem === colunaOrigem) {
+          const isIgnorar = novoCampoQualigest === 'ignorar';
+          const isObrigatorio = def ? def.obrigatorio : false;
+          setClassificacaoCampos((cPrev) => ({
+            ...cPrev,
+            [colunaOrigem]: isIgnorar ? 'IGNORADO' : isObrigatorio ? 'OBRIGATORIO' : 'OPCIONAL',
+          }));
+
           return {
             ...m,
             campoQualigest: novoCampoQualigest,
             campoLabel: def ? def.label : '(Ignorar Coluna)',
-            obrigatorio: def ? def.obrigatorio : false,
+            obrigatorio: isObrigatorio,
             tipoDado: def ? def.tipo : 'string',
             confiancaIA: 100, // Validação manual humana
           };
@@ -382,11 +449,11 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   };
 
   // ============================================================================
-  // FUNÇÃO 5: EXECUTAR VALIDAÇÃO DE QUALIDADE & PRÉVIA OBRIGATÓRIA
+  // FUNÇÃO 5: EXECUTAR VALIDAÇÃO DE QUALIDADE & PRÉVIA OBRIGATÓRIA (FASE 14.1)
   // ============================================================================
   const executarValidacaoQualidade = () => {
     setIsProcessando(true);
-    setStatusMensagem('Validando campos obrigatórios, datas, integridade e duplicidades existentes...');
+    setStatusMensagem('Validando campos obrigatórios, datas, integridade e reconciliando com cadastros oficiais...');
 
     try {
       const resultado = validarECompararLinhasImportacao(
@@ -399,7 +466,8 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
           registrosTreinamentoExistentes: registrosTreinamento,
           ferramentasExistentes: ferramentasCalibradas,
           documentosExistentes: documentos,
-        }
+        },
+        classificacaoCampos
       );
 
       setRegistrosValidados(resultado.registrosLinhas);
@@ -415,18 +483,19 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     }
   };
 
-  // Alteração da ação de duplicidade para uma linha específica
-  const alterarAcaoDuplicidadeLinha = (
+  // Alteração da decisão de reconciliação para uma linha específica (Fase 14.1)
+  const alterarDecisaoReconciliacaoLinha = (
     indiceLinha: number,
-    novaAcao: 'ATUALIZAR' | 'MANTER_EXISTENTE' | 'CRIAR_NOVO' | 'IGNORAR'
+    novaDecisao: 'ATUALIZAR' | 'MANTER_EXISTENTE' | 'CRIAR_NOVO' | 'IGNORAR'
   ) => {
     setRegistrosValidados((prev) =>
       prev.map((l) => {
         if (l.indiceLinha === indiceLinha) {
           return {
             ...l,
-            acaoDuplicidade: novaAcao,
-            selecionadoParaImportar: novaAcao !== 'IGNORAR',
+            decisaoUsuario: novaDecisao,
+            acaoDuplicidade: novaDecisao,
+            selecionadoParaImportar: novaDecisao !== 'IGNORAR' && novaDecisao !== 'MANTER_EXISTENTE',
           };
         }
         return l;
@@ -434,15 +503,60 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     );
   };
 
+  // Alteração do vínculo de pessoa (vincular ao existente vs criar nova pessoa com validação)
+  const alterarPessoaAcaoLinha = (
+    indiceLinha: number,
+    novaAcao: 'VINCULAR_EXISTENTE' | 'CRIAR_PESSOA'
+  ) => {
+    setRegistrosValidados((prev) =>
+      prev.map((l) => {
+        if (l.indiceLinha === indiceLinha) {
+          return {
+            ...l,
+            pessoaAcao: novaAcao,
+          };
+        }
+        return l;
+      })
+    );
+  };
+
+  // Alteração do vínculo de curso
+  const alterarCursoAcaoLinha = (
+    indiceLinha: number,
+    novaAcao: 'VINCULAR_EXISTENTE' | 'CRIAR_CURSO'
+  ) => {
+    setRegistrosValidados((prev) =>
+      prev.map((l) => {
+        if (l.indiceLinha === indiceLinha) {
+          return {
+            ...l,
+            cursoAcao: novaAcao,
+          };
+        }
+        return l;
+      })
+    );
+  };
+
+  // Alteração da ação de duplicidade para uma linha específica
+  const alterarAcaoDuplicidadeLinha = (
+    indiceLinha: number,
+    novaAcao: 'ATUALIZAR' | 'MANTER_EXISTENTE' | 'CRIAR_NOVO' | 'IGNORAR'
+  ) => {
+    alterarDecisaoReconciliacaoLinha(indiceLinha, novaAcao);
+  };
+
   // Alteração em lote de ações de duplicidade
   const aplicarAcaoDuplicidadeEmLote = (novaAcao: 'ATUALIZAR' | 'MANTER_EXISTENTE' | 'CRIAR_NOVO' | 'IGNORAR') => {
     setRegistrosValidados((prev) =>
       prev.map((l) => {
-        if (l.duplicidadeDetectada) {
+        if (l.duplicidadeDetectada || l.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' || l.classificacaoReconciliacao === 'EXISTENTE_ALTERADO') {
           return {
             ...l,
+            decisaoUsuario: novaAcao,
             acaoDuplicidade: novaAcao,
-            selecionadoParaImportar: novaAcao !== 'IGNORAR',
+            selecionadoParaImportar: novaAcao !== 'IGNORAR' && novaAcao !== 'MANTER_EXISTENTE',
           };
         }
         return l;
@@ -451,7 +565,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   };
 
   // ============================================================================
-  // FUNÇÃO 6: CONFIRMAR IMPORTAÇÃO & GRAVAÇÃO NO SGQ
+  // FUNÇÃO 6: CONFIRMAR IMPORTAÇÃO & GRAVAÇÃO NO SGQ (FASE 14.1 COM SNAPSHOTS)
   // ============================================================================
   const confirmarGravacaoFinal = async () => {
     if (isConsultaOnly) {
@@ -460,7 +574,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     }
 
     setIsProcessando(true);
-    setStatusMensagem('Gravando registros estruturados, registrando hash de integridade e audit trail...');
+    setStatusMensagem('Gravando registros estruturados, registrando hash de integridade e audit trail com snapshots reversíveis...');
 
     try {
       const importId = `imp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
@@ -492,7 +606,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
         await saveImportTemplate(orgId, novoTemplate, user);
       }
 
-      // 2. Gravar dados importados no QualiGest
+      // 2. Gravar dados importados no QualiGest (com snapshots automáticos em smart_imports)
       const resultado = await efetivarImportacaoNoQualigest(
         orgId,
         tipoControle,
@@ -507,37 +621,6 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
           adicionarFerramenta: onAdicionarFerramenta,
         }
       );
-
-      // 3. Registrar histórico auditável da importação
-      const registroImportacao: RegistroImportacaoCompleto = {
-        id: importId,
-        organizationId: orgId,
-        nomeArquivo: arquivoNome,
-        tipoArquivo: arquivoFormato,
-        tamanhoBytes: arquivoTamanho,
-        dataUpload: new Date().toISOString(),
-        usuarioUid: user?.uid || 'system',
-        usuarioNome: user?.displayName || 'Gestor de Qualidade',
-        usuarioEmail: user?.email || 'admin@qualigest.aero',
-        hashSha256: arquivoHash,
-        tipoControle,
-        finalidadeIdentificada: finalidadeProvavel,
-        confiancaPercentual: confiancaIA,
-        totalLinhas: linhasOriginais.length,
-        registrosCriadosQtd: resultado.totalCriados,
-        registrosAtualizadosQtd: resultado.totalAtualizados,
-        registrosIgnoradosQtd: resumoPrevia?.registrosIgnorados || 0,
-        status: 'IMPORTADO',
-        mapeamentoUtilizado: mapeamentos.reduce((acc, m) => {
-          acc[m.colunaOrigem] = m.campoQualigest;
-          return acc;
-        }, {} as Record<string, string>),
-        colunasDetectadas,
-        registrosGeradosIds: resultado.idsGerados,
-        oportunidadesGeradasQtd: oportunidades.length,
-      };
-
-      await saveSmartImportRecord(orgId, registroImportacao, user);
 
       setResultadoGravacao({
         sucesso: true,
@@ -555,6 +638,92 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     } finally {
       setIsProcessando(false);
       setStatusMensagem('');
+    }
+  };
+
+  // ============================================================================
+  // FUNÇÕES DE REVERSÃO E GESTÃO DE HISTÓRICO & METROLOGIA (FASE 14.1)
+  // ============================================================================
+  const handleReverterImportacao = async (
+    importacao: RegistroImportacaoCompleto,
+    motivo: string
+  ) => {
+    setIsProcessando(true);
+    setStatusMensagem('Revertendo importação no banco de dados e restaurando estados anteriores...');
+    try {
+      const resultado = await reverterImportacaoNoQualigest(
+        orgId,
+        importacao,
+        user,
+        motivo,
+        {
+          removerFerramenta: onRemoverFerramenta,
+          removerRegistroTreinamento: onRemoverRegistroTreinamento,
+          removerPessoa: onRemoverPessoa,
+          removerCurso: onRemoverCurso,
+          adicionarFerramenta: onAdicionarFerramenta,
+        }
+      );
+
+      if (resultado.sucesso) {
+        alert(`Reversão concluída com sucesso! ${resultado.mensagem}`);
+        setReversaoModal(null);
+      } else {
+        alert(`Falha na reversão: ${resultado.mensagem}`);
+      }
+    } catch (err: any) {
+      console.error('Erro na reversão:', err);
+      alert('Erro ao reverter importação: ' + err.message);
+    } finally {
+      setIsProcessando(false);
+      setStatusMensagem('');
+    }
+  };
+
+  const handleExcluirHistorico = async (importId: string) => {
+    if (
+      !confirm(
+        'Deseja excluir este registro do histórico de importações? Os cadastros oficiais já consolidados no QualiGest SERÃO MANTIDOS intactos.'
+      )
+    ) {
+      return;
+    }
+    try {
+      await excluirRegistroImportacaoHistorico(orgId, importId, user);
+      alert('Registro de histórico removido. Os cadastros oficiais no QualiGest permaneceram intactos.');
+    } catch (err: any) {
+      alert('Erro ao excluir registro de histórico: ' + err.message);
+    }
+  };
+
+  const handleToggleAtivoFerramenta = async (ferramenta: FerramentaCalibracao) => {
+    try {
+      const novoAtivo = !ferramenta.ativo;
+      await toggleAtivoFerramenta(orgId, ferramenta.id, novoAtivo, user);
+      if (onAdicionarFerramenta) {
+        onAdicionarFerramenta({ ...ferramenta, ativo: novoAtivo });
+      }
+    } catch (err: any) {
+      alert('Erro ao alterar status operacional da ferramenta: ' + err.message);
+    }
+  };
+
+  const handleDeleteFerramenta = async (toolId: string) => {
+    if (
+      !confirm(
+        'Tem certeza que deseja excluir esta ferramenta do cadastro oficial de calibração? Esta ação requer perfil Gestor SGQ / Admin.'
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteFerramentaCalibrada(orgId, toolId, user);
+      if (onRemoverFerramenta) {
+        onRemoverFerramenta(toolId);
+      }
+      alert('Ferramenta removida do cadastro oficial de calibração.');
+    } catch (err: any) {
+      alert('Erro ao excluir ferramenta: ' + err.message);
     }
   };
 
@@ -610,12 +779,17 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     }
   };
 
-  // Linhas filtradas para exibição na tabela da etapa 4/5
+  // Linhas filtradas para exibição na tabela da etapa 4/5 (Fase 14.1)
   const linhasFiltradas = useMemo(() => {
     return registrosValidados.filter((linha) => {
-      if (filtroQualidade === 'ERROS' && linha.statusQualidade !== 'ERRO') return false;
+      if (filtroQualidade === 'ERROS' && (linha.statusQualidade !== 'ERRO' && linha.classificacaoReconciliacao !== 'INVALIDO')) return false;
       if (filtroQualidade === 'ATENCAO' && linha.statusQualidade !== 'ATENCAO') return false;
       if (filtroQualidade === 'VALIDOS' && linha.statusQualidade !== 'OK') return false;
+      if (filtroQualidade === 'NOVO' && linha.classificacaoReconciliacao !== 'NOVO') return false;
+      if (filtroQualidade === 'EXISTENTE_IGUAL' && linha.classificacaoReconciliacao !== 'EXISTENTE_IGUAL') return false;
+      if (filtroQualidade === 'EXISTENTE_ALTERADO' && linha.classificacaoReconciliacao !== 'EXISTENTE_ALTERADO') return false;
+      if (filtroQualidade === 'POSSIVEL_DUPLICIDADE' && linha.classificacaoReconciliacao !== 'POSSIVEL_DUPLICIDADE') return false;
+      if (filtroQualidade === 'INVALIDO' && linha.classificacaoReconciliacao !== 'INVALIDO' && linha.statusQualidade !== 'ERRO') return false;
 
       if (termoBuscaLinha.trim()) {
         const busca = termoBuscaLinha.toLowerCase();
@@ -1069,6 +1243,31 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                 </div>
               </div>
 
+              {/* Alerta de Preâmbulo Isolado Automaticamente (Fase 14.1) */}
+              {linhasPreambuloDetectadas.length > 0 && (
+                <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-xl space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-blue-950">
+                    <div className="flex items-center gap-2 font-bold">
+                      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>
+                        Identificação Inteligente de Tabela: Cabeçalho localizado na Linha #{linhaCabecalhoDetectada + 1}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono bg-blue-100 text-blue-900 px-2 py-0.5 rounded font-bold">
+                      {linhasPreambuloDetectadas.length} linha(s) de metadados antes da tabela isoladas
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-blue-900 bg-white/80 p-2.5 rounded border border-blue-100 font-mono space-y-0.5">
+                    {linhasPreambuloDetectadas.map((linha, pIdx) => (
+                      <div key={pIdx} className="truncate">
+                        <span className="text-slate-400 select-none mr-2">Linha #{pIdx + 1}:</span>
+                        {linha}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Alerta de Modelo Homologado Reconhecido */}
               {templateReconhecido && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900">
@@ -1084,7 +1283,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                 </div>
               )}
 
-              {/* Tabela De/Para de Mapeamento */}
+              {/* Tabela De/Para de Mapeamento com Classificação Fase 14.1 */}
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -1092,7 +1291,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                       <th className="p-3">Coluna no Arquivo Original</th>
                       <th className="p-3">Exemplo de Valor</th>
                       <th className="p-3">Campo Correspondente no QualiGest</th>
-                      <th className="p-3">Obrigatoriedade</th>
+                      <th className="p-3">Classificação (Fase 14.1)</th>
                       <th className="p-3 text-center">Confiança</th>
                     </tr>
                   </thead>
@@ -1100,6 +1299,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                     {mapeamentos.map((item, idx) => {
                       const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
                       const isIgnorado = item.campoQualigest === 'ignorar';
+                      const classifAtual = classificacaoCampos[item.colunaOrigem] || (isIgnorado ? 'IGNORADO' : item.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
 
                       return (
                         <tr key={idx} className={isIgnorado ? 'bg-slate-50/60 opacity-80' : 'hover:bg-blue-50/20'}>
@@ -1133,15 +1333,21 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                           </td>
 
                           <td className="p-3">
-                            {item.obrigatorio ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-200">
-                                Mandatório
-                              </span>
-                            ) : isIgnorado ? (
-                              <span className="text-[11px] text-slate-400">Descartada</span>
-                            ) : (
-                              <span className="text-[11px] text-slate-500">Opcional</span>
-                            )}
+                            <select
+                              value={classifAtual}
+                              onChange={(e) => alterarClassificacaoCampo(item.colunaOrigem, e.target.value as any)}
+                              className={`border rounded px-2.5 py-1 text-xs font-bold cursor-pointer transition ${
+                                classifAtual === 'OBRIGATORIO'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : classifAtual === 'IGNORADO'
+                                  ? 'bg-slate-100 text-slate-500 border-slate-300'
+                                  : 'bg-blue-50 text-blue-700 border-blue-200'
+                              }`}
+                            >
+                              <option value="OBRIGATORIO">🔴 Obrigatório</option>
+                              <option value="OPCIONAL">🔵 Opcional</option>
+                              <option value="IGNORADO">⚪ Ignorar</option>
+                            </select>
                           </td>
 
                           <td className="p-3 text-center font-mono font-bold text-[11px]">
@@ -1222,74 +1428,88 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                 </div>
               </div>
 
-              {/* Cards de Métricas da Qualidade */}
-              {resumoPrevia && (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div
-                    onClick={() => setFiltroQualidade('VALIDOS')}
-                    className={`p-3 rounded-xl border cursor-pointer transition ${
-                      filtroQualidade === 'VALIDOS' ? 'ring-2 ring-emerald-500 bg-emerald-50' : 'bg-slate-50 border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1 text-xs font-bold text-emerald-800">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      🟢 Prontos (OK)
-                    </div>
-                    <p className="text-xl font-black text-emerald-950 mt-1">
-                      {resumoPrevia.totalLinhas - resumoPrevia.registrosComErro - resumoPrevia.registrosComAtencao}
-                    </p>
-                    <span className="text-[10px] text-emerald-700">Sem inconformidades</span>
+              {/* Cards de Métricas e Reconciliação com a Base (Fase 14.1) */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                <div
+                  onClick={() => setFiltroQualidade(filtroQualidade === 'NOVO' ? 'TODOS' : 'NOVO')}
+                  className={`p-2.5 rounded-xl border cursor-pointer transition ${
+                    filtroQualidade === 'NOVO' ? 'ring-2 ring-emerald-500 bg-emerald-50' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-bold text-emerald-800">
+                    <span className="flex items-center gap-1">🟢 Novos</span>
+                    <span className="text-[10px] bg-emerald-100 px-1.5 py-0.2 rounded font-mono">1</span>
                   </div>
-
-                  <div
-                    onClick={() => setFiltroQualidade('ATENCAO')}
-                    className={`p-3 rounded-xl border cursor-pointer transition ${
-                      filtroQualidade === 'ATENCAO' ? 'ring-2 ring-amber-500 bg-amber-50' : 'bg-slate-50 border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1 text-xs font-bold text-amber-800">
-                      <AlertTriangle className="w-4 h-4 text-amber-600" />
-                      🟡 Atenção
-                    </div>
-                    <p className="text-xl font-black text-amber-950 mt-1">
-                      {resumoPrevia.registrosComAtencao}
-                    </p>
-                    <span className="text-[10px] text-amber-700">Avisos ou duplicidades</span>
-                  </div>
-
-                  <div
-                    onClick={() => setFiltroQualidade('ERROS')}
-                    className={`p-3 rounded-xl border cursor-pointer transition ${
-                      filtroQualidade === 'ERROS' ? 'ring-2 ring-red-500 bg-red-50' : 'bg-slate-50 border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1 text-xs font-bold text-red-800">
-                      <XCircle className="w-4 h-4 text-red-600" />
-                      🔴 Erros Críticos
-                    </div>
-                    <p className="text-xl font-black text-red-950 mt-1">
-                      {resumoPrevia.registrosComErro}
-                    </p>
-                    <span className="text-[10px] text-red-700">Bloqueados para gravação</span>
-                  </div>
-
-                  <div
-                    onClick={() => setFiltroQualidade('TODOS')}
-                    className={`p-3 rounded-xl border cursor-pointer transition ${
-                      filtroQualidade === 'TODOS' ? 'ring-2 ring-blue-500 bg-blue-50' : 'bg-slate-50 border-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1 text-xs font-bold text-slate-800">
-                      <Layers className="w-4 h-4 text-blue-600" />
-                      Total de Linhas
-                    </div>
-                    <p className="text-xl font-black text-slate-900 mt-1">
-                      {resumoPrevia.totalLinhas}
-                    </p>
-                    <span className="text-[10px] text-slate-500">Evidências: {resumoPrevia.evidenciasIdentificadas}</span>
-                  </div>
+                  <p className="text-lg font-black text-emerald-950 mt-1">
+                    {registrosValidados.filter((l) => l.classificacaoReconciliacao === 'NOVO').length}
+                  </p>
+                  <span className="text-[10px] text-emerald-700">Não existem no banco</span>
                 </div>
-              )}
+
+                <div
+                  onClick={() => setFiltroQualidade(filtroQualidade === 'EXISTENTE_IGUAL' ? 'TODOS' : 'EXISTENTE_IGUAL')}
+                  className={`p-2.5 rounded-xl border cursor-pointer transition ${
+                    filtroQualidade === 'EXISTENTE_IGUAL' ? 'ring-2 ring-blue-500 bg-blue-50' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-bold text-blue-800">
+                    <span className="flex items-center gap-1">🔵 Idênticos</span>
+                    <span className="text-[10px] bg-blue-100 px-1.5 py-0.2 rounded font-mono">2</span>
+                  </div>
+                  <p className="text-lg font-black text-blue-950 mt-1">
+                    {registrosValidados.filter((l) => l.classificacaoReconciliacao === 'EXISTENTE_IGUAL').length}
+                  </p>
+                  <span className="text-[10px] text-blue-700">Sem alterações</span>
+                </div>
+
+                <div
+                  onClick={() => setFiltroQualidade(filtroQualidade === 'EXISTENTE_ALTERADO' ? 'TODOS' : 'EXISTENTE_ALTERADO')}
+                  className={`p-2.5 rounded-xl border cursor-pointer transition ${
+                    filtroQualidade === 'EXISTENTE_ALTERADO' ? 'ring-2 ring-amber-500 bg-amber-50' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-bold text-amber-800">
+                    <span className="flex items-center gap-1">🟠 Com Alteração</span>
+                    <span className="text-[10px] bg-amber-100 px-1.5 py-0.2 rounded font-mono">3</span>
+                  </div>
+                  <p className="text-lg font-black text-amber-950 mt-1">
+                    {registrosValidados.filter((l) => l.classificacaoReconciliacao === 'EXISTENTE_ALTERADO').length}
+                  </p>
+                  <span className="text-[10px] text-amber-700">Divergências detectadas</span>
+                </div>
+
+                <div
+                  onClick={() => setFiltroQualidade(filtroQualidade === 'POSSIVEL_DUPLICIDADE' ? 'TODOS' : 'POSSIVEL_DUPLICIDADE')}
+                  className={`p-2.5 rounded-xl border cursor-pointer transition ${
+                    filtroQualidade === 'POSSIVEL_DUPLICIDADE' ? 'ring-2 ring-purple-500 bg-purple-50' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-bold text-purple-800">
+                    <span className="flex items-center gap-1">🟡 Duplicidades</span>
+                    <span className="text-[10px] bg-purple-100 px-1.5 py-0.2 rounded font-mono">4</span>
+                  </div>
+                  <p className="text-lg font-black text-purple-950 mt-1">
+                    {registrosValidados.filter((l) => l.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE').length}
+                  </p>
+                  <span className="text-[10px] text-purple-700">Requer decisão humana</span>
+                </div>
+
+                <div
+                  onClick={() => setFiltroQualidade(filtroQualidade === 'INVALIDO' ? 'TODOS' : 'INVALIDO')}
+                  className={`p-2.5 rounded-xl border cursor-pointer transition ${
+                    filtroQualidade === 'INVALIDO' ? 'ring-2 ring-red-500 bg-red-50' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs font-bold text-red-800">
+                    <span className="flex items-center gap-1">🔴 Inválidos</span>
+                    <span className="text-[10px] bg-red-100 px-1.5 py-0.2 rounded font-mono">5</span>
+                  </div>
+                  <p className="text-lg font-black text-red-950 mt-1">
+                    {registrosValidados.filter((l) => l.classificacaoReconciliacao === 'INVALIDO' || l.statusQualidade === 'ERRO').length}
+                  </p>
+                  <span className="text-[10px] text-red-700">Erros impeditivos</span>
+                </div>
+              </div>
 
               {/* Filtros e Busca de Linhas */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -1304,7 +1524,15 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                   />
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
+                  {filtroQualidade !== 'TODOS' && (
+                    <button
+                      onClick={() => setFiltroQualidade('TODOS')}
+                      className="text-xs text-blue-600 hover:underline font-semibold cursor-pointer"
+                    >
+                      Remover filtro ({filtroQualidade})
+                    </button>
+                  )}
                   <span className="text-xs text-slate-500 font-medium">Exibindo:</span>
                   <span className="text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
                     {linhasFiltradas.length} de {registrosValidados.length} linhas
@@ -1312,23 +1540,25 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                 </div>
               </div>
 
-              {/* Tabela de Linhas Validadas */}
+              {/* Tabela de Linhas Validadas com Reconciliação Fase 14.1 */}
               <div className="border border-slate-200 rounded-xl overflow-x-auto max-h-[440px]">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0">
                     <tr>
-                      <th className="p-2.5 w-12 text-center">#</th>
-                      <th className="p-2.5 w-24">Qualidade</th>
+                      <th className="p-2.5 w-10 text-center">#</th>
+                      <th className="p-2.5 w-36">Status Reconciliação</th>
                       <th className="p-2.5">Dados Principais Reconhecidos</th>
-                      <th className="p-2.5">Mensagens de Validação e Diagnóstico</th>
-                      <th className="p-2.5 text-center w-24">Importar?</th>
+                      <th className="p-2.5">Diagnóstico & Divergências</th>
+                      <th className="p-2.5 text-center w-28">Comparação</th>
+                      <th className="p-2.5 text-center w-20">Importar?</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {linhasFiltradas.map((linha) => {
                       const isOk = linha.statusQualidade === 'OK';
                       const isAtencao = linha.statusQualidade === 'ATENCAO';
-                      const isErro = linha.statusQualidade === 'ERRO';
+                      const isErro = linha.statusQualidade === 'ERRO' || linha.classificacaoReconciliacao === 'INVALIDO';
+                      const temDivergencia = (linha.divergenciasDetectadas && linha.divergenciasDetectadas.length > 0) || linha.duplicidadeDetectada;
 
                       return (
                         <tr
@@ -1336,8 +1566,8 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                           className={
                             isErro
                               ? 'bg-red-50/40'
-                              : isAtencao
-                              ? 'bg-amber-50/30'
+                              : isAtencao || temDivergencia
+                              ? 'bg-amber-50/20'
                               : 'hover:bg-slate-50'
                           }
                         >
@@ -1346,22 +1576,29 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                           </td>
 
                           <td className="p-2.5">
-                            {isOk && (
-                              <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[11px]">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                🟢 OK
+                            {linha.classificacaoReconciliacao === 'NOVO' && (
+                              <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
+                                🟢 Novo
                               </span>
                             )}
-                            {isAtencao && (
-                              <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[11px]">
-                                <AlertTriangle className="w-3 h-3 text-amber-600" />
-                                🟡 Atenção
+                            {linha.classificacaoReconciliacao === 'EXISTENTE_IGUAL' && (
+                              <span className="inline-flex items-center gap-1 font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 text-[10px]">
+                                🔵 Idêntico
                               </span>
                             )}
-                            {isErro && (
-                              <span className="inline-flex items-center gap-1 font-bold text-red-800 bg-red-50 px-2 py-0.5 rounded border border-red-200 text-[11px]">
-                                <XCircle className="w-3 h-3 text-red-600" />
-                                🔴 Erro
+                            {linha.classificacaoReconciliacao === 'EXISTENTE_ALTERADO' && (
+                              <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[10px]">
+                                🟠 Com Alteração
+                              </span>
+                            )}
+                            {linha.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' && (
+                              <span className="inline-flex items-center gap-1 font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 text-[10px]">
+                                🟡 Duplicidade
+                              </span>
+                            )}
+                            {linha.classificacaoReconciliacao === 'INVALIDO' && (
+                              <span className="inline-flex items-center gap-1 font-bold text-red-800 bg-red-50 px-2 py-0.5 rounded border border-red-200 text-[10px]">
+                                🔴 Inválido
                               </span>
                             )}
                           </td>
@@ -1378,8 +1615,19 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                           </td>
 
                           <td className="p-2.5">
-                            {linha.mensagensValidacao.length > 0 ? (
+                            {linha.divergenciasDetectadas && linha.divergenciasDetectadas.length > 0 ? (
                               <div className="space-y-1">
+                                <span className="text-[10px] font-bold text-amber-900 uppercase">
+                                  {linha.divergenciasDetectadas.length} Divergência(s) com cadastro oficial:
+                                </span>
+                                {linha.divergenciasDetectadas.slice(0, 2).map((div, dIdx) => (
+                                  <div key={dIdx} className="text-[11px] text-amber-900 bg-amber-50/80 px-1.5 py-0.5 rounded border border-amber-200/60">
+                                    <span className="font-semibold">{div.campo}:</span> "{String(div.valorAtual)}" → <strong className="text-blue-700">"{String(div.valorNovo)}"</strong>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : linha.mensagensValidacao.length > 0 ? (
+                              <div className="space-y-0.5">
                                 {linha.mensagensValidacao.map((msg, mIdx) => (
                                   <div
                                     key={mIdx}
@@ -1393,6 +1641,20 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                               </div>
                             ) : (
                               <span className="text-slate-400 text-[11px]">Campos íntegros e consistentes.</span>
+                            )}
+                          </td>
+
+                          <td className="p-2.5 text-center">
+                            {temDivergencia || linha.registroExistenteId ? (
+                              <button
+                                onClick={() => setReconciliationModalLinha(linha)}
+                                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[11px] font-bold cursor-pointer transition flex items-center justify-center gap-1 mx-auto"
+                              >
+                                <Search className="w-3 h-3" />
+                                Comparar
+                              </button>
+                            ) : (
+                              <span className="text-slate-400 text-[11px]">—</span>
                             )}
                           </td>
 
@@ -1503,62 +1765,209 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                 </div>
               </div>
 
-              {/* Lista dos Registros com Conflito ou Duplicidade */}
+              {/* Lista dos Registros com Conflito, Divergências ou Duplicidade (Fase 14.1) */}
               <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Linhas com Conflitos ou Itens Já Cadastrados:
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    Reconciliação e Resolução de Divergências com o Banco:
+                  </h4>
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    {registrosValidados.filter(
+                      (l) =>
+                        l.duplicidadeDetectada ||
+                        l.classificacaoReconciliacao === 'EXISTENTE_ALTERADO' ||
+                        l.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' ||
+                        (l.divergenciasDetectadas && l.divergenciasDetectadas.length > 0) ||
+                        l.pessoaExistenteSimilar ||
+                        l.cursoExistenteSimilar
+                    ).length} registro(s) requerem confirmação humana
+                  </span>
+                </div>
 
-                {registrosValidados.filter((l) => l.duplicidadeDetectada).length === 0 ? (
+                {registrosValidados.filter(
+                  (l) =>
+                    l.duplicidadeDetectada ||
+                    l.classificacaoReconciliacao === 'EXISTENTE_ALTERADO' ||
+                    l.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' ||
+                    (l.divergenciasDetectadas && l.divergenciasDetectadas.length > 0) ||
+                    l.pessoaExistenteSimilar ||
+                    l.cursoExistenteSimilar
+                ).length === 0 ? (
                   <div className="p-6 bg-emerald-50/50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-900 space-y-1">
                     <CheckCircle2 className="w-6 h-6 text-emerald-600 mx-auto" />
-                    <p className="font-bold">Nenhuma duplicidade ou conflito encontrado na base de dados!</p>
-                    <p className="text-emerald-700">Todos os registros válidos serão criados como novos controles independentes.</p>
+                    <p className="font-bold">Nenhuma divergência ou conflito impeditivo encontrado no banco!</p>
+                    <p className="text-emerald-700">Todos os registros são novos ou compatíveis e serão incorporados aos cadastros oficiais.</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {registrosValidados
-                      .filter((l) => l.duplicidadeDetectada)
-                      .map((linha) => (
-                        <div
-                          key={linha.indiceLinha}
-                          className="p-3 bg-white border border-amber-200 rounded-xl space-y-2 shadow-2xs"
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-xs font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
-                                Linha #{linha.indiceLinha}
-                              </span>
-                              <span className="text-xs font-bold text-slate-900">
-                                {linha.dadosMapeados.codigoPatrimonio ||
-                                  linha.dadosMapeados.pessoaNome ||
-                                  linha.dadosMapeados.codigo ||
-                                  'Registro em Conflito'}
-                              </span>
+                      .filter(
+                        (l) =>
+                          l.duplicidadeDetectada ||
+                          l.classificacaoReconciliacao === 'EXISTENTE_ALTERADO' ||
+                          l.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' ||
+                          (l.divergenciasDetectadas && l.divergenciasDetectadas.length > 0) ||
+                          l.pessoaExistenteSimilar ||
+                          l.cursoExistenteSimilar
+                      )
+                      .map((linha) => {
+                        const temDivergencia = linha.divergenciasDetectadas && linha.divergenciasDetectadas.length > 0;
+                        const isAlterado = linha.classificacaoReconciliacao === 'EXISTENTE_ALTERADO';
+
+                        return (
+                          <div
+                            key={linha.indiceLinha}
+                            className="p-3.5 bg-white border border-slate-200 hover:border-blue-300 rounded-xl space-y-3 shadow-2xs transition"
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                                  Linha #{linha.indiceLinha}
+                                </span>
+                                <span className="text-xs font-bold text-slate-900">
+                                  {linha.dadosMapeados.codigoPatrimonio ||
+                                    linha.dadosMapeados.pessoaNome ||
+                                    linha.dadosMapeados.codigo ||
+                                    'Registro em Análise'}
+                                </span>
+                                {isAlterado ? (
+                                  <span className="text-[10px] font-bold bg-amber-100 text-amber-900 px-2 py-0.5 rounded border border-amber-200">
+                                    🟠 Existente com Alteração
+                                  </span>
+                                ) : linha.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' ? (
+                                  <span className="text-[10px] font-bold bg-purple-100 text-purple-900 px-2 py-0.5 rounded border border-purple-200">
+                                    🟡 Possível Duplicidade
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-bold bg-blue-100 text-blue-900 px-2 py-0.5 rounded border border-blue-200">
+                                    🔵 Reconciliação
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setReconciliationModalLinha(linha)}
+                                  className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Search className="w-3.5 h-3.5" />
+                                  Ver Comparativo Lado a Lado
+                                </button>
+                                <select
+                                  value={linha.decisaoUsuario || linha.acaoDuplicidade}
+                                  onChange={(e) =>
+                                    alterarDecisaoReconciliacaoLinha(linha.indiceLinha, e.target.value as any)
+                                  }
+                                  className="bg-slate-50 border border-slate-300 rounded px-2.5 py-1 text-xs font-bold text-slate-900 cursor-pointer"
+                                >
+                                  <option value="ATUALIZAR">Atualizar Cadastro Oficial (Preserva Histórico)</option>
+                                  <option value="MANTER_EXISTENTE">Manter Atual (Ignorar Arquivo)</option>
+                                  <option value="CRIAR_NOVO">Criar como Novo Registro</option>
+                                  <option value="IGNORAR">Descartar Completamente</option>
+                                </select>
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-slate-500 font-medium">Decisão Humana:</span>
-                              <select
-                                value={linha.acaoDuplicidade}
-                                onChange={(e) =>
-                                  alterarAcaoDuplicidadeLinha(linha.indiceLinha, e.target.value as any)
-                                }
-                                className="bg-slate-50 border border-slate-300 rounded px-2 py-1 text-xs font-bold text-slate-900 cursor-pointer"
-                              >
-                                <option value="ATUALIZAR">Atualizar dados existentes</option>
-                                <option value="MANTER_EXISTENTE">Manter dados atuais (Ignorar arquivo)</option>
-                                <option value="CRIAR_NOVO">Criar como registro separado</option>
-                                <option value="IGNORAR">Descartar completamente</option>
-                              </select>
-                            </div>
+                            {/* Detalhes de Divergências Detectadas */}
+                            {temDivergencia && (
+                              <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-2.5 space-y-1 text-xs">
+                                <span className="font-bold text-amber-950 text-[11px] block">
+                                  Divergências com o Cadastro Existente:
+                                </span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {linha.divergenciasDetectadas?.map((d, dIdx) => (
+                                    <div key={dIdx} className="bg-white p-1.5 rounded border border-amber-200/80 text-[11px]">
+                                      <span className="font-bold text-slate-700 block">{d.campo}:</span>
+                                      <div className="flex items-center gap-1 mt-0.5">
+                                        <span className="text-slate-500 line-through">"{String(d.valorAtual)}"</span>
+                                        <span className="text-slate-400">→</span>
+                                        <strong className="text-blue-700">"{String(d.valorNovo)}"</strong>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Decisão Específica para Colaborador (Pessoa) */}
+                            {linha.pessoaExistenteSimilar && (
+                              <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-blue-950">
+                                    Colaborador Identificado: "{linha.dadosMapeados.pessoaNome || 'Nome na planilha'}"
+                                  </span>
+                                  <span className="text-[10px] text-blue-700 font-mono">
+                                    Similaridade: {(linha.pessoaExistenteSimilar.scoreSimilaridade * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-4 text-xs">
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`pessoa-acao-${linha.indiceLinha}`}
+                                      checked={linha.pessoaAcao === 'VINCULAR_EXISTENTE'}
+                                      onChange={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'VINCULAR_EXISTENTE')}
+                                      className="text-blue-600 cursor-pointer"
+                                    />
+                                    <span>Vincular ao colaborador cadastrado: <strong>{linha.pessoaExistenteSimilar.nome}</strong></span>
+                                  </label>
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`pessoa-acao-${linha.indiceLinha}`}
+                                      checked={linha.pessoaAcao === 'CRIAR_PESSOA'}
+                                      onChange={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'CRIAR_PESSOA')}
+                                      className="text-blue-600 cursor-pointer"
+                                    />
+                                    <span>Criar novo colaborador no cadastro</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Decisão Específica para Curso / Treinamento */}
+                            {linha.cursoExistenteSimilar && (
+                              <div className="p-2.5 bg-purple-50/70 border border-purple-200 rounded-lg text-xs space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-purple-950">
+                                    Curso/Treinamento Reconhecido: "{linha.dadosMapeados.cursoNome || 'Nome do Curso'}"
+                                  </span>
+                                  <span className="text-[10px] text-purple-700 font-mono">
+                                    Similaridade: {(linha.cursoExistenteSimilar.scoreSimilaridade * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-4 text-xs">
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`curso-acao-${linha.indiceLinha}`}
+                                      checked={linha.cursoAcao === 'VINCULAR_EXISTENTE'}
+                                      onChange={() => alterarCursoAcaoLinha(linha.indiceLinha, 'VINCULAR_EXISTENTE')}
+                                      className="text-purple-600 cursor-pointer"
+                                    />
+                                    <span>Vincular ao curso oficial: <strong>{linha.cursoExistenteSimilar.nome}</strong></span>
+                                  </label>
+                                  <label className="flex items-center gap-1.5 cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`curso-acao-${linha.indiceLinha}`}
+                                      checked={linha.cursoAcao === 'CRIAR_CURSO'}
+                                      onChange={() => alterarCursoAcaoLinha(linha.indiceLinha, 'CRIAR_CURSO')}
+                                      className="text-purple-600 cursor-pointer"
+                                    />
+                                    <span>Criar novo curso no catálogo SGQ</span>
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+
+                            <p className="text-[11px] text-slate-500">
+                              {linha.registroExistenteResumo || 'Conflito ou associação identificada na base de dados.'}
+                            </p>
                           </div>
-
-                          <p className="text-xs text-slate-600 bg-slate-50 p-2 rounded border border-slate-100">
-                            {linha.registroExistenteResumo || 'Conflito identificado com controle anterior.'}
-                          </p>
-                        </div>
-                      ))}
+                        );
+                      })}
                   </div>
                 )}
               </div>

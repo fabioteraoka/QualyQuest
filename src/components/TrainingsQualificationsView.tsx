@@ -61,11 +61,11 @@ interface TrainingsQualificationsViewProps {
 export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewProps> = ({
   organizationId,
   userProfile,
-  persons,
-  trainingCourses,
-  trainingRecords,
-  qualifications,
-  documents,
+  persons = [],
+  trainingCourses = [],
+  trainingRecords = [],
+  qualifications = [],
+  documents = [],
 }) => {
   const [activeTab, setActiveTab] = useState<'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS'>('QUALIFICACOES');
 

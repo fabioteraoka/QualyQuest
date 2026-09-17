@@ -1288,6 +1288,7 @@ export default function App() {
                   trainingRecords={trainingRecords}
                   documents={personDocuments}
                   activities={activityRequirements}
+                  nonConformities={records}
                 />
               )}
 
