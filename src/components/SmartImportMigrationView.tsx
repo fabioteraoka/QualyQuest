@@ -32,7 +32,10 @@ import {
   Flame,
   Info,
   Link as LinkIcon,
-  Plus
+  Plus,
+  Trash2,
+  ShieldAlert,
+  History
 } from 'lucide-react';
 import {
   OrganizationRecord,
@@ -138,9 +141,11 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   const [classificacaoCampos, setClassificacaoCampos] = useState<Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>>({});
 
   // Modais de Reconciliação, Reversão e Histórico Metrológico (Fase 14.1)
-  const [registroDivergenteModal, setRegistroDivergenteModal] = useState<RegistroLinhaImportacao | null>(null);
+  const [reconciliationModalLinha, setReconciliationModalLinha] = useState<RegistroLinhaImportacao | null>(null);
   const [reversaoModal, setReversaoModal] = useState<RegistroImportacaoCompleto | null>(null);
   const [ferramentaHistoricoModal, setFerramentaHistoricoModal] = useState<FerramentaCalibracao | null>(null);
+  const [buscaFerramenta, setBuscaFerramenta] = useState<string>('');
+  const [filtroStatusFerramenta, setFiltroStatusFerramenta] = useState<string>('TODAS');
   const [filtroReconciliacao, setFiltroReconciliacao] = useState<'TODOS' | 'NOVO' | 'EXISTENTE_IGUAL' | 'EXISTENTE_ALTERADO' | 'POSSIVEL_DUPLICIDADE' | 'INVALIDO'>('TODOS');
 
   // Estado da Análise Automática (Etapa 2)
@@ -2317,47 +2322,96 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                     <th className="p-3">Tipo Controle</th>
                     <th className="p-3">Hash SHA-256</th>
                     <th className="p-3">Responsável</th>
-                    <th className="p-3 text-center">Registros</th>
+                    <th className="p-3 text-center">Balanço Registros</th>
                     <th className="p-3 text-center">Status</th>
+                    <th className="p-3 text-center w-36">Ações de Gestão</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {smartImports.map((imp) => (
-                    <tr key={imp.id} className="hover:bg-slate-50">
-                      <td className="p-3 text-slate-600 whitespace-nowrap">
-                        {new Date(imp.dataUpload).toLocaleString('pt-BR')}
-                      </td>
+                  {smartImports.map((imp) => {
+                    const isRevertida = Boolean(imp.revertida || imp.status === 'REVERTIDA');
 
-                      <td className="p-3 font-bold text-slate-900 whitespace-nowrap">
-                        {imp.nomeArquivo}
-                      </td>
+                    return (
+                      <tr key={imp.id} className={isRevertida ? 'bg-slate-50 opacity-70' : 'hover:bg-slate-50'}>
+                        <td className="p-3 text-slate-600 whitespace-nowrap">
+                          {new Date(imp.dataUpload).toLocaleString('pt-BR')}
+                        </td>
 
-                      <td className="p-3">
-                        <span className="text-[11px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                          {imp.tipoControle}
-                        </span>
-                      </td>
+                        <td className="p-3 font-bold text-slate-900 whitespace-nowrap">
+                          <div>{imp.nomeArquivo}</div>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {imp.totalLinhasProcessadas || (imp.registrosCriadosQtd + imp.registrosAtualizadosQtd + (imp.registrosIgnoradosQtd || 0))} linhas analisadas
+                          </span>
+                        </td>
 
-                      <td className="p-3 font-mono text-[10px] text-purple-700">
-                        {imp.hashSha256.slice(0, 16)}...
-                      </td>
+                        <td className="p-3">
+                          <span className="text-[11px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                            {imp.tipoControle}
+                          </span>
+                        </td>
 
-                      <td className="p-3 text-slate-700">
-                        {imp.usuarioNome}
-                      </td>
+                        <td className="p-3 font-mono text-[10px] text-purple-700">
+                          {imp.hashSha256 ? imp.hashSha256.slice(0, 16) + '...' : '—'}
+                        </td>
 
-                      <td className="p-3 text-center font-bold text-slate-900">
-                        +{imp.registrosCriadosQtd} novos / {imp.registrosAtualizadosQtd} atualiz.
-                      </td>
+                        <td className="p-3 text-slate-700">
+                          {imp.usuarioNome}
+                        </td>
 
-                      <td className="p-3 text-center">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          <Check className="w-3 h-3 text-emerald-600" />
-                          Gravado
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="p-3 text-center">
+                          <div className="text-xs font-bold text-slate-900">
+                            <span className="text-emerald-700">+{imp.registrosCriadosQtd} novos</span>
+                            {imp.registrosAtualizadosQtd > 0 && (
+                              <span className="text-blue-700"> | {imp.registrosAtualizadosQtd} atualiz.</span>
+                            )}
+                          </div>
+                          {(imp.registrosIgnoradosQtd || 0) > 0 && (
+                            <span className="text-[10px] text-slate-400 block">
+                              {imp.registrosIgnoradosQtd} ignorados
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="p-3 text-center">
+                          {isRevertida ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-800 bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                              <RotateCcw className="w-3 h-3 text-red-600" />
+                              Revertida
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              Gravado
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {!isRevertida ? (
+                              <button
+                                onClick={() => setReversaoModal(imp)}
+                                title="Reverter cadastros desta importação"
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3 h-3 text-amber-600" />
+                                Reverter
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-semibold italic">Reversão feita</span>
+                            )}
+                            <button
+                              onClick={() => handleExcluirHistorico(imp.id)}
+                              title="Excluir este item da fila/histórico (mantém dados oficiais)"
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -2460,7 +2514,12 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
           {/* Cards de Status de Ferramentas */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <div
+              onClick={() => setFiltroStatusFerramenta(filtroStatusFerramenta === 'CALIBRADA' ? 'TODAS' : 'CALIBRADA')}
+              className={`p-3 rounded-xl border cursor-pointer transition ${
+                filtroStatusFerramenta === 'CALIBRADA' ? 'bg-emerald-100/70 border-emerald-300 ring-2 ring-emerald-500' : 'bg-emerald-50 border-emerald-200'
+              }`}
+            >
               <span className="text-xs text-emerald-800 font-bold">Calibradas</span>
               <p className="text-xl font-black text-emerald-950 mt-1">
                 {ferramentasCalibradas.filter((f) => f.status === 'CALIBRADA').length}
@@ -2468,7 +2527,12 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
               <span className="text-[10px] text-emerald-700">Aptas para uso em voo</span>
             </div>
 
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <div
+              onClick={() => setFiltroStatusFerramenta(filtroStatusFerramenta === 'PROXIMA_VENCIMENTO' ? 'TODAS' : 'PROXIMA_VENCIMENTO')}
+              className={`p-3 rounded-xl border cursor-pointer transition ${
+                filtroStatusFerramenta === 'PROXIMA_VENCIMENTO' ? 'bg-amber-100/70 border-amber-300 ring-2 ring-amber-500' : 'bg-amber-50 border-amber-200'
+              }`}
+            >
               <span className="text-xs text-amber-800 font-bold">Próximas Vencer (&lt;30d)</span>
               <p className="text-xl font-black text-amber-950 mt-1">
                 {ferramentasCalibradas.filter((f) => f.status === 'PROXIMA_VENCIMENTO').length}
@@ -2476,7 +2540,12 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
               <span className="text-[10px] text-amber-700">Requer agendamento laboratório</span>
             </div>
 
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl">
+            <div
+              onClick={() => setFiltroStatusFerramenta(filtroStatusFerramenta === 'VENCIDA' ? 'TODAS' : 'VENCIDA')}
+              className={`p-3 rounded-xl border cursor-pointer transition ${
+                filtroStatusFerramenta === 'VENCIDA' ? 'bg-red-100/70 border-red-300 ring-2 ring-red-500' : 'bg-red-50 border-red-200'
+              }`}
+            >
               <span className="text-xs text-red-800 font-bold">Vencidas / Quarentena</span>
               <p className="text-xl font-black text-red-950 mt-1">
                 {ferramentasCalibradas.filter((f) => f.status === 'VENCIDA' || f.status === 'QUARENTENA').length}
@@ -2484,12 +2553,62 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
               <span className="text-[10px] text-red-700">Uso proibido</span>
             </div>
 
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+            <div
+              onClick={() => setFiltroStatusFerramenta('TODAS')}
+              className={`p-3 rounded-xl border cursor-pointer transition ${
+                filtroStatusFerramenta === 'TODAS' ? 'bg-slate-100/70 border-slate-300 ring-2 ring-blue-500' : 'bg-slate-50 border-slate-200'
+              }`}
+            >
               <span className="text-xs text-slate-600 font-medium">Total de Instrumentos</span>
               <p className="text-xl font-black text-slate-900 mt-1">
                 {ferramentasCalibradas.length}
               </p>
               <span className="text-[10px] text-slate-500">Cadastrados no tenant</span>
+            </div>
+          </div>
+
+          {/* Filtros e Busca de Instrumentos */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar patrimônio, descrição, série..."
+                value={buscaFerramenta}
+                onChange={(e) => setBuscaFerramenta(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              {filtroStatusFerramenta !== 'TODAS' && (
+                <button
+                  onClick={() => setFiltroStatusFerramenta('TODAS')}
+                  className="text-xs text-blue-600 hover:underline font-semibold cursor-pointer"
+                >
+                  Limpar filtro ({filtroStatusFerramenta})
+                </button>
+              )}
+              <span className="text-xs text-slate-500 font-medium">Exibindo:</span>
+              <span className="text-xs font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
+                {
+                  ferramentasCalibradas.filter((tool) => {
+                    const matchFiltro =
+                      filtroStatusFerramenta === 'TODAS' ||
+                      tool.status === filtroStatusFerramenta ||
+                      (filtroStatusFerramenta === 'VENCIDA' && tool.status === 'QUARENTENA');
+                    const termo = buscaFerramenta.toLowerCase();
+                    const matchBusca =
+                      !buscaFerramenta ||
+                      tool.codigoPatrimonio.toLowerCase().includes(termo) ||
+                      tool.descricao.toLowerCase().includes(termo) ||
+                      tool.numeroSerie.toLowerCase().includes(termo) ||
+                      (tool.fabricante && tool.fabricante.toLowerCase().includes(termo));
+                    return matchFiltro && matchBusca;
+                  }).length
+                }{' '}
+                de {ferramentasCalibradas.length}
+              </span>
             </div>
           </div>
 
@@ -2506,69 +2625,154 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                   <th className="p-3">Próxima Calibração</th>
                   <th className="p-3">Certificado RBC</th>
                   <th className="p-3 text-center">Status</th>
+                  <th className="p-3 text-center w-36">Ações Metrológicas</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {ferramentasCalibradas.map((tool) => {
-                  const isVencida = tool.status === 'VENCIDA' || tool.status === 'QUARENTENA';
-                  const isProx = tool.status === 'PROXIMA_VENCIMENTO';
+                {ferramentasCalibradas
+                  .filter((tool) => {
+                    const matchFiltro =
+                      filtroStatusFerramenta === 'TODAS' ||
+                      tool.status === filtroStatusFerramenta ||
+                      (filtroStatusFerramenta === 'VENCIDA' && tool.status === 'QUARENTENA');
+                    const termo = buscaFerramenta.toLowerCase();
+                    const matchBusca =
+                      !buscaFerramenta ||
+                      tool.codigoPatrimonio.toLowerCase().includes(termo) ||
+                      tool.descricao.toLowerCase().includes(termo) ||
+                      tool.numeroSerie.toLowerCase().includes(termo) ||
+                      (tool.fabricante && tool.fabricante.toLowerCase().includes(termo));
+                    return matchFiltro && matchBusca;
+                  })
+                  .map((tool) => {
+                    const isVencida = tool.status === 'VENCIDA' || tool.status === 'QUARENTENA';
+                    const isProx = tool.status === 'PROXIMA_VENCIMENTO';
+                    const isAtivo = tool.ativo !== false;
 
-                  return (
-                    <tr key={tool.id} className={isVencida ? 'bg-red-50/40' : isProx ? 'bg-amber-50/30' : 'hover:bg-slate-50'}>
-                      <td className="p-3 font-mono font-bold text-slate-900">
-                        {tool.codigoPatrimonio}
-                      </td>
+                    return (
+                      <tr key={tool.id} className={!isAtivo ? 'bg-slate-50 opacity-60' : isVencida ? 'bg-red-50/40' : isProx ? 'bg-amber-50/30' : 'hover:bg-slate-50'}>
+                        <td className="p-3 font-mono font-bold text-slate-900">
+                          <div>{tool.codigoPatrimonio}</div>
+                          {!isAtivo && (
+                            <span className="text-[10px] font-bold text-slate-500 bg-slate-200 px-1.5 py-0.2 rounded">
+                              INATIVO
+                            </span>
+                          )}
+                        </td>
 
-                      <td className="p-3 text-slate-800 font-medium max-w-xs">
-                        <div className="font-bold">{tool.descricao}</div>
-                        <div className="text-[11px] text-slate-500 truncate">{tool.setor}</div>
-                      </td>
+                        <td className="p-3 text-slate-800 font-medium max-w-xs">
+                          <div className="font-bold">{tool.descricao}</div>
+                          <div className="text-[11px] text-slate-500 truncate">{tool.setor}</div>
+                        </td>
 
-                      <td className="p-3 text-slate-600">
-                        {tool.fabricante} {tool.modelo ? `(${tool.modelo})` : ''}
-                      </td>
+                        <td className="p-3 text-slate-600">
+                          {tool.fabricante} {tool.modelo ? `(${tool.modelo})` : ''}
+                        </td>
 
-                      <td className="p-3 font-mono text-[11px] text-slate-700">
-                        {tool.numeroSerie}
-                      </td>
+                        <td className="p-3 font-mono text-[11px] text-slate-700">
+                          {tool.numeroSerie}
+                        </td>
 
-                      <td className="p-3 text-slate-600 whitespace-nowrap">
-                        {tool.dataUltimaCalibracao}
-                      </td>
+                        <td className="p-3 text-slate-600 whitespace-nowrap">
+                          {tool.dataUltimaCalibracao}
+                        </td>
 
-                      <td className="p-3 font-bold whitespace-nowrap">
-                        <span className={isVencida ? 'text-red-700' : isProx ? 'text-amber-800' : 'text-slate-900'}>
-                          {tool.dataProximaCalibracao}
-                        </span>
-                      </td>
-
-                      <td className="p-3 font-mono text-[11px] text-slate-600">
-                        {tool.numeroCertificado || '—'}
-                      </td>
-
-                      <td className="p-3 text-center whitespace-nowrap">
-                        {isVencida ? (
-                          <span className="text-[11px] font-bold text-red-800 bg-red-100 px-2 py-0.5 rounded">
-                            VENCIDA
+                        <td className="p-3 font-bold whitespace-nowrap">
+                          <span className={isVencida ? 'text-red-700' : isProx ? 'text-amber-800' : 'text-slate-900'}>
+                            {tool.dataProximaCalibracao}
                           </span>
-                        ) : isProx ? (
-                          <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
-                            EXPIRA EM BREVE
-                          </span>
-                        ) : (
-                          <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
-                            CALIBRADA
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+
+                        <td className="p-3 font-mono text-[11px] text-slate-600">
+                          {tool.numeroCertificado || '—'}
+                        </td>
+
+                        <td className="p-3 text-center whitespace-nowrap">
+                          {isVencida ? (
+                            <span className="text-[11px] font-bold text-red-800 bg-red-100 px-2 py-0.5 rounded">
+                              VENCIDA
+                            </span>
+                          ) : isProx ? (
+                            <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded">
+                              EXPIRA EM BREVE
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                              CALIBRADA
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="p-3 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => setFerramentaHistoricoModal(tool)}
+                              title="Visualizar histórico metrológico RBC"
+                              className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <History className="w-3 h-3" />
+                              Histórico
+                            </button>
+                            <button
+                              onClick={() => handleToggleAtivoFerramenta(tool)}
+                              title={isAtivo ? 'Inativar instrumento' : 'Reativar instrumento'}
+                              className={`p-1 rounded transition cursor-pointer ${
+                                isAtivo ? 'text-slate-400 hover:text-amber-600 hover:bg-amber-50' : 'text-emerald-600 hover:bg-emerald-50'
+                              }`}
+                            >
+                              <ShieldAlert className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteFerramenta(tool.id)}
+                              title="Excluir ferramenta do cadastro oficial"
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
         </div>
       )}
+
+      {/* ======================================================================== */}
+      {/* MODAIS DA FASE 14.1 (RECONCILIAÇÃO, REVERSÃO, HISTÓRICO METROLÓGICO) */}
+      {/* ======================================================================== */}
+
+      {/* Modal de Reconciliação e Comparativo Lado a Lado (Fase 14.1 - Requisito 6) */}
+      <ReconciliationDiffModal
+        linha={reconciliationModalLinha}
+        tipoControle={tipoControle}
+        isOpen={Boolean(reconciliationModalLinha)}
+        onClose={() => setReconciliationModalLinha(null)}
+        onDecidir={(indiceLinha, decisao) => {
+          alterarDecisaoReconciliacaoLinha(indiceLinha, decisao);
+          setReconciliationModalLinha(null);
+        }}
+        onAlterarPessoaAcao={alterarPessoaAcaoLinha}
+        onAlterarCursoAcao={alterarCursoAcaoLinha}
+      />
+
+      {/* Modal de Reversão de Importação com Auditoria e Validação de Dependências (Fase 14.1 - Requisito 12) */}
+      <ImportReversalModal
+        importacao={reversaoModal}
+        user={user}
+        isOpen={Boolean(reversaoModal)}
+        onClose={() => setReversaoModal(null)}
+        onConfirmarReversao={handleReverterImportacao}
+      />
+
+      {/* Modal de Histórico Metrológico e Calibrações (Fase 14.1 - Requisito 8) */}
+      <ToolCalibrationHistoryModal
+        tool={ferramentaHistoricoModal}
+        isOpen={Boolean(ferramentaHistoricoModal)}
+        onClose={() => setFerramentaHistoricoModal(null)}
+      />
     </div>
   );
 };

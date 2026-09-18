@@ -720,7 +720,8 @@ export function validarECompararLinhasImportacao(
   linhasOriginais: Record<string, any>[],
   mapeamentos: MapeamentoCampoItem[],
   tipoControle: TipoControleImportacao,
-  contexto: ContextoValidacaoExistente
+  contexto: ContextoValidacaoExistente,
+  classificacaoCampos?: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>
 ): {
   registrosLinhas: RegistroLinhaImportacao[];
   resumo: ResumoPreviaImportacao;
@@ -730,9 +731,10 @@ export function validarECompararLinhasImportacao(
   const statusUsoCampo: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'> = {};
 
   mapeamentos.forEach((m) => {
-    if (m.campoQualigest && m.campoQualigest !== 'ignorar' && m.classificacaoUso !== 'IGNORADO') {
+    const classif = (classificacaoCampos && classificacaoCampos[m.colunaOrigem]) || m.classificacaoUso;
+    if (m.campoQualigest && m.campoQualigest !== 'ignorar' && classif !== 'IGNORADO') {
       mapaDePara[m.colunaOrigem] = m.campoQualigest;
-      statusUsoCampo[m.campoQualigest] = m.classificacaoUso || (m.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
+      statusUsoCampo[m.campoQualigest] = classif || (m.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
     }
   });
 
