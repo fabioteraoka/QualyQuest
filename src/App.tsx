@@ -1412,6 +1412,10 @@ export default function App() {
                   onAdicionarCurso={(c) => setTrainingCourses((prev) => [c, ...prev.filter((x) => x.id !== c.id)])}
                   onAdicionarRegistroTreinamento={(r) => setTrainingRecords((prev) => [r, ...prev.filter((x) => x.id !== r.id)])}
                   onAdicionarFerramenta={(f) => setFerramentasCalibradas((prev) => [f, ...prev.filter((x) => x.id !== f.id)])}
+                  onRemoverFerramenta={(toolId) => setFerramentasCalibradas((prev) => prev.filter((x) => x.id !== toolId))}
+                  onRemoverRegistroTreinamento={(recordId) => setTrainingRecords((prev) => prev.filter((x) => x.id !== recordId))}
+                  onRemoverPessoa={(personId) => setPersons((prev) => prev.filter((x) => x.id !== personId))}
+                  onRemoverCurso={(courseId) => setTrainingCourses((prev) => prev.filter((x) => x.id !== courseId))}
                   onCriarRncSugerida={(dadosRnc) => {
                     handleNewNC();
                   }}

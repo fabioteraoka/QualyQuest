@@ -25,6 +25,11 @@ import {
   sanitizeForFirestore,
   recordOrganizationAudit,
 } from './firestore';
+import {
+  savePerson,
+  saveTrainingCourse,
+  saveTrainingRecord,
+} from './competenciesFirestore';
 import { INITIAL_CALIBRATED_TOOLS } from '../../data/initialCalibratedTools';
 
 // ============================================================================
@@ -283,6 +288,11 @@ export async function efetivarImportacaoNoQualigest(
     removerRegistroTreinamento?: (recordId: string) => void;
     removerPessoa?: (personId: string) => void;
     removerCurso?: (courseId: string) => void;
+  },
+  contextoExistente?: {
+    pessoasExistentes?: ColaboradorPessoa[];
+    treinamentosExistentes?: CursoTreinamento[];
+    registrosTreinamentoExistentes?: RegistroTreinamentoColaborador[];
   }
 ): Promise<ResultadoGravacaoImportacao> {
   let totalCriados = 0;
@@ -300,86 +310,177 @@ export async function efetivarImportacaoNoQualigest(
       l.decisaoUsuario !== 'CANCELAR'
   );
 
-  // 1. Processar TREINAMENTOS
+  // 1. Processar TREINAMENTOS & COLABORADORES (Fase 14.1-A)
   if (tipoControle === 'TREINAMENTOS') {
+    // Rastrear pessoas e cursos criados/atualizados neste lote para persistência unificada
+    const pessoasCriadasBatch = new Map<string, ColaboradorPessoa>();
+    const pessoasAtualizadasBatch = new Map<string, ColaboradorPessoa>();
+    const cursosCriadosBatch = new Map<string, CursoTreinamento>();
+
     for (const linha of linhasParaImportar) {
       const dados = linha.dadosMapeados;
       let pessoaId = linha.pessoaIdVinculada;
       let pessoaNome = linha.pessoaNomeVinculada || dados.pessoaNome || 'Colaborador';
       let matricula = dados.pessoaMatricula || '';
+      const pessoaNomeNorm = (pessoaNome || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
 
-      // Se a decisão do usuário ou detecção exigir criação de pessoa
-      if (linha.pessoaAcao === 'CRIAR_PESSOA' || !pessoaId) {
-        pessoaId = `person-imp-${Math.random().toString(36).substr(2, 7)}`;
-        matricula = dados.pessoaMatricula || `IMP-${Math.floor(1000 + Math.random() * 9000)}`;
-        const novaPessoa: ColaboradorPessoa = {
-          id: pessoaId,
-          organizationId,
-          nome: pessoaNome,
-          matricula,
-          setor: dados.setor || 'Manutenção / SGQ',
-          funcao: 'TECNICO_MANUTENCAO',
-          cargoOperacional: dados.funcao || 'Técnico de Manutenção Aeronáutica',
-          status: 'ATIVO',
-          dataAdmissao: '2024-01-01',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          criadoPor: user?.displayName || 'Importador SGQ',
-          criadoPorUid: user?.uid || 'system',
-        };
+      // ====================================================================
+      // 1.1 PERSISTÊNCIA OFICIAL DO COLABORADOR (Pessoas & Competências)
+      // ====================================================================
+      if (linha.pessoaAcao === 'CRIAR_PESSOA' || (!pessoaId && linha.decisaoUsuario !== 'IGNORAR')) {
+        if (pessoasCriadasBatch.has(pessoaNomeNorm)) {
+          const pessoaJaCriada = pessoasCriadasBatch.get(pessoaNomeNorm)!;
+          pessoaId = pessoaJaCriada.id;
+          pessoaNome = pessoaJaCriada.nome;
+          matricula = pessoaJaCriada.matricula;
+        } else {
+          pessoaId = pessoaId || `person-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
+          matricula = dados.pessoaMatricula || `IMP-${Math.floor(1000 + Math.random() * 9000)}`;
 
-        if (callbacksEstado.adicionarPessoa) {
-          callbacksEstado.adicionarPessoa(novaPessoa);
+          const cargoMec = dados.funcao || 'Mecânico de Manutenção de Aeronaves';
+          const funcaoPadrao = cargoMec.toUpperCase().includes('INSPETOR') ? 'INSPETOR_QUALIDADE' : 'TECNICO_MANUTENCAO';
+
+          const novaPessoa: ColaboradorPessoa = {
+            id: pessoaId,
+            organizationId,
+            nome: pessoaNome,
+            matricula,
+            setor: dados.setor || 'Operações de Manutenção',
+            funcao: funcaoPadrao as any,
+            cargoOperacional: cargoMec,
+            status: 'ATIVO',
+            dataAdmissao: dados.dataAdmissao || '2024-01-01',
+            observacoes: `Cadastrado automaticamente via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            criadoPor: user?.displayName || user?.email || 'Importador SGQ',
+            criadoPorUid: user?.uid || auth.currentUser?.uid || 'system',
+          };
+
+          // Salvar oficialmente no Firestore (organizations/{orgId}/persons/{id})
+          await savePerson(organizationId, novaPessoa, user);
+
+          if (callbacksEstado.adicionarPessoa) {
+            callbacksEstado.adicionarPessoa(novaPessoa);
+          }
+
+          pessoasCriadasBatch.set(pessoaNomeNorm, novaPessoa);
+
+          registrosCriadosSnapshot.push({
+            modulo: 'PERSON',
+            id: pessoaId,
+            dados: novaPessoa,
+          });
+
+          idsGerados.push(pessoaId);
+          totalCriados++;
         }
+      } else if (linha.pessoaAcao === 'VINCULAR_EXISTENTE' && pessoaId) {
+        // Se houver alteração nos dados do colaborador existente (aprovado na decisão)
+        const pessoaExistente = (contextoExistente?.pessoasExistentes || []).find((p) => p.id === pessoaId);
+        if (pessoaExistente && !pessoasAtualizadasBatch.has(pessoaId)) {
+          const temNovaMatricula = dados.pessoaMatricula && dados.pessoaMatricula !== pessoaExistente.matricula;
+          const temNovoSetor = dados.setor && dados.setor !== pessoaExistente.setor;
+          const temNovoCargo = dados.funcao && dados.funcao !== pessoaExistente.cargoOperacional;
 
-        registrosCriadosSnapshot.push({
-          modulo: 'PERSON',
-          id: pessoaId,
-          dados: novaPessoa,
-        });
+          if ((temNovaMatricula || temNovoSetor || temNovoCargo) && linha.decisaoUsuario === 'ATUALIZAR') {
+            const pessoaAtualizada: ColaboradorPessoa = {
+              ...pessoaExistente,
+              matricula: dados.pessoaMatricula || pessoaExistente.matricula,
+              setor: dados.setor || pessoaExistente.setor,
+              cargoOperacional: dados.funcao || pessoaExistente.cargoOperacional,
+              updatedAt: new Date().toISOString(),
+            };
+
+            await savePerson(organizationId, pessoaAtualizada, user, pessoaExistente);
+
+            if (callbacksEstado.adicionarPessoa) {
+              callbacksEstado.adicionarPessoa(pessoaAtualizada);
+            }
+
+            pessoasAtualizadasBatch.set(pessoaId, pessoaAtualizada);
+
+            registrosAtualizadosSnapshot.push({
+              modulo: 'PERSON',
+              id: pessoaId,
+              dadosAnteriores: pessoaExistente,
+              dadosNovos: pessoaAtualizada,
+            });
+
+            totalAtualizados++;
+          }
+        }
       }
 
-      // Se exigir criação de curso
+      // ====================================================================
+      // 1.2 PERSISTÊNCIA OFICIAL DO CURSO (Treinamentos, CHTs & Catálogo)
+      // ====================================================================
       let cursoId = linha.cursoIdVinculado;
       let cursoCodigo = dados.cursoCodigo || `TREIN-${Math.floor(100 + Math.random() * 900)}`;
       const cursoTitulo = dados.cursoTitulo || 'Treinamento Aeronáutico';
+      const cursoTituloNorm = (cursoTitulo || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
 
-      if (linha.cursoAcao === 'CRIAR_CURSO' || !cursoId) {
-        cursoId = `course-imp-${Math.random().toString(36).substr(2, 7)}`;
-        const novoCurso: CursoTreinamento = {
-          id: cursoId,
-          organizationId,
-          codigo: cursoCodigo,
-          titulo: cursoTitulo,
-          tipo: 'AERONAUTICO',
-          modalidade: 'PRESENCIAL',
-          cargaHorariaHoras: Number(dados.cargaHoraria) || 16,
-          ementa: `Capacitação técnica importada via planilha original ${nomeArquivo}`,
-          recorrente: true,
-          periodicidadeMeses: 24,
-          origemPrazo: 'REGULAMENTO',
-          competenciasDesenvolvidasIds: [],
-          status: 'ATIVO',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          criadoPorUid: user?.uid || 'system',
-        };
+      if (linha.cursoAcao === 'CRIAR_CURSO' || (!cursoId && linha.decisaoUsuario !== 'IGNORAR')) {
+        if (cursosCriadosBatch.has(cursoTituloNorm)) {
+          const cursoJaCriado = cursosCriadosBatch.get(cursoTituloNorm)!;
+          cursoId = cursoJaCriado.id;
+          cursoCodigo = cursoJaCriado.codigo;
+        } else {
+          cursoId = cursoId || `course-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
+          const novoCurso: CursoTreinamento = {
+            id: cursoId,
+            organizationId,
+            codigo: cursoCodigo,
+            titulo: cursoTitulo,
+            tipo: 'AERONAUTICO',
+            modalidade: 'PRESENCIAL',
+            cargaHorariaHoras: Number(dados.cargaHoraria) || 16,
+            ementa: `Capacitação técnica catalogada via Importação Inteligente (${nomeArquivo})`,
+            recorrente: Boolean(dados.dataValidade),
+            periodicidadeMeses: 24,
+            origemPrazo: 'REGULAMENTO',
+            competenciasDesenvolvidasIds: [],
+            status: 'ATIVO',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            criadoPorUid: user?.uid || auth.currentUser?.uid || 'system',
+          };
 
-        if (callbacksEstado.adicionarCurso) {
-          callbacksEstado.adicionarCurso(novoCurso);
+          // Salvar oficialmente no Firestore (organizations/{orgId}/trainingCourses/{id})
+          await saveTrainingCourse(organizationId, novoCurso, user);
+
+          if (callbacksEstado.adicionarCurso) {
+            callbacksEstado.adicionarCurso(novoCurso);
+          }
+
+          cursosCriadosBatch.set(cursoTituloNorm, novoCurso);
+
+          registrosCriadosSnapshot.push({
+            modulo: 'TRAINING_COURSE',
+            id: cursoId,
+            dados: novoCurso,
+          });
+
+          idsGerados.push(cursoId);
+          totalCriados++;
         }
-
-        registrosCriadosSnapshot.push({
-          modulo: 'TRAINING_COURSE',
-          id: cursoId,
-          dados: novoCurso,
-        });
       }
 
-      const registroTreinoId =
-        linha.decisaoUsuario === 'ATUALIZAR' && linha.registroExistenteId
-          ? linha.registroExistenteId
-          : `reg-tr-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      // ====================================================================
+      // 1.3 PERSISTÊNCIA DO REGISTRO DE TREINAMENTO REALIZADO PELO COLABORADOR
+      // ====================================================================
+      const isAtualizacaoTreino = linha.decisaoUsuario === 'ATUALIZAR' && Boolean(linha.registroExistenteId);
+      const registroTreinoId = isAtualizacaoTreino && linha.registroExistenteId
+        ? linha.registroExistenteId
+        : `reg-tr-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
 
       const novoRegistroTreinamento: RegistroTreinamentoColaborador = {
         id: registroTreinoId,
@@ -387,22 +488,26 @@ export async function efetivarImportacaoNoQualigest(
         treinamentoId: cursoId || 'curso-gen',
         treinamentoCodigo: cursoCodigo,
         treinamentoTitulo: cursoTitulo,
-        colaboradorId: pessoaId,
+        colaboradorId: pessoaId || 'colab-gen',
         colaboradorNome: pessoaNome,
         colaboradorMatricula: matricula,
         dataRealizacao: dados.dataRealizacao || new Date().toISOString().split('T')[0],
         dataValidade: dados.dataValidade || undefined,
         cargaHoraria: Number(dados.cargaHoraria) || 16,
-        instrutor: dados.instrutor || 'Instrutor Homologado',
+        instrutor: dados.instrutor || dados.entidadeInstrutora || 'Instrutor Homologado',
         resultado: 'APROVADO',
         entidadeInstrutora: dados.entidadeInstrutora || 'Impacto Training / Autorizada',
         numeroCertificado: dados.numeroCertificado || undefined,
-        observacoes: `Importado de ${nomeArquivo} (Import ID: ${importId})`,
-        validadoPorSGQNome: user?.displayName || 'Importador SGQ',
-        validadoPorSGQUid: user?.uid || 'system',
-        createdAt: new Date().toISOString(),
+        observacoes: `Treinamento homologado via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
+        validadoPorSGQNome: user?.displayName || user?.email || 'Importador SGQ',
+        validadoPorSGQUid: user?.uid || auth.currentUser?.uid || 'system',
+        dataValidacaoSGQ: new Date().toISOString(),
+        createdAt: isAtualizacaoTreino && linha.dadosExistentesSnapshot?.createdAt ? linha.dadosExistentesSnapshot.createdAt : new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+
+      // Salvar oficialmente no Firestore (organizations/{orgId}/trainingRecords/{id})
+      await saveTrainingRecord(organizationId, novoRegistroTreinamento, user);
 
       if (callbacksEstado.adicionarRegistroTreinamento) {
         callbacksEstado.adicionarRegistroTreinamento(novoRegistroTreinamento);
@@ -410,7 +515,7 @@ export async function efetivarImportacaoNoQualigest(
 
       idsGerados.push(registroTreinoId);
 
-      if (linha.decisaoUsuario === 'ATUALIZAR' && linha.dadosExistentesSnapshot) {
+      if (isAtualizacaoTreino && linha.dadosExistentesSnapshot) {
         totalAtualizados++;
         registrosAtualizadosSnapshot.push({
           modulo: 'TRAINING_RECORD',
@@ -567,6 +672,9 @@ export async function reverterImportacaoNoQualigest(
     removerPessoa?: (personId: string) => void;
     removerCurso?: (courseId: string) => void;
     adicionarFerramenta?: (tool: FerramentaCalibracao) => void;
+    adicionarPessoa?: (pessoa: ColaboradorPessoa) => void;
+    adicionarCurso?: (curso: CursoTreinamento) => void;
+    adicionarRegistroTreinamento?: (registro: RegistroTreinamentoColaborador) => void;
   }
 ): Promise<{ sucesso: boolean; mensagem: string }> {
   if (importRecord.revertida) {
@@ -586,7 +694,7 @@ export async function reverterImportacaoNoQualigest(
         if (callbacksEstado?.removerFerramenta) callbacksEstado.removerFerramenta(item.id);
         criadosExcluidos++;
       } else if (item.modulo === 'TRAINING_RECORD') {
-        const docRef = doc(db, 'organizations', organizationId, 'training_records', item.id);
+        const docRef = doc(db, 'organizations', organizationId, 'trainingRecords', item.id);
         batch.delete(docRef);
         if (callbacksEstado?.removerRegistroTreinamento) callbacksEstado.removerRegistroTreinamento(item.id);
         criadosExcluidos++;
@@ -596,7 +704,7 @@ export async function reverterImportacaoNoQualigest(
         if (callbacksEstado?.removerPessoa) callbacksEstado.removerPessoa(item.id);
         criadosExcluidos++;
       } else if (item.modulo === 'TRAINING_COURSE') {
-        const docRef = doc(db, 'organizations', organizationId, 'training_courses', item.id);
+        const docRef = doc(db, 'organizations', organizationId, 'trainingCourses', item.id);
         batch.delete(docRef);
         if (callbacksEstado?.removerCurso) callbacksEstado.removerCurso(item.id);
         criadosExcluidos++;
@@ -610,6 +718,11 @@ export async function reverterImportacaoNoQualigest(
         batch.delete(docRef);
         if (callbacksEstado?.removerFerramenta) callbacksEstado.removerFerramenta(id);
         criadosExcluidos++;
+      } else if (importRecord.tipoControle === 'TREINAMENTOS') {
+        const docRef = doc(db, 'organizations', organizationId, 'trainingRecords', id);
+        batch.delete(docRef);
+        if (callbacksEstado?.removerRegistroTreinamento) callbacksEstado.removerRegistroTreinamento(id);
+        criadosExcluidos++;
       }
     }
   }
@@ -621,6 +734,21 @@ export async function reverterImportacaoNoQualigest(
         const docRef = doc(db, 'organizations', organizationId, 'calibrated_tools', item.id);
         batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
         if (callbacksEstado?.adicionarFerramenta) callbacksEstado.adicionarFerramenta(item.dadosAnteriores);
+        atualizadosRestaurados++;
+      } else if (item.modulo === 'PERSON') {
+        const docRef = doc(db, 'organizations', organizationId, 'persons', item.id);
+        batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
+        if (callbacksEstado?.adicionarPessoa) callbacksEstado.adicionarPessoa(item.dadosAnteriores);
+        atualizadosRestaurados++;
+      } else if (item.modulo === 'TRAINING_RECORD') {
+        const docRef = doc(db, 'organizations', organizationId, 'trainingRecords', item.id);
+        batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
+        if (callbacksEstado?.adicionarRegistroTreinamento) callbacksEstado.adicionarRegistroTreinamento(item.dadosAnteriores);
+        atualizadosRestaurados++;
+      } else if (item.modulo === 'TRAINING_COURSE') {
+        const docRef = doc(db, 'organizations', organizationId, 'trainingCourses', item.id);
+        batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
+        if (callbacksEstado?.adicionarCurso) callbacksEstado.adicionarCurso(item.dadosAnteriores);
         atualizadosRestaurados++;
       }
     }

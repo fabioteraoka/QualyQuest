@@ -624,6 +624,15 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
           adicionarCurso: onAdicionarCurso,
           adicionarRegistroTreinamento: onAdicionarRegistroTreinamento,
           adicionarFerramenta: onAdicionarFerramenta,
+          removerFerramenta: onRemoverFerramenta,
+          removerRegistroTreinamento: onRemoverRegistroTreinamento,
+          removerPessoa: onRemoverPessoa,
+          removerCurso: onRemoverCurso,
+        },
+        {
+          pessoasExistentes: pessoas,
+          treinamentosExistentes: treinamentos,
+          registrosTreinamentoExistentes: registrosTreinamento,
         }
       );
 
@@ -667,6 +676,9 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
           removerPessoa: onRemoverPessoa,
           removerCurso: onRemoverCurso,
           adicionarFerramenta: onAdicionarFerramenta,
+          adicionarPessoa: onAdicionarPessoa,
+          adicionarCurso: onAdicionarCurso,
+          adicionarRegistroTreinamento: onAdicionarRegistroTreinamento,
         }
       );
 
