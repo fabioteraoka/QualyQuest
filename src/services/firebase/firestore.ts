@@ -601,26 +601,60 @@ export async function ensureUserProfile(
   try {
     const existing = await getUserProfile(uid);
     const now = new Date().toISOString();
+    const cleanEmail = (email || '').toLowerCase().trim();
+    const isProjectOwner = cleanEmail === 'fteraoka@gmail.com' || (existing?.email && existing.email.toLowerCase().trim() === 'fteraoka@gmail.com');
+
     if (existing) {
-      // Atualiza data do último acesso de forma não bloqueante
+      let needsHeal = false;
+      const updates: Record<string, any> = {
+        lastLoginAt: now,
+      };
+
+      // Auto-heal missing organizationId
+      if (!existing.organizationId || existing.organizationId === 'org-impacto-aviation') {
+        existing.organizationId = organizationId || DEFAULT_ORGANIZATION_ID;
+        updates.organizationId = existing.organizationId;
+        needsHeal = true;
+      }
+
+      // Auto-heal project owner privileges
+      if (isProjectOwner) {
+        if (existing.role !== 'ADMIN') {
+          existing.role = 'ADMIN';
+          updates.role = 'ADMIN';
+          needsHeal = true;
+        }
+        if (existing.status !== 'ATIVO') {
+          existing.status = 'ATIVO';
+          updates.status = 'ATIVO';
+        }
+      } else {
+        // Para usuários da organização operacional, garantir status ativo e perfil operacional
+        if (!existing.role || existing.role === 'CONSULTA') {
+          existing.role = 'GESTOR_SGQ';
+          updates.role = 'GESTOR_SGQ';
+          needsHeal = true;
+        }
+        if (existing.status !== 'ATIVO') {
+          existing.status = 'ATIVO';
+          updates.status = 'ATIVO';
+          needsHeal = true;
+        }
+      }
+
       try {
         const docRef = doc(db, 'users', uid);
-        await updateDoc(docRef, {
-          lastLoginAt: now,
-        });
-      } catch {
-        // não bloqueante
+        await updateDoc(docRef, updates);
+      } catch (e) {
+        console.warn('Atualização de perfil (auto-heal) não bloqueante:', e);
       }
       return existing;
     }
 
-    const cleanEmail = (email || '').toLowerCase().trim();
-    const isProjectOwner = cleanEmail === 'fteraoka@gmail.com';
-
-    let finalOrgId = '';
-    let finalRole: UserRole = 'CONSULTA';
-    let finalSector = '';
-    let finalStatus: UserStatus = 'PENDENTE';
+    let finalOrgId = organizationId || DEFAULT_ORGANIZATION_ID;
+    let finalRole: UserRole = isProjectOwner ? 'ADMIN' : 'GESTOR_SGQ';
+    let finalSector = 'Qualidade';
+    let finalStatus: UserStatus = 'ATIVO';
     let linkedInvitationId = '';
 
     if (isProjectOwner) {
@@ -647,9 +681,9 @@ export async function ensureUserProfile(
           const appSnap = await getDocs(qApproved);
           if (!appSnap.empty) {
             const invData = appSnap.docs[0].data() as UserInvitation;
-            finalOrgId = invData.organizationId || '';
+            finalOrgId = invData.organizationId || DEFAULT_ORGANIZATION_ID;
             finalRole = normalizeUserRole(invData.role);
-            finalSector = invData.setor || '';
+            finalSector = invData.setor || 'Operações';
             finalStatus = 'ATIVO';
             linkedInvitationId = appSnap.docs[0].id;
           }
@@ -692,6 +726,48 @@ export async function updateUserProfile(uid: string, data: Partial<Pick<UserProf
     });
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+/**
+ * Auto-migração não destrutiva de dados legados gravados sob o identificador com hífen (org-impacto-aviation)
+ * para o padrão oficial com underscore (org_impacto_aviation).
+ */
+export async function checkAndMigrateLegacyHyphenData(): Promise<void> {
+  const legacyOrgId: string = 'org-impacto-aviation';
+  const targetOrgId: string = DEFAULT_ORGANIZATION_ID; // 'org_impacto_aviation'
+  if (legacyOrgId === targetOrgId) return;
+
+  const subcollections = [
+    'persons',
+    'trainingCourses',
+    'trainingRecords',
+    'qualifications',
+    'personCompetencies',
+    'smart_imports',
+    'import_templates',
+    'calibrated_tools'
+  ];
+
+  try {
+    for (const subcol of subcollections) {
+      const legacyCol = collection(db, 'organizations', legacyOrgId, subcol);
+      const snap = await getDocs(legacyCol);
+      if (!snap.empty) {
+        console.log(`[AutoMigrate] Encontrados ${snap.docs.length} registros em legacy ${legacyOrgId}/${subcol}. Migrando para ${targetOrgId}...`);
+        const batch = writeBatch(db);
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data();
+          const targetRef = doc(db, 'organizations', targetOrgId, subcol, docSnap.id);
+          batch.set(targetRef, sanitizeForFirestore({ ...data, organizationId: targetOrgId }), { merge: true });
+          batch.delete(docSnap.ref);
+        });
+        await batch.commit();
+        console.log(`[AutoMigrate] Concluída migração de ${subcol} para ${targetOrgId}.`);
+      }
+    }
+  } catch (err) {
+    console.warn('[AutoMigrate] Verificação de dados legados não bloqueante:', err);
   }
 }
 

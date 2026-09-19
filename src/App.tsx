@@ -50,6 +50,7 @@ import {
   saveAuditLesson,
   deleteAuditLesson,
   promoverLicaoParaConhecimento,
+  checkAndMigrateLegacyHyphenData,
 } from './services/firebase/firestore';
 import { saveManualToDB } from './utils/manualsStorage';
 import { useAuth } from './hooks/useAuth';
@@ -150,9 +151,9 @@ import { RefreshCw, Sparkles, UploadCloud, Database, ShieldAlert, LayoutDashboar
 
 export default function App() {
   const { user, userProfile, loading: authLoading, logout } = useAuth();
-  // Quando autenticado, utiliza o tenant estrito do perfil. Sem fallback tácito para a Impacto.
+  // Quando autenticado, utiliza o tenant vinculado do perfil ou o tenant padrão operacional.
   // Em modo demo local não autenticado, utiliza DEFAULT_ORGANIZATION_ID.
-  const activeOrgId = user ? (userProfile?.organizationId || '') : DEFAULT_ORGANIZATION_ID;
+  const activeOrgId = (user && userProfile?.organizationId) ? userProfile.organizationId : DEFAULT_ORGANIZATION_ID;
 
   // Real-time Firestore state
   const [records, setRecords] = useState<NCRecord[]>([]);
@@ -303,6 +304,13 @@ export default function App() {
     setLoadingRecords(true);
     setLoadingManuals(true);
     setFirestoreError(null);
+
+    // Auto-migração não-bloqueante de dados gravados anteriormente com hífen
+    if (activeOrgId === DEFAULT_ORGANIZATION_ID) {
+      checkAndMigrateLegacyHyphenData().catch((err) => {
+        console.warn('Auto-migração de dados com hífen finalizada ou ignorada:', err);
+      });
+    }
 
     // 1. Subscribe to Non-Conformities in Firestore
     const unsubscribeNCs = subscribeToNonConformities(
@@ -1416,6 +1424,8 @@ export default function App() {
                   onRemoverRegistroTreinamento={(recordId) => setTrainingRecords((prev) => prev.filter((x) => x.id !== recordId))}
                   onRemoverPessoa={(personId) => setPersons((prev) => prev.filter((x) => x.id !== personId))}
                   onRemoverCurso={(courseId) => setTrainingCourses((prev) => prev.filter((x) => x.id !== courseId))}
+                  onAdicionarQualificacao={(q) => setQualifications((prev) => [q, ...prev.filter((x) => x.id !== q.id)])}
+                  onRemoverQualificacao={(qualId) => setQualifications((prev) => prev.filter((x) => x.id !== qualId))}
                   onCriarRncSugerida={(dadosRnc) => {
                     handleNewNC();
                   }}

@@ -14,6 +14,7 @@ import {
   ColaboradorPessoa,
   CursoTreinamento,
   RegistroTreinamentoColaborador,
+  QualificacaoColaborador,
   UserProfile,
   TipoControleImportacao,
   RegistroLinhaImportacao,
@@ -29,6 +30,7 @@ import {
   savePerson,
   saveTrainingCourse,
   saveTrainingRecord,
+  saveQualification,
 } from './competenciesFirestore';
 import { INITIAL_CALIBRATED_TOOLS } from '../../data/initialCalibratedTools';
 
@@ -283,11 +285,13 @@ export async function efetivarImportacaoNoQualigest(
     adicionarPessoa?: (pessoa: ColaboradorPessoa) => void;
     adicionarCurso?: (curso: CursoTreinamento) => void;
     adicionarRegistroTreinamento?: (registro: RegistroTreinamentoColaborador) => void;
+    adicionarQualificacao?: (qualificacao: QualificacaoColaborador) => void;
     adicionarFerramenta?: (ferramenta: FerramentaCalibracao) => void;
     removerFerramenta?: (toolId: string) => void;
     removerRegistroTreinamento?: (recordId: string) => void;
     removerPessoa?: (personId: string) => void;
     removerCurso?: (courseId: string) => void;
+    removerQualificacao?: (qualId: string) => void;
   },
   contextoExistente?: {
     pessoasExistentes?: ColaboradorPessoa[];
@@ -475,61 +479,108 @@ export async function efetivarImportacaoNoQualigest(
       }
 
       // ====================================================================
-      // 1.3 PERSISTÊNCIA DO REGISTRO DE TREINAMENTO REALIZADO PELO COLABORADOR
+      // 1.3 PERSISTÊNCIA DO REGISTRO DE TREINAMENTO (quando houver curso)
       // ====================================================================
-      const isAtualizacaoTreino = linha.decisaoUsuario === 'ATUALIZAR' && Boolean(linha.registroExistenteId);
-      const registroTreinoId = isAtualizacaoTreino && linha.registroExistenteId
-        ? linha.registroExistenteId
-        : `reg-tr-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
+      if (dados.cursoTitulo || cursoId) {
+        const isAtualizacaoTreino = linha.decisaoUsuario === 'ATUALIZAR' && Boolean(linha.registroExistenteId);
+        const registroTreinoId = isAtualizacaoTreino && linha.registroExistenteId
+          ? linha.registroExistenteId
+          : `reg-tr-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
 
-      const novoRegistroTreinamento: RegistroTreinamentoColaborador = {
-        id: registroTreinoId,
-        organizationId,
-        treinamentoId: cursoId || 'curso-gen',
-        treinamentoCodigo: cursoCodigo,
-        treinamentoTitulo: cursoTitulo,
-        colaboradorId: pessoaId || 'colab-gen',
-        colaboradorNome: pessoaNome,
-        colaboradorMatricula: matricula,
-        dataRealizacao: dados.dataRealizacao || new Date().toISOString().split('T')[0],
-        dataValidade: dados.dataValidade || undefined,
-        cargaHoraria: Number(dados.cargaHoraria) || 16,
-        instrutor: dados.instrutor || dados.entidadeInstrutora || 'Instrutor Homologado',
-        resultado: 'APROVADO',
-        entidadeInstrutora: dados.entidadeInstrutora || 'Impacto Training / Autorizada',
-        numeroCertificado: dados.numeroCertificado || undefined,
-        observacoes: `Treinamento homologado via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
-        validadoPorSGQNome: user?.displayName || user?.email || 'Importador SGQ',
-        validadoPorSGQUid: user?.uid || auth.currentUser?.uid || 'system',
-        dataValidacaoSGQ: new Date().toISOString(),
-        createdAt: isAtualizacaoTreino && linha.dadosExistentesSnapshot?.createdAt ? linha.dadosExistentesSnapshot.createdAt : new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+        const novoRegistroTreinamento: RegistroTreinamentoColaborador = {
+          id: registroTreinoId,
+          organizationId,
+          treinamentoId: cursoId || 'curso-gen',
+          treinamentoCodigo: cursoCodigo,
+          treinamentoTitulo: cursoTitulo,
+          colaboradorId: pessoaId || 'colab-gen',
+          colaboradorNome: pessoaNome,
+          colaboradorMatricula: matricula,
+          dataRealizacao: dados.dataRealizacao || new Date().toISOString().split('T')[0],
+          dataValidade: dados.dataValidade || undefined,
+          cargaHoraria: Number(dados.cargaHoraria) || 16,
+          instrutor: dados.instrutor || dados.entidadeInstrutora || 'Instrutor Homologado',
+          resultado: 'APROVADO',
+          entidadeInstrutora: dados.entidadeInstrutora || 'Impacto Training / Autorizada',
+          numeroCertificado: dados.numeroCertificado || undefined,
+          observacoes: `Treinamento homologado via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
+          validadoPorSGQNome: user?.displayName || user?.email || 'Importador SGQ',
+          validadoPorSGQUid: user?.uid || auth.currentUser?.uid || 'system',
+          dataValidacaoSGQ: new Date().toISOString(),
+          createdAt: isAtualizacaoTreino && linha.dadosExistentesSnapshot?.createdAt ? linha.dadosExistentesSnapshot.createdAt : new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
 
-      // Salvar oficialmente no Firestore (organizations/{orgId}/trainingRecords/{id})
-      await saveTrainingRecord(organizationId, novoRegistroTreinamento, user);
+        // Salvar oficialmente no Firestore (organizations/{orgId}/trainingRecords/{id})
+        await saveTrainingRecord(organizationId, novoRegistroTreinamento, user);
 
-      if (callbacksEstado.adicionarRegistroTreinamento) {
-        callbacksEstado.adicionarRegistroTreinamento(novoRegistroTreinamento);
+        if (callbacksEstado.adicionarRegistroTreinamento) {
+          callbacksEstado.adicionarRegistroTreinamento(novoRegistroTreinamento);
+        }
+
+        idsGerados.push(registroTreinoId);
+
+        if (isAtualizacaoTreino && linha.dadosExistentesSnapshot) {
+          totalAtualizados++;
+          registrosAtualizadosSnapshot.push({
+            modulo: 'TRAINING_RECORD',
+            id: registroTreinoId,
+            dadosAnteriores: linha.dadosExistentesSnapshot,
+            dadosNovos: novoRegistroTreinamento,
+          });
+        } else {
+          totalCriados++;
+          registrosCriadosSnapshot.push({
+            modulo: 'TRAINING_RECORD',
+            id: registroTreinoId,
+            dados: novoRegistroTreinamento,
+          });
+        }
       }
 
-      idsGerados.push(registroTreinoId);
+      // ====================================================================
+      // 1.4 PERSISTÊNCIA DE QUALIFICAÇÃO / CHT / CANAC (quando informada)
+      // ====================================================================
+      if (dados.chtNumero) {
+        const cleanCht = String(dados.chtNumero).trim();
+        const qualId = `qual-cht-${pessoaId || 'colab'}-${cleanCht.replace(/[^a-zA-Z0-9]/g, '')}`;
+        const novaQualificacao: QualificacaoColaborador = {
+          id: qualId,
+          organizationId,
+          colaboradorId: pessoaId || 'colab-gen',
+          colaboradorNome: pessoaNome,
+          colaboradorMatricula: matricula || '',
+          tipo: 'CHT_ANAC',
+          titulo: `CHT ${cleanCht}${dados.chtCategoria ? ` (${dados.chtCategoria})` : ''}`,
+          escopo: dados.chtCategoria || 'Manutenção Aeronáutica Homologada',
+          emissor: 'ANAC',
+          numeroRegistro: cleanCht,
+          dataEmissao: dados.chtDataEmissao || dados.dataRealizacao || new Date().toISOString().split('T')[0],
+          dataValidade: dados.chtValidade || dados.dataValidade || undefined,
+          possuiValidade: Boolean(dados.chtValidade || dados.dataValidade),
+          status: 'VALIDA',
+          bloqueiaOperacaoSeVencida: true,
+          responsavelValidacaoNome: user?.displayName || user?.email || 'SGQ',
+          responsavelValidacaoUid: user?.uid || auth.currentUser?.uid || 'sgq',
+          dataValidacao: new Date().toISOString(),
+          observacoes: `Habilitação CHT importada via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
 
-      if (isAtualizacaoTreino && linha.dadosExistentesSnapshot) {
-        totalAtualizados++;
-        registrosAtualizadosSnapshot.push({
-          modulo: 'TRAINING_RECORD',
-          id: registroTreinoId,
-          dadosAnteriores: linha.dadosExistentesSnapshot,
-          dadosNovos: novoRegistroTreinamento,
-        });
-      } else {
-        totalCriados++;
+        await saveQualification(organizationId, novaQualificacao, user);
+
+        if (callbacksEstado.adicionarQualificacao) {
+          callbacksEstado.adicionarQualificacao(novaQualificacao);
+        }
+
+        idsGerados.push(qualId);
         registrosCriadosSnapshot.push({
-          modulo: 'TRAINING_RECORD',
-          id: registroTreinoId,
-          dados: novoRegistroTreinamento,
+          modulo: 'QUALIFICATION' as any,
+          id: qualId,
+          dados: novaQualificacao,
         });
+        totalCriados++;
       }
     }
   }
@@ -671,10 +722,12 @@ export async function reverterImportacaoNoQualigest(
     removerRegistroTreinamento?: (recordId: string) => void;
     removerPessoa?: (personId: string) => void;
     removerCurso?: (courseId: string) => void;
+    removerQualificacao?: (qualId: string) => void;
     adicionarFerramenta?: (tool: FerramentaCalibracao) => void;
     adicionarPessoa?: (pessoa: ColaboradorPessoa) => void;
     adicionarCurso?: (curso: CursoTreinamento) => void;
     adicionarRegistroTreinamento?: (registro: RegistroTreinamentoColaborador) => void;
+    adicionarQualificacao?: (qual: QualificacaoColaborador) => void;
   }
 ): Promise<{ sucesso: boolean; mensagem: string }> {
   if (importRecord.revertida) {
@@ -707,6 +760,11 @@ export async function reverterImportacaoNoQualigest(
         const docRef = doc(db, 'organizations', organizationId, 'trainingCourses', item.id);
         batch.delete(docRef);
         if (callbacksEstado?.removerCurso) callbacksEstado.removerCurso(item.id);
+        criadosExcluidos++;
+      } else if ((item.modulo as string) === 'QUALIFICATION') {
+        const docRef = doc(db, 'organizations', organizationId, 'qualifications', item.id);
+        batch.delete(docRef);
+        if (callbacksEstado?.removerQualificacao) callbacksEstado.removerQualificacao(item.id);
         criadosExcluidos++;
       }
     }

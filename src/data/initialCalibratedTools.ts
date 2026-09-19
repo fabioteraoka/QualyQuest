@@ -3,7 +3,7 @@ import { FerramentaCalibracao } from '../types';
 export const INITIAL_CALIBRATED_TOOLS: FerramentaCalibracao[] = [
   {
     id: 'tool-tq-023',
-    organizationId: 'org-impacto-aviation',
+    organizationId: 'org_impacto_aviation',
     codigoPatrimonio: 'TQ-023',
     descricao: 'Torquímetro de Estalo 20 a 100 Nm com Encaixe 3/8"',
     fabricante: 'Stahlwille',
@@ -27,7 +27,7 @@ export const INITIAL_CALIBRATED_TOOLS: FerramentaCalibracao[] = [
   },
   {
     id: 'tool-tq-041',
-    organizationId: 'org-impacto-aviation',
+    organizationId: 'org_impacto_aviation',
     codigoPatrimonio: 'TQ-041',
     descricao: 'Torquímetro de Alta Precisão 4 a 20 Nm',
     fabricante: 'Snap-on',
@@ -51,7 +51,7 @@ export const INITIAL_CALIBRATED_TOOLS: FerramentaCalibracao[] = [
   },
   {
     id: 'tool-mult-004',
-    organizationId: 'org-impacto-aviation',
+    organizationId: 'org_impacto_aviation',
     codigoPatrimonio: 'MULT-004',
     descricao: 'Multímetro Digital True-RMS Automotivo/Aero',
     fabricante: 'Fluke',
@@ -75,7 +75,7 @@ export const INITIAL_CALIBRATED_TOOLS: FerramentaCalibracao[] = [
   },
   {
     id: 'tool-man-012',
-    organizationId: 'org-impacto-aviation',
+    organizationId: 'org_impacto_aviation',
     codigoPatrimonio: 'MAN-012',
     descricao: 'Manômetro Diferencial de Pressão Pitot-Estático',
     fabricante: 'Druck / Baker Hughes',
@@ -99,7 +99,7 @@ export const INITIAL_CALIBRATED_TOOLS: FerramentaCalibracao[] = [
   },
   {
     id: 'tool-mic-008',
-    organizationId: 'org-impacto-aviation',
+    organizationId: 'org_impacto_aviation',
     codigoPatrimonio: 'MIC-008',
     descricao: 'Micrômetro Externo 0-25mm Resolução 0,001mm',
     fabricante: 'Mitutoyo',
@@ -123,7 +123,7 @@ export const INITIAL_CALIBRATED_TOOLS: FerramentaCalibracao[] = [
   },
   {
     id: 'tool-bal-002',
-    organizationId: 'org-impacto-aviation',
+    organizationId: 'org_impacto_aviation',
     codigoPatrimonio: 'BAL-002',
     descricao: 'Balança Analítica de Precisão 0,001g para Resinas e Selantes',
     fabricante: 'Mettler Toledo',

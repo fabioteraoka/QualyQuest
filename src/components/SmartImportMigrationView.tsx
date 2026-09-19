@@ -51,6 +51,7 @@ import {
   ColaboradorPessoa,
   CursoTreinamento,
   RegistroTreinamentoColaborador,
+  QualificacaoColaborador,
   DocumentoControlado
 } from '../types';
 import { PRESETS_AMOSTRAS_IMPORTACAO, PresetAmostraImportacao } from '../data/sampleImportFiles';
@@ -96,6 +97,8 @@ interface SmartImportMigrationViewProps {
   onRemoverRegistroTreinamento?: (recordId: string) => void;
   onRemoverPessoa?: (personId: string) => void;
   onRemoverCurso?: (courseId: string) => void;
+  onAdicionarQualificacao?: (qualificacao: QualificacaoColaborador) => void;
+  onRemoverQualificacao?: (qualId: string) => void;
   onCriarRncSugerida?: (dadosRnc: any) => void;
 }
 
@@ -118,6 +121,8 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   onRemoverRegistroTreinamento,
   onRemoverPessoa,
   onRemoverCurso,
+  onAdicionarQualificacao,
+  onRemoverQualificacao,
   onCriarRncSugerida
 }) => {
   const [tabPrincipal, setTabPrincipal] = useState<'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA'>('WIZARD');
@@ -623,11 +628,13 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
           adicionarPessoa: onAdicionarPessoa,
           adicionarCurso: onAdicionarCurso,
           adicionarRegistroTreinamento: onAdicionarRegistroTreinamento,
+          adicionarQualificacao: onAdicionarQualificacao,
           adicionarFerramenta: onAdicionarFerramenta,
           removerFerramenta: onRemoverFerramenta,
           removerRegistroTreinamento: onRemoverRegistroTreinamento,
           removerPessoa: onRemoverPessoa,
           removerCurso: onRemoverCurso,
+          removerQualificacao: onRemoverQualificacao,
         },
         {
           pessoasExistentes: pessoas,

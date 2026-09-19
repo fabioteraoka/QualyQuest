@@ -81,7 +81,11 @@ service cloud.firestore {
     function userBelongsToOrg(orgId) {
       return isSignedIn() && (
         isSuperPlatformAdmin() ||
-        (isUserActive() && getUserOrgId() != '' && orgId != '' && getUserOrgId() == orgId)
+        (isUserActive() && getUserOrgId() != '' && orgId != '' && (
+          getUserOrgId() == orgId ||
+          (getUserOrgId() == 'org-impacto-aviation' && orgId == 'org_impacto_aviation') ||
+          (getUserOrgId() == 'org_impacto_aviation' && orgId == 'org-impacto-aviation')
+        ))
       );
     }
 

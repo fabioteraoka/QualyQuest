@@ -60,7 +60,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       campo: 'cursoTitulo',
       label: 'Título do Treinamento / Curso',
       tipo: 'string',
-      obrigatorio: true,
+      obrigatorio: false,
       sinonimos: ['curso', 'treinamento', 'capacitacao', 'modulo', 'titulo', 'nome curso', 'disciplina', 'especializacao'],
       descricao: 'Nome ou título do curso aeronáutico (ex: EWIS, FTS, Fatores Humanos)',
     },
@@ -68,7 +68,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       campo: 'dataRealizacao',
       label: 'Data de Realização',
       tipo: 'date',
-      obrigatorio: true,
+      obrigatorio: false,
       sinonimos: ['data', 'data realizacao', 'data curso', 'conclusao', 'data termino', 'realizado em', 'data inicio', 'concluido'],
       descricao: 'Data em que o colaborador concluiu o treinamento',
     },
@@ -103,6 +103,30 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       obrigatorio: false,
       sinonimos: ['certificado', 'numero certificado', 'registro', 'n certificado', 'comprovante', 'doc', 'evidencia'],
       descricao: 'Número ou identificador formal do certificado/evidência emitido',
+    },
+    {
+      campo: 'chtNumero',
+      label: 'Nº da CHT / Licença ANAC / CANAC',
+      tipo: 'string',
+      obrigatorio: false,
+      sinonimos: ['cht', 'canac', 'licenca', 'anac', 'numero cht', 'nr cht', 'licenca anac', 'habilitacao', 'cht/canac'],
+      descricao: 'Número da Carteira de Habilitação Técnica ou código ANAC do colaborador',
+    },
+    {
+      campo: 'chtValidade',
+      label: 'Validade da CHT / Licença',
+      tipo: 'date',
+      obrigatorio: false,
+      sinonimos: ['validade cht', 'vencimento cht', 'cht validade', 'data cht', 'expiracao cht', 'validade licenca'],
+      descricao: 'Data de validade da habilitação técnica / CHT aeronáutica',
+    },
+    {
+      campo: 'chtCategoria',
+      label: 'Categoria / Especialidade CHT (CEL / GMP / AVI)',
+      tipo: 'string',
+      obrigatorio: false,
+      sinonimos: ['categoria cht', 'celula', 'habilitacao cht', 'especialidade cht', 'gmp', 'cel', 'avi', 'ramo'],
+      descricao: 'Habilitações técnicas homologadas ANAC (Célula, Grupo Moto-Propulsor ou Aviônicos)',
     },
     {
       campo: 'situacao',
@@ -953,11 +977,11 @@ export function validarECompararLinhasImportacao(
       const cursoTituloNorm = normalizarTexto(dadosMapeados.cursoTitulo || '');
       const dataRealizacao = dadosMapeados.dataRealizacao || '';
 
-      if (!pessoaNomeNorm || !cursoTituloNorm) {
+      if (!pessoaNomeNorm && !cursoTituloNorm) {
         classificacaoReconciliacao = 'INVALIDO';
         decisaoUsuario = 'IGNORAR';
         statusQualidade = 'ERRO';
-        mensagensValidacao.push('Registro incompleto: Nome do colaborador ou Título do treinamento não informados.');
+        mensagensValidacao.push('Registro incompleto: Nem o nome do colaborador nem o título do treinamento foram identificados.');
         totalInvalidos++;
       } else {
         if (pessoaNomeNorm) pessoasDetectadas.add(pessoaNomeNorm);
@@ -966,220 +990,249 @@ export function validarECompararLinhasImportacao(
         // ====================================================================
         // 1. RECONCILIAÇÃO DO COLABORADOR (Pessoas & Competências - Fase 14.1-A)
         // ====================================================================
-        // A. Busca exata por matrícula informada ou nome completo normalizado
-        const pessoaCadastrada = (contexto.pessoasExistentes || []).find(
-          (p) =>
-            (dadosMapeados.pessoaMatricula && p.matricula && normalizarTexto(p.matricula) === normalizarTexto(dadosMapeados.pessoaMatricula)) ||
-            normalizarTexto(p.nome) === pessoaNomeNorm
-        );
+        if (pessoaNomeNorm) {
+          // A. Busca exata por matrícula informada ou nome completo normalizado
+          const pessoaCadastrada = (contexto.pessoasExistentes || []).find(
+            (p) =>
+              (dadosMapeados.pessoaMatricula && p.matricula && normalizarTexto(p.matricula) === normalizarTexto(dadosMapeados.pessoaMatricula)) ||
+              normalizarTexto(p.nome) === pessoaNomeNorm
+          );
 
-        if (pessoaCadastrada) {
-          pessoaAcao = 'VINCULAR_EXISTENTE';
-          pessoaIdVinculada = pessoaCadastrada.id;
-          pessoaNomeVinculada = pessoaCadastrada.nome;
-
-          // Detectar se há alteração cadastral para decisão humana (matrícula, setor ou função)
-          const camposPessoaDivergentes: CampoDivergente[] = [];
-          if (dadosMapeados.pessoaMatricula && normalizarTexto(pessoaCadastrada.matricula || '') !== normalizarTexto(dadosMapeados.pessoaMatricula)) {
-            camposPessoaDivergentes.push({
-              campo: 'pessoaMatricula',
-              label: 'Matrícula',
-              valorAtual: pessoaCadastrada.matricula || 'Não informada',
-              valorImportado: dadosMapeados.pessoaMatricula,
-            });
-          }
-          if (dadosMapeados.setor && normalizarTexto(pessoaCadastrada.setor || '') !== normalizarTexto(dadosMapeados.setor)) {
-            camposPessoaDivergentes.push({
-              campo: 'setor',
-              label: 'Setor',
-              valorAtual: pessoaCadastrada.setor || 'Geral',
-              valorImportado: dadosMapeados.setor,
-            });
-          }
-          if (dadosMapeados.funcao && normalizarTexto(pessoaCadastrada.cargoOperacional || '') !== normalizarTexto(dadosMapeados.funcao)) {
-            camposPessoaDivergentes.push({
-              campo: 'funcao',
-              label: 'Função / Cargo',
-              valorAtual: pessoaCadastrada.cargoOperacional || 'Mecânico',
-              valorImportado: dadosMapeados.funcao,
-            });
-          }
-
-          if (camposPessoaDivergentes.length > 0) {
-            camposPessoaDivergentes.forEach((d) => camposDivergentes.push(d));
-            mensagensValidacao.push(
-              `Colaborador oficial identificado (${pessoaCadastrada.nome} - Matrícula: ${pessoaCadastrada.matricula || 'S/M'}). Dados complementares/alterações detectadas na planilha: ${camposPessoaDivergentes.map((c) => c.label).join(', ')}.`
-            );
-          }
-        } else {
-          // B. Verificar possível duplicidade / homônimo por similaridade de tokens no banco oficial
-          const tokens = pessoaNomeNorm.split(' ').filter((t) => t.length > 2);
-          const pessoaSimilar = (contexto.pessoasExistentes || []).find((p) => {
-            const pTokens = normalizarTexto(p.nome).split(' ').filter((t) => t.length > 2);
-            if (tokens.length >= 2 && pTokens.length >= 2) {
-              return tokens[0] === pTokens[0] && tokens[tokens.length - 1] === pTokens[pTokens.length - 1];
-            }
-            return false;
-          });
-
-          if (pessoaSimilar) {
-            duplicidadeDetectada = true;
-            classificacaoReconciliacao = 'POSSIVEL_DUPLICIDADE';
-            decisaoUsuario = 'REVISAR';
-            registroExistenteId = pessoaSimilar.id;
-            registroExistenteResumo = `Possível homônimo/duplicata com colaborador existente: ${pessoaSimilar.nome} (${pessoaSimilar.matricula || 'S/M'}) - Setor: ${pessoaSimilar.setor || 'Geral'}`;
+          if (pessoaCadastrada) {
             pessoaAcao = 'VINCULAR_EXISTENTE';
-            pessoaIdVinculada = pessoaSimilar.id;
-            pessoaNomeVinculada = pessoaSimilar.nome;
-            if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
-            mensagensValidacao.push(
-              `Possível homônimo/duplicidade detectada com "${pessoaSimilar.nome}". Decisão humana necessária para vincular ou criar novo colaborador.`
-            );
-          } else {
-            // C. Novo colaborador: verificar se já apareceu em linha anterior desta planilha
-            const pessoaEmLote = pessoasLoteMap.get(pessoaNomeNorm);
-            if (pessoaEmLote) {
-              pessoaAcao = 'CRIAR_PESSOA';
-              pessoaIdVinculada = pessoaEmLote.id;
-              pessoaNomeVinculada = pessoaEmLote.nome;
-            } else {
-              const newPersonId = `person-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
-              pessoasLoteMap.set(pessoaNomeNorm, {
-                id: newPersonId,
-                nome: dadosMapeados.pessoaNome,
-                matricula: dadosMapeados.pessoaMatricula || '',
-                setor: dadosMapeados.setor,
-                funcao: dadosMapeados.funcao,
-                isNew: true,
+            pessoaIdVinculada = pessoaCadastrada.id;
+            pessoaNomeVinculada = pessoaCadastrada.nome;
+
+            // Detectar se há alteração cadastral para decisão humana (matrícula, setor ou função)
+            const camposPessoaDivergentes: CampoDivergente[] = [];
+            if (dadosMapeados.pessoaMatricula && normalizarTexto(pessoaCadastrada.matricula || '') !== normalizarTexto(dadosMapeados.pessoaMatricula)) {
+              camposPessoaDivergentes.push({
+                campo: 'pessoaMatricula',
+                label: 'Matrícula',
+                valorAtual: pessoaCadastrada.matricula || 'Não informada',
+                valorImportado: dadosMapeados.pessoaMatricula,
               });
-              pessoaAcao = 'CRIAR_PESSOA';
-              pessoaIdVinculada = newPersonId;
-              pessoaNomeVinculada = dadosMapeados.pessoaNome;
-              qtdPessoasNaoCadastradas++;
+            }
+            if (dadosMapeados.setor && normalizarTexto(pessoaCadastrada.setor || '') !== normalizarTexto(dadosMapeados.setor)) {
+              camposPessoaDivergentes.push({
+                campo: 'setor',
+                label: 'Setor',
+                valorAtual: pessoaCadastrada.setor || 'Geral',
+                valorImportado: dadosMapeados.setor,
+              });
+            }
+            if (dadosMapeados.funcao && normalizarTexto(pessoaCadastrada.cargoOperacional || '') !== normalizarTexto(dadosMapeados.funcao)) {
+              camposPessoaDivergentes.push({
+                campo: 'funcao',
+                label: 'Função / Cargo',
+                valorAtual: pessoaCadastrada.cargoOperacional || 'Mecânico',
+                valorImportado: dadosMapeados.funcao,
+              });
+            }
+
+            if (camposPessoaDivergentes.length > 0) {
+              camposPessoaDivergentes.forEach((d) => camposDivergentes.push(d));
+              mensagensValidacao.push(
+                `Colaborador oficial identificado (${pessoaCadastrada.nome} - Matrícula: ${pessoaCadastrada.matricula || 'S/M'}). Dados complementares/alterações detectadas na planilha: ${camposPessoaDivergentes.map((c) => c.label).join(', ')}.`
+              );
+            }
+          } else {
+            // B. Verificar possível duplicidade / homônimo por similaridade de tokens no banco oficial
+            const tokens = pessoaNomeNorm.split(' ').filter((t) => t.length > 2);
+            const pessoaSimilar = (contexto.pessoasExistentes || []).find((p) => {
+              const pTokens = normalizarTexto(p.nome).split(' ').filter((t) => t.length > 2);
+              if (tokens.length >= 2 && pTokens.length >= 2) {
+                return tokens[0] === pTokens[0] && tokens[tokens.length - 1] === pTokens[pTokens.length - 1];
+              }
+              return false;
+            });
+
+            if (pessoaSimilar) {
+              duplicidadeDetectada = true;
+              classificacaoReconciliacao = 'POSSIVEL_DUPLICIDADE';
+              decisaoUsuario = 'REVISAR';
+              registroExistenteId = pessoaSimilar.id;
+              registroExistenteResumo = `Possível homônimo/duplicata com colaborador existente: ${pessoaSimilar.nome} (${pessoaSimilar.matricula || 'S/M'}) - Setor: ${pessoaSimilar.setor || 'Geral'}`;
+              pessoaAcao = 'VINCULAR_EXISTENTE';
+              pessoaIdVinculada = pessoaSimilar.id;
+              pessoaNomeVinculada = pessoaSimilar.nome;
               if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
               mensagensValidacao.push(
-                `Novo mecânico/colaborador identificado: "${dadosMapeados.pessoaNome}". Será cadastrado oficialmente em Pessoas & Competências após aprovação.`
+                `Possível homônimo/duplicidade detectada com "${pessoaSimilar.nome}". Decisão humana necessária para vincular ou criar novo colaborador.`
+              );
+            } else {
+              // C. Novo colaborador: verificar se já apareceu em linha anterior desta planilha
+              const pessoaEmLote = pessoasLoteMap.get(pessoaNomeNorm);
+              if (pessoaEmLote) {
+                pessoaAcao = 'CRIAR_PESSOA';
+                pessoaIdVinculada = pessoaEmLote.id;
+                pessoaNomeVinculada = pessoaEmLote.nome;
+              } else {
+                const newPersonId = `person-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
+                pessoasLoteMap.set(pessoaNomeNorm, {
+                  id: newPersonId,
+                  nome: dadosMapeados.pessoaNome,
+                  matricula: dadosMapeados.pessoaMatricula || '',
+                  setor: dadosMapeados.setor,
+                  funcao: dadosMapeados.funcao,
+                  isNew: true,
+                });
+                pessoaAcao = 'CRIAR_PESSOA';
+                pessoaIdVinculada = newPersonId;
+                pessoaNomeVinculada = dadosMapeados.pessoaNome;
+                qtdPessoasNaoCadastradas++;
+                if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
+                mensagensValidacao.push(
+                  `Novo mecânico/colaborador identificado: "${dadosMapeados.pessoaNome}". Será cadastrado oficialmente em Pessoas & Competências após aprovação.`
+                );
+              }
+            }
+          }
+        }
+
+        // Se a linha tiver curso definido, faz a reconciliação do catálogo e do registro de treinamento
+        if (cursoTituloNorm) {
+          // ====================================================================
+          // 2. RECONCILIAÇÃO DO CURSO NO CATÁLOGO (Fase 14.1-A)
+          // ====================================================================
+          const cursoCadastrado = (contexto.treinamentosExistentes || []).find(
+            (c) =>
+              (dadosMapeados.cursoCodigo && c.codigo && normalizarTexto(c.codigo) === normalizarTexto(dadosMapeados.cursoCodigo)) ||
+              normalizarTexto(c.titulo) === cursoTituloNorm
+          );
+
+          if (cursoCadastrado) {
+            cursoAcao = 'VINCULAR_EXISTENTE';
+            cursoIdVinculado = cursoCadastrado.id;
+          } else {
+            // Checar se já foi planejado em linha anterior deste lote
+            const cursoEmLote = cursosLoteMap.get(cursoTituloNorm);
+            if (cursoEmLote) {
+              cursoAcao = 'CRIAR_CURSO';
+              cursoIdVinculado = cursoEmLote.id;
+            } else {
+              const newCourseId = `course-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
+              cursosLoteMap.set(cursoTituloNorm, {
+                id: newCourseId,
+                titulo: dadosMapeados.cursoTitulo,
+                codigo: dadosMapeados.cursoCodigo || '',
+                isNew: true,
+              });
+              cursoAcao = 'CRIAR_CURSO';
+              cursoIdVinculado = newCourseId;
+              mensagensValidacao.push(
+                `Novo treinamento identificado: "${dadosMapeados.cursoTitulo}". Será cadastrado no catálogo oficial de Treinamentos após aprovação.`
               );
             }
           }
-        }
 
-        // ====================================================================
-        // 2. RECONCILIAÇÃO DO CURSO NO CATÁLOGO (Fase 14.1-A)
-        // ====================================================================
-        const cursoCadastrado = (contexto.treinamentosExistentes || []).find(
-          (c) =>
-            (dadosMapeados.cursoCodigo && c.codigo && normalizarTexto(c.codigo) === normalizarTexto(dadosMapeados.cursoCodigo)) ||
-            normalizarTexto(c.titulo) === cursoTituloNorm
-        );
-
-        if (cursoCadastrado) {
-          cursoAcao = 'VINCULAR_EXISTENTE';
-          cursoIdVinculado = cursoCadastrado.id;
-        } else {
-          // Checar se já foi planejado em linha anterior deste lote
-          const cursoEmLote = cursosLoteMap.get(cursoTituloNorm);
-          if (cursoEmLote) {
-            cursoAcao = 'CRIAR_CURSO';
-            cursoIdVinculado = cursoEmLote.id;
-          } else {
-            const newCourseId = `course-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
-            cursosLoteMap.set(cursoTituloNorm, {
-              id: newCourseId,
-              titulo: dadosMapeados.cursoTitulo,
-              codigo: dadosMapeados.cursoCodigo || '',
-              isNew: true,
-            });
-            cursoAcao = 'CRIAR_CURSO';
-            cursoIdVinculado = newCourseId;
-            mensagensValidacao.push(
-              `Novo treinamento identificado: "${dadosMapeados.cursoTitulo}". Será cadastrado no catálogo oficial de Treinamentos após aprovação.`
-            );
-          }
-        }
-
-        // ====================================================================
-        // 3. RECONCILIAÇÃO DO REGISTRO DE TREINAMENTO (Fase 14.1-A)
-        // ====================================================================
-        const treinoExistente = (contexto.registrosTreinamentoExistentes || []).find((r) => {
-          const matchColaborador =
-            (pessoaIdVinculada && r.colaboradorId === pessoaIdVinculada) ||
-            normalizarTexto(r.colaboradorNome) === pessoaNomeNorm;
-          const matchCurso =
-            (cursoIdVinculado && r.treinamentoId === cursoIdVinculado) ||
-            normalizarTexto(r.treinamentoTitulo) === cursoTituloNorm;
-          return matchColaborador && matchCurso && r.dataRealizacao === dataRealizacao;
-        });
-
-        if (treinoExistente) {
-          registroExistenteId = treinoExistente.id;
-          dadosExistentesSnapshot = { ...treinoExistente };
-          registroExistenteResumo = `Treinamento realizado em ${dataRealizacao} (Validade: ${treinoExistente.dataValidade || 'N/A'}, Cert: ${treinoExistente.numeroCertificado || 'S/N'})`;
-
-          const camposComparacaoTreino = [
-            { campo: 'dataValidade', label: 'Data de Validade' },
-            { campo: 'cargaHoraria', label: 'Carga Horária' },
-            { campo: 'numeroCertificado', label: 'Nº Certificado' },
-            { campo: 'entidadeInstrutora', label: 'Entidade / Instrutor' },
-          ];
-
-          camposComparacaoTreino.forEach((c) => {
-            const valAtual = (treinoExistente as any)[c.campo] || '';
-            const valNovo = dadosMapeados[c.campo] || '';
-            if (valNovo && normalizarTexto(String(valAtual)) !== normalizarTexto(String(valNovo))) {
-              camposDivergentes.push({
-                campo: c.campo,
-                label: c.label,
-                valorAtual: valAtual,
-                valorImportado: valNovo,
-              });
-            }
-          });
-
-          if (camposDivergentes.length === 0) {
-            classificacaoReconciliacao = 'EXISTENTE_IGUAL';
-            decisaoUsuario = 'IGNORAR';
-            acaoDuplicidade = 'MANTER_EXISTENTE';
-            totalIguais++;
-            totalIgnorados++;
-            mensagensValidacao.push(`Capacitação já homologada para este colaborador na mesma data. Sugestão: Manter existente.`);
-          } else {
-            classificacaoReconciliacao = 'EXISTENTE_ALTERADO';
-            decisaoUsuario = 'ATUALIZAR';
-            acaoDuplicidade = 'ATUALIZAR';
-            duplicidadeDetectada = true;
-            totalAlterados++;
-            if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
-            mensagensValidacao.push(`Registro existente com dados complementares (${camposDivergentes.map((c) => c.label).join(', ')}). Sugestão: Atualizar.`);
-          }
-        } else {
-          // Checar se existe treinamento do mesmo curso com data diferente
-          const mesmoCursoOutraData = (contexto.registrosTreinamentoExistentes || []).find((r) => {
+          // ====================================================================
+          // 3. RECONCILIAÇÃO DO REGISTRO DE TREINAMENTO (Fase 14.1-A)
+          // ====================================================================
+          const treinoExistente = (contexto.registrosTreinamentoExistentes || []).find((r) => {
             const matchColaborador =
               (pessoaIdVinculada && r.colaboradorId === pessoaIdVinculada) ||
               normalizarTexto(r.colaboradorNome) === pessoaNomeNorm;
             const matchCurso =
               (cursoIdVinculado && r.treinamentoId === cursoIdVinculado) ||
               normalizarTexto(r.treinamentoTitulo) === cursoTituloNorm;
-            return matchColaborador && matchCurso;
+            return matchColaborador && matchCurso && r.dataRealizacao === dataRealizacao;
           });
 
-          if (mesmoCursoOutraData) {
-            classificacaoReconciliacao = 'NOVO';
-            decisaoUsuario = 'CRIAR';
-            acaoDuplicidade = 'CRIAR_NOVO';
-            totalNovos++;
-            mensagensValidacao.push(`Nova reciclagem periódica do treinamento "${dadosMapeados.cursoTitulo}" para ${dadosMapeados.pessoaNome}. O histórico anterior será preservado.`);
+          if (treinoExistente) {
+            registroExistenteId = treinoExistente.id;
+            dadosExistentesSnapshot = { ...treinoExistente };
+            registroExistenteResumo = `Treinamento realizado em ${dataRealizacao} (Validade: ${treinoExistente.dataValidade || 'N/A'}, Cert: ${treinoExistente.numeroCertificado || 'S/N'})`;
+
+            const camposComparacaoTreino = [
+              { campo: 'dataValidade', label: 'Data de Validade' },
+              { campo: 'cargaHoraria', label: 'Carga Horária' },
+              { campo: 'numeroCertificado', label: 'Nº Certificado' },
+              { campo: 'entidadeInstrutora', label: 'Entidade / Instrutor' },
+            ];
+
+            camposComparacaoTreino.forEach((c) => {
+              const valAtual = (treinoExistente as any)[c.campo] || '';
+              const valNovo = dadosMapeados[c.campo] || '';
+              if (valNovo && normalizarTexto(String(valAtual)) !== normalizarTexto(String(valNovo))) {
+                camposDivergentes.push({
+                  campo: c.campo,
+                  label: c.label,
+                  valorAtual: valAtual,
+                  valorImportado: valNovo,
+                });
+              }
+            });
+
+            if (camposDivergentes.length === 0) {
+              classificacaoReconciliacao = 'EXISTENTE_IGUAL';
+              decisaoUsuario = 'IGNORAR';
+              acaoDuplicidade = 'MANTER_EXISTENTE';
+              totalIguais++;
+              totalIgnorados++;
+              mensagensValidacao.push(`Capacitação já homologada para este colaborador na mesma data. Sugestão: Manter existente.`);
+            } else {
+              classificacaoReconciliacao = 'EXISTENTE_ALTERADO';
+              decisaoUsuario = 'ATUALIZAR';
+              acaoDuplicidade = 'ATUALIZAR';
+              duplicidadeDetectada = true;
+              totalAlterados++;
+              if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
+              mensagensValidacao.push(`Registro existente com dados complementares (${camposDivergentes.map((c) => c.label).join(', ')}). Sugestão: Atualizar.`);
+            }
           } else {
+            // Checar se existe treinamento do mesmo curso com data diferente
+            const mesmoCursoOutraData = (contexto.registrosTreinamentoExistentes || []).find((r) => {
+              const matchColaborador =
+                (pessoaIdVinculada && r.colaboradorId === pessoaIdVinculada) ||
+                normalizarTexto(r.colaboradorNome) === pessoaNomeNorm;
+              const matchCurso =
+                (cursoIdVinculado && r.treinamentoId === cursoIdVinculado) ||
+                normalizarTexto(r.treinamentoTitulo) === cursoTituloNorm;
+              return matchColaborador && matchCurso;
+            });
+
+            if (mesmoCursoOutraData) {
+              classificacaoReconciliacao = 'NOVO';
+              decisaoUsuario = 'CRIAR';
+              acaoDuplicidade = 'CRIAR_NOVO';
+              totalNovos++;
+              mensagensValidacao.push(`Nova reciclagem periódica do treinamento "${dadosMapeados.cursoTitulo}" para ${dadosMapeados.pessoaNome}. O histórico anterior será preservado.`);
+            } else {
+              classificacaoReconciliacao = 'NOVO';
+              decisaoUsuario = 'CRIAR';
+              acaoDuplicidade = 'CRIAR_NOVO';
+              totalNovos++;
+            }
+          }
+
+          if (!dadosMapeados.dataValidade) {
+            qtdValidadeAusente++;
+          }
+        } else {
+          // Sem curso especificado: registro focado em Colaborador / Habilitação
+          if (pessoaAcao === 'CRIAR_PESSOA') {
             classificacaoReconciliacao = 'NOVO';
             decisaoUsuario = 'CRIAR';
-            acaoDuplicidade = 'CRIAR_NOVO';
             totalNovos++;
+            mensagensValidacao.push('Cadastro de novo colaborador para Pessoas & Competências.');
+          } else if (pessoaAcao === 'VINCULAR_EXISTENTE') {
+            if (camposDivergentes.length > 0) {
+              classificacaoReconciliacao = 'EXISTENTE_ALTERADO';
+              decisaoUsuario = 'ATUALIZAR';
+              totalAlterados++;
+              mensagensValidacao.push('Atualização cadastral do colaborador existente.');
+            } else {
+              classificacaoReconciliacao = 'EXISTENTE_IGUAL';
+              decisaoUsuario = 'IGNORAR';
+              totalIguais++;
+              mensagensValidacao.push('Colaborador já cadastrado na organização com dados idênticos.');
+            }
           }
         }
 
-        if (!dadosMapeados.dataValidade) {
-          qtdValidadeAusente++;
+        if (dadosMapeados.chtNumero) {
+          mensagensValidacao.push(`Habilitação CHT/CANAC ${dadosMapeados.chtNumero} identificada (Validade: ${dadosMapeados.chtValidade || 'Não informada'}).`);
         }
       }
     } else if (tipoControle === 'CONTROLE_DOCUMENTAL') {
