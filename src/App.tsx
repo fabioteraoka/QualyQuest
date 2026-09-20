@@ -72,6 +72,7 @@ import { ValidationQueueView } from './components/ValidationQueueView';
 import { KnowledgeBaseView } from './components/KnowledgeBaseView';
 import { QualityPresentationGeneratorView } from './components/QualityPresentationGeneratorView';
 import { SystemArchitectureView } from './components/SystemArchitectureView';
+import { TechnicalDiagnosticsCenterView } from './components/TechnicalDiagnosticsCenterView';
 import { InteractiveTourView } from './components/InteractiveTourView';
 import { OrganizationSettingsView } from './components/OrganizationSettingsView';
 import { NewOrganizationOnboardingView } from './components/NewOrganizationOnboardingView';
@@ -1056,10 +1057,14 @@ export default function App() {
                 />
               )}
 
-              {/* TAB: ARQUITETURA FUNCIONAL E TÉCNICA REAL (FASE 6.1) */}
-              {activeTab === 'arquitetura' && (
-                <SystemArchitectureView
+              {/* ADMINISTRAÇÃO: DIAGNÓSTICOS TÉCNICOS & ARQUITETURA CONSOLIDADA */}
+              {(activeTab === 'diagnosticos-tecnicos' || activeTab === 'arquitetura') && (
+                <TechnicalDiagnosticsCenterView
+                  organization={activeOrganization}
+                  onOpenTechnicalAuditModal={() => setIsTechnicalAuditModalOpen(true)}
+                  onOpenFirebaseDiagnosticsModal={() => setIsDiagnosticsModalOpen(true)}
                   onNavigateToPresentation={() => setActiveTab('apresentacao')}
+                  initialSubTab={activeTab === 'arquitetura' ? 'arquitetura' : 'visao-geral'}
                 />
               )}
 
@@ -1180,9 +1185,10 @@ export default function App() {
               )}
 
               {/* FASE 11: GESTÃO CENTRALIZADA DE ORGANIZAÇÕES, USUÁRIOS E PERMISSÕES */}
-              {activeTab === 'admin-central' && (
+              {(activeTab === 'admin-central' || activeTab === 'admin-audit-trail') && (
                 <CentralAdministrationView
                   organization={activeOrganization}
+                  initialSubTab={activeTab === 'admin-audit-trail' ? 'audit-trail' : 'usuarios'}
                   onOrganizationUpdated={(updated) => setActiveOrganization(updated)}
                 />
               )}
@@ -1301,7 +1307,7 @@ export default function App() {
               )}
 
               {/* FASE 9: TREINAMENTOS, CHTs & QUALIFICAÇÕES */}
-              {activeTab === 'treinamentos-qualificacoes' && (
+              {(activeTab === 'treinamentos-qualificacoes' || activeTab === 'cht-qualificacoes') && (
                 <TrainingsQualificationsView
                   organizationId={activeOrgId}
                   userProfile={userProfile}
@@ -1310,11 +1316,12 @@ export default function App() {
                   trainingRecords={trainingRecords}
                   qualifications={qualifications}
                   documents={personDocuments}
+                  initialTab={activeTab === 'cht-qualificacoes' ? 'QUALIFICACOES' : 'CURSOS'}
                 />
               )}
 
               {/* FASE 9: CENTRAL DE VENCIMENTOS & GAPS */}
-              {activeTab === 'central-vencimentos-gaps' && (
+              {(activeTab === 'central-vencimentos-gaps' || activeTab === 'aptidao-operacional') && (
                 <ExpirationsGapsCenterView
                   organizationId={activeOrgId}
                   userProfile={userProfile}
@@ -1326,6 +1333,7 @@ export default function App() {
                   documents={personDocuments}
                   activities={activityRequirements}
                   aiSuggestions={aiCompetencySuggestions}
+                  initialSubTab={activeTab === 'aptidao-operacional' ? 'SIMULADOR' : 'VENCIMENTOS'}
                 />
               )}
 
@@ -1350,7 +1358,10 @@ export default function App() {
               {(activeTab === 'controle-documental' ||
                 activeTab === 'consulta-temporal' ||
                 activeTab === 'fontes-externas' ||
-                activeTab === 'documentos-dashboard') && (
+                activeTab === 'documentos-dashboard' ||
+                activeTab === 'documentos-revisoes' ||
+                activeTab === 'documentos-solicitacoes' ||
+                activeTab === 'documentos-comparador') && (
                 <DocumentControlCenterView
                   organizationId={activeOrgId}
                   currentUser={userProfile}
@@ -1369,6 +1380,10 @@ export default function App() {
                       ? 'fontes'
                       : activeTab === 'documentos-dashboard'
                       ? 'dashboard'
+                      : activeTab === 'documentos-solicitacoes'
+                      ? 'solicitacoes'
+                      : activeTab === 'documentos-comparador'
+                      ? 'comparador'
                       : 'acervo'
                   }
                   onOpenNCFormWithDoc={() => {
@@ -1380,7 +1395,9 @@ export default function App() {
               {/* FASE 13: AUDITORIAS, REQUISITOS E CONTROLES DE CLIENTES */}
               {(activeTab === 'clientes-requisitos' ||
                 activeTab === 'clientes-matriz' ||
-                activeTab === 'clientes-cockpit') && (
+                activeTab === 'clientes-cockpit' ||
+                activeTab === 'clientes-cronograma' ||
+                activeTab === 'outros-controles') && (
                 <ClientAuditsManagementView
                   clientes={clientesExternos}
                   bases={basesOperacionais}
@@ -1395,6 +1412,8 @@ export default function App() {
                       ? 'matriz'
                       : activeTab === 'clientes-cockpit'
                       ? 'cockpit'
+                      : activeTab === 'clientes-cronograma'
+                      ? 'cronograma'
                       : 'requisitos'
                   }
                   onSaveAvaliacao={handleSaveAvaliacaoCliente}
@@ -1404,7 +1423,7 @@ export default function App() {
               )}
 
               {/* FASE 14: IMPORTAÇÃO INTELIGENTE E MIGRAÇÃO DE CONTROLES EXISTENTES */}
-              {activeTab === 'importacao-inteligente' && (
+              {(activeTab === 'importacao-inteligente' || activeTab === 'ferramentas-metrologia') && (
                 <SmartImportMigrationView
                   organization={activeOrganization}
                   user={userProfile}
@@ -1415,6 +1434,7 @@ export default function App() {
                   ferramentasCalibradas={ferramentasCalibradas}
                   smartImports={smartImports}
                   templatesAprovados={templatesAprovados}
+                  initialTab={activeTab === 'ferramentas-metrologia' ? 'METROLOGIA' : 'WIZARD'}
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}
                   onAdicionarPessoa={(p) => setPersons((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}
                   onAdicionarCurso={(c) => setTrainingCourses((prev) => [c, ...prev.filter((x) => x.id !== c.id)])}

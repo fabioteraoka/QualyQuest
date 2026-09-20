@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Clock,
   AlertTriangle,
@@ -52,6 +52,7 @@ interface ExpirationsGapsCenterViewProps {
   documents: DocumentoEvidenciaPessoa[];
   activities: AtividadeCompetenciaRequerida[];
   aiSuggestions: SugestaoIACompetencia[];
+  initialSubTab?: 'VENCIMENTOS' | 'GAPS' | 'SIMULADOR' | 'IA_SUGESTOES';
 }
 
 export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps> = ({
@@ -65,8 +66,15 @@ export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps>
   documents = [],
   activities = [],
   aiSuggestions = [],
+  initialSubTab = 'VENCIMENTOS',
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'VENCIMENTOS' | 'GAPS' | 'SIMULADOR' | 'IA_SUGESTOES'>('VENCIMENTOS');
+  const [activeSubTab, setActiveSubTab] = useState<'VENCIMENTOS' | 'GAPS' | 'SIMULADOR' | 'IA_SUGESTOES'>(initialSubTab);
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   // Filtros de Vencimento
   const [selectedFaixa, setSelectedFaixa] = useState<string>('TODAS');

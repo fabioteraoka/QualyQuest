@@ -100,49 +100,61 @@ Gestão integral do corpo técnico de manutenção:
 
 ---
 
-## 🧩 Módulos Estruturais do Sistema
+## 🧩 Arquitetura de Navegação em 8 Blocos Operacionais
+
+A navegação do QualiGest é estruturada em torno do ciclo real de trabalho de uma organização de manutenção aeronáutica (RBAC 145 / EASA Part-145):
 
 ```
 QualiGest SGQ Enterprise
-├── 1. Não Conformidades (RNC F 001-29)
-│   ├── Emissão & Triagem Rápida
-│   ├── Matriz de Risco Aeronáutico 5x5
-│   ├── Investigação 5 Porquês & Ishikawa 6M
-│   ├── Plano CAPA (Ações Imediatas, Corretivas e Preventivas)
-│   └── Verificação Formal de Eficácia
-├── 2. Inteligência Artificial & Auditoria Técnica
-│   ├── Copilot Gemini Integrado para SGQ
-│   ├── Sugestão Contextual de Causas e Contramedidas
-│   └── Verificação de Conformidade Textual Automatizada
-├── 3. Gestão de Auditorias Externas
-│   ├── Registro de Auditorias (ANAC, EASA, Clientes, FAA)
-│   ├── Tratamento de Constatações (Findings & Observações)
-│   └── Banco de Lições Aprendidas Homologadas
-├── 4. Pessoas, Competências & Habilitações
-│   ├── Dossiê Técnico do Colaborador
-│   ├── Controle de Carteiras CHT (CEL / GMP / AVI)
-│   ├── Central Preditiva de Vencimentos (< 60d, < 30d, Vencidos)
-│   └── Matriz de Proficiência por Posto de Trabalho
-├── 5. Controle Documental & Conhecimento Temporal
-│   ├── Acervo Centralizado de Manuais (AMM, CMM, SRM, MOE)
-│   ├── Histórico de Revisões Imutáveis
-│   ├── Máquina de Consulta Temporal por Data de Evento
-│   ├── Comparador de Revisões com Diagnóstico de Impacto
-│   ├── Monitoramento de Fontes Regulatórias e de Fabricantes
-│   └── Evidências de Consulta Operacional de Mecânicos
-├── 6. Apresentação Gerencial & Espelho Executivo Fidedigno (Fase 12.2)
-│   ├── Arquitetura de Fonte Única da Verdade (SSoT Centralizado)
-│   ├── Estrutura Proporcional 70/30: 14 Slides da Empresa + 6 Slides de Evolução
-│   ├── Teste de Espelho Automático (100% de Fidelidade Web vs Exportação PPTX)
-│   ├── Gráficos Reais Sincronizados (Tendências, Pareto de Setores, 6M, Matriz 5x5)
-│   ├── Auto-Fit Geométrico Imune a Transbordamentos (maxBottomY = 6.85")
-│   ├── Régua de Maturidade do SGQ (Básico → Reativo → Preventivo → Integrado → Preditivo)
-│   └── Exportação Nativa em PPTX Widescreen 16:9, Impressão/PDF e CSV
-└── 7. Governança Multi-Tenant & Documentação Técnica Completa
-    ├── Particionamento Total por Organização no Firestore
-    ├── Assistente de Onboarding de Novas Bases/Clientes
-    └── Manuais Oficiais de Operação, Administração, Engenharia e Implantação
+├── [+ Nova Não Conformidade] (Ação Primária Instantânea)
+├── 1. INÍCIO
+│   ├── Dashboard Executivo
+│   ├── Pendências & Alertas Críticos
+│   ├── Saúde do SGQ (Maturidade RBAC 145)
+│   └── Apresentação Gerencial (SSoT 20 Slides 70/30)
+├── 2. QUALIDADE
+│   ├── Não Conformidades (Tabela Dinâmica & Kanban)
+│   ├── Análise & Indicadores (Pareto 80/20 & ATA 100)
+│   ├── Validação & Aprovação (Fila N1-N5)
+│   └── Base de Conhecimento Homologada
+├── 3. AUDITORIAS & CLIENTES
+│   ├── Auditorias Regulatórias & Clientes
+│   ├── Clientes & Requisitos ("Um Controle, Vários Requisitos")
+│   ├── Auditoria Inteligente com IA
+│   └── Calendário e Cronograma de Auditorias
+├── 4. PESSOAS & COMPETÊNCIAS
+│   ├── Colaboradores & Dossiê Técnico
+│   ├── Treinamentos & Cursos Regulamentares
+│   ├── Carteiras CHT (CEL / GMP / AVI) & Qualificações
+│   ├── Central Preditiva de Vencimentos & Gaps
+│   └── Simulador de Aptidão Operacional
+├── 5. DOCUMENTOS
+│   ├── Acervo Documental (AMM, CMM, MOE, POP)
+│   ├── Revisões Vigentes & Histórico Imutável
+│   ├── Conhecimento Temporal na Data da OS
+│   ├── Monitoramento de Fontes Oficiais (ANAC, FAA, EASA, OEMs)
+│   ├── Solicitações de Revisão de Clientes
+│   ├── Comparador Visual de Revisões
+│   └── Indicadores de Gestão Documental
+├── 6. RECURSOS & CONTROLES
+│   ├── Ferramentas & Metrologia Calibrada
+│   ├── Importação Inteligente de Dados (Wizard)
+│   └── Outros Controles Centrais SGQ
+├── 7. CONHECIMENTO & MELHORIA
+│   ├── Base de Conhecimento e Padrões
+│   ├── Lições Aprendidas de Auditorias
+│   ├── Soluções Validadas (Comparador de RNCs)
+│   ├── Extrator de Documentos com IA
+│   └── Manual Oficial de Utilização
+└── 8. ADMINISTRAÇÃO
+    ├── Parâmetros da Organização (Tenant)
+    ├── Gestão de Usuários & Permissões (RBAC)
+    ├── Trilha de Auditoria do Sistema (Audit Trail)
+    ├── Implantação e Onboarding de Clientes
+    └── Centro de Diagnósticos Técnicos (Arquitetura, ADRs, Firebase & Infra)
 ```
+
+> **Jornada Operacional Padronizada:** A navegação obedece ao fluxo: **Módulo → Registro → Abas e Ações Relacionadas → Evidências → Histórico**. Ações de saída como a *Ficha Oficial F 001-29* são acionadas contextualmente em cada registro, eliminando poluição visual no menu permanente.
 
 ---
 

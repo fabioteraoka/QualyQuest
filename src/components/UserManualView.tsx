@@ -141,19 +141,54 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
     },
     {
       id: 4,
-      title: '4. Conhecendo a Interface de Navegação',
+      title: '4. Nova Arquitetura de Navegação do QualiGest',
       category: 'Interface',
-      summary: 'Menu lateral, barra superior, indicadores em tempo real e atalhos.',
+      summary: 'Estrutura dos 8 blocos organizacionais, jornada operacional e atalhos contextuais.',
       content: (
-        <div className="space-y-4">
-          <p className="text-slate-700 leading-relaxed">
-            A interface foi estruturada para rápida leitura técnica em computadores de oficina, hangares e dispositivos móveis:
+        <div className="space-y-4 text-xs text-slate-700 leading-relaxed">
+          <p>
+            O QualiGest SGQ adota uma arquitetura de navegação centrada na <strong>utilização real dos processos da organização aeronáutica</strong>, organizada em 8 blocos de governança fundamentais:
           </p>
-          <ul className="text-xs text-slate-700 space-y-2 list-disc list-inside">
-            <li><strong>Barra Superior:</strong> Exibe a sigla da organização ativa ({orgSigla}), atalho de pesquisa global, checklist de implantação e o sino com badge de alertas críticos em tempo real.</li>
-            <li><strong>Menu Lateral (Sidebar):</strong> Dividido por fluxos de trabalho (Visão Geral, Aprendizado, Manuais e Administração).</li>
-            <li><strong>Rodapé Responsivo Mobile:</strong> Atalhos essenciais em telas estreitas para nunca perder produtividade em trânsito.</li>
-          </ul>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <strong className="block text-blue-900 font-bold mb-1">1. INÍCIO</strong>
+              <p className="text-blue-800">Dashboard Executivo, Pendências & Alertas, Saúde do SGQ e Apresentação Gerencial.</p>
+            </div>
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+              <strong className="block text-indigo-900 font-bold mb-1">2. QUALIDADE</strong>
+              <p className="text-indigo-800">Não Conformidades (Lista & Kanban), Análise & Indicadores (Pareto), Fila de Validação & Aprovação e Base de Conhecimento.</p>
+            </div>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <strong className="block text-amber-900 font-bold mb-1">3. AUDITORIAS & CLIENTES</strong>
+              <p className="text-amber-800">Auditorias, Clientes & Requisitos ("Um Controle, Vários Requisitos"), Auditoria Inteligente com IA e Calendário de Auditorias.</p>
+            </div>
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <strong className="block text-emerald-900 font-bold mb-1">4. PESSOAS & COMPETÊNCIAS</strong>
+              <p className="text-emerald-800">Colaboradores, Treinamentos, CHTs & Qualificações, Vencimentos & Gaps e Simulador de Aptidão Operacional.</p>
+            </div>
+            <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg">
+              <strong className="block text-sky-900 font-bold mb-1">5. DOCUMENTOS</strong>
+              <p className="text-sky-800">Acervo Documental, Revisões e Histórico, Conhecimento Temporal na Data da OS, Fontes Oficiais Externas, Solicitações de Revisão e Comparador.</p>
+            </div>
+            <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+              <strong className="block text-purple-900 font-bold mb-1">6. RECURSOS & CONTROLES</strong>
+              <p className="text-purple-800">Ferramentas & Metrologia Calibrada, Importação Inteligente de Dados e Outros Controles Centrais.</p>
+            </div>
+            <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg">
+              <strong className="block text-teal-900 font-bold mb-1">7. CONHECIMENTO & MELHORIA</strong>
+              <p className="text-teal-800">Lições Aprendidas de Auditorias, Soluções Validadas, Extrator de NCs com IA e Manuais Oficiais.</p>
+            </div>
+            <div className="p-3 bg-slate-100 border border-slate-300 rounded-lg">
+              <strong className="block text-slate-900 font-bold mb-1">8. ADMINISTRAÇÃO</strong>
+              <p className="text-slate-800">Organização, Usuários & Permissões (RBAC), Trilha de Auditoria (Audit Trail), Implantação/Onboarding e Centro de Diagnósticos Técnicos.</p>
+            </div>
+          </div>
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            <strong className="text-slate-900 font-bold block mb-1">Jornada Operacional Padrão:</strong>
+            <p className="text-slate-600">
+              A navegação segue a lógica: <strong>Módulo → Registro → Abas e Ações Relacionadas → Evidências → Histórico</strong>. Ações frequentes como a <em>Ficha Oficial F 001-29</em> são acessadas contextualmente dentro do próprio registro ou relatório, sem sobrecarregar a barra lateral permanente.
+            </p>
+          </div>
         </div>
       ),
     },

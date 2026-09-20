@@ -41,3 +41,20 @@ O sistema possui motor de inteligência e base de conhecimento estruturado em 5 
 ### 4. Manutenção de Acervo e Políticas de Retenção
 - Os relatórios gerenciais gerados podem ser auditados a qualquer tempo.
 - O histórico de auditorias e trilha imutável (`auditTrails`) não permite exclusão física (`delete`) nem modificação (`update`), garantindo conformidade perante inspeções da ANAC ou FAA.
+
+---
+
+### 5. Bloco de Administração na Nova Navegação
+
+Na nova arquitetura em 8 blocos, o módulo **ADMINISTRAÇÃO** consolida:
+1. **Organização:** Dados cadastrais, logotipo, sigla aeronáutica e parâmetros do tenant.
+2. **Usuários & Permissões:** Vínculo de colaboradores com papéis RBAC (`ADMIN`, `GESTOR_SGQ`, `AUDITOR`, `MANUTENCAO`, `TREINAMENTO`, `CONSULTA`).
+3. **Auditoria do Sistema:** Trilha imutável de eventos (`audit_trails`) com filtros por usuário e severidade.
+4. **Implantação e Onboarding:** Assistente de setup para ativação de novas organizações e bases de manutenção.
+5. **Centro de Diagnósticos Técnicos:** Painel exclusivo de governança de TI com:
+   - Visão Geral de Infraestrutura e conectividade;
+   - Arquitetura do Sistema e Topologia;
+   - System Designer Oficial e catálogo vivo de ADRs (ADR-001 a ADR-008);
+   - Auditoria Técnica e Hardening de Segurança;
+   - Diagnóstico em Tempo Real do Firebase Firestore & Auth.
+

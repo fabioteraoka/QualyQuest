@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   GraduationCap,
   Award,
@@ -56,6 +56,7 @@ interface TrainingsQualificationsViewProps {
   trainingRecords: RegistroTreinamentoColaborador[];
   qualifications: QualificacaoColaborador[];
   documents: DocumentoEvidenciaPessoa[];
+  initialTab?: 'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS';
 }
 
 export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewProps> = ({
@@ -66,8 +67,15 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
   trainingRecords = [],
   qualifications = [],
   documents = [],
+  initialTab = 'QUALIFICACOES',
 }) => {
-  const [activeTab, setActiveTab] = useState<'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS'>('QUALIFICACOES');
+  const [activeTab, setActiveTab] = useState<'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState('TODOS');

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -6,7 +6,6 @@ import {
   Bell, 
   BookOpen, 
   Sparkles, 
-  Printer, 
   Plus, 
   ShieldCheck,
   Activity,
@@ -17,7 +16,6 @@ import {
   Award,
   Presentation,
   Cpu,
-  Compass,
   Building2,
   Sliders,
   FileCheck2,
@@ -27,10 +25,12 @@ import {
   Clock,
   History,
   Globe,
-  Milestone,
   Layers,
   ClipboardCheck,
-  UploadCloud
+  UploadCloud,
+  ChevronDown,
+  ChevronRight,
+  FolderTree
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
@@ -67,12 +67,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenOnboarding,
 }) => {
   const { user, userProfile } = useAuth();
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
   const alertasCriticos = (alertas || []).filter(
     (a) => a.tipoAlerta === 'VENCIDA' || a.tipoAlerta === 'VENCE_HOJE' || a.tipoAlerta === 'VENCE_7_DIAS'
   );
 
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [groupId]: !prev[groupId],
+    }));
+  };
+
   const handleItemClick = (tabId: string) => {
-    setActiveTab(tabId);
+    // Normalização de atalhos seletivos
+    const targetTab = tabId === 'knowledgeBase-melhoria' ? 'knowledgeBase' : tabId;
+    setActiveTab(targetTab);
     if (onCloseMobile) onCloseMobile();
   };
 
@@ -84,174 +95,150 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const orgSigla = activeOrganization?.configuration?.identidadeVisual?.siglaAeronautica || 
                    (activeOrganization?.name ? activeOrganization.name.substring(0, 3).toUpperCase() : 'SGQ');
   const orgName = activeOrganization?.name || 'QualiGest SGQ';
-  const orgLegalName = activeOrganization?.legalName || orgName;
 
+  // Perfil administrativo / permissão de sistema
+  const isAdminOrGestor = !userProfile || 
+                          userProfile.role === 'ADMIN' || 
+                          userProfile.role === 'ADMINISTRADOR' || 
+                          userProfile.role === 'GESTOR_SGQ';
+
+  /**
+   * NOVA ARQUITETURA DEFINITIVA DE NAVEGAÇÃO DO QUALIGEST
+   * Estruturada estritamente conforme as 8 seções mandatadas:
+   * 1. INÍCIO
+   * 2. QUALIDADE
+   * 3. AUDITORIAS & CLIENTES
+   * 4. PESSOAS & COMPETÊNCIAS
+   * 5. DOCUMENTOS
+   * 6. RECURSOS & CONTROLES
+   * 7. CONHECIMENTO & MELHORIA
+   * 8. ADMINISTRAÇÃO
+   */
   const navGroups = [
     {
-      label: 'Visão Geral & Gestão',
+      id: 'inicio',
+      label: 'INÍCIO',
       items: [
         {
           id: 'dashboard',
           label: 'Dashboard Executivo',
-          icon: <LayoutDashboard className="w-4 h-4" />,
+          icon: <LayoutDashboard className="w-4 h-4 text-blue-400" />,
         },
         {
-          id: 'conhecaQualigest',
-          label: 'Conheça o QualiGest',
-          icon: <Compass className="w-4 h-4 text-emerald-400" />,
-          tag: 'TOUR',
+          id: 'alertas',
+          label: 'Pendências & Alertas',
+          icon: <Bell className="w-4 h-4 text-rose-400" />,
+          badge: alertasCriticos.length > 0 ? alertasCriticos.length : undefined,
+          badgeColor: 'bg-rose-600 text-white',
         },
         {
           id: 'saudeSGQ',
           label: 'Saúde do SGQ',
-          icon: <Activity className="w-4 h-4" />,
-          tag: 'FASE 5',
+          icon: <Activity className="w-4 h-4 text-emerald-400" />,
         },
         {
           id: 'apresentacao',
-          label: 'Apresentação Gerencial & Evolução',
+          label: 'Apresentação Gerencial',
           icon: <Presentation className="w-4 h-4 text-sky-400" />,
-          tag: 'FASE 12.1',
         },
-        {
-          id: 'arquitetura',
-          label: 'Arquitetura do Sistema',
-          icon: <Cpu className="w-4 h-4" />,
-          tag: 'REAL',
-        },
+      ],
+    },
+    {
+      id: 'qualidade',
+      label: 'QUALIDADE',
+      items: [
         {
           id: 'relatorio',
-          label: 'Registros de RNC',
-          icon: <FileText className="w-4 h-4" />,
+          label: 'Não Conformidades',
+          icon: <FileText className="w-4 h-4 text-blue-400" />,
         },
         {
           id: 'incidencias',
-          label: 'Incidências & Pareto',
-          icon: <BarChart3 className="w-4 h-4" />,
+          label: 'Análise & Indicadores',
+          icon: <BarChart3 className="w-4 h-4 text-indigo-400" />,
         },
         {
-          id: 'alertas',
-          label: 'Central de Alertas',
-          icon: <Bell className="w-4 h-4" />,
-          badge: alertasCriticos.length > 0 ? alertasCriticos.length : undefined,
-          badgeColor: 'bg-rose-600 text-white',
+          id: 'validacaoQueue',
+          label: 'Validação & Aprovação',
+          icon: <CheckSquare className="w-4 h-4 text-amber-400" />,
+        },
+        {
+          id: 'knowledgeBase',
+          label: 'Base de Conhecimento',
+          icon: <Award className="w-4 h-4 text-emerald-400" />,
         },
       ],
     },
     {
-      label: 'Auditorias Externas',
+      id: 'auditorias-clientes',
+      label: 'AUDITORIAS & CLIENTES',
       items: [
         {
           id: 'auditorias-gestao',
-          label: 'Auditorias Recebidas',
+          label: 'Auditorias',
           icon: <ShieldCheck className="w-4 h-4 text-amber-400" />,
-          tag: 'FASE 8',
-        },
-        {
-          id: 'auditorias-constatacoes',
-          label: 'Constatações (Findings)',
-          icon: <FileCheck2 className="w-4 h-4 text-blue-400" />,
-        },
-        {
-          id: 'auditorias-licoes',
-          label: 'Lições Aprendidas',
-          icon: <Lightbulb className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'auditorias-dashboard',
-          label: 'Dashboard de Auditorias',
-          icon: <BarChart3 className="w-4 h-4 text-purple-400" />,
-        },
-      ],
-    },
-    {
-      label: 'Auditorias & Requisitos de Clientes',
-      items: [
-        {
-          id: 'smart-audit',
-          label: 'Auditoria Inteligente (Exceções)',
-          icon: <Sparkles className="w-4 h-4 text-amber-400" />,
-          tag: 'FASE 15',
         },
         {
           id: 'clientes-requisitos',
-          label: 'Requisitos & Avaliações',
+          label: 'Clientes & Requisitos',
           icon: <ClipboardCheck className="w-4 h-4 text-sky-400" />,
-          tag: 'FASE 13',
         },
         {
-          id: 'clientes-matriz',
-          label: 'Matriz de Cobertura SGQ',
-          icon: <Layers className="w-4 h-4 text-emerald-400" />,
+          id: 'smart-audit',
+          label: 'Auditoria Inteligente',
+          icon: <Sparkles className="w-4 h-4 text-purple-400" />,
         },
         {
-          id: 'clientes-cockpit',
-          label: 'Cockpit & Bases Clientes',
-          icon: <Building2 className="w-4 h-4 text-indigo-400" />,
-        },
-        {
-          id: 'system-designer',
-          label: 'System Designer Oficial',
-          icon: <Cpu className="w-4 h-4 text-purple-400" />,
-          tag: 'ADR',
+          id: 'clientes-cronograma',
+          label: 'Calendário de Auditorias',
+          icon: <Clock className="w-4 h-4 text-emerald-400" />,
         },
       ],
     },
     {
-      label: 'Pessoas & Competências',
+      id: 'pessoas-competencias-group',
+      label: 'PESSOAS & COMPETÊNCIAS',
       items: [
         {
           id: 'pessoas-competencias',
-          label: 'Colaboradores & Matriz',
+          label: 'Colaboradores',
           icon: <Users className="w-4 h-4 text-emerald-400" />,
-          tag: 'FASE 9',
         },
         {
           id: 'treinamentos-qualificacoes',
-          label: 'Treinamentos & CHTs',
+          label: 'Treinamentos',
           icon: <GraduationCap className="w-4 h-4 text-sky-400" />,
+        },
+        {
+          id: 'cht-qualificacoes',
+          label: 'CHTs & Qualificações',
+          icon: <Award className="w-4 h-4 text-amber-400" />,
         },
         {
           id: 'central-vencimentos-gaps',
           label: 'Vencimentos & Gaps',
-          icon: <Clock className="w-4 h-4 text-amber-400" />,
+          icon: <Clock className="w-4 h-4 text-rose-400" />,
         },
         {
-          id: 'competencias-dashboard',
-          label: 'Dashboard de Competências',
-          icon: <BarChart3 className="w-4 h-4 text-indigo-400" />,
+          id: 'aptidao-operacional',
+          label: 'Aptidão Operacional',
+          icon: <Activity className="w-4 h-4 text-indigo-400" />,
         },
       ],
     },
     {
-      label: 'Aprendizado & Validação',
-      items: [
-        {
-          id: 'comparacaoRNC',
-          label: 'Comparação de RNCs',
-          icon: <Scale className="w-4 h-4" />,
-          tag: 'FASE 3',
-        },
-        {
-          id: 'validacaoQueue',
-          label: 'Fila de Validação',
-          icon: <CheckSquare className="w-4 h-4" />,
-        },
-        {
-          id: 'knowledgeBase',
-          label: 'Base de Conhecimento SGQ',
-          icon: <Award className="w-4 h-4" />,
-        },
-      ],
-    },
-    {
-      label: 'Controle Documental & Revisões',
+      id: 'documentos-group',
+      label: 'DOCUMENTOS',
       items: [
         {
           id: 'controle-documental',
-          label: 'Controle Documental',
+          label: 'Acervo Documental',
           icon: <BookOpen className="w-4 h-4 text-sky-400" />,
-          tag: 'FASE 10',
+        },
+        {
+          id: 'documentos-revisoes',
+          label: 'Revisões e Histórico',
+          icon: <History className="w-4 h-4 text-blue-400" />,
         },
         {
           id: 'consulta-temporal',
@@ -260,68 +247,106 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'fontes-externas',
-          label: 'Fontes Oficiais & Verificação',
+          label: 'Fontes Oficiais',
           icon: <Globe className="w-4 h-4 text-amber-400" />,
         },
         {
+          id: 'documentos-solicitacoes',
+          label: 'Solicitações de Revisão de Clientes',
+          icon: <ClipboardCheck className="w-4 h-4 text-purple-400" />,
+        },
+        {
+          id: 'documentos-comparador',
+          label: 'Comparação de Revisões',
+          icon: <Scale className="w-4 h-4 text-cyan-400" />,
+        },
+        {
           id: 'documentos-dashboard',
-          label: 'Dashboard Documental',
+          label: 'Indicadores Documentais',
           icon: <BarChart3 className="w-4 h-4 text-indigo-400" />,
         },
       ],
     },
     {
-      label: 'Conhecimento & Compliance',
+      id: 'recursos-controles',
+      label: 'RECURSOS & CONTROLES',
       items: [
         {
-          id: 'manual-utilizacao',
-          label: 'Manual de Utilização',
-          icon: <BookOpen className="w-4 h-4 text-cyan-400" />,
-          tag: 'DOC',
+          id: 'ferramentas-metrologia',
+          label: 'Ferramentas & Metrologia',
+          icon: <Sliders className="w-4 h-4 text-amber-400" />,
         },
         {
-          id: 'manuais',
-          label: 'Biblioteca de Manuais',
-          icon: <BookOpen className="w-4 h-4" />,
+          id: 'importacao-inteligente',
+          label: 'Importação de Dados',
+          icon: <UploadCloud className="w-4 h-4 text-sky-400" />,
         },
         {
-          id: 'extrator',
-          label: 'Extrator de NCs (IA)',
-          icon: <Sparkles className="w-4 h-4" />,
-          tag: 'IA',
+          id: 'outros-controles',
+          label: 'Outros Controles',
+          icon: <Layers className="w-4 h-4 text-emerald-400" />,
         },
       ],
     },
     {
-      label: 'Administração & Multi-Tenant',
+      id: 'conhecimento-melhoria',
+      label: 'CONHECIMENTO & MELHORIA',
       items: [
         {
-          id: 'importacao-inteligente',
-          label: 'Importação Inteligente',
-          icon: <UploadCloud className="w-4 h-4 text-sky-400" />,
-          tag: 'FASE 14',
+          id: 'knowledgeBase-melhoria',
+          label: 'Base de Conhecimento',
+          icon: <Award className="w-4 h-4 text-emerald-400" />,
+        },
+        {
+          id: 'auditorias-licoes',
+          label: 'Lições Aprendidas',
+          icon: <Lightbulb className="w-4 h-4 text-amber-400" />,
+        },
+        {
+          id: 'comparacaoRNC',
+          label: 'Soluções Validadas',
+          icon: <CheckSquare className="w-4 h-4 text-cyan-400" />,
+        },
+        {
+          id: 'extrator',
+          label: 'Extrator de NCs com IA',
+          icon: <Sparkles className="w-4 h-4 text-purple-400" />,
+        },
+        {
+          id: 'manual-utilizacao',
+          label: 'Manual de Utilização',
+          icon: <BookOpen className="w-4 h-4 text-blue-400" />,
+        },
+      ],
+    },
+    {
+      id: 'administracao',
+      label: 'ADMINISTRAÇÃO',
+      items: [
+        {
+          id: 'configuracoes-org',
+          label: 'Organização',
+          icon: <Building2 className="w-4 h-4 text-blue-400" />,
         },
         {
           id: 'admin-central',
-          label: 'Gestão Central & Usuários',
-          icon: <ShieldCheck className="w-4 h-4 text-blue-400" />,
-          tag: 'FASE 11',
+          label: 'Usuários & Permissões',
+          icon: <ShieldCheck className="w-4 h-4 text-indigo-400" />,
         },
         {
-          id: 'configuracoes-org',
-          label: 'Configurações da Org',
-          icon: <Sliders className="w-4 h-4" />,
+          id: 'admin-audit-trail',
+          label: 'Auditoria do Sistema',
+          icon: <History className="w-4 h-4 text-amber-400" />,
         },
         {
           id: 'onboarding-novo-cliente',
-          label: 'Novo Cliente / Onboarding',
-          icon: <Building2 className="w-4 h-4" />,
-          tag: 'MULTI',
+          label: 'Implantação e Onboarding',
+          icon: <CheckSquare className="w-4 h-4 text-emerald-400" />,
         },
         {
-          id: 'oficial',
-          label: 'Ficha Oficial F 001-29',
-          icon: <Printer className="w-4 h-4" />,
+          id: 'diagnosticos-tecnicos',
+          label: 'Diagnósticos Técnicos',
+          icon: <Cpu className="w-4 h-4 text-slate-400" />,
         },
       ],
     },
@@ -369,95 +394,70 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      {/* Navigation Groups */}
-      <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
-        {navGroups.map((group) => (
-          <div key={group.label} className="space-y-1">
-            <div className="px-3 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-              {group.label}
-            </div>
-            {group.items.map((item) => {
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => handleItemClick(item.id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-[8px] text-xs font-medium transition-colors cursor-pointer ${
-                    isActive
-                      ? 'bg-slate-800 text-white font-semibold shadow-xs border border-slate-700/80'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className={`shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-400'}`}>
-                      {item.icon}
-                    </span>
-                    <span className="truncate">{item.label}</span>
-                  </div>
+      {/* Navigation Groups (8 Consolidated Blocks) */}
+      <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
+        {navGroups.map((group) => {
+          const isCollapsed = !!collapsedGroups[group.id];
 
-                  <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                    {item.badge !== undefined && (
-                      <span
-                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                          item.badgeColor || 'bg-slate-700 text-white'
+          return (
+            <div key={group.id} className="space-y-1">
+              <button
+                type="button"
+                onClick={() => toggleGroup(group.id)}
+                className="w-full flex items-center justify-between px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 cursor-pointer select-none transition-colors"
+              >
+                <span>{group.label}</span>
+                <span className="text-slate-500">
+                  {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </span>
+              </button>
+
+              {!isCollapsed && (
+                <div className="space-y-0.5">
+                  {group.items.map((item) => {
+                    const isActive = 
+                      activeTab === item.id || 
+                      (item.id === 'knowledgeBase-melhoria' && activeTab === 'knowledgeBase') ||
+                      (item.id === 'relatorio' && (activeTab === 'oficial' || activeTab === 'formulario'));
+
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleItemClick(item.id)}
+                        className={`w-full flex items-center justify-between px-3 py-2 rounded-[7px] text-xs font-medium transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-slate-800 text-white font-semibold shadow-xs border border-slate-700/80'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                         }`}
                       >
-                        {item.badge}
-                      </span>
-                    )}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className={`shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-400'}`}>
+                            {item.icon}
+                          </span>
+                          <span className="truncate">{item.label}</span>
+                        </div>
 
-                    {item.tag && (
-                      <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
-                        {item.tag}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        ))}
+                        {item.badge !== undefined && (
+                          <span
+                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ml-1.5 ${
+                              item.badgeColor || 'bg-slate-700 text-white'
+                            }`}
+                          >
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
 
-      {/* System Info / User Footer */}
-      <div className="p-3.5 border-t border-slate-800/80 bg-slate-950/40 text-xs shrink-0 space-y-2">
-        {/* Activation Checklist Link */}
-        {onOpenChecklist && (
-          <button
-            onClick={() => {
-              onOpenChecklist();
-              if (onCloseMobile) onCloseMobile();
-            }}
-            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] bg-slate-800/80 hover:bg-slate-800 text-blue-300 hover:text-blue-200 border border-blue-900/50 transition-colors text-[11px] font-semibold cursor-pointer"
-          >
-            <div className="flex items-center gap-1.5">
-              <CheckSquare className="w-3.5 h-3.5 text-blue-400" />
-              <span>Checklist de Ativação</span>
-            </div>
-            <span className="text-[9px] px-1 py-0.2 rounded bg-blue-950 text-blue-300 border border-blue-800/60 font-mono">
-              9 ETAPAS
-            </span>
-          </button>
-        )}
-
-        {onOpenTechnicalAudit && (
-          <button
-            onClick={() => {
-              onOpenTechnicalAudit();
-              if (onCloseMobile) onCloseMobile();
-            }}
-            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-[6px] bg-slate-800/80 hover:bg-slate-800 text-indigo-300 hover:text-indigo-200 border border-indigo-900/50 transition-colors text-[11px] font-semibold cursor-pointer"
-          >
-            <div className="flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Modo Auditoria Técnica</span>
-            </div>
-            <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-950 text-indigo-300 border border-indigo-800/60 font-mono">
-              AUDIT
-            </span>
-          </button>
-        )}
-
+      {/* System Info / User Profile Footer */}
+      <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 text-xs shrink-0">
         {user ? (
           <div
             onClick={() => {

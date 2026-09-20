@@ -88,6 +88,7 @@ interface SmartImportMigrationViewProps {
   ferramentasCalibradas: FerramentaCalibracao[];
   smartImports: RegistroImportacaoCompleto[];
   templatesAprovados: TemplateMapeamentoAprovado[];
+  initialTab?: 'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA';
   onNavigateToTab?: (tab: string) => void;
   onAdicionarPessoa?: (pessoa: ColaboradorPessoa) => void;
   onAdicionarCurso?: (curso: CursoTreinamento) => void;
@@ -112,6 +113,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   ferramentasCalibradas = [],
   smartImports = [],
   templatesAprovados = [],
+  initialTab = 'WIZARD',
   onNavigateToTab,
   onAdicionarPessoa,
   onAdicionarCurso,
@@ -125,7 +127,13 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   onRemoverQualificacao,
   onCriarRncSugerida
 }) => {
-  const [tabPrincipal, setTabPrincipal] = useState<'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA'>('WIZARD');
+  const [tabPrincipal, setTabPrincipal] = useState<'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setTabPrincipal(initialTab);
+    }
+  }, [initialTab]);
   
   // Etapa atual do assistente (1 a 7)
   const [etapaAtual, setEtapaAtual] = useState<number>(1);
