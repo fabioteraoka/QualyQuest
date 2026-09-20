@@ -1532,7 +1532,14 @@ export interface AuditoriaDashboardMetrics {
 // FASE 9: PESSOAS, COMPETÊNCIAS, TREINAMENTOS, QUALIFICAÇÕES E VENCIMENTOS
 // ============================================================================
 
-export type StatusColaborador = 'ATIVO' | 'INATIVO' | 'AFASTADO' | 'DESLIGADO';
+export type StatusColaborador = 
+  | 'ATIVO' 
+  | 'INATIVO' 
+  | 'AFASTADO' 
+  | 'SUSPENSO' 
+  | 'RESTRITO' 
+  | 'OUTRO' 
+  | 'DESLIGADO';
 
 export type FuncaoOperacionalColaborador =
   | 'Mecânico'
@@ -1566,6 +1573,7 @@ export interface ColaboradorPessoa {
   funcao: FuncaoOperacionalColaborador;
   cargoOperacional?: string;
   status: StatusColaborador;
+  statusCustomizado?: string; // Configuração organizacional adicional
   dataAdmissao?: string;
   contatoCorporativo?: string;
   observacoes?: string;
@@ -1878,10 +1886,10 @@ export interface SugestaoIACompetencia {
 
 export interface FaixaVencimentoItem {
   id: string;
-  tipoItem: 'QUALIFICACAO' | 'TREINAMENTO' | 'DOCUMENTO' | 'COMPETENCIA';
-  colaboradorId: string;
+  tipoItem: 'QUALIFICACAO' | 'TREINAMENTO' | 'DOCUMENTO' | 'COMPETENCIA' | 'FERRAMENTA' | 'RNC' | 'MANUAL';
+  colaboradorId?: string;
   colaboradorNome: string;
-  colaboradorMatricula: string;
+  colaboradorMatricula?: string;
   setor: string;
   titulo: string;
   subtitulo?: string;
@@ -1891,6 +1899,8 @@ export interface FaixaVencimentoItem {
   bloqueiaOperacao: boolean;
   status: string;
   documentoId?: string;
+  entidadeOriginalId?: string;
+  categoriaOrigem?: 'PESSOAS' | 'METROLOGIA' | 'DOCUMENTOS' | 'RNC';
 }
 
 export interface CompetenciasDashboardMetrics {
@@ -1898,6 +1908,10 @@ export interface CompetenciasDashboardMetrics {
   colaboradoresAtivos: number;
   colaboradoresInativos: number;
   colaboradoresComRestricao: number;
+  colaboradoresSuspensos?: number;
+  colaboradoresAfastados?: number;
+  colaboradoresRestritos?: number;
+  colaboradoresDesligados?: number;
   totalCompetencias: number;
   taxaColaboradoresQualificados: number; // 0 a 100
   taxaTreinamentosEmDia: number; // 0 a 100

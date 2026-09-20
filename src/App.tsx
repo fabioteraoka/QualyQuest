@@ -1333,6 +1333,9 @@ export default function App() {
                   documents={personDocuments}
                   activities={activityRequirements}
                   aiSuggestions={aiCompetencySuggestions}
+                  ferramentas={ferramentasCalibradas}
+                  documentosControlados={documentosControlados}
+                  recordsNC={records}
                   initialSubTab={activeTab === 'aptidao-operacional' ? 'SIMULADOR' : 'VENCIMENTOS'}
                 />
               )}

@@ -32,6 +32,7 @@ import {
   saveTrainingRecord,
   saveQualification,
 } from './competenciesFirestore';
+import { normalizarStatusColaborador } from '../../utils/smartImportEngine';
 import { INITIAL_CALIBRATED_TOOLS } from '../../data/initialCalibratedTools';
 
 // ============================================================================
@@ -347,6 +348,8 @@ export async function efetivarImportacaoNoQualigest(
 
           const cargoMec = dados.funcao || 'Mecânico de Manutenção de Aeronaves';
           const funcaoPadrao = cargoMec.toUpperCase().includes('INSPETOR') ? 'INSPETOR_QUALIDADE' : 'TECNICO_MANUTENCAO';
+          const rawStatus = dados.statusColaborador || dados.status || '';
+          const statusFinal = rawStatus ? normalizarStatusColaborador(rawStatus) : 'ATIVO';
 
           const novaPessoa: ColaboradorPessoa = {
             id: pessoaId,
@@ -356,9 +359,10 @@ export async function efetivarImportacaoNoQualigest(
             setor: dados.setor || 'Operações de Manutenção',
             funcao: funcaoPadrao as any,
             cargoOperacional: cargoMec,
-            status: 'ATIVO',
+            status: statusFinal,
+            statusCustomizado: statusFinal === 'OUTRO' ? String(rawStatus) : undefined,
             dataAdmissao: dados.dataAdmissao || '2024-01-01',
-            observacoes: `Cadastrado automaticamente via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
+            observacoes: `Cadastrado via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             criadoPor: user?.displayName || user?.email || 'Importador SGQ',
@@ -390,13 +394,18 @@ export async function efetivarImportacaoNoQualigest(
           const temNovaMatricula = dados.pessoaMatricula && dados.pessoaMatricula !== pessoaExistente.matricula;
           const temNovoSetor = dados.setor && dados.setor !== pessoaExistente.setor;
           const temNovoCargo = dados.funcao && dados.funcao !== pessoaExistente.cargoOperacional;
+          const rawStatusNovo = dados.statusColaborador || dados.status || '';
+          const statusNovo = rawStatusNovo ? normalizarStatusColaborador(rawStatusNovo) : undefined;
+          const temNovoStatus = statusNovo && statusNovo !== pessoaExistente.status;
 
-          if ((temNovaMatricula || temNovoSetor || temNovoCargo) && linha.decisaoUsuario === 'ATUALIZAR') {
+          if ((temNovaMatricula || temNovoSetor || temNovoCargo || temNovoStatus) && linha.decisaoUsuario === 'ATUALIZAR') {
             const pessoaAtualizada: ColaboradorPessoa = {
               ...pessoaExistente,
               matricula: dados.pessoaMatricula || pessoaExistente.matricula,
               setor: dados.setor || pessoaExistente.setor,
               cargoOperacional: dados.funcao || pessoaExistente.cargoOperacional,
+              status: statusNovo || pessoaExistente.status,
+              statusCustomizado: statusNovo === 'OUTRO' ? String(rawStatusNovo) : pessoaExistente.statusCustomizado,
               updatedAt: new Date().toISOString(),
             };
 

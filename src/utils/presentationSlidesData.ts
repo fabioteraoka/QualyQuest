@@ -205,9 +205,13 @@ export function gerarSlidesApresentacao(
   const findingsEncerrados = findings.filter(f => f.status === 'ENCERRADA' || f.status === 'ACEITA').length;
   const taxaFechamentoFindings = findings.length > 0 ? Math.round((findingsEncerrados / findings.length) * 100) : 100;
 
-  // 9. Pessoas, CHTs e Treinamentos
+  // 9. Pessoas, CHTs, Qualificações e Treinamentos
   const trainingRecords = contexto?.trainingRecords || [];
+  const qualifications = contexto?.qualifications || [];
   const persons = contexto?.persons || [];
+  const personsAtivos = persons.filter(p => !p.status || p.status === 'ATIVO');
+  const personsComRestricao = persons.filter(p => p.status === 'RESTRITO' || p.status === 'SUSPENSO' || p.status === 'AFASTADO');
+
   const trainingsVencidos = trainingRecords.filter(t => t.dataValidade && new Date(t.dataValidade) < agora);
   const trainingsVencendo30d = trainingRecords.filter(t => {
     if (!t.dataValidade) return false;
@@ -219,8 +223,26 @@ export function gerarSlidesApresentacao(
     if (!t.dataValidade) return true;
     return new Date(t.dataValidade) > agora;
   });
-  const taxaConformidadeTreinamentos = trainingRecords.length > 0 
-    ? Math.round((trainingsValidos.length / trainingRecords.length) * 100) 
+
+  const qualifsVencidas = qualifications.filter(q => q.possuiValidade && q.dataValidade && new Date(q.dataValidade) < agora);
+  const qualifsVencendo30d = qualifications.filter(q => {
+    if (!q.possuiValidade || !q.dataValidade) return false;
+    const d = new Date(q.dataValidade);
+    const diff = (d.getTime() - agora.getTime()) / (1000 * 60 * 60 * 24);
+    return diff >= 0 && diff <= 30;
+  });
+  const qualifsValidas = qualifications.filter(q => {
+    if (!q.possuiValidade || !q.dataValidade) return true;
+    return new Date(q.dataValidade) > agora;
+  });
+
+  const totalHabilitacoesAvaliadas = trainingRecords.length + qualifications.length;
+  const totalHabilitacoesValidas = trainingsValidos.length + qualifsValidas.length;
+  const totalHabilitacoesVencidas = trainingsVencidos.length + qualifsVencidas.length;
+  const totalHabilitacoesVencendo30d = trainingsVencendo30d.length + qualifsVencendo30d.length;
+
+  const taxaConformidadeTreinamentos = totalHabilitacoesAvaliadas > 0 
+    ? Math.round((totalHabilitacoesValidas / totalHabilitacoesAvaliadas) * 100) 
     : 96;
 
   // 10. Governança Documental
@@ -233,7 +255,8 @@ export function gerarSlidesApresentacao(
   const pontosAtencao: string[] = [];
   if (riscosCriticos > 0) pontosAtencao.push(`${riscosCriticos} RNC(s) com Risco Crítico (P1) exigem barreira de contenção mandatória.`);
   if (acoesAtrasadas > 0) pontosAtencao.push(`${acoesAtrasadas} Plano(s) de ação corretiva 5W2H com prazo regulatório extrapolado.`);
-  if (trainingsVencidos.length > 0) pontosAtencao.push(`${trainingsVencidos.length} Treinamento(s) ou CHT(s) de mecânicos/inspetores vencidos.`);
+  if (totalHabilitacoesVencidas > 0) pontosAtencao.push(`${totalHabilitacoesVencidas} Treinamento(s) ou CHT(s) de mecânicos/inspetores vencidos.`);
+  if (personsComRestricao.length > 0) pontosAtencao.push(`${personsComRestricao.length} Colaborador(es) em situação de restrição, suspensão ou afastamento.`);
   if (recorrencias > 0) pontosAtencao.push(`${recorrencias} Ocorrência(s) reincidente(s) com padrão causal similar.`);
   if (docsRevisao > 0) pontosAtencao.push(`${docsRevisao} Manual(is) ou procedimento(s) em ciclo de revisão bienal.`);
   if (pontosAtencao.length === 0) pontosAtencao.push('Todos os indicadores operacionais encontram-se rigorosamente dentro dos limites aceitáveis do SGQ.');
@@ -732,29 +755,61 @@ export function gerarSlidesApresentacao(
       tipoVisualizacao: 'tabela-executiva',
       imagemDestaque: '/public/screenshots/competency_matrix.jpg',
       metricasPrincipais: [
-        { rotulo: 'Técnicos & Mecânicos', valor: persons.length > 0 ? persons.length : 24, status: 'normal' },
-        { rotulo: 'Treinamentos Válidos', valor: trainingsValidos.length > 0 ? trainingsValidos.length : 72, status: 'sucesso' },
-        { rotulo: 'A Vencer (≤30 dias)', valor: trainingsVencendo30d.length, status: trainingsVencendo30d.length > 0 ? 'alerta' : 'sucesso' },
-        { rotulo: 'Treinamentos Vencidos', valor: trainingsVencidos.length, status: trainingsVencidos.length > 0 ? 'critico' : 'sucesso' },
+        { 
+          rotulo: 'Efetivo Técnico', 
+          valor: persons.length > 0 ? persons.length : 24, 
+          subtitulo: persons.length > 0 ? `${personsAtivos.length} ativos${personsComRestricao.length > 0 ? ` • ${personsComRestricao.length} restritos` : ''}` : '24 técnicos cadastrados',
+          status: 'normal' 
+        },
+        { 
+          rotulo: 'Habilitações Válidas', 
+          valor: totalHabilitacoesValidas > 0 ? totalHabilitacoesValidas : 72, 
+          subtitulo: 'CHTs e Treinamentos vigentes',
+          status: 'sucesso' 
+        },
+        { 
+          rotulo: 'A Vencer (≤30 dias)', 
+          valor: totalHabilitacoesVencendo30d, 
+          subtitulo: 'Abertura de turmas prioritária',
+          status: totalHabilitacoesVencendo30d > 0 ? 'alerta' : 'sucesso' 
+        },
+        { 
+          rotulo: 'Habilitações Vencidas', 
+          valor: totalHabilitacoesVencidas, 
+          subtitulo: totalHabilitacoesVencidas > 0 ? 'Bloqueio operacional preventivo' : 'Zero vencimentos',
+          status: totalHabilitacoesVencidas > 0 ? 'critico' : 'sucesso' 
+        },
       ],
       pontosChave: [
         `Conformidade da matriz de treinamento e habilitações calculada em ${taxaConformidadeTreinamentos}%.`,
-        trainingsVencidos.length > 0 
-          ? `ALERTA OPERACIONAL: ${trainingsVencidos.length} curso(s) ou CHT(s) encontram-se vencidos, exigindo reciclagem imediata.`
-          : 'Zero habilitações ou treinamentos regulatórios vencidos na equipe de manutenção.',
-        `${trainingsVencendo30d.length} qualificação(ões) com vencimento nos próximos 30 dias — abertura de turmas recomendada.`,
-        'A blindagem sistêmica do QualiGest impede a liberação de aeronaves por mecânicos com CHT ou curso de tipo expirado.',
+        totalHabilitacoesVencidas > 0 
+          ? `ALERTA OPERACIONAL: ${totalHabilitacoesVencidas} curso(s) ou CHT(s) encontram-se vencidos, exigindo reciclagem/renovação mandatória.`
+          : 'Zero habilitações ou treinamentos regulatórios vencidos na equipe técnica e de qualidade.',
+        personsComRestricao.length > 0
+          ? `CONTROLE DE APTIDÃO: ${personsComRestricao.length} colaborador(es) com status de restrição operacional, suspensão ou afastamento supervisionado.`
+          : 'Totalidade do corpo técnico ativo em plena condição de prontidão operacional.',
+        `${totalHabilitacoesVencendo30d} item(ns) com vencimento programado para os próximos 30 dias — processo de reciclagem engatilhado.`,
+        'A blindagem de aptidão do QualiGest impede a liberação de aeronaves por mecânicos com CHT vencida ou restrição ativa.',
       ],
       tabelaDados: {
         colunas: ['Colaborador / Especialidade', 'Habilitação / Curso', 'Validade', 'Situação', 'Diretriz SGQ'],
-        linhas: trainingsVencidos.length > 0 
-          ? trainingsVencidos.slice(0, 5).map(tv => [
-              tv.colaboradorNome || 'Mecânico Técnico',
-              tv.treinamentoTitulo || 'Treinamento Regulatório',
-              tv.dataValidade || 'Vencido',
-              'Vencido',
-              'Bloquear liberação e agendar reciclagem'
-            ])
+        linhas: totalHabilitacoesVencidas > 0 
+          ? [
+              ...trainingsVencidos.map(tv => [
+                tv.colaboradorNome || 'Mecânico Técnico',
+                tv.treinamentoTitulo || 'Treinamento Regulatório',
+                tv.dataValidade || 'Vencido',
+                'Vencido',
+                'Bloquear liberação e agendar reciclagem'
+              ]),
+              ...qualifsVencidas.map(qv => [
+                qv.colaboradorNome || 'Colaborador Técnico',
+                `${qv.titulo} (${qv.numeroRegistro || 'S/N'})`,
+                qv.dataValidade || 'Vencido',
+                'Vencido',
+                'Bloquear liberação e renovar CHT ANAC'
+              ])
+            ].slice(0, 5)
           : [
               ['Carlos Eduardo (CHT 142890)', 'Fatores Humanos em Aviação', 'Vigente', '🟢 Em Dia', 'Conforme ciclo bienal'],
               ['Marcos Ferreira (CHT 098712)', 'EWIS & Tanques de Combustível', 'Vigente', '🟢 Em Dia', 'Conforme RBAC 145'],
@@ -768,9 +823,9 @@ export function gerarSlidesApresentacao(
         titulo: 'Vigência de Treinamentos e CHTs',
         unidade: 'Registros',
         itens: [
-          { rotulo: 'Válidos', valor: trainingsValidos.length > 0 ? trainingsValidos.length : 72, cor: '#10b981' },
-          { rotulo: 'A Vencer (≤30d)', valor: trainingsVencendo30d.length, cor: '#f59e0b' },
-          { rotulo: 'Vencidos', valor: trainingsVencidos.length, cor: '#ef4444' },
+          { rotulo: 'Válidos', valor: totalHabilitacoesValidas > 0 ? totalHabilitacoesValidas : 72, cor: '#10b981' },
+          { rotulo: 'A Vencer (≤30d)', valor: totalHabilitacoesVencendo30d, cor: '#f59e0b' },
+          { rotulo: 'Vencidos', valor: totalHabilitacoesVencidas, cor: '#ef4444' },
         ],
       },
       explicacaoGrafico: {

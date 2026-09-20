@@ -40,6 +40,7 @@ import {
   UserProfile,
   StatusColaborador,
   CriticidadeCompetencia,
+  FaixaVencimentoItem,
 } from '../types';
 import {
   savePerson,
@@ -53,6 +54,7 @@ import {
 import {
   verificarPodeExecutarAtividade,
   calcularDiasParaVencimento,
+  consolidarCentralVencimentos,
 } from '../services/competenciesEngine';
 
 interface PersonsCompetenciesViewProps {
@@ -94,6 +96,9 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [selectedColaborador, setSelectedColaborador] = useState<ColaboradorPessoa | null>(null);
   const [modalColaboradorOpen, setModalColaboradorOpen] = useState(false);
   const [colaboradorParaEditar, setColaboradorParaEditar] = useState<ColaboradorPessoa | null>(null);
+  const [aba360, setAba360] = useState<
+    'GERAL' | 'COMPETENCIAS' | 'TREINAMENTOS' | 'QUALIFICACOES' | 'VENCIMENTOS' | 'HISTORICO'
+  >('GERAL');
 
   // Modais de Governança de Ciclo de Vida: Inativação, Reativação, Exclusão
   const [colaboradorParaInativar, setColaboradorParaInativar] = useState<ColaboradorPessoa | null>(null);
@@ -187,6 +192,17 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     return documents.filter((d) => d.colaboradorId === selectedColaborador.id);
   }, [documents, selectedColaborador]);
 
+  // Vencimentos consolidados específicos do colaborador 360
+  const vencimentosColaborador = useMemo(() => {
+    if (!selectedColaborador) return [];
+    return consolidarCentralVencimentos(
+      colabQualifs,
+      colabTreinos,
+      colabDocs,
+      colabComps
+    );
+  }, [selectedColaborador, colabQualifs, colabTreinos, colabDocs, colabComps]);
+
   // Checagem da atividade selecionada para o colaborador 360
   const resultadoAtividade = useMemo(() => {
     if (!selectedColaborador) return null;
@@ -223,6 +239,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       funcao: String(formData.get('funcao') || '').trim(),
       cargoOperacional: String(formData.get('cargoOperacional') || '').trim(),
       status: (formData.get('status') as StatusColaborador) || 'ATIVO',
+      statusCustomizado: String(formData.get('statusCustomizado') || '').trim() || undefined,
       dataAdmissao: String(formData.get('dataAdmissao') || ''),
       contatoCorporativo: String(formData.get('contatoCorporativo') || '').trim(),
       observacoes: String(formData.get('observacoes') || '').trim(),
@@ -463,6 +480,48 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     }
   };
 
+  const renderStatusBadge = (colab: ColaboradorPessoa) => {
+    let colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
+    let label = colab.statusCustomizado || colab.status;
+
+    switch (colab.status) {
+      case 'ATIVO':
+        colorClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+        label = colab.statusCustomizado || 'ATIVO';
+        break;
+      case 'AFASTADO':
+        colorClass = 'bg-amber-100 text-amber-800 border-amber-200';
+        label = colab.statusCustomizado || 'AFASTADO';
+        break;
+      case 'SUSPENSO':
+        colorClass = 'bg-rose-100 text-rose-800 border-rose-300 font-bold';
+        label = colab.statusCustomizado || 'SUSPENSO';
+        break;
+      case 'RESTRITO':
+        colorClass = 'bg-orange-100 text-orange-800 border-orange-200 font-semibold';
+        label = colab.statusCustomizado || 'RESTRITO';
+        break;
+      case 'INATIVO':
+        colorClass = 'bg-slate-200 text-slate-700 border-slate-300';
+        label = colab.statusCustomizado || 'INATIVO';
+        break;
+      case 'DESLIGADO':
+        colorClass = 'bg-slate-300 text-slate-800 border-slate-400';
+        label = colab.statusCustomizado || 'DESLIGADO';
+        break;
+      case 'OUTRO':
+        colorClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
+        label = colab.statusCustomizado || 'OUTRO';
+        break;
+    }
+
+    return (
+      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${colorClass}`}>
+        {label}
+      </span>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Header com Navegação Secundária da Fase 9 */}
@@ -577,8 +636,11 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   <option value="TODOS">Todos os Status</option>
                   <option value="ATIVO">Ativo</option>
                   <option value="AFASTADO">Afastado</option>
+                  <option value="SUSPENSO">Suspenso</option>
+                  <option value="RESTRITO">Restrito</option>
                   <option value="INATIVO">Inativo</option>
                   <option value="DESLIGADO">Desligado</option>
+                  <option value="OUTRO">Outro</option>
                 </select>
 
                 <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none ml-auto">
@@ -633,17 +695,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                         </div>
 
                         <div className="flex flex-col items-end gap-1.5">
-                          <span
-                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              colab.status === 'ATIVO'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : colab.status === 'AFASTADO'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}
-                          >
-                            {colab.status}
-                          </span>
+                          {renderStatusBadge(colab)}
 
                           {temRestricao && (
                             <span
@@ -738,9 +790,9 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
             </div>
           </div>
 
-          {/* Coluna da Direita: Painel 360° do Colaborador */}
+          {/* Coluna da Direita: Painel 360° do Colaborador Consolidado */}
           {selectedColaborador && (
-            <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+            <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
               {/* Header 360° */}
               <div className="flex flex-col md:flex-row md:items-start justify-between border-b border-slate-100 pb-4 gap-4">
                 <div>
@@ -749,20 +801,10 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     <span className="font-mono text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-semibold">
                       {selectedColaborador.matricula}
                     </span>
-                    <span
-                      className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
-                        selectedColaborador.status === 'ATIVO'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : selectedColaborador.status === 'AFASTADO'
-                          ? 'bg-amber-100 text-amber-800'
-                          : 'bg-slate-200 text-slate-700'
-                      }`}
-                    >
-                      {selectedColaborador.status}
-                    </span>
+                    {renderStatusBadge(selectedColaborador)}
                   </div>
                   <p className="text-sm text-slate-600 mt-1">
-                    {selectedColaborador.funcao} • {selectedColaborador.setor} •{' '}
+                    <span className="font-medium text-slate-800">{selectedColaborador.funcao}</span> • {selectedColaborador.setor} •{' '}
                     {selectedColaborador.cargoOperacional || 'Sem cargo específico'}
                   </p>
                   {selectedColaborador.contatoCorporativo && (
@@ -880,83 +922,271 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 </div>
               )}
 
-              {/* SIMULADOR OPERACIONAL INSTANTÂNEO: PODE EXECUTAR ATIVIDADE? */}
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <Shield className="w-4 h-4 text-blue-600" /> Verificação de Bloqueio Operacional
+              {/* Navegação por Sub-Abas 360° */}
+              <div className="flex border-b border-slate-200 gap-2 overflow-x-auto text-xs font-semibold">
+                <button
+                  onClick={() => setAba360('GERAL')}
+                  className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+                    aba360 === 'GERAL'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Geral & Aptidão</span>
+                </button>
+
+                <button
+                  onClick={() => setAba360('COMPETENCIAS')}
+                  className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+                    aba360 === 'COMPETENCIAS'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Award className="w-4 h-4 text-emerald-600" />
+                  <span>Competências</span>
+                  <span className="ml-0.5 px-1.5 py-0.2 bg-slate-100 rounded-full text-[10px] text-slate-700">
+                    {colabComps.length}
                   </span>
-                  <span className="text-xs text-slate-500">Matriz Atividade x Competência</span>
-                </div>
+                </button>
 
-                <div className="flex items-center gap-3">
-                  <select
-                    value={selectedActivityId}
-                    onChange={(e) => setSelectedActivityId(e.target.value)}
-                    className="flex-1 text-xs border border-slate-300 rounded-lg p-2 bg-white text-slate-800 font-medium"
-                  >
-                    {activities.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.codigoAtividade} — {a.nomeAtividade}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <button
+                  onClick={() => setAba360('TREINAMENTOS')}
+                  className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+                    aba360 === 'TREINAMENTOS'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 text-sky-600" />
+                  <span>Treinamentos</span>
+                  <span className="ml-0.5 px-1.5 py-0.2 bg-slate-100 rounded-full text-[10px] text-slate-700">
+                    {colabTreinos.length}
+                  </span>
+                </button>
 
-                {resultadoAtividade && (
-                  <div
-                    className={`p-3 rounded-lg border text-xs space-y-2 ${
-                      resultadoAtividade.resultado.podeExecutar
-                        ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
-                        : 'bg-rose-50/80 border-rose-200 text-rose-900'
+                <button
+                  onClick={() => setAba360('QUALIFICACOES')}
+                  className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+                    aba360 === 'QUALIFICACOES'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Shield className="w-4 h-4 text-blue-600" />
+                  <span>CHTs & Licenças</span>
+                  <span className="ml-0.5 px-1.5 py-0.2 bg-slate-100 rounded-full text-[10px] text-slate-700">
+                    {colabQualifs.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setAba360('VENCIMENTOS')}
+                  className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+                    aba360 === 'VENCIMENTOS'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Clock className="w-4 h-4 text-amber-600" />
+                  <span>Vencimentos</span>
+                  <span
+                    className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      vencimentosColaborador.some((v) => v.diasRestantes !== null && v.diasRestantes < 0)
+                        ? 'bg-rose-100 text-rose-800'
+                        : 'bg-slate-100 text-slate-700'
                     }`}
                   >
-                    <div className="flex items-center gap-2 font-semibold text-sm">
-                      {resultadoAtividade.resultado.podeExecutar ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>AUTORIZADO PARA EXECUÇÃO DA ATIVIDADE</span>
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="w-4 h-4 text-rose-600" />
-                          <span>BLOQUEIO OPERACIONAL — EXECUÇÃO NÃO AUTORIZADA</span>
-                        </>
-                      )}
+                    {vencimentosColaborador.length}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => setAba360('HISTORICO')}
+                  className={`pb-2.5 px-3 border-b-2 transition flex items-center gap-1.5 whitespace-nowrap ${
+                    aba360 === 'HISTORICO'
+                      ? 'border-blue-600 text-blue-600'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-4 h-4 text-purple-600" />
+                  <span>Histórico & Docs</span>
+                  <span className="ml-0.5 px-1.5 py-0.2 bg-slate-100 rounded-full text-[10px] text-slate-700">
+                    {colabDocs.length}
+                  </span>
+                </button>
+              </div>
+
+              {/* CONTEÚDO DAS SUB-ABAS 360° */}
+
+              {/* SUB-ABA 1: GERAL & APTIDÃO OPERACIONAL */}
+              {aba360 === 'GERAL' && (
+                <div className="space-y-5">
+                  {/* Cards de Métricas Rápidas do Colaborador */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                      <p className="text-[11px] text-slate-500 uppercase font-semibold">Competências</p>
+                      <p className="text-xl font-bold text-slate-900 mt-0.5">{colabComps.length}</p>
+                      <p className="text-[10px] text-emerald-600 mt-0.5">
+                        {colabComps.filter((c) => c.nivelAtual >= 3).length} nível 3+
+                      </p>
                     </div>
 
-                    {resultadoAtividade.resultado.motivosBloqueio.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="font-semibold text-rose-800">Motivos do Bloqueio:</p>
-                        <ul className="list-disc list-inside space-y-0.5 text-rose-700">
-                          {resultadoAtividade.resultado.motivosBloqueio.map((m, idx) => (
-                            <li key={idx}>{m}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                      <p className="text-[11px] text-slate-500 uppercase font-semibold">CHTs & Licenças</p>
+                      <p className="text-xl font-bold text-blue-900 mt-0.5">{colabQualifs.length}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        {colabQualifs.filter((q) => q.status === 'VALIDA').length} válidas
+                      </p>
+                    </div>
 
-                    {resultadoAtividade.resultado.alertasNaoImpeditivos.length > 0 && (
-                      <div className="space-y-1 pt-1 border-t border-amber-200 text-amber-800">
-                        <p className="font-semibold">Alertas de Atenção:</p>
-                        <ul className="list-disc list-inside space-y-0.5">
-                          {resultadoAtividade.resultado.alertasNaoImpeditivos.map((a, idx) => (
-                            <li key={idx}>{a}</li>
-                          ))}
-                        </ul>
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                      <p className="text-[11px] text-slate-500 uppercase font-semibold">Treinamentos</p>
+                      <p className="text-xl font-bold text-sky-900 mt-0.5">{colabTreinos.length}</p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Cursos concluídos</p>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-center">
+                      <p className="text-[11px] text-slate-500 uppercase font-semibold">Itens a Vencer</p>
+                      <p
+                        className={`text-xl font-bold mt-0.5 ${
+                          vencimentosColaborador.some((v) => v.diasRestantes !== null && v.diasRestantes < 0)
+                            ? 'text-rose-600'
+                            : 'text-amber-600'
+                        }`}
+                      >
+                        {vencimentosColaborador.filter((v) => v.diasRestantes !== null && v.diasRestantes <= 30).length}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">Nos próximos 30d</p>
+                    </div>
+                  </div>
+
+                  {/* Ficha Cadastral Estruturada */}
+                  <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <UserCheck className="w-4 h-4 text-blue-600" /> Ficha Cadastral & Lotação
+                    </h3>
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                      <div>
+                        <span className="text-slate-500 block">Matrícula:</span>
+                        <span className="font-mono font-semibold text-slate-800">{selectedColaborador.matricula}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Função Primária:</span>
+                        <span className="font-semibold text-slate-800">{selectedColaborador.funcao}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Cargo / Especialidade:</span>
+                        <span className="font-medium text-slate-800">
+                          {selectedColaborador.cargoOperacional || 'Não especificado'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Setor Operacional:</span>
+                        <span className="font-medium text-slate-800">{selectedColaborador.setor}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">Data de Admissão:</span>
+                        <span className="font-medium text-slate-800">
+                          {selectedColaborador.dataAdmissao || 'Não informada'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block">E-mail Corporativo:</span>
+                        <span className="font-medium text-slate-800 truncate block">
+                          {selectedColaborador.contatoCorporativo || 'Não informado'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {selectedColaborador.observacoes && (
+                      <div className="pt-2 border-t border-slate-200 text-xs text-slate-600">
+                        <span className="font-semibold text-slate-700">Observações:</span>{' '}
+                        {selectedColaborador.observacoes}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
 
-              {/* Seções em Mini-Abas 360° */}
-              <div className="space-y-4">
-                {/* 1. Competências Mapeadas */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
+                  {/* SIMULADOR OPERACIONAL INSTANTÂNEO: PODE EXECUTAR ATIVIDADE? */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Shield className="w-4 h-4 text-blue-600" /> Verificação de Bloqueio Operacional
+                      </span>
+                      <span className="text-xs text-slate-500">Matriz Atividade x Competência</span>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <select
+                        value={selectedActivityId}
+                        onChange={(e) => setSelectedActivityId(e.target.value)}
+                        className="flex-1 text-xs border border-slate-300 rounded-lg p-2 bg-white text-slate-800 font-medium"
+                      >
+                        {activities.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.codigoAtividade} — {a.nomeAtividade}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {resultadoAtividade && (
+                      <div
+                        className={`p-3 rounded-lg border text-xs space-y-2 ${
+                          resultadoAtividade.resultado.podeExecutar
+                            ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                            : 'bg-rose-50/80 border-rose-200 text-rose-900'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 font-semibold text-sm">
+                          {resultadoAtividade.resultado.podeExecutar ? (
+                            <>
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                              <span>AUTORIZADO PARA EXECUÇÃO DA ATIVIDADE</span>
+                            </>
+                          ) : (
+                            <>
+                              <XCircle className="w-4 h-4 text-rose-600" />
+                              <span>BLOQUEIO OPERACIONAL — EXECUÇÃO NÃO AUTORIZADA</span>
+                            </>
+                          )}
+                        </div>
+
+                        {resultadoAtividade.resultado.motivosBloqueio.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="font-semibold text-rose-800">Motivos do Bloqueio:</p>
+                            <ul className="list-disc list-inside space-y-0.5 text-rose-700">
+                              {resultadoAtividade.resultado.motivosBloqueio.map((m, idx) => (
+                                <li key={idx}>{m}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {resultadoAtividade.resultado.alertasNaoImpeditivos.length > 0 && (
+                          <div className="space-y-1 pt-1 border-t border-amber-200 text-amber-800">
+                            <p className="font-semibold">Alertas de Atenção:</p>
+                            <ul className="list-disc list-inside space-y-0.5">
+                              {resultadoAtividade.resultado.alertasNaoImpeditivos.map((a, idx) => (
+                                <li key={idx}>{a}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* SUB-ABA 2: COMPETÊNCIAS REGISTRADAS */}
+              {aba360 === 'COMPETENCIAS' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
                     <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <Award className="w-4 h-4 text-emerald-600" /> Competências Registradas ({colabComps.length})
+                      <Award className="w-4 h-4 text-emerald-600" /> Competências Atribuídas ({colabComps.length})
                     </h3>
                     <button
                       onClick={() => {
@@ -976,7 +1206,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   </div>
 
                   {colabComps.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg">
+                    <p className="text-xs text-slate-500 italic bg-slate-50 p-4 rounded-lg text-center border border-dashed border-slate-200">
                       Nenhuma competência formal mapeada para este colaborador.
                     </p>
                   ) : (
@@ -989,7 +1219,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-slate-900">{cc.competenciaNome}</span>
-                              <span className="font-mono text-[10px] text-slate-500 bg-slate-200 px-1 py-0.5 rounded">
+                              <span className="font-mono text-[10px] text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded font-bold">
                                 {cc.competenciaCodigo}
                               </span>
                             </div>
@@ -1007,15 +1237,17 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                               <span className="font-medium text-slate-700">Nível {cc.nivelAtual}/5</span>
                               {cc.dataValidade && (
                                 <span className="text-slate-500">
-                                  • Validade: {cc.dataValidade} (
-                                  {calcularDiasParaVencimento(cc.dataValidade) ?? 'N/A'} dias)
+                                  • Validade: {cc.dataValidade} ({calcularDiasParaVencimento(cc.dataValidade) ?? 'N/A'} dias)
                                 </span>
                               )}
                             </div>
+                            {cc.observacoes && (
+                              <p className="text-[11px] text-slate-500 italic">{cc.observacoes}</p>
+                            )}
                           </div>
 
                           <span
-                            className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                            className={`px-2 py-0.5 rounded text-[11px] font-medium shrink-0 ${
                               cc.status === 'QUALIFICADO'
                                 ? 'bg-emerald-100 text-emerald-800'
                                 : cc.status === 'VENCENDO'
@@ -1030,14 +1262,66 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     </div>
                   )}
                 </div>
+              )}
 
-                {/* 2. Qualificações e Habilitações */}
-                <div>
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              {/* SUB-ABA 3: TREINAMENTOS & RECICLAGENS */}
+              {aba360 === 'TREINAMENTOS' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-sky-600" /> Treinamentos & Reciclagens ({colabTreinos.length})
+                    </h3>
+                    {onNavigateToTrainings && (
+                      <button
+                        onClick={onNavigateToTrainings}
+                        className="text-xs text-blue-600 hover:underline font-medium"
+                      >
+                        Gerenciar Treinamentos →
+                      </button>
+                    )}
+                  </div>
+
+                  {colabTreinos.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic bg-slate-50 p-4 rounded-lg text-center border border-dashed border-slate-200">
+                      Nenhum registro de treinamento localizado para este colaborador.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {colabTreinos.map((tr) => (
+                        <div
+                          key={tr.id}
+                          className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs flex items-center justify-between gap-3"
+                        >
+                          <div>
+                            <p className="font-semibold text-slate-900">{tr.treinamentoTitulo}</p>
+                            <p className="text-slate-600 text-[11px]">
+                              Realizado em: <strong>{tr.dataRealizacao}</strong> • Carga: {tr.cargaHoraria}h • Instrutor: {tr.instrutor}
+                            </p>
+                            {tr.dataValidade && (
+                              <p className="text-slate-500 text-[11px]">
+                                Reciclagem: {tr.dataValidade} ({calcularDiasParaVencimento(tr.dataValidade) ?? 'N/A'} dias)
+                              </p>
+                            )}
+                          </div>
+                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-100 text-emerald-800 shrink-0">
+                            {tr.resultado} {tr.aproveitamentoPercentual ? `(${tr.aproveitamentoPercentual}%)` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SUB-ABA 4: CHTS & QUALIFICAÇÕES REGULAMENTARES */}
+              {aba360 === 'QUALIFICACOES' && (
+                <div className="space-y-3">
+                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Shield className="w-4 h-4 text-blue-600" /> Qualificações & CHTs ({colabQualifs.length})
                   </h3>
+
                   {colabQualifs.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg">
+                    <p className="text-xs text-slate-500 italic bg-slate-50 p-4 rounded-lg text-center border border-dashed border-slate-200">
                       Nenhuma qualificação ou CHT associada a este colaborador.
                     </p>
                   ) : (
@@ -1069,7 +1353,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                               )}
                             </div>
                             <span
-                              className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                              className={`px-2 py-0.5 rounded text-[11px] font-medium shrink-0 ${
                                 q.status === 'VALIDA'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : q.status === 'VENCENDO'
@@ -1085,76 +1369,174 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     </div>
                   )}
                 </div>
+              )}
 
-                {/* 3. Treinamentos Concluídos */}
-                <div>
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <BookOpen className="w-4 h-4 text-sky-600" /> Treinamentos & Reciclagens ({colabTreinos.length})
-                  </h3>
-                  {colabTreinos.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg">
-                      Nenhum registro de treinamento localizado para este colaborador.
+              {/* SUB-ABA 5: CENTRAL DE VENCIMENTOS DO COLABORADOR */}
+              {aba360 === 'VENCIMENTOS' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock className="w-4 h-4 text-amber-600" /> Todos os Vencimentos do Colaborador ({vencimentosColaborador.length})
+                    </h3>
+                    {onNavigateToExpirations && (
+                      <button
+                        onClick={onNavigateToExpirations}
+                        className="text-xs text-blue-600 hover:underline font-medium"
+                      >
+                        Central de Vencimentos SGQ →
+                      </button>
+                    )}
+                  </div>
+
+                  {vencimentosColaborador.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic bg-slate-50 p-4 rounded-lg text-center border border-dashed border-slate-200">
+                      Nenhum item com data de vencimento controlada para este colaborador.
                     </p>
                   ) : (
                     <div className="space-y-2">
-                      {colabTreinos.map((tr) => (
-                        <div
-                          key={tr.id}
-                          className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs flex items-center justify-between gap-3"
-                        >
-                          <div>
-                            <p className="font-semibold text-slate-900">{tr.treinamentoTitulo}</p>
-                            <p className="text-slate-600 text-[11px]">
-                              Realizado em: {tr.dataRealizacao} • Carga: {tr.cargaHoraria}h • Instrutor: {tr.instrutor}
-                            </p>
-                            {tr.dataValidade && (
-                              <p className="text-slate-500 text-[11px]">
-                                Reciclagem: {tr.dataValidade} (
-                                {calcularDiasParaVencimento(tr.dataValidade) ?? 'N/A'} dias)
+                      {vencimentosColaborador
+                        .slice()
+                        .sort((a, b) => (a.diasRestantes ?? 9999) - (b.diasRestantes ?? 9999))
+                        .map((item) => {
+                          const isVencido = item.diasRestantes !== null && item.diasRestantes < 0;
+                          const isUrgente = item.diasRestantes !== null && item.diasRestantes >= 0 && item.diasRestantes <= 30;
+
+                          return (
+                            <div
+                              key={item.id}
+                              className={`p-3 rounded-lg border text-xs flex items-center justify-between gap-3 ${
+                                isVencido
+                                  ? 'bg-rose-50 border-rose-200'
+                                  : isUrgente
+                                  ? 'bg-amber-50 border-amber-200'
+                                  : 'bg-slate-50 border-slate-200'
+                              }`}
+                            >
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-slate-900">{item.itemDescricao}</span>
+                                  <span className="text-[10px] px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded font-semibold">
+                                    {item.tipoOrigem}
+                                  </span>
+                                </div>
+                                <p className="text-slate-600 text-[11px]">
+                                  Data Limite: <strong>{item.dataVencimento}</strong>
+                                  {item.impactoOperacional && ` • Impacto: ${item.impactoOperacional}`}
+                                </p>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                    isVencido
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : isUrgente
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : 'bg-emerald-100 text-emerald-800'
+                                  }`}
+                                >
+                                  {item.diasRestantes !== null
+                                    ? isVencido
+                                      ? `Vencido há ${Math.abs(item.diasRestantes)}d`
+                                      : `Em ${item.diasRestantes} dias`
+                                    : 'Sem data'}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SUB-ABA 6: HISTÓRICO, AUDITORIA & DOCUMENTOS */}
+              {aba360 === 'HISTORICO' && (
+                <div className="space-y-5">
+                  {/* Trilha de Auditoria e Governança RBAC 145.161 */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Shield className="w-4 h-4 text-blue-600" /> Trilha de Auditoria & Conformidade Regulatória
+                    </h3>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+                        <span className="text-slate-600">Cadastro Criado:</span>
+                        <span className="font-medium text-slate-800">
+                          {new Date(selectedColaborador.createdAt).toLocaleString('pt-BR')} por{' '}
+                          <strong>{selectedColaborador.criadoPor || 'SGQ'}</strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 bg-white rounded border border-slate-200">
+                        <span className="text-slate-600">Última Atualização Registrada:</span>
+                        <span className="font-medium text-slate-800">
+                          {new Date(selectedColaborador.updatedAt).toLocaleString('pt-BR')}
+                        </span>
+                      </div>
+
+                      {selectedColaborador.inativadoEm && (
+                        <div className="p-2 bg-amber-50 rounded border border-amber-200 text-amber-900 space-y-1">
+                          <p className="font-semibold">Registro de Inativação:</p>
+                          <p>
+                            Em {new Date(selectedColaborador.inativadoEm).toLocaleString('pt-BR')} por{' '}
+                            <strong>{selectedColaborador.inativadoPor || 'SGQ'}</strong>.
+                          </p>
+                          {selectedColaborador.motivoInativacao && (
+                            <p className="text-[11px] italic">Motivo: {selectedColaborador.motivoInativacao}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {selectedColaborador.reativadoEm && (
+                        <div className="p-2 bg-emerald-50 rounded border border-emerald-200 text-emerald-900 space-y-1">
+                          <p className="font-semibold">Registro de Reativação:</p>
+                          <p>
+                            Em {new Date(selectedColaborador.reativadoEm).toLocaleString('pt-BR')} por{' '}
+                            <strong>{selectedColaborador.reativadoPor || 'SGQ'}</strong>.
+                          </p>
+                          {selectedColaborador.motivoReativacao && (
+                            <p className="text-[11px] italic">Motivo: {selectedColaborador.motivoReativacao}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Documentos e Evidências Objetivas */}
+                  <div className="space-y-3">
+                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-purple-600" /> Documentos & Evidências Objetivas ({colabDocs.length})
+                    </h3>
+
+                    {colabDocs.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic bg-slate-50 p-4 rounded-lg text-center border border-dashed border-slate-200">
+                        Nenhum documento ou certificado anexado.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {colabDocs.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs flex items-center justify-between"
+                          >
+                            <div className="space-y-0.5">
+                              <p className="font-medium text-slate-900">{doc.titulo}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {doc.tipoDocumento} • Emissor: {doc.emissor}
+                                {doc.hashArquivo && ` • Hash SHA-256: ${doc.hashArquivo.substring(0, 12)}...`}
                               </p>
-                            )}
+                            </div>
+                            <span className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded">
+                              {doc.statusValidade}
+                            </span>
                           </div>
-                          <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-100 text-emerald-800">
-                            {tr.resultado} {tr.aproveitamentoPercentual ? `(${tr.aproveitamentoPercentual}%)` : ''}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
-
-                {/* 4. Documentos e Evidências */}
-                <div>
-                  <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <FileText className="w-4 h-4 text-purple-600" /> Documentos & Evidências Objetivas ({colabDocs.length})
-                  </h3>
-                  {colabDocs.length === 0 ? (
-                    <p className="text-xs text-slate-500 italic bg-slate-50 p-3 rounded-lg">
-                      Nenhum documento ou certificado anexado.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {colabDocs.map((doc) => (
-                        <div
-                          key={doc.id}
-                          className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs flex items-center justify-between"
-                        >
-                          <div className="space-y-0.5">
-                            <p className="font-medium text-slate-900">{doc.titulo}</p>
-                            <p className="text-[11px] text-slate-500">
-                              {doc.tipoDocumento} • Emissor: {doc.emissor}
-                              {doc.hashArquivo && ` • Hash SHA-256: ${doc.hashArquivo.substring(0, 12)}...`}
-                            </p>
-                          </div>
-                          <span className="text-[11px] font-mono text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
-                            {doc.statusValidade}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
           )}
         </div>
@@ -1445,9 +1827,23 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   >
                     <option value="ATIVO">ATIVO (Disponível)</option>
                     <option value="AFASTADO">AFASTADO (Licença/Atestado)</option>
+                    <option value="SUSPENSO">SUSPENSO (Averiguação / Medida)</option>
+                    <option value="RESTRITO">RESTRITO (Atividades Limitadas)</option>
                     <option value="INATIVO">INATIVO</option>
                     <option value="DESLIGADO">DESLIGADO</option>
+                    <option value="OUTRO">OUTRO (Especificar abaixo)</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Status Customizado / Detalhamento</label>
+                  <input
+                    type="text"
+                    name="statusCustomizado"
+                    defaultValue={colaboradorParaEditar?.statusCustomizado || ''}
+                    placeholder="Ex: Em processo de homologação, Cedido, etc."
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
                 </div>
 
                 <div>

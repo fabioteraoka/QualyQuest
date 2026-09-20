@@ -224,7 +224,7 @@ export const CompetenciesDashboardView: React.FC<CompetenciesDashboardViewProps>
           </div>
         </div>
 
-        {/* KPI 4: Total de Colaboradores Ativos */}
+        {/* KPI 4: Total de Colaboradores Ativos e Status Operacional */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -233,9 +233,30 @@ export const CompetenciesDashboardView: React.FC<CompetenciesDashboardViewProps>
             <div className="text-3xl font-extrabold text-slate-900 mt-1">
               {metricas.colaboradoresAtivos}
             </div>
-            <p className="text-[11px] text-slate-500 mt-1">
-              {metricas.colaboradoresComRestricao} com restrição ativa
-            </p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px]">
+              {Boolean(metricas.colaboradoresSuspensos && metricas.colaboradoresSuspensos > 0) && (
+                <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]">
+                  {metricas.colaboradoresSuspensos} suspenso{metricas.colaboradoresSuspensos! > 1 ? 's' : ''}
+                </span>
+              )}
+              {Boolean(metricas.colaboradoresRestritos && metricas.colaboradoresRestritos > 0) && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">
+                  {metricas.colaboradoresRestritos} restrito{metricas.colaboradoresRestritos! > 1 ? 's' : ''}
+                </span>
+              )}
+              {Boolean(metricas.colaboradoresAfastados && metricas.colaboradoresAfastados > 0) && (
+                <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">
+                  {metricas.colaboradoresAfastados} afastado{metricas.colaboradoresAfastados! > 1 ? 's' : ''}
+                </span>
+              )}
+              {!metricas.colaboradoresSuspensos && !metricas.colaboradoresRestritos && !metricas.colaboradoresAfastados && (
+                <span className="text-slate-500">
+                  {metricas.colaboradoresComRestricao > 0
+                    ? `${metricas.colaboradoresComRestricao} com restrição ativa`
+                    : '100% disponíveis sem restrições'}
+                </span>
+              )}
+            </div>
           </div>
           <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700">
             <Users className="w-6 h-6" />

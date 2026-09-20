@@ -719,6 +719,70 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
         </div>
       ),
     },
+    {
+      id: 30,
+      title: '30. Gestão Consolidada de Pessoas, Competências 360° & Aptidão Operacional',
+      category: 'Pessoas & Competências',
+      summary: 'Dossiê 360° do técnico, novos status operacionais (Ativo, Em Treinamento, Restrito, Suspenso, Afastado), CHTs ANAC e blindagem de liberação.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-indigo-900 text-sm flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-indigo-600" />
+              <span>Visão 360° do Colaborador & Blindagem de Aptidão</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              O módulo de Pessoas & Competências centraliza a ficha completa do colaborador técnico em 8 abas de governança: <strong>Cadastro</strong>, <strong>Competências</strong>, <strong>Treinamentos</strong>, <strong>CHTs/Qualificações ANAC</strong>, <strong>Autorizações Técnicas</strong>, <strong>Aptidão & Restrições</strong>, <strong>Vencimentos</strong> e <strong>Histórico de Auditoria</strong>.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">1. Status Operacionais</span>
+              <p className="text-slate-600 text-[11px]">
+                Suporte nativo a colaboradores <strong>ATIVO</strong>, <strong>EM TREINAMENTO</strong>, <strong>RESTRITO</strong>, <strong>SUSPENSO</strong>, <strong>AFASTADO</strong> e <strong>DESLIGADO</strong>, sem falsos bloqueios mas com controle de fila técnica.
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">2. Motor de Aptidão Real</span>
+              <p className="text-slate-600 text-[11px]">
+                A aptidão técnica não usa bloqueio automático arbitrário: cruza <code>REQUISITO DA TAREFA + CHT VIGENTE + TREINAMENTO + STATUS + REGRA ORGANIZACIONAL</code>.
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">3. Sincronização Executiva</span>
+              <p className="text-slate-600 text-[11px]">
+                Os indicadores da equipe alimentam em tempo real o Dashboard de Competências e o Slide 10 da Apresentação Gerencial (PPTX).
+              </p>
+            </div>
+          </div>
+
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-[11px] space-y-1">
+            <span className="font-bold block">Diretriz Regulamentar ANAC RBAC 145.163 / EASA Part-145:</span>
+            <p>
+              Toda emissão de Atestado de Liberação de Aeronave (APRS) requer validação de CHT ativa e curso de fatores humanos vigente no ciclo bienal. Qualquer restrição ativa é sinalizada como barreira de segurança operacional.
+            </p>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('pessoas-competencias')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Painel de Colaboradores</span>
+              </button>
+              <button
+                onClick={() => onNavigateToTab('competencias-dashboard')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-white font-bold text-xs hover:bg-slate-700 cursor-pointer shadow-xs"
+              >
+                <span>Ver Dashboard Executivo</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
   ], [organization, orgName, orgSigla]);
 
   // Filtro de capítulos por busca

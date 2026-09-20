@@ -13,6 +13,8 @@ import {
   SugestaoIACompetencia,
   NCRecord,
   ConstatacaoExternaRecord,
+  FerramentaCalibracao,
+  DocumentoControlado,
 } from '../types';
 
 /**
@@ -281,12 +283,32 @@ export function diagnosticarGapsOrganizacao(
   const hojeStr = new Date().toISOString().split('T')[0];
 
   for (const colab of colaboradores) {
-    // Se inativo, registrar como gap de disponibilidade caso tenha atribuições críticas
-    if (colab.status !== 'ATIVO') {
-      continue; // Colaboradores inativos não geram falsos gaps operacionais, mas ficam identificados
+    // Colaboradores desligados ou inativos definitivos não geram falsos gaps de fila de trabalho
+    if (colab.status === 'INATIVO' || colab.status === 'DESLIGADO') {
+      continue;
     }
 
-    if (colab.restricaoOperacional?.possuiRestricao && colab.restricaoOperacional.impedeExecucao) {
+    // Identificar colaborador suspenso
+    if (colab.status === 'SUSPENSO') {
+      gaps.push({
+        id: `gap-suspenso-${colab.id}`,
+        colaboradorId: colab.id,
+        colaboradorNome: colab.nome,
+        colaboradorMatricula: colab.matricula,
+        setor: colab.setor,
+        funcao: colab.funcao,
+        tipoGap: 'RESTRICAO_ATIVA',
+        descricaoGap: `Colaborador com status SUSPENSO: impedido temporariamente de atuar ou assinar tarefas. ${colab.statusCustomizado ? `(${colab.statusCustomizado})` : ''}`,
+        criticidade: 'CRITICA',
+        bloqueiaOperacao: true,
+        dataIdentificacao: hojeStr,
+      });
+    }
+
+    // Identificar colaborador restrito ou com restrição cadastrada
+    const temRestricaoStatus = colab.status === 'RESTRITO';
+    const temRestricaoOperacional = colab.restricaoOperacional?.possuiRestricao;
+    if (temRestricaoStatus || temRestricaoOperacional) {
       gaps.push({
         id: `gap-restricao-${colab.id}`,
         colaboradorId: colab.id,
@@ -295,9 +317,26 @@ export function diagnosticarGapsOrganizacao(
         setor: colab.setor,
         funcao: colab.funcao,
         tipoGap: 'RESTRICAO_ATIVA',
-        descricaoGap: `Colaborador com restrição operacional ativa: ${colab.restricaoOperacional.motivo || 'Sem detalhe'}`,
+        descricaoGap: `Colaborador com restrição operacional ativa: ${colab.restricaoOperacional?.motivo || colab.statusCustomizado || 'Atuação técnica condicionada ou restrita'}`,
         criticidade: 'ALTA',
-        bloqueiaOperacao: true,
+        bloqueiaOperacao: colab.restricaoOperacional?.impedeExecucao ?? true,
+        dataIdentificacao: hojeStr,
+      });
+    }
+
+    // Se estiver afastado por licença médica/afastamento
+    if (colab.status === 'AFASTADO') {
+      gaps.push({
+        id: `gap-afastado-${colab.id}`,
+        colaboradorId: colab.id,
+        colaboradorNome: colab.nome,
+        colaboradorMatricula: colab.matricula,
+        setor: colab.setor,
+        funcao: colab.funcao,
+        tipoGap: 'RESTRICAO_ATIVA',
+        descricaoGap: `Colaborador AFASTADO da escala operacional. ${colab.statusCustomizado ? `(${colab.statusCustomizado})` : ''}`,
+        criticidade: 'MEDIA',
+        bloqueiaOperacao: false,
         dataIdentificacao: hojeStr,
       });
     }
@@ -414,10 +453,13 @@ export const diagnosticarGapsOrganizacionais = diagnosticarGapsOrganizacao;
  * Monta a lista consolidada da Central de Vencimentos em faixas temporais.
  */
 export function consolidarCentralVencimentos(
-  qualificacoes: QualificacaoColaborador[],
-  treinamentos: RegistroTreinamentoColaborador[],
-  documentos: DocumentoEvidenciaPessoa[],
-  competencias: CompetenciaColaborador[]
+  qualificacoes: QualificacaoColaborador[] = [],
+  treinamentos: RegistroTreinamentoColaborador[] = [],
+  documentos: DocumentoEvidenciaPessoa[] = [],
+  competencias: CompetenciaColaborador[] = [],
+  ferramentas: FerramentaCalibracao[] = [],
+  documentosControlados: DocumentoControlado[] = [],
+  recordsNC: NCRecord[] = []
 ): FaixaVencimentoItem[] {
   const itens: FaixaVencimentoItem[] = [];
 
@@ -444,6 +486,7 @@ export function consolidarCentralVencimentos(
       bloqueiaOperacao: q.bloqueiaOperacaoSeVencida && dias < 0,
       status: q.status,
       documentoId: q.documentoComprobatorioId,
+      categoriaOrigem: 'PESSOAS',
     });
   }
 
@@ -470,6 +513,7 @@ export function consolidarCentralVencimentos(
       bloqueiaOperacao: dias < 0,
       status: dias < 0 ? 'VENCIDO' : dias <= 30 ? 'VENCENDO' : 'EM_DIA',
       documentoId: tr.documentoCertificadoId,
+      categoriaOrigem: 'PESSOAS',
     });
   }
 
@@ -496,6 +540,7 @@ export function consolidarCentralVencimentos(
       bloqueiaOperacao: dias < 0,
       status: doc.statusValidade,
       documentoId: doc.id,
+      categoriaOrigem: 'PESSOAS',
     });
   }
 
@@ -521,6 +566,86 @@ export function consolidarCentralVencimentos(
       faixa: faixa as any,
       bloqueiaOperacao: dias < 0,
       status: comp.status,
+      categoriaOrigem: 'PESSOAS',
+    });
+  }
+
+  // 5. Ferramentas Calibradas / Metrologia (RBAC 145.109)
+  for (const f of ferramentas) {
+    const dataValidade = f.dataProximaCalibracao || (f as any).dataValidadeCalibracao;
+    if (!dataValidade) continue;
+    const dias = calcularDiasParaVencimento(dataValidade);
+    if (dias === null) continue;
+    const faixa = classificarFaixaVencimento(dias, true);
+    if (faixa === 'SEM_VALIDADE') continue;
+
+    itens.push({
+      id: `venc-ferr-${f.id}`,
+      tipoItem: 'FERRAMENTA',
+      colaboradorNome: f.baseOperacionalNome || (f as any).responsavelCustodia || (f as any).localizacao || 'Almoxarifado / Metrologia',
+      setor: f.setor || 'Metrologia & Ferramental',
+      titulo: f.descricao,
+      subtitulo: `Tag/Patrimônio: ${f.codigoPatrimonio} • Certificado: ${f.numeroCertificado || 'N/A'}`,
+      dataValidade: dataValidade,
+      diasParaVencer: dias,
+      faixa: faixa as any,
+      bloqueiaOperacao: f.status === 'VENCIDA' || f.status === 'QUARANTENA' || dias < 0,
+      status: f.status,
+      entidadeOriginalId: f.id,
+      categoriaOrigem: 'METROLOGIA',
+    });
+  }
+
+  // 6. Documentos e Manuais Controlados (Revisão Periódica / Bienal)
+  for (const docCtrl of documentosControlados) {
+    const dataRev = docCtrl.proximaVerificacaoExterna || (docCtrl as any).proximaRevisao || (docCtrl as any).dataValidade;
+    if (!dataRev) continue;
+    const dias = calcularDiasParaVencimento(dataRev);
+    if (dias === null) continue;
+    const faixa = classificarFaixaVencimento(dias, true);
+    if (faixa === 'SEM_VALIDADE') continue;
+
+    itens.push({
+      id: `venc-doc-ctrl-${docCtrl.id}`,
+      tipoItem: 'MANUAL',
+      colaboradorNome: docCtrl.responsavelNome || (docCtrl as any).elaborador || 'Controle Documental SGQ',
+      setor: docCtrl.emissor || (docCtrl as any).area || 'Controle Documental',
+      titulo: `${docCtrl.codigo || (docCtrl as any).numero || 'DOC'} — ${docCtrl.titulo}`,
+      subtitulo: `Rev. ${docCtrl.revisaoVigenteNumero || docCtrl.revisaoAtual || '0'} • Tipo: ${docCtrl.tipoSubcategoria || docCtrl.categoria || 'Procedimento'}`,
+      dataValidade: dataRev,
+      diasParaVencer: dias,
+      faixa: faixa as any,
+      bloqueiaOperacao: false,
+      status: docCtrl.statusGeral || docCtrl.status || 'ATIVO',
+      entidadeOriginalId: docCtrl.id,
+      categoriaOrigem: 'DOCUMENTOS',
+    });
+  }
+
+  // 7. Não Conformidades (RNCs) com Prazos de Tratativa em Aberto
+  for (const rnc of recordsNC) {
+    if (rnc.statusGeral === 'Encerrada' || rnc.statusGeral === 'Cancelada' || (rnc as any).status === 'ENCERRADA' || (rnc as any).status === 'CANCELADA') continue;
+    const dataPrazo = rnc.prazoResposta || rnc.acaoCorretiva?.dataPrazo || (rnc as any).prazoConclusao || (rnc as any).dataLimite;
+    if (!dataPrazo) continue;
+    const dias = calcularDiasParaVencimento(dataPrazo);
+    if (dias === null) continue;
+    const faixa = classificarFaixaVencimento(dias, true);
+    if (faixa === 'SEM_VALIDADE') continue;
+
+    itens.push({
+      id: `venc-rnc-${rnc.id}`,
+      tipoItem: 'RNC',
+      colaboradorNome: rnc.responsavel || rnc.auditor || 'SGQ / Qualidade',
+      setor: rnc.setor || 'SGQ',
+      titulo: `RNC #${rnc.numeroNC || rnc.id.slice(-6)} — ${rnc.titulo}`,
+      subtitulo: `Severidade: ${rnc.avaliacaoRiscoInicial?.nivel || 'Média'} • Status: ${rnc.statusGeral}`,
+      dataValidade: dataPrazo,
+      diasParaVencer: dias,
+      faixa: faixa as any,
+      bloqueiaOperacao: rnc.avaliacaoRiscoInicial?.nivel === 'Crítico' || rnc.avaliacaoRiscoInicial?.nivel === 'Alto',
+      status: rnc.statusGeral,
+      entidadeOriginalId: rnc.id,
+      categoriaOrigem: 'RNC',
     });
   }
 
@@ -566,9 +691,15 @@ export function calcularMetricasDashboardCompetencias(
     };
   }
 
-  const ativos = colaboradores.filter((c) => c.status === 'ATIVO');
-  const inativos = colaboradores.filter((c) => c.status !== 'ATIVO');
-  const comRestricao = colaboradores.filter((c) => c.restricaoOperacional?.possuiRestricao);
+  const ativos = colaboradores.filter((c) => !c.status || c.status === 'ATIVO');
+  const inativos = colaboradores.filter((c) => c.status === 'INATIVO' || c.status === 'DESLIGADO');
+  const suspensos = colaboradores.filter((c) => c.status === 'SUSPENSO');
+  const afastados = colaboradores.filter((c) => c.status === 'AFASTADO');
+  const restritos = colaboradores.filter((c) => c.status === 'RESTRITO');
+  const desligados = colaboradores.filter((c) => c.status === 'DESLIGADO');
+  const comRestricao = colaboradores.filter(
+    (c) => c.status === 'RESTRITO' || c.status === 'SUSPENSO' || c.restricaoOperacional?.possuiRestricao
+  );
 
   // Vencimentos consolidados
   const centralVencimentos = consolidarCentralVencimentos(
@@ -674,6 +805,10 @@ export function calcularMetricasDashboardCompetencias(
     colaboradoresAtivos: ativos.length,
     colaboradoresInativos: inativos.length,
     colaboradoresComRestricao: comRestricao.length,
+    colaboradoresSuspensos: suspensos.length,
+    colaboradoresAfastados: afastados.length,
+    colaboradoresRestritos: restritos.length,
+    colaboradoresDesligados: desligados.length,
     totalCompetencias: catalogoCompetencias.length,
     taxaColaboradoresQualificados,
     taxaTreinamentosEmDia,

@@ -15,7 +15,20 @@ import {
   ClassificacaoReconciliacao,
   DecisaoReconciliacao,
   AcaoConflitoDuplicidade,
+  StatusColaborador,
 } from '../types';
+
+export function normalizarStatusColaborador(valor: any): StatusColaborador {
+  if (!valor) return 'ATIVO';
+  const str = String(valor).trim().toUpperCase();
+  if (str.includes('INATIV') || str === 'OFF' || str === 'NAO' || str === 'N' || str === '0') return 'INATIVO';
+  if (str.includes('AFAST') || str.includes('LICEN')) return 'AFASTADO';
+  if (str.includes('SUSP')) return 'SUSPENSO';
+  if (str.includes('RESTRIT') || str.includes('LIMIT')) return 'RESTRITO';
+  if (str.includes('DESLIG') || str.includes('DEMIT') || str.includes('RESCIS')) return 'DESLIGADO';
+  if (str.includes('ATIV') || str === 'SIM' || str === 'S' || str === 'OK' || str === '1') return 'ATIVO';
+  return 'OUTRO';
+}
 
 // ============================================================================
 // DICIONÁRIOS SEMÂNTICOS DE MAPEAMENTO DE CAMPOS QUALIGEST
@@ -55,6 +68,22 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       obrigatorio: false,
       sinonimos: ['funcao', 'cargo', 'especialidade', 'ocupacao', 'qualificacao'],
       descricao: 'Cargo técnico (ex: Mecânico CHT, Inspetor NDT, Técnico Aviônica)',
+    },
+    {
+      campo: 'setor',
+      label: 'Setor / Departamento / Base',
+      tipo: 'string',
+      obrigatorio: false,
+      sinonimos: ['setor', 'departamento', 'area', 'base', 'lotacao', 'oficina', 'secao', 'hangar'],
+      descricao: 'Setor ou base operacional onde o colaborador atua (ex: Manutenção de Linha, Qualidade)',
+    },
+    {
+      campo: 'statusColaborador',
+      label: 'Status do Colaborador (Ativo/Inativo/Afastado/Restrito)',
+      tipo: 'enum',
+      obrigatorio: false,
+      sinonimos: ['status colaborador', 'status funcionario', 'ativo', 'ativo/inativo', 'situacao cadastral', 'condicao funcionario', 'vinculo', 'estado colaborador', 'status'],
+      descricao: 'Situação cadastral real da pessoa (Ativo, Inativo, Afastado, Suspenso, Restrito)',
     },
     {
       campo: 'cursoTitulo',
@@ -1003,7 +1032,7 @@ export function validarECompararLinhasImportacao(
             pessoaIdVinculada = pessoaCadastrada.id;
             pessoaNomeVinculada = pessoaCadastrada.nome;
 
-            // Detectar se há alteração cadastral para decisão humana (matrícula, setor ou função)
+            // Detectar se há alteração cadastral para decisão humana (matrícula, setor, função ou status)
             const camposPessoaDivergentes: CampoDivergente[] = [];
             if (dadosMapeados.pessoaMatricula && normalizarTexto(pessoaCadastrada.matricula || '') !== normalizarTexto(dadosMapeados.pessoaMatricula)) {
               camposPessoaDivergentes.push({
@@ -1028,6 +1057,18 @@ export function validarECompararLinhasImportacao(
                 valorAtual: pessoaCadastrada.cargoOperacional || 'Mecânico',
                 valorImportado: dadosMapeados.funcao,
               });
+            }
+            const rawStatusImp = dadosMapeados.statusColaborador || dadosMapeados.status || '';
+            if (rawStatusImp) {
+              const statusNormalizado = normalizarStatusColaborador(rawStatusImp);
+              if (pessoaCadastrada.status !== statusNormalizado) {
+                camposPessoaDivergentes.push({
+                  campo: 'status',
+                  label: 'Status do Colaborador',
+                  valorAtual: pessoaCadastrada.status,
+                  valorImportado: statusNormalizado,
+                });
+              }
             }
 
             if (camposPessoaDivergentes.length > 0) {
