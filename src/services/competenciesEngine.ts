@@ -17,6 +17,8 @@ import {
   DocumentoControlado,
 } from '../types';
 
+export { consolidarRNCsPorMatrizRisco } from '../utils/qualityHelpers';
+
 /**
  * Calcula a data de validade com base na periodicidade (em meses) e tolerância (em dias).
  */
@@ -691,12 +693,16 @@ export function calcularMetricasDashboardCompetencias(
     };
   }
 
-  const ativos = colaboradores.filter((c) => !c.status || c.status === 'ATIVO');
-  const inativos = colaboradores.filter((c) => c.status === 'INATIVO' || c.status === 'DESLIGADO');
+  const ativos = colaboradores.filter((c) => c.status === 'ATIVO');
+  const emTreinamento = colaboradores.filter((c) => c.status === 'EM_TREINAMENTO');
+  const restritos = colaboradores.filter((c) => c.status === 'RESTRITO');
   const suspensos = colaboradores.filter((c) => c.status === 'SUSPENSO');
   const afastados = colaboradores.filter((c) => c.status === 'AFASTADO');
-  const restritos = colaboradores.filter((c) => c.status === 'RESTRITO');
   const desligados = colaboradores.filter((c) => c.status === 'DESLIGADO');
+  const inativos = colaboradores.filter((c) => c.status === 'INATIVO');
+  const outros = colaboradores.filter(
+    (c) => c.status === 'OUTRO' || (!['ATIVO', 'EM_TREINAMENTO', 'RESTRITO', 'SUSPENSO', 'AFASTADO', 'DESLIGADO', 'INATIVO'].includes(c.status))
+  );
   const comRestricao = colaboradores.filter(
     (c) => c.status === 'RESTRITO' || c.status === 'SUSPENSO' || c.restricaoOperacional?.possuiRestricao
   );
@@ -809,6 +815,8 @@ export function calcularMetricasDashboardCompetencias(
     colaboradoresAfastados: afastados.length,
     colaboradoresRestritos: restritos.length,
     colaboradoresDesligados: desligados.length,
+    colaboradoresEmTreinamento: emTreinamento.length,
+    colaboradoresOutros: outros.length,
     totalCompetencias: catalogoCompetencias.length,
     taxaColaboradoresQualificados,
     taxaTreinamentosEmDia,

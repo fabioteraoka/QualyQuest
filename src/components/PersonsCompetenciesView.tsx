@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users,
   Search,
@@ -56,6 +56,7 @@ import {
   calcularDiasParaVencimento,
   consolidarCentralVencimentos,
 } from '../services/competenciesEngine';
+import { obterConfiguracaoStatusColaborador } from '../utils/qualityHelpers';
 
 interface PersonsCompetenciesViewProps {
   organizationId: string;
@@ -68,6 +69,7 @@ interface PersonsCompetenciesViewProps {
   documents: DocumentoEvidenciaPessoa[];
   activities: AtividadeCompetenciaRequerida[];
   nonConformities?: any[];
+  initialStatusFilter?: string;
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
 }
@@ -83,14 +85,21 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   documents = [],
   activities = [],
   nonConformities = [],
+  initialStatusFilter,
   onNavigateToTrainings,
   onNavigateToExpirations,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'COLABORADORES' | 'MATRIZ' | 'CATALOGO'>('COLABORADORES');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSetor, setSelectedSetor] = useState('TODOS');
-  const [selectedStatus, setSelectedStatus] = useState('TODOS');
+  const [selectedStatus, setSelectedStatus] = useState<string>(initialStatusFilter || 'TODOS');
   const [filterRestricao, setFilterRestricao] = useState(false);
+
+  useEffect(() => {
+    if (initialStatusFilter) {
+      setSelectedStatus(initialStatusFilter);
+    }
+  }, [initialStatusFilter]);
 
   // Colaborador Selecionado para Visão 360°
   const [selectedColaborador, setSelectedColaborador] = useState<ColaboradorPessoa | null>(null);
@@ -151,6 +160,32 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       if (p.setor) s.add(p.setor);
     });
     return Array.from(s).sort();
+  }, [persons]);
+
+  // Contagens oficiais de colaboradores por status (Fonte Única da Verdade)
+  const contagensPorStatus = useMemo(() => {
+    const counts: Record<string, number> = {
+      TODOS: persons.length,
+      ATIVO: 0,
+      EM_TREINAMENTO: 0,
+      RESTRITO: 0,
+      SUSPENSO: 0,
+      AFASTADO: 0,
+      DESLIGADO: 0,
+      INATIVO: 0,
+      OUTRO: 0,
+    };
+
+    persons.forEach((p) => {
+      const st = p.status || 'ATIVO';
+      if (counts[st] !== undefined) {
+        counts[st]++;
+      } else {
+        counts.OUTRO++;
+      }
+    });
+
+    return counts;
   }, [persons]);
 
   // Colaboradores filtrados
@@ -481,43 +516,16 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   };
 
   const renderStatusBadge = (colab: ColaboradorPessoa) => {
-    let colorClass = 'bg-slate-100 text-slate-700 border-slate-200';
-    let label = colab.statusCustomizado || colab.status;
-
-    switch (colab.status) {
-      case 'ATIVO':
-        colorClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
-        label = colab.statusCustomizado || 'ATIVO';
-        break;
-      case 'AFASTADO':
-        colorClass = 'bg-amber-100 text-amber-800 border-amber-200';
-        label = colab.statusCustomizado || 'AFASTADO';
-        break;
-      case 'SUSPENSO':
-        colorClass = 'bg-rose-100 text-rose-800 border-rose-300 font-bold';
-        label = colab.statusCustomizado || 'SUSPENSO';
-        break;
-      case 'RESTRITO':
-        colorClass = 'bg-orange-100 text-orange-800 border-orange-200 font-semibold';
-        label = colab.statusCustomizado || 'RESTRITO';
-        break;
-      case 'INATIVO':
-        colorClass = 'bg-slate-200 text-slate-700 border-slate-300';
-        label = colab.statusCustomizado || 'INATIVO';
-        break;
-      case 'DESLIGADO':
-        colorClass = 'bg-slate-300 text-slate-800 border-slate-400';
-        label = colab.statusCustomizado || 'DESLIGADO';
-        break;
-      case 'OUTRO':
-        colorClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
-        label = colab.statusCustomizado || 'OUTRO';
-        break;
-    }
+    const config = obterConfiguracaoStatusColaborador(colab.status);
+    const label = colab.statusCustomizado || config.label;
 
     return (
-      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${colorClass}`}>
-        {label}
+      <span
+        title={config.descricao}
+        className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-0.5 rounded-full font-semibold border ${config.badgeClass}`}
+      >
+        <span>{config.iconeEmoji}</span>
+        <span>{label}</span>
       </span>
     );
   };
@@ -614,6 +622,121 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 />
               </div>
 
+              {/* Chips Rápidos de Filtro por Status Operacional */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('TODOS')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border ${
+                    selectedStatus === 'TODOS'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  Todos ({contagensPorStatus.TODOS})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('ATIVO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'ATIVO'
+                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-xs'
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  <span>🟢</span>
+                  <span>Ativos ({contagensPorStatus.ATIVO})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('EM_TREINAMENTO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'EM_TREINAMENTO'
+                      ? 'bg-sky-700 text-white border-sky-800 shadow-xs'
+                      : 'bg-sky-50 text-sky-800 border-sky-200 hover:bg-sky-100'
+                  }`}
+                >
+                  <span>🔵</span>
+                  <span>Em treinamento ({contagensPorStatus.EM_TREINAMENTO})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('RESTRITO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'RESTRITO'
+                      ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                      : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  <span>🟡</span>
+                  <span>Restritos ({contagensPorStatus.RESTRITO})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('SUSPENSO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'SUSPENSO'
+                      ? 'bg-rose-700 text-white border-rose-800 shadow-xs'
+                      : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  <span>🔴</span>
+                  <span>Suspensos ({contagensPorStatus.SUSPENSO})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('AFASTADO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'AFASTADO'
+                      ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
+                      : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                  }`}
+                >
+                  <span>🟣</span>
+                  <span>Afastados ({contagensPorStatus.AFASTADO})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('DESLIGADO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'DESLIGADO'
+                      ? 'bg-slate-800 text-white border-slate-900 shadow-xs'
+                      : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                  }`}
+                >
+                  <span>⚫</span>
+                  <span>Desligados ({contagensPorStatus.DESLIGADO})</span>
+                </button>
+                {contagensPorStatus.OUTRO > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatus('OUTRO')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                      selectedStatus === 'OUTRO'
+                        ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>⚪</span>
+                    <span>Outros ({contagensPorStatus.OUTRO})</span>
+                  </button>
+                )}
+                {contagensPorStatus.INATIVO > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatus('INATIVO')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                      selectedStatus === 'INATIVO'
+                        ? 'bg-zinc-700 text-white border-zinc-800 shadow-xs'
+                        : 'bg-zinc-100 text-zinc-700 border-zinc-300 hover:bg-zinc-200'
+                    }`}
+                  >
+                    <span>🔘</span>
+                    <span>Inativos ({contagensPorStatus.INATIVO})</span>
+                  </button>
+                )}
+              </div>
+
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <select
                   value={selectedSetor}
@@ -631,16 +754,21 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 <select
                   value={selectedStatus}
                   onChange={(e) => setSelectedStatus(e.target.value)}
-                  className="text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-slate-50 text-slate-700"
+                  className="text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-slate-50 text-slate-700 font-medium"
                 >
-                  <option value="TODOS">Todos os Status</option>
-                  <option value="ATIVO">Ativo</option>
-                  <option value="AFASTADO">Afastado</option>
-                  <option value="SUSPENSO">Suspenso</option>
-                  <option value="RESTRITO">Restrito</option>
-                  <option value="INATIVO">Inativo</option>
-                  <option value="DESLIGADO">Desligado</option>
-                  <option value="OUTRO">Outro</option>
+                  <option value="TODOS">Todos os Status ({contagensPorStatus.TODOS})</option>
+                  <option value="ATIVO">🟢 Ativos ({contagensPorStatus.ATIVO})</option>
+                  <option value="EM_TREINAMENTO">🔵 Em treinamento ({contagensPorStatus.EM_TREINAMENTO})</option>
+                  <option value="RESTRITO">🟡 Restritos ({contagensPorStatus.RESTRITO})</option>
+                  <option value="SUSPENSO">🔴 Suspensos ({contagensPorStatus.SUSPENSO})</option>
+                  <option value="AFASTADO">🟣 Afastados ({contagensPorStatus.AFASTADO})</option>
+                  <option value="DESLIGADO">⚫ Desligados ({contagensPorStatus.DESLIGADO})</option>
+                  {contagensPorStatus.OUTRO > 0 && (
+                    <option value="OUTRO">⚪ Outros ({contagensPorStatus.OUTRO})</option>
+                  )}
+                  {contagensPorStatus.INATIVO > 0 && (
+                    <option value="INATIVO">🔘 Inativos ({contagensPorStatus.INATIVO})</option>
+                  )}
                 </select>
 
                 <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none ml-auto">
@@ -1826,7 +1954,8 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                   >
                     <option value="ATIVO">ATIVO (Disponível)</option>
-                    <option value="AFASTADO">AFASTADO (Licença/Atestado)</option>
+                    <option value="EM_TREINAMENTO">EM TREINAMENTO (Capacitação / Formação)</option>
+                    <option value="AFASTADO">AFASTADO (Licença / Atestado)</option>
                     <option value="SUSPENSO">SUSPENSO (Averiguação / Medida)</option>
                     <option value="RESTRITO">RESTRITO (Atividades Limitadas)</option>
                     <option value="INATIVO">INATIVO</option>

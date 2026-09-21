@@ -18,16 +18,72 @@ import {
   StatusColaborador,
 } from '../types';
 
+export interface ResultadoNormalizacaoStatusColaborador {
+  status: StatusColaborador;
+  statusOriginal: string;
+  informado: boolean;
+  statusNaoInformado: boolean;
+  aviso?: string;
+}
+
+export function normalizarStatusColaboradorCompleto(valor: any): ResultadoNormalizacaoStatusColaborador {
+  if (valor === undefined || valor === null || String(valor).trim() === '') {
+    return {
+      status: 'OUTRO',
+      statusOriginal: '',
+      informado: false,
+      statusNaoInformado: true,
+      aviso: 'STATUS NÃO INFORMADO na planilha — Requer validação humana antes de cadastrar.',
+    };
+  }
+
+  const raw = String(valor).trim();
+  const str = raw.toUpperCase();
+
+  if (
+    str.includes('TREINAMENTO') || 
+    str.includes('TRAINEE') || 
+    str.includes('ESTAGI') || 
+    str.includes('APRENDIZ') || 
+    str.includes('FORMACAO')
+  ) {
+    return { status: 'EM_TREINAMENTO', statusOriginal: raw, informado: true, statusNaoInformado: false };
+  }
+  if (str.includes('AFAST') || str.includes('LICEN') || str.includes('INSS') || str.includes('MEDIC')) {
+    return { status: 'AFASTADO', statusOriginal: raw, informado: true, statusNaoInformado: false };
+  }
+  if (str.includes('SUSP') || str.includes('BLOQUE')) {
+    return { status: 'SUSPENSO', statusOriginal: raw, informado: true, statusNaoInformado: false };
+  }
+  if (str.includes('RESTRIT') || str.includes('LIMIT')) {
+    return { status: 'RESTRITO', statusOriginal: raw, informado: true, statusNaoInformado: false };
+  }
+  if (str.includes('DESLIG') || str.includes('DEMIT') || str.includes('RESCIS') || str.includes('EX-') || str.includes('SAIDA')) {
+    return { status: 'DESLIGADO', statusOriginal: raw, informado: true, statusNaoInformado: false };
+  }
+  if (str.includes('INATIV') || str === 'OFF' || str === 'NAO' || str === 'N' || str === '0') {
+    return { status: 'INATIVO', statusOriginal: raw, informado: true, statusNaoInformado: false };
+  }
+  if (str.includes('ATIV') || str === 'SIM' || str === 'S' || str === 'OK' || str === '1' || str === 'OPERACIONAL') {
+    return { status: 'ATIVO', statusOriginal: raw, informado: true, statusNaoInformado: false };
+  }
+
+  return {
+    status: 'OUTRO',
+    statusOriginal: raw,
+    informado: true,
+    statusNaoInformado: false,
+    aviso: `Status operacional com terminologia específica: "${raw}". Registrado como OUTRO para validação.`,
+  };
+}
+
 export function normalizarStatusColaborador(valor: any): StatusColaborador {
-  if (!valor) return 'ATIVO';
-  const str = String(valor).trim().toUpperCase();
-  if (str.includes('INATIV') || str === 'OFF' || str === 'NAO' || str === 'N' || str === '0') return 'INATIVO';
-  if (str.includes('AFAST') || str.includes('LICEN')) return 'AFASTADO';
-  if (str.includes('SUSP')) return 'SUSPENSO';
-  if (str.includes('RESTRIT') || str.includes('LIMIT')) return 'RESTRITO';
-  if (str.includes('DESLIG') || str.includes('DEMIT') || str.includes('RESCIS')) return 'DESLIGADO';
-  if (str.includes('ATIV') || str === 'SIM' || str === 'S' || str === 'OK' || str === '1') return 'ATIVO';
-  return 'OUTRO';
+  const res = normalizarStatusColaboradorCompleto(valor);
+  if (res.statusNaoInformado) {
+    // Quando não informado, não assume 'ATIVO' silenciosamente; mantém 'OUTRO' para indicar ausência de status
+    return 'OUTRO';
+  }
+  return res.status;
 }
 
 // ============================================================================
@@ -1123,9 +1179,18 @@ export function validarECompararLinhasImportacao(
                 pessoaNomeVinculada = dadosMapeados.pessoaNome;
                 qtdPessoasNaoCadastradas++;
                 if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
-                mensagensValidacao.push(
-                  `Novo mecânico/colaborador identificado: "${dadosMapeados.pessoaNome}". Será cadastrado oficialmente em Pessoas & Competências após aprovação.`
-                );
+
+                const rawStatusColab = dadosMapeados.statusColaborador || dadosMapeados.status;
+                const analiseStatus = normalizarStatusColaboradorCompleto(rawStatusColab);
+                if (analiseStatus.statusNaoInformado) {
+                  mensagensValidacao.push(
+                    `Novo colaborador identificado: "${dadosMapeados.pessoaNome}" com STATUS NÃO INFORMADO na planilha. Validação e decisão humana obrigatórias antes da persistência.`
+                  );
+                } else {
+                  mensagensValidacao.push(
+                    `Novo colaborador identificado: "${dadosMapeados.pessoaNome}" com status ${analiseStatus.status} (original: "${analiseStatus.statusOriginal}"). Será cadastrado oficialmente em Pessoas & Competências após aprovação.`
+                  );
+                }
               }
             }
           }

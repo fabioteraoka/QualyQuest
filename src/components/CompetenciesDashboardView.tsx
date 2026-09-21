@@ -40,6 +40,7 @@ interface CompetenciesDashboardViewProps {
   documents: DocumentoEvidenciaPessoa[];
   activities: AtividadeCompetenciaRequerida[];
   onNavigateToPersons?: () => void;
+  onNavigateToPersonsWithStatus?: (status: string) => void;
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
 }
@@ -54,6 +55,7 @@ export const CompetenciesDashboardView: React.FC<CompetenciesDashboardViewProps>
   documents = [],
   activities = [],
   onNavigateToPersons,
+  onNavigateToPersonsWithStatus,
   onNavigateToTrainings,
   onNavigateToExpirations,
 }) => {
@@ -226,30 +228,66 @@ export const CompetenciesDashboardView: React.FC<CompetenciesDashboardViewProps>
 
         {/* KPI 4: Total de Colaboradores Ativos e Status Operacional */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-              Efetivo Ativo
-            </span>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Efetivo Ativo
+              </span>
+              {onNavigateToPersonsWithStatus && (
+                <button
+                  onClick={() => onNavigateToPersonsWithStatus('ATIVO')}
+                  className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 underline transition"
+                  title="Clique para ver quem está ativo atualmente"
+                >
+                  Ver Ativos →
+                </button>
+              )}
+            </div>
             <div className="text-3xl font-extrabold text-slate-900 mt-1">
               {metricas.colaboradoresAtivos}
             </div>
             <div className="flex flex-wrap items-center gap-1.5 mt-1.5 text-[11px]">
+              {Boolean(metricas.colaboradoresEmTreinamento && metricas.colaboradoresEmTreinamento > 0) && (
+                <button
+                  type="button"
+                  onClick={() => onNavigateToPersonsWithStatus && onNavigateToPersonsWithStatus('EM_TREINAMENTO')}
+                  className="px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 font-bold text-[10px] hover:bg-sky-200 transition"
+                  title="Filtrar colaboradores em treinamento"
+                >
+                  {metricas.colaboradoresEmTreinamento} em treinamento
+                </button>
+              )}
               {Boolean(metricas.colaboradoresSuspensos && metricas.colaboradoresSuspensos > 0) && (
-                <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => onNavigateToPersonsWithStatus && onNavigateToPersonsWithStatus('SUSPENSO')}
+                  className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[10px] hover:bg-rose-200 transition"
+                  title="Filtrar colaboradores suspensos"
+                >
                   {metricas.colaboradoresSuspensos} suspenso{metricas.colaboradoresSuspensos! > 1 ? 's' : ''}
-                </span>
+                </button>
               )}
               {Boolean(metricas.colaboradoresRestritos && metricas.colaboradoresRestritos > 0) && (
-                <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => onNavigateToPersonsWithStatus && onNavigateToPersonsWithStatus('RESTRITO')}
+                  className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px] hover:bg-amber-200 transition"
+                  title="Filtrar colaboradores restritos"
+                >
                   {metricas.colaboradoresRestritos} restrito{metricas.colaboradoresRestritos! > 1 ? 's' : ''}
-                </span>
+                </button>
               )}
               {Boolean(metricas.colaboradoresAfastados && metricas.colaboradoresAfastados > 0) && (
-                <span className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => onNavigateToPersonsWithStatus && onNavigateToPersonsWithStatus('AFASTADO')}
+                  className="px-1.5 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px] hover:bg-purple-200 transition"
+                  title="Filtrar colaboradores afastados"
+                >
                   {metricas.colaboradoresAfastados} afastado{metricas.colaboradoresAfastados! > 1 ? 's' : ''}
-                </span>
+                </button>
               )}
-              {!metricas.colaboradoresSuspensos && !metricas.colaboradoresRestritos && !metricas.colaboradoresAfastados && (
+              {!metricas.colaboradoresSuspensos && !metricas.colaboradoresRestritos && !metricas.colaboradoresAfastados && !metricas.colaboradoresEmTreinamento && (
                 <span className="text-slate-500">
                   {metricas.colaboradoresComRestricao > 0
                     ? `${metricas.colaboradoresComRestricao} com restrição ativa`
@@ -258,9 +296,213 @@ export const CompetenciesDashboardView: React.FC<CompetenciesDashboardViewProps>
               )}
             </div>
           </div>
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700">
+          <div className="w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 shrink-0 ml-3">
             <Users className="w-6 h-6" />
           </div>
+        </div>
+      </div>
+
+      {/* VISÃO EXECUTIVA DE EFETIVO POR STATUS OPERACIONAL */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-600" />
+              <h2 className="text-base font-bold text-slate-900">
+                Visão Executiva de Efetivo
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500">
+              Distribuição oficial de colaboradores por status operacional com acesso direto à lista filtrada.
+            </p>
+          </div>
+          <div className="text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 shrink-0">
+            Total Cadastrado: <strong className="text-slate-900">{metricas.totalColaboradores} colaboradores</strong>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[550px]">
+            <thead>
+              <tr className="border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider bg-slate-50">
+                <th className="py-2.5 px-4">Status Operacional</th>
+                <th className="py-2.5 px-4 text-center">Quantidade</th>
+                <th className="py-2.5 px-4 text-center">% do Efetivo</th>
+                <th className="py-2.5 px-4 text-right">Ação Direta</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-sm">
+              {/* Linha Ativos */}
+              <tr className="hover:bg-slate-50/70 transition">
+                <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
+                  <span>Ativos (Disponíveis para Escala / Execução)</span>
+                </td>
+                <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                  {metricas.colaboradoresAtivos}
+                </td>
+                <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                  {metricas.totalColaboradores > 0
+                    ? `${Math.round((metricas.colaboradoresAtivos / metricas.totalColaboradores) * 100)}%`
+                    : '0%'}
+                </td>
+                <td className="py-2.5 px-4 text-right">
+                  <button
+                    onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('ATIVO') : onNavigateToPersons && onNavigateToPersons()}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1 rounded-lg border border-emerald-200 transition"
+                  >
+                    Ver Ativos ({metricas.colaboradoresAtivos}) →
+                  </button>
+                </td>
+              </tr>
+
+              {/* Linha Em Treinamento */}
+              <tr className="hover:bg-slate-50/70 transition">
+                <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                  <span className="w-2.5 h-2.5 rounded-full bg-sky-600"></span>
+                  <span>Em Treinamento (Capacitação / Onboarding)</span>
+                </td>
+                <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                  {metricas.colaboradoresEmTreinamento || 0}
+                </td>
+                <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                  {metricas.totalColaboradores > 0
+                    ? `${Math.round(((metricas.colaboradoresEmTreinamento || 0) / metricas.totalColaboradores) * 100)}%`
+                    : '0%'}
+                </td>
+                <td className="py-2.5 px-4 text-right">
+                  <button
+                    onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('EM_TREINAMENTO') : onNavigateToPersons && onNavigateToPersons()}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-sky-700 hover:text-sky-800 bg-sky-50 hover:bg-sky-100 px-3 py-1 rounded-lg border border-sky-200 transition"
+                  >
+                    Ver Lista ({metricas.colaboradoresEmTreinamento || 0}) →
+                  </button>
+                </td>
+              </tr>
+
+              {/* Linha Restritos */}
+              <tr className="hover:bg-slate-50/70 transition">
+                <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                  <span>Restritos (Atividades Limitadas)</span>
+                </td>
+                <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                  {metricas.colaboradoresRestritos || 0}
+                </td>
+                <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                  {metricas.totalColaboradores > 0
+                    ? `${Math.round(((metricas.colaboradoresRestritos || 0) / metricas.totalColaboradores) * 100)}%`
+                    : '0%'}
+                </td>
+                <td className="py-2.5 px-4 text-right">
+                  <button
+                    onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('RESTRITO') : onNavigateToPersons && onNavigateToPersons()}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 px-3 py-1 rounded-lg border border-amber-200 transition"
+                  >
+                    Ver Lista ({metricas.colaboradoresRestritos || 0}) →
+                  </button>
+                </td>
+              </tr>
+
+              {/* Linha Suspensos */}
+              <tr className="hover:bg-slate-50/70 transition">
+                <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
+                  <span>Suspensos (Medida Cautelar / Averiguação)</span>
+                </td>
+                <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                  {metricas.colaboradoresSuspensos || 0}
+                </td>
+                <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                  {metricas.totalColaboradores > 0
+                    ? `${Math.round(((metricas.colaboradoresSuspensos || 0) / metricas.totalColaboradores) * 100)}%`
+                    : '0%'}
+                </td>
+                <td className="py-2.5 px-4 text-right">
+                  <button
+                    onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('SUSPENSO') : onNavigateToPersons && onNavigateToPersons()}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-3 py-1 rounded-lg border border-rose-200 transition"
+                  >
+                    Ver Lista ({metricas.colaboradoresSuspensos || 0}) →
+                  </button>
+                </td>
+              </tr>
+
+              {/* Linha Afastados */}
+              <tr className="hover:bg-slate-50/70 transition">
+                <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                  <span className="w-2.5 h-2.5 rounded-full bg-purple-600"></span>
+                  <span>Afastados (Licença Médica / Atestado)</span>
+                </td>
+                <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                  {metricas.colaboradoresAfastados || 0}
+                </td>
+                <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                  {metricas.totalColaboradores > 0
+                    ? `${Math.round(((metricas.colaboradoresAfastados || 0) / metricas.totalColaboradores) * 100)}%`
+                    : '0%'}
+                </td>
+                <td className="py-2.5 px-4 text-right">
+                  <button
+                    onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('AFASTADO') : onNavigateToPersons && onNavigateToPersons()}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-purple-700 hover:text-purple-800 bg-purple-50 hover:bg-purple-100 px-3 py-1 rounded-lg border border-purple-200 transition"
+                  >
+                    Ver Lista ({metricas.colaboradoresAfastados || 0}) →
+                  </button>
+                </td>
+              </tr>
+
+              {/* Linha Desligados */}
+              <tr className="hover:bg-slate-50/70 transition">
+                <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+                  <span>Desligados (Inativos / Histórico)</span>
+                </td>
+                <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                  {metricas.colaboradoresDesligados || 0}
+                </td>
+                <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                  {metricas.totalColaboradores > 0
+                    ? `${Math.round(((metricas.colaboradoresDesligados || 0) / metricas.totalColaboradores) * 100)}%`
+                    : '0%'}
+                </td>
+                <td className="py-2.5 px-4 text-right">
+                  <button
+                    onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('DESLIGADO') : onNavigateToPersons && onNavigateToPersons()}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1 rounded-lg border border-slate-300 transition"
+                  >
+                    Ver Lista ({metricas.colaboradoresDesligados || 0}) →
+                  </button>
+                </td>
+              </tr>
+
+              {/* Linha Outros */}
+              {(metricas.colaboradoresOutros || 0) > 0 && (
+                <tr className="hover:bg-slate-50/70 transition">
+                  <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                    <span>Outros (Status Personalizado)</span>
+                  </td>
+                  <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                    {metricas.colaboradoresOutros}
+                  </td>
+                  <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                    {metricas.totalColaboradores > 0
+                      ? `${Math.round(((metricas.colaboradoresOutros || 0) / metricas.totalColaboradores) * 100)}%`
+                      : '0%'}
+                  </td>
+                  <td className="py-2.5 px-4 text-right">
+                    <button
+                      onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('OUTRO') : onNavigateToPersons && onNavigateToPersons()}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-lg border border-indigo-200 transition"
+                    >
+                      Ver Lista ({metricas.colaboradoresOutros}) →
+                    </button>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

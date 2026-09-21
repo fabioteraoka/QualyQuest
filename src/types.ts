@@ -1049,7 +1049,8 @@ export type BlocoApresentacao =
   | 'CAUSALIDADE'
   | 'PRIORIZACAO'
   | 'MATURIDADE_EVOLUCAO'
-  | 'CONCLUSAO';
+  | 'CONCLUSAO'
+  | 'PESSOAS_COMPETENCIAS';
 
 export type TipoVisualizacaoSlide = 
   | 'capa'
@@ -1534,12 +1535,46 @@ export interface AuditoriaDashboardMetrics {
 
 export type StatusColaborador = 
   | 'ATIVO' 
-  | 'INATIVO' 
-  | 'AFASTADO' 
-  | 'SUSPENSO' 
+  | 'EM_TREINAMENTO'
   | 'RESTRITO' 
+  | 'SUSPENSO' 
+  | 'AFASTADO' 
+  | 'DESLIGADO'
   | 'OUTRO' 
-  | 'DESLIGADO';
+  | 'INATIVO'; // Preservado para retrocompatibilidade histórica sem perda de dados
+
+export interface ItemRNCMatrizRisco {
+  id: string;
+  numero: string;
+  titulo: string;
+  setor?: string;
+  status: string;
+  severidade: string;
+  probabilidade: string;
+  nivel: NivelRisco;
+}
+
+export interface CelulaMatrizRisco5x5 {
+  codigo: string; // Ex: '4C'
+  severidade: string; // '1' a '5'
+  probabilidade: string; // 'A' a 'E'
+  nivel: NivelRisco; // 'Crítico' | 'Alto' | 'Médio' | 'Baixo'
+  quantidade: number;
+  rncs: ItemRNCMatrizRisco[];
+}
+
+export type MapaMatrizRisco5x5 = Record<string, CelulaMatrizRisco5x5>;
+
+export interface ConsolidadoMatrizRisco5x5 {
+  matriz: MapaMatrizRisco5x5;
+  totalRNCsAvaliadas: number;
+  totalSemAvaliacao: number;
+  totalCriticos: number;
+  totalAltos: number;
+  totalMedios: number;
+  totalBaixos: number;
+  celulasComRNCs: CelulaMatrizRisco5x5[];
+}
 
 export type FuncaoOperacionalColaborador =
   | 'Mecânico'
@@ -1912,6 +1947,8 @@ export interface CompetenciasDashboardMetrics {
   colaboradoresAfastados?: number;
   colaboradoresRestritos?: number;
   colaboradoresDesligados?: number;
+  colaboradoresEmTreinamento?: number;
+  colaboradoresOutros?: number;
   totalCompetencias: number;
   taxaColaboradoresQualificados: number; // 0 a 100
   taxaTreinamentosEmDia: number; // 0 a 100

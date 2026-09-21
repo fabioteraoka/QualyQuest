@@ -94,3 +94,30 @@ export interface SlideApresentacao {
   origemRastreabilidade: string;
 }
 ```
+
+---
+
+### 4. Architecture Decision Records (ADRs) — Fase Corretiva & Homologação
+
+#### ADR-014: Unificação da Matriz de Risco 5x5 como Single Source of Truth (SSoT)
+* **Contexto:** Havia cálculo independente de células da Matriz 5x5 no Dashboard e na Apresentação PPTX, causando potenciais divergências de agrupamento e formatação visual das células.
+* **Decisão:** Implementar a função canônica centralizada `consolidarRNCsPorMatrizRisco(records)` em `src/utils/qualityHelpers.ts`. O Dashboard e o motor de slides consomem obrigatoriamente essa mesma função. As células destacam a quantidade com badges em alto contraste e listagem nominal das RNCs por tooltip.
+* **Impacto:** Eliminação total de divergências entre Web e PPTX, garantindo paridade cruzada perfeita no Teste de Espelho.
+
+#### ADR-015: Governança Oficial de Status Operacional (`EM_TREINAMENTO`) e Separação de Aptidão
+* **Contexto:** O status `EM_TREINAMENTO` era previsto em algumas telas mas não integrava o tipo oficial `StatusColaborador`, gerando inconsistências no cadastro e no importador.
+* **Decisão:** 
+  1. Incluir formalmente `EM_TREINAMENTO` no tipo canônico `StatusColaborador`.
+  2. Implementar `normalizarStatusColaboradorCompleto()` no motor de importação com trilha de auditoria.
+  3. Separar terminológica e funcionalmente **Status Operacional** (disponibilidade administrativa: `ATIVO`, `EM_TREINAMENTO`, `RESTRITO`, `SUSPENSO`, `AFASTADO`, `DESLIGADO`) de **Aptidão Operacional** (habilitação técnica para a tarefa: `APTO`, `APTO_COM_RESTRICAO`, `NAO_APTO`, `EM_AVALIACAO`).
+  4. Adicionar no Dashboard a "Tabela Executiva de Efetivo por Status" e navegação interativa que filtra os técnicos ao clicar nos cards de status.
+* **Impacto:** Clareza executiva imediata para a liderança e conformidade estrita com RBAC 145.
+
+#### ADR-016: Geração Dinâmica de Slides e Paginação Adaptativa (Sem Limite Rígido de 20 Slides)
+* **Contexto:** A apresentação gerencial estava artificialmente limitada a 20 slides, truncando dados de colaboradores, RNCs e ações quando o volume de dados da organização crescia.
+* **Decisão:** 
+  1. Remover o teto de 20 slides; a quantidade de slides agora é calculada dinamicamente conforme o volume de dados.
+  2. Utilizar `particionarArray()` para dividir colaboradores nominais (máx 6 por slide), RNCs e ações 5W2H em slides subsequentes numerados sequencialmente.
+  3. Refatorar o construtor PPTX e o visualizador Web para mapear blocos e números dinamicamente sem suposições estáticas.
+* **Impacto:** Escalabilidade para organizações com grande efetivo sem espremer conteúdo ou violar a Safe Area de 16:9.
+

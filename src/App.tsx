@@ -249,6 +249,7 @@ export default function App() {
   // Multi-Tenant Setup Checklist Modal & Welcome Banner State
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
   const [isWelcomeDismissed, setIsWelcomeDismissed] = useState(false);
+  const [initialPersonStatusFilter, setInitialPersonStatusFilter] = useState<string>('TODOS');
 
   // Currently selected NC for detail or edit or official sheet
   const [selectedNC, setSelectedNC] = useState<NCRecord | null>(null);
@@ -1303,6 +1304,9 @@ export default function App() {
                   documents={personDocuments}
                   activities={activityRequirements}
                   nonConformities={records}
+                  initialStatusFilter={initialPersonStatusFilter}
+                  onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
+                  onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
                 />
               )}
 
@@ -1351,7 +1355,14 @@ export default function App() {
                   trainingRecords={trainingRecords}
                   documents={personDocuments}
                   activities={activityRequirements}
-                  onNavigateToPersons={() => setActiveTab('pessoas-competencias')}
+                  onNavigateToPersons={() => {
+                    setInitialPersonStatusFilter('TODOS');
+                    setActiveTab('pessoas-competencias');
+                  }}
+                  onNavigateToPersonsWithStatus={(status) => {
+                    setInitialPersonStatusFilter(status);
+                    setActiveTab('pessoas-competencias');
+                  }}
                   onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
                   onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
                 />

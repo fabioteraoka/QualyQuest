@@ -350,6 +350,9 @@ export async function efetivarImportacaoNoQualigest(
           const funcaoPadrao = cargoMec.toUpperCase().includes('INSPETOR') ? 'INSPETOR_QUALIDADE' : 'TECNICO_MANUTENCAO';
           const rawStatus = dados.statusColaborador || dados.status || '';
           const statusFinal = rawStatus ? normalizarStatusColaborador(rawStatus) : 'ATIVO';
+          const obsStatus = rawStatus 
+            ? `Status operacional "${statusFinal}" normalizado a partir de "${rawStatus}" na planilha de origem.`
+            : `Status não informado na planilha de origem ("STATUS NÃO INFORMADO"); atribuído como ATIVO mediante homologação humana de importação.`;
 
           const novaPessoa: ColaboradorPessoa = {
             id: pessoaId,
@@ -360,9 +363,9 @@ export async function efetivarImportacaoNoQualigest(
             funcao: funcaoPadrao as any,
             cargoOperacional: cargoMec,
             status: statusFinal,
-            statusCustomizado: statusFinal === 'OUTRO' ? String(rawStatus) : undefined,
+            statusCustomizado: statusFinal === 'OUTRO' ? String(rawStatus || 'Não Especificado') : undefined,
             dataAdmissao: dados.dataAdmissao || '2024-01-01',
-            observacoes: `Cadastrado via Importação Inteligente (${nomeArquivo} - Lote: ${importId})`,
+            observacoes: `Cadastrado via Importação Inteligente (${nomeArquivo} - Lote: ${importId}). ${obsStatus}`,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             criadoPor: user?.displayName || user?.email || 'Importador SGQ',

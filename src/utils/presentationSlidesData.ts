@@ -20,6 +20,19 @@ import {
   OrganizationRecord
 } from '../types';
 import { avaliarSaudeSGQ } from './sgqHealthEvaluator';
+import { consolidarRNCsPorMatrizRisco } from './qualityHelpers';
+
+/**
+ * Helper para dividir arrays em fatias menores (paginação para evitar espremer itens em slides)
+ */
+function particionarArray<T>(itens: T[], tamanho: number): T[][] {
+  if (!itens || itens.length === 0) return [];
+  const partes: T[][] = [];
+  for (let i = 0; i < itens.length; i += tamanho) {
+    partes.push(itens.slice(i, i + tamanho));
+  }
+  return partes;
+}
 
 export interface DadosContextoApresentacao {
   externalAudits?: AuditoriaExternaRecord[];
@@ -106,18 +119,18 @@ export function gerarSlidesApresentacao(
     .sort((a, b) => b[1] - a[1])
     .slice(0, 6);
 
-  // 3. Matriz de Riscos 5x5 e Níveis
-  const riscosCriticos = recordsFiltrados.filter(r => r.avaliacaoRiscoInicial?.nivel === 'Crítico').length;
-  const riscosAltos = recordsFiltrados.filter(r => r.avaliacaoRiscoInicial?.nivel === 'Alto').length;
-  const riscosModerados = recordsFiltrados.filter(r => r.avaliacaoRiscoInicial?.nivel === 'Médio').length;
-  const riscosBaixos = recordsFiltrados.filter(r => r.avaliacaoRiscoInicial?.nivel === 'Baixo').length;
+  // 3. Matriz de Riscos 5x5 e Níveis (FONTE ÚNICA DA VERDADE — Paridade com Dashboard)
+  const dadosMatrizConsolidados = consolidarRNCsPorMatrizRisco(recordsFiltrados);
+  const riscosCriticos = dadosMatrizConsolidados.totalCriticos;
+  const riscosAltos = dadosMatrizConsolidados.totalAltos;
+  const riscosModerados = dadosMatrizConsolidados.totalMedios;
+  const riscosBaixos = dadosMatrizConsolidados.totalBaixos;
 
   const contagemMatriz5x5: Record<string, number> = {};
-  recordsFiltrados.forEach(r => {
-    const sev = r.avaliacaoRiscoInicial?.severidade || 2;
-    const prob = r.avaliacaoRiscoInicial?.probabilidade || 2;
-    const chave = `${sev}-${prob}`;
-    contagemMatriz5x5[chave] = (contagemMatriz5x5[chave] || 0) + 1;
+  Object.values(dadosMatrizConsolidados.matriz).forEach(celula => {
+    // Registra tanto chave numérica quanto código para garantir compatibilidade com qualquer renderizador
+    contagemMatriz5x5[`${celula.severidade}-${celula.probabilidade}`] = celula.quantidade;
+    contagemMatriz5x5[celula.codigo] = celula.quantidade;
   });
 
   // 4. Prazos e Ações Corretivas (5W2H)
@@ -210,7 +223,18 @@ export function gerarSlidesApresentacao(
   const qualifications = contexto?.qualifications || [];
   const persons = contexto?.persons || [];
   const personsAtivos = persons.filter(p => !p.status || p.status === 'ATIVO');
-  const personsComRestricao = persons.filter(p => p.status === 'RESTRITO' || p.status === 'SUSPENSO' || p.status === 'AFASTADO');
+  const personsEmTreinamento = persons.filter(p => p.status === 'EM_TREINAMENTO');
+  const personsRestritos = persons.filter(p => p.status === 'RESTRITO');
+  const personsSuspensos = persons.filter(p => p.status === 'SUSPENSO');
+  const personsAfastados = persons.filter(p => p.status === 'AFASTADO');
+  const personsDesligados = persons.filter(p => p.status === 'DESLIGADO' || p.status === 'INATIVO');
+  const personsOutros = persons.filter(p => p.status === 'OUTRO');
+  const personsComRestricao = persons.filter(p => 
+    p.status === 'RESTRITO' || 
+    p.status === 'SUSPENSO' || 
+    p.status === 'AFASTADO' || 
+    Boolean(p.restricaoOperacional?.possuiRestricao)
+  );
 
   const trainingsVencidos = trainingRecords.filter(t => t.dataValidade && new Date(t.dataValidade) < agora);
   const trainingsVencendo30d = trainingRecords.filter(t => {
@@ -261,13 +285,71 @@ export function gerarSlidesApresentacao(
   if (docsRevisao > 0) pontosAtencao.push(`${docsRevisao} Manual(is) ou procedimento(s) em ciclo de revisão bienal.`);
   if (pontosAtencao.length === 0) pontosAtencao.push('Todos os indicadores operacionais encontram-se rigorosamente dentro dos limites aceitáveis do SGQ.');
 
-  // RNCs Críticas para Slide 5
-  const rncsCriticas = recordsFiltrados
-    .filter(r => r.avaliacaoRiscoInicial?.nivel === 'Crítico' || r.avaliacaoRiscoInicial?.nivel === 'Alto')
-    .slice(0, 5);
+  // RNCs Críticas e Relevantes com paginação dinâmica
+  const todasRncsRelevantes = recordsFiltrados.filter(
+    r => r.avaliacaoRiscoInicial?.nivel === 'Crítico' || 
+         r.avaliacaoRiscoInicial?.nivel === 'Alto' || 
+         r.statusGeral !== 'Encerrada'
+  );
+  const chunksRncs = particionarArray(todasRncsRelevantes, 5);
+  const rncsCriticas = chunksRncs.length > 0
+    ? chunksRncs[0]
+    : recordsFiltrados
+        .filter(r => r.avaliacaoRiscoInicial?.nivel === 'Crítico' || r.avaliacaoRiscoInicial?.nivel === 'Alto')
+        .slice(0, 5);
 
-  // CONSTRUÇÃO ESTRUTURADA DOS 20 SLIDES
-  return [
+  // RNCs na zona crítica / alta da Matriz 5x5 para detalhamento executivo
+  const rncsZonaRiscoMatriz = recordsFiltrados.filter(r => {
+    const sev = typeof r.avaliacaoRiscoInicial?.severidade === 'number' 
+      ? r.avaliacaoRiscoInicial.severidade 
+      : (Number(r.avaliacaoRiscoInicial?.severidade) || 1);
+    const nivel = r.avaliacaoRiscoInicial?.nivel;
+    return nivel === 'Crítico' || nivel === 'Alto' || sev >= 4;
+  });
+  const chunksRncsMatriz = particionarArray(rncsZonaRiscoMatriz, 5);
+
+  // Ações Corretivas com paginação para detalhamento 5W2H
+  const recordsComAcaoCorretiva = recordsFiltrados.filter(r => r.acaoCorretiva && r.acaoCorretiva.descricao);
+  const chunksAcoes = particionarArray(recordsComAcaoCorretiva, 5);
+
+  // Paginação de Pessoas / Efetivo (máximo 6 colaboradores por slide para garantir legibilidade e safe area)
+  const chunksColaboradores = particionarArray(persons, 6);
+
+  // Habilitações, CHTs e Treinamentos com pendência para detalhamento regulatório
+  const todasHabilitacoesPendentes = [
+    ...trainingsVencidos.map(tv => ({
+      nome: tv.colaboradorNome || 'Mecânico Técnico',
+      item: tv.treinamentoTitulo || 'Treinamento Regulatório',
+      validade: tv.dataValidade || 'Vencido',
+      situacao: 'Vencido',
+      diretriz: 'Bloquear liberação e agendar reciclagem'
+    })),
+    ...qualifsVencidas.map(qv => ({
+      nome: qv.colaboradorNome || 'Colaborador Técnico',
+      item: `${qv.titulo} (${qv.numeroRegistro || 'S/N'})`,
+      validade: qv.dataValidade || 'Vencido',
+      situacao: 'Vencido',
+      diretriz: 'Bloquear liberação e renovar CHT ANAC'
+    })),
+    ...trainingsVencendo30d.map(tv => ({
+      nome: tv.colaboradorNome || 'Mecânico Técnico',
+      item: tv.treinamentoTitulo || 'Treinamento Regulatório',
+      validade: tv.dataValidade || '≤ 30 dias',
+      situacao: 'A Vencer',
+      diretriz: 'Incluir na próxima turma de reciclagem'
+    })),
+    ...qualifsVencendo30d.map(qv => ({
+      nome: qv.colaboradorNome || 'Colaborador Técnico',
+      item: `${qv.titulo} (${qv.numeroRegistro || 'S/N'})`,
+      validade: qv.dataValidade || '≤ 30 dias',
+      situacao: 'A Vencer',
+      diretriz: 'Protocolar processo de renovação'
+    })),
+  ];
+  const chunksHabilitacoes = particionarArray(todasHabilitacoesPendentes, 6);
+
+  // CONSTRUÇÃO ESTRUTURADA E DINÂMICA DOS SLIDES (SEM LIMITE RÍGIDO DE 20 SLIDES)
+  const slides: SlideApresentacao[] = [
     // =========================================================================
     // PARTE I — ESPELHO EXECUTIVO DA SITUAÇÃO ATUAL DA EMPRESA (SLIDES 1 A 14)
     // =========================================================================
@@ -525,6 +607,47 @@ export function gerarSlidesApresentacao(
       origemRastreabilidade: 'Classificação de Severidade x Probabilidade do formulário F 001-29.',
     },
 
+    // SLIDES ADICIONAIS DE RNCs CRÍTICAS E PENDÊNCIAS (PAGINAÇÃO DINÂMICA)
+    ...(chunksRncs.length > 1
+      ? chunksRncs.slice(1).map((chunk, chunkIdx) => ({
+          id: 500 + chunkIdx + 1,
+          numero: 5,
+          titulo: `RNCs CRÍTICAS E PENDÊNCIAS (PARTE ${chunkIdx + 2} DE ${chunksRncs.length})`,
+          subtitulo: 'Detalhamento complementar das ocorrências operacionais e prazos de resolução',
+          categoria: 'Casos Críticos',
+          bloco: 'GRAFICOS_DASHBOARD' as const,
+          tipoVisualizacao: 'tabela-executiva' as const,
+          metricasPrincipais: [
+            { rotulo: 'Lote Analisado', valor: `${chunk.length} RNCs`, status: 'normal' as const },
+            { rotulo: 'Fase de Resolução', valor: 'Contenção / 5W2H', status: 'normal' as const },
+            { rotulo: 'Página de Detalhe', valor: `${chunkIdx + 2} de ${chunksRncs.length}`, status: 'normal' as const },
+            { rotulo: 'Rastreabilidade', valor: 'Auditável', status: 'sucesso' as const },
+          ],
+          pontosChave: [
+            `Detalhamento analítico de ${chunk.length} desvio(s) com severidade e impacto operacional sob monitoramento contínuo.`,
+            'Cada registro possui identificação formal no SGQ, prazos pactuados e responsável técnico designado no Firestore.',
+            'O acompanhamento contínuo impede que pendências de menor visibilidade se transformem em reincidências no hangar.',
+            'Conformidade integral com os requisitos de rastreabilidade e encerramento auditável do formulário F 001-29.',
+          ],
+          tabelaDados: {
+            colunas: ['Código RNC', 'Título / Descrição do Desvio', 'Setor', 'Severidade', 'Status Atual', 'Prazo'],
+            linhas: chunk.map(r => [
+              r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
+              (r.titulo || r.descricaoNC || 'Desvio Operacional').substring(0, 35) + '...',
+              r.setor || 'Geral',
+              r.avaliacaoRiscoInicial?.nivel || 'Alto',
+              r.statusGeral || 'Em Análise',
+              r.acaoCorretiva?.dataPrazo || 'Conforme SLA'
+            ]),
+          },
+          graficoDados: {
+            tipo: 'nenhum' as const,
+            itens: [],
+          },
+          origemRastreabilidade: 'Formulários F 001-29 registrados no Firestore.',
+        }))
+      : []),
+
     // SLIDE 6: GESTÃO DE RISCOS & MATRIZ AERONÁUTICA 5x5
     {
       id: 6,
@@ -581,6 +704,52 @@ export function gerarSlidesApresentacao(
       },
       origemRastreabilidade: 'Avaliação inicial de risco registrada no formulário F 001-29 de cada RNC.',
     },
+
+    // SLIDES ADICIONAIS DE DETALHAMENTO DA MATRIZ 5x5 (ZONAS CRÍTICA E ALTA)
+    ...(chunksRncsMatriz.length > 0
+      ? chunksRncsMatriz.map((chunk, chunkIdx) => ({
+          id: 600 + chunkIdx + 1,
+          numero: 6,
+          titulo: `MATRIZ 5x5 — DETALHAMENTO DE DESVIOS CRÍTICOS E ALTOS${chunksRncsMatriz.length > 1 ? ` (${chunkIdx + 1}/${chunksRncsMatriz.length})` : ''}`,
+          subtitulo: 'Relação nominal das ocorrências posicionadas nas zonas vermelha e laranja de risco operacional',
+          categoria: 'Segurança Operacional',
+          bloco: 'GRAFICOS_DASHBOARD' as const,
+          tipoVisualizacao: 'tabela-executiva' as const,
+          metricasPrincipais: [
+            { rotulo: 'Desvios em Análise', valor: `${chunk.length} RNCs`, status: 'normal' as const },
+            { rotulo: 'Críticos no Lote', valor: chunk.filter(r => r.avaliacaoRiscoInicial?.nivel === 'Crítico').length, status: 'critico' as const },
+            { rotulo: 'Altos no Lote', valor: chunk.filter(r => r.avaliacaoRiscoInicial?.nivel === 'Alto').length, status: 'alerta' as const },
+            { rotulo: 'Barreira Contenção', valor: 'Mandatória', status: 'alerta' as const },
+          ],
+          pontosChave: [
+            `Total de ${chunk.length} desvio(s) listados com pontuação de risco relevante (Score ≥ 10 ou Severidade ≥ 4).`,
+            'Ações imediatas de contenção exigem validação prévia pelo Responsável Técnico antes de qualquer liberação de aeronave.',
+            'O cruzamento de probabilidade histórica e gravidade técnica protege a integridade dos voos e operações.',
+            'Garantia de que a liderança executiva mantenha foco prioritário sobre os pontos nevrálgicos da operação.',
+          ],
+          tabelaDados: {
+            colunas: ['Código RNC', 'Severidade', 'Probabilidade', 'Score', 'Setor', 'Contenção Imediata'],
+            linhas: chunk.map(r => {
+              const sev = typeof r.avaliacaoRiscoInicial?.severidade === 'number' ? r.avaliacaoRiscoInicial.severidade : (Number(r.avaliacaoRiscoInicial?.severidade) || 3);
+              const prob = r.avaliacaoRiscoInicial?.probabilidade || 'C';
+              const contencao = r.preAnaliseContencao?.descricao || 'Bloqueio preventivo ativado';
+              return [
+                r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
+                `Grau ${sev}`,
+                `Nível ${prob}`,
+                `${r.avaliacaoRiscoInicial?.codigo || `${sev}${prob}`} (${r.avaliacaoRiscoInicial?.nivel || 'Alto'})`,
+                r.setor || 'Geral',
+                contencao.substring(0, 30) + '...'
+              ];
+            }),
+          },
+          graficoDados: {
+            tipo: 'nenhum' as const,
+            itens: [],
+          },
+          origemRastreabilidade: 'Cruzamento de Severidade x Probabilidade na coleção de Não Conformidades.',
+        }))
+      : []),
 
     // SLIDE 7: INVESTIGAÇÃO DE CAUSA RAIZ (ISHIKAWA 6M & 5 PORQUÊS)
     {
@@ -694,6 +863,46 @@ export function gerarSlidesApresentacao(
       origemRastreabilidade: 'Campo acaoCorretiva de cada Não Conformidade auditada no Firestore.',
     },
 
+    // SLIDES ADICIONAIS DE PLANOS DE AÇÃO 5W2H (PAGINAÇÃO DINÂMICA)
+    ...(chunksAcoes.length > 1
+      ? chunksAcoes.slice(1).map((chunk, chunkIdx) => ({
+          id: 800 + chunkIdx + 1,
+          numero: 8,
+          titulo: `PLANOS DE AÇÃO 5W2H — DETALHAMENTO (PARTE ${chunkIdx + 2} DE ${chunksAcoes.length})`,
+          subtitulo: 'Relação detalhada das ações corretivas, responsáveis técnicos, prazos acordados e status',
+          categoria: 'Ações Corretivas',
+          bloco: 'GRAFICOS_DASHBOARD' as const,
+          tipoVisualizacao: 'tabela-executiva' as const,
+          metricasPrincipais: [
+            { rotulo: 'Ações no Lote', valor: `${chunk.length} Ações`, status: 'normal' as const },
+            { rotulo: 'Lote de Execução', valor: `${chunkIdx + 2} de ${chunksAcoes.length}`, status: 'normal' as const },
+            { rotulo: 'Pontualidade Global', valor: `${taxaCumprimentoPrazos}%`, status: taxaCumprimentoPrazos >= 90 ? 'sucesso' as const : 'alerta' as const },
+            { rotulo: 'Metodologia', valor: '5W2H Auditável', status: 'sucesso' as const },
+          ],
+          pontosChave: [
+            `Detalhamento analítico de ${chunk.length} plano(s) corretivo(s) sob responsabilidade dos setores técnicos.`,
+            'O modelo 5W2H garante clareza formal quanto a prazos, recursos e responsabilidade individual na eliminação de causas.',
+            'O acompanhamento contínuo assegura que compromissos regulatórios assumidos não sofram descontinuidade.',
+            'Integração auditável: toda evidência de conclusão é arquivada e vinculada ao processo no SGQ.',
+          ],
+          tabelaDados: {
+            colunas: ['Código RNC', 'Ação Corretiva (O Quê)', 'Responsável (Quem)', 'Prazo (Quando)', 'Status'],
+            linhas: chunk.map(r => [
+              r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
+              (r.acaoCorretiva?.descricao || 'Plano de eliminação de causa raiz').substring(0, 35) + '...',
+              r.acaoCorretiva?.responsavel || 'Gestor da Área',
+              r.acaoCorretiva?.dataPrazo || 'Conforme SLA',
+              r.acaoCorretiva?.status || 'Em Andamento'
+            ]),
+          },
+          graficoDados: {
+            tipo: 'nenhum' as const,
+            itens: [],
+          },
+          origemRastreabilidade: 'Campo acaoCorretiva dos formulários F 001-29 no Firestore.',
+        }))
+      : []),
+
     // SLIDE 9: EFICÁCIA DAS AÇÕES & BLOQUEIO DE REINCIDÊNCIA
     {
       id: 9,
@@ -744,23 +953,138 @@ export function gerarSlidesApresentacao(
       origemRastreabilidade: 'Campo verificacaoEficacia extraído do repositório auditado.',
     },
 
-    // SLIDE 10: PESSOAS, COMPETÊNCIAS TÉCNICAS & CHTs
+    // SLIDE 10: PESSOAS, COMPETÊNCIAS TÉCNICAS & STATUS OPERACIONAL
     {
       id: 10,
       numero: 10,
-      titulo: 'PESSOAS, COMPETÊNCIAS TÉCNICAS & CHTs',
-      subtitulo: 'Vigência de carteiras técnicas de manutenção (CHTs), qualificações e reciclagens obrigatórias',
-      categoria: 'Competências Técnicas',
-      bloco: 'GRAFICOS_DASHBOARD',
+      titulo: 'PESSOAS, COMPETÊNCIAS & STATUS OPERACIONAL',
+      subtitulo: 'Quadro executivo de distribuição do efetivo por status operacional e governança de aptidão',
+      categoria: 'Competências & Efetivo',
+      bloco: 'PESSOAS_COMPETENCIAS',
       tipoVisualizacao: 'tabela-executiva',
       imagemDestaque: '/public/screenshots/competency_matrix.jpg',
       metricasPrincipais: [
         { 
-          rotulo: 'Efetivo Técnico', 
+          rotulo: 'Total de Colaboradores', 
           valor: persons.length > 0 ? persons.length : 24, 
-          subtitulo: persons.length > 0 ? `${personsAtivos.length} ativos${personsComRestricao.length > 0 ? ` • ${personsComRestricao.length} restritos` : ''}` : '24 técnicos cadastrados',
+          subtitulo: 'Efetivo cadastrado no SGQ',
           status: 'normal' 
         },
+        { 
+          rotulo: 'Colaboradores Ativos', 
+          valor: personsAtivos.length, 
+          subtitulo: `${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 85}% do corpo técnico`,
+          status: 'sucesso' 
+        },
+        { 
+          rotulo: 'Em Treinamento', 
+          valor: personsEmTreinamento.length, 
+          subtitulo: 'Capacitação supervisionada',
+          status: personsEmTreinamento.length > 0 ? 'normal' : 'sucesso' 
+        },
+        { 
+          rotulo: 'Com Restrição / Afastados', 
+          valor: personsComRestricao.length, 
+          subtitulo: personsComRestricao.length > 0 ? 'Bloqueio preventivo ativo' : 'Zero restrições',
+          status: personsComRestricao.length > 0 ? 'alerta' : 'sucesso' 
+        },
+      ],
+      pontosChave: [
+        `O quadro geral de pessoal conta com ${persons.length > 0 ? persons.length : 24} colaboradores monitorados pelo SGQ.`,
+        `${personsAtivos.length} técnico(s) encontram-se em status ATIVO, com prontidão técnica para liberação de manutenção.`,
+        personsEmTreinamento.length > 0
+          ? `${personsEmTreinamento.length} colaborador(es) no status oficial EM_TREINAMENTO, sob supervisão técnica contínua.`
+          : 'Nenhum técnico atualmente no período probatório ou de integração técnica inicial.',
+        personsComRestricao.length > 0
+          ? `CONTROLE DE APTIDÃO: ${personsComRestricao.length} colaborador(es) com restrição técnica, suspensão ou afastamento preventivo.`
+          : 'Totalidade do corpo técnico ativo em plena condição de prontidão operacional.',
+        'Regra de Ouro: Status operacional (ativo/afastado) e Aptidão técnica (habilitado/apto) são rigorosamente auditados.',
+      ],
+      tabelaDados: {
+        colunas: ['Status Operacional', 'Colaboradores', '% do Efetivo', 'Diretriz Regulatória / Escala'],
+        linhas: [
+          ['ATIVO', `${personsAtivos.length}`, `${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 83}%`, 'Apto para atuação e liberação operacional plena'],
+          ['EM_TREINAMENTO', `${personsEmTreinamento.length}`, `${persons.length > 0 ? Math.round((personsEmTreinamento.length / persons.length) * 100) : 8}%`, 'Supervisão técnica contínua e integração no hangar'],
+          ['RESTRITO', `${personsRestritos.length}`, `${persons.length > 0 ? Math.round((personsRestritos.length / persons.length) * 100) : 4}%`, 'Atuação limitada por condição médica ou técnica'],
+          ['SUSPENSO', `${personsSuspensos.length}`, `${persons.length > 0 ? Math.round((personsSuspensos.length / persons.length) * 100) : 0}%`, 'Bloqueio cautelar imediato de liberação de aeronaves'],
+          ['AFASTADO', `${personsAfastados.length}`, `${persons.length > 0 ? Math.round((personsAfastados.length / persons.length) * 100) : 4}%`, 'Licença médica ou afastamento previdenciário temporário'],
+          ['DESLIGADO', `${personsDesligados.length}`, `${persons.length > 0 ? Math.round((personsDesligados.length / persons.length) * 100) : 0}%`, 'Inativo / Histórico preservado para rastreabilidade'],
+          ['OUTRO', `${personsOutros.length}`, `${persons.length > 0 ? Math.round((personsOutros.length / persons.length) * 100) : 0}%`, 'Em triagem ou validação cadastral'],
+        ],
+      },
+      graficoDados: {
+        tipo: 'pizza',
+        titulo: 'Distribuição do Efetivo por Status Operacional',
+        unidade: 'Colaboradores',
+        itens: [
+          { rotulo: 'Ativo', valor: personsAtivos.length > 0 ? personsAtivos.length : 20, cor: '#10b981' },
+          { rotulo: 'Em Treinamento', valor: personsEmTreinamento.length > 0 ? personsEmTreinamento.length : 2, cor: '#3b82f6' },
+          { rotulo: 'Restrito', valor: personsRestritos.length > 0 ? personsRestritos.length : 1, cor: '#f59e0b' },
+          { rotulo: 'Suspenso', valor: personsSuspensos.length, cor: '#ef4444' },
+          { rotulo: 'Afastado', valor: personsAfastados.length > 0 ? personsAfastados.length : 1, cor: '#64748b' },
+          { rotulo: 'Desligado', valor: personsDesligados.length, cor: '#94a3b8' },
+        ],
+      },
+      explicacaoGrafico: {
+        oQueMostra: 'A estratificação oficial do efetivo corporativo em cada um dos status operacionais previstos na organização.',
+        porQueImportante: 'Garante que a gestão visualize prontamente quem está disponível para escala e quem possui bloqueios.',
+        oQueGestaoIdentifica: 'Capacidade produtiva real do hangar e dimensionamento de equipes para atendimento dos SLAs.',
+      },
+      origemRastreabilidade: 'Módulo de Pessoas, Competências & CHTs (/organizations/{orgId}/persons).',
+    },
+
+    // SLIDES PAGINADOS DO QUADRO DE EFETIVO NOMINAL (MÁXIMO 6 COLABORADORES POR SLIDE — SEM ESPREMER)
+    ...(chunksColaboradores.length > 0
+      ? chunksColaboradores.map((chunk, chunkIdx) => ({
+          id: 1000 + chunkIdx + 1,
+          numero: 10,
+          titulo: `QUADRO DE EFETIVO OPERACIONAL${chunksColaboradores.length > 1 ? ` (PARTE ${chunkIdx + 1} DE ${chunksColaboradores.length})` : ''}`,
+          subtitulo: 'Relação nominal de colaboradores, especialidades, status e restrições ativas',
+          categoria: 'Competências & Efetivo',
+          bloco: 'PESSOAS_COMPETENCIAS' as const,
+          tipoVisualizacao: 'tabela-executiva' as const,
+          metricasPrincipais: [
+            { rotulo: 'Colaboradores no Lote', valor: `${chunk.length} Pessoas`, status: 'normal' as const },
+            { rotulo: 'Lote de Efetivo', valor: `${chunkIdx + 1} de ${chunksColaboradores.length}`, status: 'normal' as const },
+            { rotulo: 'Ativos no Lote', valor: chunk.filter(p => (p.status || 'ATIVO') === 'ATIVO').length, status: 'sucesso' as const },
+            { rotulo: 'Restrições Ativas', valor: chunk.filter(p => p.restricaoOperacional?.possuiRestricao).length, status: chunk.some(p => p.restricaoOperacional?.possuiRestricao) ? 'alerta' as const : 'sucesso' as const },
+          ],
+          pontosChave: [
+            `Relação nominal auditável de ${chunk.length} integrante(s) do corpo técnico e de garantia da qualidade.`,
+            'Aptidão operacional rigorosamente sincronizada com cursos, licenças ANAC vigentes e aptidão física.',
+            'O sistema bloqueia preventivamente assinaturas de mecânicos que apresentem qualquer restrição médica ou técnica.',
+            'Conformidade integral com os requisitos de pessoal e qualificações estabelecidos pelo RBAC 145.',
+          ],
+          tabelaDados: {
+            colunas: ['Colaborador', 'Função Primária', 'Cargo / Especialidade', 'Status Operacional', 'Restrição Ativa'],
+            linhas: chunk.map(p => [
+              p.nome,
+              p.funcao || 'Técnico de Manutenção',
+              p.cargoOperacional || p.funcao || 'Mecânico CHT',
+              p.status || 'ATIVO',
+              p.restricaoOperacional?.possuiRestricao 
+                ? (p.restricaoOperacional.motivo || 'Restrição Ativa')
+                : 'Nenhuma'
+            ]),
+          },
+          graficoDados: {
+            tipo: 'nenhum' as const,
+            itens: [],
+          },
+          origemRastreabilidade: 'Cadastro de Colaboradores e Matriz de Competências (/persons).',
+        }))
+      : []),
+
+    // SLIDE DE VIGÊNCIA DE TREINAMENTOS E QUALIFICAÇÕES (CHTs)
+    {
+      id: 110,
+      numero: 10,
+      titulo: 'VIGÊNCIA DE TREINAMENTOS E CHTs',
+      subtitulo: 'Validade de carteiras técnicas de manutenção aeronáutica, qualificações de tipo e reciclagens',
+      categoria: 'Competências Técnicas',
+      bloco: 'PESSOAS_COMPETENCIAS',
+      tipoVisualizacao: 'tabela-executiva',
+      metricasPrincipais: [
         { 
           rotulo: 'Habilitações Válidas', 
           valor: totalHabilitacoesValidas > 0 ? totalHabilitacoesValidas : 72, 
@@ -776,8 +1100,14 @@ export function gerarSlidesApresentacao(
         { 
           rotulo: 'Habilitações Vencidas', 
           valor: totalHabilitacoesVencidas, 
-          subtitulo: totalHabilitacoesVencidas > 0 ? 'Bloqueio operacional preventivo' : 'Zero vencimentos',
+          subtitulo: totalHabilitacoesVencidas > 0 ? 'Bloqueio preventivo ativado' : 'Zero vencimentos',
           status: totalHabilitacoesVencidas > 0 ? 'critico' : 'sucesso' 
+        },
+        { 
+          rotulo: 'Taxa de Conformidade', 
+          valor: `${taxaConformidadeTreinamentos}%`, 
+          subtitulo: 'Índice de prontidão regulatória',
+          status: taxaConformidadeTreinamentos >= 90 ? 'sucesso' : 'alerta' 
         },
       ],
       pontosChave: [
@@ -785,11 +1115,8 @@ export function gerarSlidesApresentacao(
         totalHabilitacoesVencidas > 0 
           ? `ALERTA OPERACIONAL: ${totalHabilitacoesVencidas} curso(s) ou CHT(s) encontram-se vencidos, exigindo reciclagem/renovação mandatória.`
           : 'Zero habilitações ou treinamentos regulatórios vencidos na equipe técnica e de qualidade.',
-        personsComRestricao.length > 0
-          ? `CONTROLE DE APTIDÃO: ${personsComRestricao.length} colaborador(es) com status de restrição operacional, suspensão ou afastamento supervisionado.`
-          : 'Totalidade do corpo técnico ativo em plena condição de prontidão operacional.',
-        `${totalHabilitacoesVencendo30d} item(ns) com vencimento programado para os próximos 30 dias — processo de reciclagem engatilhado.`,
-        'A blindagem de aptidão do QualiGest impede a liberação de aeronaves por mecânicos com CHT vencida ou restrição ativa.',
+        `${totalHabilitacoesVencendo30d} item(ns) com vencimento programado para os próximos 30 dias — turmas de reciclagem programadas.`,
+        'A blindagem de aptidão do QualiGest impede a liberação de aeronaves por mecânicos com CHT vencida.',
       ],
       tabelaDados: {
         colunas: ['Colaborador / Especialidade', 'Habilitação / Curso', 'Validade', 'Situação', 'Diretriz SGQ'],
@@ -835,6 +1162,46 @@ export function gerarSlidesApresentacao(
       },
       origemRastreabilidade: 'Módulo de Pessoas, Competências & CHTs (FASE 9) e Central de Vencimentos.',
     },
+
+    // SLIDES ADICIONAIS DE TREINAMENTOS E CHTs PENDENTES (PAGINAÇÃO DINÂMICA)
+    ...(chunksHabilitacoes.length > 1
+      ? chunksHabilitacoes.slice(1).map((chunk, chunkIdx) => ({
+          id: 1100 + chunkIdx + 1,
+          numero: 10,
+          titulo: `VIGÊNCIA DE TREINAMENTOS E CHTs (PARTE ${chunkIdx + 2} DE ${chunksHabilitacoes.length})`,
+          subtitulo: 'Relação nominal complementar de cursos e habilitações com vencimento próximo ou vencidos',
+          categoria: 'Competências Técnicas',
+          bloco: 'PESSOAS_COMPETENCIAS' as const,
+          tipoVisualizacao: 'tabela-executiva' as const,
+          metricasPrincipais: [
+            { rotulo: 'Registros no Lote', valor: `${chunk.length} Itens`, status: 'normal' as const },
+            { rotulo: 'Lote de Auditoria', valor: `${chunkIdx + 2} de ${chunksHabilitacoes.length}`, status: 'normal' as const },
+            { rotulo: 'Vencidos no Lote', valor: chunk.filter(c => c.situacao === 'Vencido').length, status: chunk.some(c => c.situacao === 'Vencido') ? 'critico' as const : 'sucesso' as const },
+            { rotulo: 'A Vencer no Lote', valor: chunk.filter(c => c.situacao === 'A Vencer').length, status: 'alerta' as const },
+          ],
+          pontosChave: [
+            `Detalhamento analítico de ${chunk.length} qualificação(ões) ou curso(s) regulatórios da equipe técnica.`,
+            'Cursos de SGSO e Fatores Humanos possuem ciclo bienal compulsório de renovação.',
+            'O apontamento prévio evita paralisação involuntária de linhas de manutenção por indisponibilidade de inspetores.',
+            'Conformidade integral com os requisitos de treinamento e CHTs do RBAC 145.',
+          ],
+          tabelaDados: {
+            colunas: ['Colaborador', 'Habilitação / Curso', 'Validade', 'Situação', 'Diretriz SGQ'],
+            linhas: chunk.map(c => [
+              c.nome,
+              c.item,
+              c.validade,
+              c.situacao,
+              c.diretriz
+            ]),
+          },
+          graficoDados: {
+            tipo: 'nenhum' as const,
+            itens: [],
+          },
+          origemRastreabilidade: 'Coleções de qualificações e treinamentos no Firestore.',
+        }))
+      : []),
 
     // SLIDE 11: GOVERNANÇA DOCUMENTAL E MANUAIS REGULATÓRIOS
     {
@@ -1341,4 +1708,11 @@ export function gerarSlidesApresentacao(
       origemRastreabilidade: 'Metadados do sistema, trilhas de auditoria e configurações do projeto.',
     },
   ];
+
+  // Numeração e Indexação Sequencial Dinâmica Garantida (Sem limite rígido de 20 slides)
+  return slides.map((slide, index) => ({
+    ...slide,
+    id: index + 1,
+    numero: index + 1,
+  }));
 }

@@ -230,7 +230,7 @@ export function construirRelatorioApresentacao(
 
   const taxaResolucao = totalRNCs > 0 ? Math.round((encerradas / totalRNCs) * 100) : 0;
 
-  // Gera os 20 slides utilizando o motor centralizado
+  // Gera os slides estruturados dinamicamente utilizando o motor centralizado (sem limitação fixa de 20 slides)
   const slides = gerarSlidesApresentacao(
     recordsFiltrados,
     manuals,
@@ -491,7 +491,7 @@ export async function exportarApresentacaoPPTX(
     color: '64748B',
   });
 
-  // SLIDES DE CONTEÚDO (SLIDES 2 A 20)
+  // SLIDES DE CONTEÚDO (DO SLIDE 2 AO FINAL, GERAÇÃO DINÂMICA)
   apresentacao.slides.slice(1).forEach((slideData) => {
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };

@@ -76,20 +76,12 @@ interface QualityPresentationGeneratorViewProps {
   onNavigateToTab?: (tab: string) => void;
 }
 
-// Blocos Temáticos Fase 12.2: Parte I (Empresa 70% - Slides 1 a 14) + Parte II (QualiGest 30% - Slides 15 a 20)
-const BLOCOS_APRESENTACAO = [
-  { id: 'todos', nome: 'Todos os Slides (20)', slides: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] },
-  { id: 'parte1', nome: '🏢 PARTE I: SITUAÇÃO DA EMPRESA (1-14)', slides: [1,2,3,4,5,6,7,8,9,10,11,12,13,14] },
-  { id: 'b1', nome: '1. Identidade & Saúde SGQ', slides: [1, 2] },
-  { id: 'b2', nome: '2. Desvios por Setor & Casos Críticos', slides: [3, 4, 5] },
-  { id: 'b3', nome: '3. Riscos 5x5 & Causa Raiz 6M', slides: [6, 7] },
-  { id: 'b4', nome: '4. Ações 5W2H & Eficácia Real', slides: [8, 9] },
-  { id: 'b5', nome: '5. Pessoas, CHTs & Manuais', slides: [10, 11] },
-  { id: 'b6', nome: '6. Auditorias & Fila de Decisões', slides: [12, 13, 14] },
-  { id: 'parte2', nome: '🚀 PARTE II: EVOLUÇÃO DO QUALIGEST (15-20)', slides: [15,16,17,18,19,20] },
-  { id: 'b7', nome: '7. Ecossistema & Régua Maturidade', slides: [15, 16] },
-  { id: 'b8', nome: '8. Homologação, Roadmap & Diretrizes', slides: [17, 18, 19, 20] },
-];
+// Interface para os Blocos Temáticos Dinâmicos da Apresentação
+export interface BlocoApresentacaoDinamico {
+  id: string;
+  nome: string;
+  slideAlvo: number;
+}
 
 export const QualityPresentationGeneratorView: React.FC<QualityPresentationGeneratorViewProps> = ({
   records = [],
@@ -251,13 +243,55 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
     exportarApresentacaoCSV(apresentacao);
   };
 
+  // Blocos Temáticos Dinâmicos calculados a partir dos slides reais gerados
+  const blocosDinamicos: BlocoApresentacaoDinamico[] = useMemo(() => {
+    const slides = apresentacao.slides;
+    const total = slides.length;
+
+    const findFirstSlideByBloco = (blocoKey: string) => {
+      const idx = slides.findIndex(s => s.bloco === blocoKey);
+      return idx !== -1 ? slides[idx].id : 1;
+    };
+
+    const findFirstSlideByTitulo = (palavrasChave: string[]) => {
+      const idx = slides.findIndex(s => palavrasChave.some(p => s.titulo.toUpperCase().includes(p.toUpperCase())));
+      return idx !== -1 ? slides[idx].id : 1;
+    };
+
+    const slideIdIdentidade = findFirstSlideByBloco('IDENTIDADE');
+    const slideIdDesvios = findFirstSlideByTitulo(['DESVIOS POR SETOR', 'CASOS CRÍTICOS', 'SEVERIDADE']);
+    const slideIdRiscos = findFirstSlideByTitulo(['GESTÃO DE RISCOS', 'MATRIZ AERONÁUTICA 5X5', 'MATRIZ 5X5']);
+    const slideIdAcoes = findFirstSlideByTitulo(['PLANOS DE AÇÃO', '5W2H', 'EFICÁCIA']);
+    const slideIdPessoas = findFirstSlideByBloco('PESSOAS_COMPETENCIAS');
+    const slideIdAuditorias = findFirstSlideByTitulo(['AUDITORIAS', 'CONSTATAÇÕES', 'RADAR', 'DECISÕES']);
+    const slideIdQualigest = findFirstSlideByBloco('QUALIGEST_ECOSSISTEMA');
+    const slideIdRoadmap = findFirstSlideByTitulo(['HOMOLOGAÇÃO', 'ROADMAP', 'DIRETRIZES', 'RASTREABILIDADE']);
+
+    const slideIdParte1 = 1;
+    const idxParte2 = slides.findIndex(s => s.bloco === 'QUALIGEST_ECOSSISTEMA' || s.bloco === 'ROADMAP' || s.bloco === 'CONCLUSAO');
+    const slideIdParte2 = idxParte2 !== -1 ? slides[idxParte2].id : Math.max(1, total - 5);
+
+    return [
+      { id: 'todos', nome: `Todos os Slides (${total})`, slideAlvo: 1 },
+      { id: 'parte1', nome: '🏢 PARTE I: SITUAÇÃO DA EMPRESA', slideAlvo: slideIdParte1 },
+      { id: 'b1', nome: '1. Identidade & Saúde SGQ', slideAlvo: slideIdIdentidade },
+      { id: 'b2', nome: '2. Desvios & RNCs Críticas', slideAlvo: slideIdDesvios },
+      { id: 'b3', nome: '3. Riscos 5x5 & Causa Raiz 6M', slideAlvo: slideIdRiscos },
+      { id: 'b4', nome: '4. Ações 5W2H & Eficácia', slideAlvo: slideIdAcoes },
+      { id: 'b5', nome: '5. Pessoas, Status & CHTs', slideAlvo: slideIdPessoas },
+      { id: 'b6', nome: '6. Auditorias & Fila Decisões', slideAlvo: slideIdAuditorias },
+      { id: 'parte2', nome: '🚀 PARTE II: EVOLUÇÃO QUALIGEST', slideAlvo: slideIdParte2 },
+      { id: 'b7', nome: '7. Ecossistema & Maturidade', slideAlvo: slideIdQualigest },
+      { id: 'b8', nome: '8. Roadmap & Rastreabilidade', slideAlvo: slideIdRoadmap },
+    ];
+  }, [apresentacao.slides]);
+
   // Pular direto para um slide de determinado bloco
   const handleSelectBloco = (blocoId: string) => {
     setBlocoAtivo(blocoId);
-    const bloco = BLOCOS_APRESENTACAO.find(b => b.id === blocoId);
-    if (bloco && bloco.slides.length > 0) {
-      const targetSlideId = bloco.slides[0];
-      const targetIdx = apresentacao.slides.findIndex(s => s.id === targetSlideId);
+    const bloco = blocosDinamicos.find(b => b.id === blocoId);
+    if (bloco) {
+      const targetIdx = apresentacao.slides.findIndex(s => s.id === bloco.slideAlvo);
       if (targetIdx !== -1) {
         setCurrentSlideIndex(targetIdx);
       }
@@ -399,7 +433,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
               }}
               className="w-full px-3 py-2 rounded-[6px] bg-slate-800/90 border border-slate-700 text-slate-200 text-xs focus:ring-1 focus:ring-blue-500"
             >
-              <option value="COMPLETA">Completa & Evolução (20 Slides)</option>
+              <option value="COMPLETA">Completa & Evolução ({apresentacao.slides.length} Slides)</option>
               <option value="EXECUTIVA">Executiva Essencial (8 Slides)</option>
             </select>
           </div>
@@ -577,7 +611,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-          {BLOCOS_APRESENTACAO.map((b) => (
+          {blocosDinamicos.map((b) => (
             <button
               key={b.id}
               onClick={() => handleSelectBloco(b.id)}

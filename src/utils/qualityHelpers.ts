@@ -9,7 +9,12 @@ import {
   StatusGeralNC,
   ManualRecord,
   VersaoDocumentoConfig,
-  OrganizationSLAConfig
+  OrganizationSLAConfig,
+  StatusColaborador,
+  ConsolidadoMatrizRisco5x5,
+  CelulaMatrizRisco5x5,
+  ItemRNCMatrizRisco,
+  MapaMatrizRisco5x5,
 } from '../types';
 
 export const SEVERIDADES = [
@@ -52,6 +57,233 @@ export function obterCorRisco(nivel: NivelRisco | string): { bg: string; text: s
     default:
       return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-300', badgeBg: 'bg-emerald-600 text-white' };
   }
+}
+
+/**
+ * Retorna as propriedades visuais e semânticas padronizadas do status de colaborador
+ * Regra de Ouro: Identificação visual inequívoca (🟢 ATIVO, 🔵 EM TREINAMENTO, 🟡 RESTRITO, etc.)
+ */
+export function obterConfiguracaoStatusColaborador(status?: StatusColaborador | string): {
+  status: StatusColaborador;
+  label: string;
+  badgeClass: string;
+  iconeEmoji: string;
+  corTexto: string;
+  corBg: string;
+  corBorda: string;
+  descricao: string;
+} {
+  const norm = String(status || '').trim().toUpperCase();
+
+  switch (norm) {
+    case 'ATIVO':
+      return {
+        status: 'ATIVO',
+        label: 'Ativo',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+        iconeEmoji: '🟢',
+        corTexto: 'text-emerald-700',
+        corBg: 'bg-emerald-50',
+        corBorda: 'border-emerald-300',
+        descricao: 'Colaborador com vínculo ativo e disponibilidade operacional regular',
+      };
+    case 'EM_TREINAMENTO':
+    case 'EM TREINAMENTO':
+    case 'TREINAMENTO':
+      return {
+        status: 'EM_TREINAMENTO',
+        label: 'Em Treinamento',
+        badgeClass: 'bg-sky-50 text-sky-700 border-sky-300',
+        iconeEmoji: '🔵',
+        corTexto: 'text-sky-700',
+        corBg: 'bg-sky-50',
+        corBorda: 'border-sky-300',
+        descricao: 'Período de capacitação supervisionada ou formação técnica',
+      };
+    case 'RESTRITO':
+      return {
+        status: 'RESTRITO',
+        label: 'Restrito',
+        badgeClass: 'bg-amber-50 text-amber-800 border-amber-300',
+        iconeEmoji: '🟡',
+        corTexto: 'text-amber-800',
+        corBg: 'bg-amber-50',
+        corBorda: 'border-amber-300',
+        descricao: 'Possui restrição médica ou técnica delimitando seu escopo de atuação',
+      };
+    case 'SUSPENSO':
+      return {
+        status: 'SUSPENSO',
+        label: 'Suspenso',
+        badgeClass: 'bg-rose-50 text-rose-700 border-rose-300',
+        iconeEmoji: '🔴',
+        corTexto: 'text-rose-700',
+        corBg: 'bg-rose-50',
+        corBorda: 'border-rose-300',
+        descricao: 'Suspensão preventiva ou disciplinar com bloqueio operacional imediato',
+      };
+    case 'AFASTADO':
+      return {
+        status: 'AFASTADO',
+        label: 'Afastado',
+        badgeClass: 'bg-purple-50 text-purple-700 border-purple-300',
+        iconeEmoji: '🟣',
+        corTexto: 'text-purple-700',
+        corBg: 'bg-purple-50',
+        corBorda: 'border-purple-300',
+        descricao: 'Afastamento temporário por licença médica, benefício previdenciário ou cessão',
+      };
+    case 'DESLIGADO':
+      return {
+        status: 'DESLIGADO',
+        label: 'Desligado',
+        badgeClass: 'bg-slate-100 text-slate-800 border-slate-400',
+        iconeEmoji: '⚫',
+        corTexto: 'text-slate-800',
+        corBg: 'bg-slate-100',
+        corBorda: 'border-slate-400',
+        descricao: 'Colaborador desligado da organização (registro mantido para histórico e rastreabilidade)',
+      };
+    case 'INATIVO':
+      return {
+        status: 'INATIVO',
+        label: 'Inativo (Histórico)',
+        badgeClass: 'bg-zinc-100 text-zinc-700 border-zinc-300',
+        iconeEmoji: '🔘',
+        corTexto: 'text-zinc-700',
+        corBg: 'bg-zinc-100',
+        corBorda: 'border-zinc-300',
+        descricao: 'Registro inativo pré-existente (compatibilidade legada)',
+      };
+    case 'OUTRO':
+    default:
+      return {
+        status: 'OUTRO',
+        label: status ? String(status) : 'Outro / Não Definido',
+        badgeClass: 'bg-slate-50 text-slate-600 border-slate-200',
+        iconeEmoji: '⚪',
+        corTexto: 'text-slate-600',
+        corBg: 'bg-slate-50',
+        corBorda: 'border-slate-200',
+        descricao: 'Status administrativo não categorizado no rol principal',
+      };
+  }
+}
+
+/**
+ * Função central e ÚNICA FONTE DE VERDADE para a Matriz de Risco 5x5
+ * Utilizada rigorosamente tanto pelo Dashboard (RiskMatrixWidget) quanto pelo gerador PPTX.
+ * Origem estrita: NCRecord.avaliacaoRiscoInicial (severidade + probabilidade).
+ */
+export function consolidarRNCsPorMatrizRisco(records: NCRecord[]): ConsolidadoMatrizRisco5x5 {
+  const mapaProbNum: Record<string, string> = {
+    '1': 'A',
+    '2': 'B',
+    '3': 'C',
+    '4': 'D',
+    '5': 'E',
+  };
+
+  // Inicializa o mapa com todas as 25 células da matriz 5x5
+  const matriz: MapaMatrizRisco5x5 = {};
+  SEVERIDADES.forEach((s) => {
+    PROBABILIDADES.forEach((p) => {
+      const codigo = `${s.valor}${p.valor}`.toUpperCase();
+      const nivel = calcularNivelRisco(s.valor, p.valor);
+      matriz[codigo] = {
+        codigo,
+        severidade: s.valor,
+        probabilidade: p.valor,
+        nivel,
+        quantidade: 0,
+        rncs: [],
+      };
+    });
+  });
+
+  let totalRNCsAvaliadas = 0;
+  let totalSemAvaliacao = 0;
+
+  records.forEach((record) => {
+    const aval = record.avaliacaoRiscoInicial;
+    if (!aval) {
+      totalSemAvaliacao++;
+      return;
+    }
+
+    let codigo = aval.codigo ? String(aval.codigo).trim().toUpperCase() : '';
+
+    if (!codigo && aval.severidade && aval.probabilidade) {
+      let sevStr = String(aval.severidade).trim();
+      let probStr = String(aval.probabilidade).trim().toUpperCase();
+      if (mapaProbNum[probStr]) {
+        probStr = mapaProbNum[probStr];
+      }
+      codigo = `${sevStr}${probStr}`;
+    }
+
+    // Se a célula existe na matriz de 25 posições
+    if (codigo && matriz[codigo]) {
+      const celula = matriz[codigo];
+      celula.quantidade++;
+      totalRNCsAvaliadas++;
+
+      const itemRNC: ItemRNCMatrizRisco = {
+        id: record.id,
+        numero: record.numeroNC || record.id,
+        titulo: record.titulo || record.descricaoNC || 'Desvio sem descrição',
+        setor: record.setor,
+        status: record.statusGeral || 'Aberta',
+        severidade: celula.severidade,
+        probabilidade: celula.probabilidade,
+        nivel: celula.nivel,
+      };
+
+      celula.rncs.push(itemRNC);
+    } else {
+      totalSemAvaliacao++;
+    }
+  });
+
+  // Totais por nível de risco agregados diretamente da matriz consolidada
+  let totalCriticos = 0;
+  let totalAltos = 0;
+  let totalMedios = 0;
+  let totalBaixos = 0;
+
+  Object.values(matriz).forEach((c) => {
+    if (c.nivel === 'Crítico') totalCriticos += c.quantidade;
+    else if (c.nivel === 'Alto') totalAltos += c.quantidade;
+    else if (c.nivel === 'Médio') totalMedios += c.quantidade;
+    else if (c.nivel === 'Baixo') totalBaixos += c.quantidade;
+  });
+
+  // Lista de células que possuem pelo menos 1 RNC, ordenadas por criticidade
+  const ordemNivel: Record<NivelRisco, number> = {
+    'Crítico': 4,
+    'Alto': 3,
+    'Médio': 2,
+    'Baixo': 1,
+  };
+
+  const celulasComRNCs = Object.values(matriz)
+    .filter((c) => c.quantidade > 0)
+    .sort((a, b) => {
+      const nivelDiff = ordemNivel[b.nivel] - ordemNivel[a.nivel];
+      if (nivelDiff !== 0) return nivelDiff;
+      return b.quantidade - a.quantidade;
+    });
+
+  return {
+    matriz,
+    totalRNCsAvaliadas,
+    totalSemAvaliacao,
+    totalCriticos,
+    totalAltos,
+    totalMedios,
+    totalBaixos,
+    celulasComRNCs,
+  };
 }
 
 export function obterCorStatus(status: StatusGeralNC | string): { bg: string; text: string; dot: string; label: string } {
