@@ -352,64 +352,64 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Código do Documento',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['codigo', 'codigo documento', 'numero', 'identificador', 'doc id', 'cod'],
-      descricao: 'Identificador formal do documento (ex: MOMQ, MPO-04, IT-MNT-12)',
+      sinonimos: ['codigo', 'codigo documento', 'codigo do documento', 'codigo da norma', 'codigo da norma / regulamento', 'norma', 'regulamento', 'numero', 'identificador', 'doc id', 'cod'],
+      descricao: 'Identificador formal do documento (ex: MOMQ, MPO-04, IT-MNT-12, RBAC 145)',
     },
     {
       campo: 'titulo',
       label: 'Título Oficial do Documento',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['titulo', 'nome documento', 'descricao', 'denominacao', 'documento'],
-      descricao: 'Nome por extenso do manual, instrução de trabalho ou política técnica',
+      sinonimos: ['titulo', 'titulo oficial', 'titulo da documentacao normativa', 'nome documento', 'descricao', 'denominacao', 'documento'],
+      descricao: 'Nome por extenso do manual, instrução de trabalho, política técnica ou regulamento',
     },
     {
       campo: 'tipoDocumento',
       label: 'Tipo / Categoria Documental',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['tipo', 'categoria', 'classificacao', 'natureza'],
-      descricao: 'Categoria documental (Manual da Qualidade, Procedimento Operacional, Formulário, IT)',
+      sinonimos: ['tipo', 'categoria', 'categoria normativa', 'classificacao', 'natureza', 'tipo / categoria'],
+      descricao: 'Categoria documental (Manual da Qualidade, Procedimento Operacional, Legislação Aeronáutica, Formulário, IT)',
     },
     {
       campo: 'numeroRevisao',
       label: 'Revisão Vigente',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['revisao', 'rev', 'revisao atual', 'versao', 'edicao'],
-      descricao: 'Número ou letra da revisão atualmente aprovada (ex: Rev. 05, Rev. B)',
+      sinonimos: ['revisao', 'rev', 'revisao vigente', 'revisao / emenda vigente', 'emenda', 'revisao atual', 'versao', 'edicao'],
+      descricao: 'Número ou letra da revisão atualmente aprovada (ex: Rev. 08, Rev. D, Emenda 07, 02)',
     },
     {
       campo: 'dataAprovacao',
       label: 'Data de Aprovação / Vigência',
       tipo: 'date',
       obrigatorio: true,
-      sinonimos: ['data aprovacao', 'data vigencia', 'vigente desde', 'aprovado em', 'data revisao', 'data'],
-      descricao: 'Data de entrada em vigor da revisão atual',
+      sinonimos: ['data aprovacao', 'data de aprovacao', 'data da revisao / emenda', 'data vigencia', 'vigente desde', 'aprovado em', 'data revisao', 'data'],
+      descricao: 'Data de entrada em vigor da revisão atual (aceita formatos DD/MM/YYYY, YYYY-MM-DD e Ago.26)',
     },
     {
       campo: 'dataProximaRevisao',
       label: 'Data da Próxima Revisão',
       tipo: 'date',
       obrigatorio: false,
-      sinonimos: ['proxima revisao', 'validade', 'vencimento', 'revisao prevista', 'expiracao'],
+      sinonimos: ['proxima revisao', 'data proxima revisao', 'validade', 'vencimento', 'revisao prevista', 'expiracao'],
       descricao: 'Data limite para revisão periódica obrigatória',
     },
     {
       campo: 'responsavel',
-      label: 'Responsável / Elaborador',
+      label: 'Responsável / Elaborador / Órgão',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['responsavel', 'elaborador', 'autor', 'aprovador', 'gestor'],
-      descricao: 'Nome ou cargo do profissional responsável técnico pela elaboração/aprovação',
+      sinonimos: ['responsavel', 'responsavel elaboracao', 'orgao regulador', 'elaborador', 'autor', 'aprovador', 'gestor', 'orgao emissor'],
+      descricao: 'Nome ou cargo do profissional responsável técnico ou órgão regulador (ANAC, FAA, etc.)',
     },
     {
       campo: 'status',
       label: 'Status do Documento',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['status', 'situacao', 'vigencia', 'estado'],
-      descricao: 'Condição do documento (Vigente, Em Revisão, Obsoleto, Cancelado)',
+      sinonimos: ['status', 'status de adocao', 'situacao', 'vigencia', 'estado'],
+      descricao: 'Condição do documento (Vigente, Em Revisão, STATUS_NAO_INFORMADO, Obsoleto, Cancelado)',
     },
     {
       campo: 'observacoes',
@@ -609,8 +609,8 @@ export function identificarTipoControleAutomatico(
   }
 
   // 3. Scoring para CONTROLE DOCUMENTAL
-  const palavrasDocColunas = ['documento', 'revisao', 'rev', 'vigencia', 'aprovacao', 'codigo doc', 'manual', 'procedimento', 'instrucao', 'master list', 'elaborador'];
-  const palavrasDocValores = ['momq', 'mpo', 'sgq', 'it mnt', 'procedimento operacional', 'rev 0', 'rev 1', 'vigente', 'obsoleto', 'aprovado'];
+  const palavrasDocColunas = ['documento', 'revisao', 'rev', 'vigencia', 'aprovacao', 'codigo doc', 'norma', 'regulamento', 'emenda', 'manual', 'procedimento', 'instrucao', 'master list', 'elaborador'];
+  const palavrasDocValores = ['momq', 'mpo', 'sgq', 'it mnt', 'rbac', 'anac', 'instrucao suplementar', 'procedimento operacional', 'rev 0', 'rev 1', 'vigente', 'obsoleto', 'aprovado', 'ago 26'];
 
   palavrasDocColunas.forEach((p) => {
     if (colunasNorm.some((c) => c.includes(p))) pontuacoes.CONTROLE_DOCUMENTAL += 15;
@@ -618,8 +618,17 @@ export function identificarTipoControleAutomatico(
   palavrasDocValores.forEach((p) => {
     if (valoresAmostraTexto.includes(p)) pontuacoes.CONTROLE_DOCUMENTAL += 10;
   });
-  if (nomeNorm.includes('docum') || nomeNorm.includes('master') || nomeNorm.includes('manual') || nomeNorm.includes('procediment')) {
-    pontuacoes.CONTROLE_DOCUMENTAL += 20;
+  if (
+    nomeNorm.includes('docum') ||
+    nomeNorm.includes('contole') ||
+    nomeNorm.includes('controle') ||
+    nomeNorm.includes('normativ') ||
+    nomeNorm.includes('f 001') ||
+    nomeNorm.includes('master') ||
+    nomeNorm.includes('manual') ||
+    nomeNorm.includes('procediment')
+  ) {
+    pontuacoes.CONTROLE_DOCUMENTAL += 25;
   }
 
   // 4. Scoring para NÃO CONFORMIDADES
@@ -802,10 +811,27 @@ export interface ContextoValidacaoExistente {
   documentosExistentes?: DocumentoControlado[];
 }
 
-function validarDataISO(valor: any): { valida: boolean; isoString?: string } {
-  if (!valor) return { valida: false };
+export function validarDataISO(valor: any): { valida: boolean; isoString?: string } {
+  if (valor === undefined || valor === null || valor === '') return { valida: false };
+
+  // Caso seja número ou string de número (serial date do Excel, ex: 45520)
+  if (typeof valor === 'number' || (/^\d{5}$/.test(String(valor).trim()) && Number(valor) > 30000 && Number(valor) < 65000)) {
+    const num = Number(valor);
+    // Excel epoch 1899-12-30
+    const excelEpoch = new Date(1899, 11, 30);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const date = new Date(excelEpoch.getTime() + num * msPerDay);
+    if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return { valida: true, isoString: `${y}-${m}-${d}` };
+    }
+  }
+
   const str = String(valor).trim();
-  
+  if (!str) return { valida: false };
+
   // Testar padrão YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
     const [y, m, d] = str.split('-').map(Number);
@@ -818,9 +844,15 @@ function validarDataISO(valor: any): { valida: boolean; isoString?: string } {
     return { valida: false };
   }
 
-  // Testar padrão DD/MM/YYYY
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(str)) {
-    const [d, m, y] = str.split('/').map(Number);
+  // Testar padrão DD/MM/YYYY, DD.MM.YYYY ou DD-MM-YYYY
+  const ddmmyyyyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
+  if (ddmmyyyyMatch) {
+    const d = Number(ddmmyyyyMatch[1]);
+    const m = Number(ddmmyyyyMatch[2]);
+    let y = Number(ddmmyyyyMatch[3]);
+    if (y < 100) {
+      y += y >= 70 ? 1900 : 2000;
+    }
     if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
       const dt = new Date(y, m - 1, d);
       if (dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d) {
@@ -828,7 +860,47 @@ function validarDataISO(valor: any): { valida: boolean; isoString?: string } {
         return { valida: true, isoString: iso };
       }
     }
-    return { valida: false };
+  }
+
+  // Testar formato Mês/Ano em português, ex: "Ago.26", "Ago/26", "Ago-26", "Ago.2026", "Agosto/2026"
+  const mesesPt: Record<string, number> = {
+    jan: 1, janeiro: 1,
+    fev: 2, fevereiro: 2,
+    mar: 3, marco: 3, março: 3,
+    abr: 4, abril: 4,
+    mai: 5, maio: 5,
+    jun: 6, junho: 6,
+    jul: 7, julho: 7,
+    ago: 8, agosto: 8,
+    set: 9, setembro: 9,
+    out: 10, outubro: 10,
+    nov: 11, novembro: 11,
+    dez: 12, dezembro: 12,
+  };
+
+  const mesAnoMatch = str.toLowerCase().match(/^([a-zçãé]+)[\/\.\s-]+(\d{2,4})$/);
+  if (mesAnoMatch) {
+    const nomeMes = mesAnoMatch[1];
+    let ano = Number(mesAnoMatch[2]);
+    if (ano < 100) {
+      ano += ano >= 70 ? 1900 : 2000;
+    }
+    const mesNum = mesesPt[nomeMes];
+    if (mesNum && ano >= 1990 && ano <= 2099) {
+      const iso = `${ano}-${String(mesNum).padStart(2, '0')}-01`;
+      return { valida: true, isoString: iso };
+    }
+  }
+
+  // Testar padrão MM/YYYY ou MM.YYYY
+  const mmyyyyMatch = str.match(/^(\d{1,2})[\/\.-](\d{4})$/);
+  if (mmyyyyMatch) {
+    const m = Number(mmyyyyMatch[1]);
+    const y = Number(mmyyyyMatch[2]);
+    if (m >= 1 && m <= 12 && y >= 1990 && y <= 2099) {
+      const iso = `${y}-${String(m).padStart(2, '0')}-01`;
+      return { valida: true, isoString: iso };
+    }
   }
 
   // Tentar Date parse padrão
@@ -925,7 +997,7 @@ export function validarECompararLinhasImportacao(
       }
     }
 
-    // 2. Validar tipos de dados e datas
+    // 2. Validar tipos de dados, datas, revisões e regras de governança
     definicoes.forEach((def) => {
       const val = dadosMapeados[def.campo];
       if (val && def.tipo === 'date') {
@@ -935,6 +1007,33 @@ export function validarECompararLinhasImportacao(
           mensagensValidacao.push(`Data inválida em '${def.label}': "${val}". Verifique dia/mês/ano.`);
         } else if (valData.isoString) {
           dadosMapeados[def.campo] = valData.isoString;
+        }
+      }
+
+      // Governança de Revisões: SEMPRE STRING (ex: 'Rev. 08', 'Rev. D', '02', 'Emenda 07') — NUNCA CONVERTER PARA NÚMERO
+      if (def.campo === 'numeroRevisao' || def.campo === 'revisaoNumero') {
+        if (dadosMapeados[def.campo] !== undefined && dadosMapeados[def.campo] !== null) {
+          dadosMapeados[def.campo] = String(dadosMapeados[def.campo]).trim();
+        }
+      }
+
+      // Governança de Status: STATUS_NAO_INFORMADO proibido de converter silenciosamente para ATIVO
+      if (def.campo === 'status') {
+        const rawStatus = dadosMapeados[def.campo];
+        if (
+          rawStatus === undefined ||
+          rawStatus === null ||
+          rawStatus === '' ||
+          String(rawStatus).toUpperCase() === 'STATUS_NAO_INFORMADO' ||
+          String(rawStatus).toUpperCase() === 'NAO INFORMADO' ||
+          String(rawStatus).toUpperCase() === 'NÃO INFORMADO' ||
+          String(rawStatus).toUpperCase() === 'SEM STATUS' ||
+          String(rawStatus).toUpperCase() === 'A DEFINIR' ||
+          String(rawStatus).toUpperCase() === 'PENDENTE'
+        ) {
+          dadosMapeados[def.campo] = 'STATUS_NAO_INFORMADO';
+          mensagensValidacao.push('Status não informado no arquivo original — Preservado como STATUS_NAO_INFORMADO (Governança SGQ: proibido presumir ATIVO).');
+          if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
         }
       }
     });
@@ -1400,7 +1499,7 @@ export function validarECompararLinhasImportacao(
               valorImportado: dadosMapeados.revisaoNumero || dadosMapeados.numeroRevisao || 'Nova',
             });
             if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
-            mensagensValidacao.push(`Documento já existe no Controle Documental. A importação registrará a nova revisão histórica (${dadosMapeados.revisaoNumero || 'Nova'}).`);
+            mensagensValidacao.push(`Documento já existe no Controle Documental. A importação registrará a nova revisão histórica (${dadosMapeados.numeroRevisao || dadosMapeados.revisaoNumero || 'Nova'}).`);
           }
         } else {
           classificacaoReconciliacao = 'NOVO';
@@ -1703,16 +1802,35 @@ export function detectarEstruturaTabular(
 
     const primeiroTexto = String(nonEmpties[0] || '').toLowerCase();
     if (
-      nonEmpties.length <= 2 &&
+      nonEmpties.length <= 3 &&
       (primeiroTexto.startsWith('observa') ||
         primeiroTexto.startsWith('aprovado') ||
+        primeiroTexto.startsWith('elaborado') ||
+        primeiroTexto.startsWith('revisado') ||
         primeiroTexto.startsWith('total') ||
         primeiroTexto.startsWith('assinatura') ||
-        primeiroTexto.startsWith('nota:'))
+        primeiroTexto.startsWith('nota:') ||
+        primeiroTexto.startsWith('f 001') ||
+        primeiroTexto.startsWith('f-001') ||
+        primeiroTexto.startsWith('página') ||
+        primeiroTexto.startsWith('pag.') ||
+        primeiroTexto.startsWith('confidencial') ||
+        primeiroTexto.includes('controle de documentações') ||
+        primeiroTexto.includes('impacto aviation'))
     ) {
       linhasRodape.push(nonEmpties.join(' — '));
       continue;
     }
+
+    // Ignora cabeçalhos repetidos em quebras de página
+    const isRepeatedHeader =
+      nonEmpties.length >= 2 &&
+      nonEmpties.every((cell, idx) => {
+        const colNorm = normalizarTexto(colunas[idx] || '');
+        const cellNorm = normalizarTexto(String(cell));
+        return colNorm && cellNorm && (colNorm === cellNorm || colNorm.includes(cellNorm) || cellNorm.includes(colNorm));
+      });
+    if (isRepeatedHeader) continue;
 
     const item: Record<string, any> = {};
     colunas.forEach((col, cIdx) => {

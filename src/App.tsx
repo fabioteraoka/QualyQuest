@@ -141,6 +141,7 @@ import {
   TemplateMapeamentoAprovado,
 } from './types';
 import { SmartImportMigrationView } from './components/SmartImportMigrationView';
+import { FerramentasMetrologiaView } from './components/FerramentasMetrologiaView';
 import { SmartAuditView } from './components/SmartAuditView';
 import { SystemDesignerOfficialView } from './components/SystemDesignerOfficialView';
 import {
@@ -1436,8 +1437,20 @@ export default function App() {
                 />
               )}
 
+              {/* FASE 14: CONTROLE OPERACIONAL OFICIAL DE FERRAMENTAS & METROLOGIA (RBAC 145.109) */}
+              {activeTab === 'ferramentas-metrologia' && (
+                <FerramentasMetrologiaView
+                  organization={activeOrganization}
+                  user={userProfile}
+                  ferramentasCalibradas={ferramentasCalibradas}
+                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
+                  onAdicionarFerramenta={(f) => setFerramentasCalibradas((prev) => [f, ...prev.filter((x) => x.id !== f.id)])}
+                  onRemoverFerramenta={(toolId) => setFerramentasCalibradas((prev) => prev.filter((x) => x.id !== toolId))}
+                />
+              )}
+
               {/* FASE 14: IMPORTAÇÃO INTELIGENTE E MIGRAÇÃO DE CONTROLES EXISTENTES */}
-              {(activeTab === 'importacao-inteligente' || activeTab === 'ferramentas-metrologia') && (
+              {activeTab === 'importacao-inteligente' && (
                 <SmartImportMigrationView
                   organization={activeOrganization}
                   user={userProfile}
@@ -1448,7 +1461,7 @@ export default function App() {
                   ferramentasCalibradas={ferramentasCalibradas}
                   smartImports={smartImports}
                   templatesAprovados={templatesAprovados}
-                  initialTab={activeTab === 'ferramentas-metrologia' ? 'METROLOGIA' : 'WIZARD'}
+                  initialTab="WIZARD"
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}
                   onAdicionarPessoa={(p) => setPersons((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}
                   onAdicionarCurso={(c) => setTrainingCourses((prev) => [c, ...prev.filter((x) => x.id !== c.id)])}

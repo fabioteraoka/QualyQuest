@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -20,6 +21,9 @@ import {
   RegistroLinhaImportacao,
   SnapshotRegistroCriado,
   SnapshotRegistroAtualizado,
+  DocumentoControlado,
+  RevisaoDocumental,
+  CategoriaDocumental,
 } from '../../types';
 import {
   DEFAULT_ORGANIZATION_ID,
@@ -32,6 +36,10 @@ import {
   saveTrainingRecord,
   saveQualification,
 } from './competenciesFirestore';
+import {
+  saveDocumentoControlado,
+  saveRevisaoDocumental,
+} from './documentControlFirestore';
 import { normalizarStatusColaborador } from '../../utils/smartImportEngine';
 import { INITIAL_CALIBRATED_TOOLS } from '../../data/initialCalibratedTools';
 
@@ -690,7 +698,123 @@ export async function efetivarImportacaoNoQualigest(
     }
   }
 
-  // 3. Gravar auditoria geral da operação
+  // 3. Processar CONTROLE_DOCUMENTAL (Manuais, POPs, ITs, Normas, Formulários)
+  if (tipoControle === 'CONTROLE_DOCUMENTAL') {
+    for (const linha of linhasParaImportar) {
+      const dados = linha.dadosMapeados;
+      const isAtualizacao = (linha.decisaoUsuario === 'ATUALIZAR' || linha.documentoAcao === 'NOVA_REVISAO') && Boolean(linha.registroExistenteId);
+      const docId = isAtualizacao && linha.registroExistenteId
+        ? linha.registroExistenteId
+        : `doc-imp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+
+      const dadosExistentes = isAtualizacao ? (linha.dadosExistentesSnapshot as DocumentoControlado | undefined) : undefined;
+      const hoje = new Date().toISOString().split('T')[0];
+
+      // Revisão SEMPRE COMO STRING (ex: 'Rev. 08', 'Rev. D', '02', 'Ago.26') — NUNCA CONVERTER PARA NÚMERO
+      const rawRevisao = dados.numeroRevisao ?? dados.revisaoNumero ?? dados.revisao ?? '';
+      const revisaoStr = String(rawRevisao).trim() || dadosExistentes?.revisaoVigenteNumero || 'Rev. 00';
+
+      // Status: GOVERNANÇA DE DADOS
+      // STATUS_NAO_INFORMADO não deve ser convertido silenciosamente para 'ATIVO'
+      let statusGeral: 'ATIVO' | 'INATIVO' | 'CANCELADO' = 'ATIVO';
+      let statusDet = dados.status ? String(dados.status).trim() : '';
+      if (
+        !statusDet ||
+        statusDet.toUpperCase().includes('NAO_INFORMADO') ||
+        statusDet.toUpperCase().includes('NÃO INFORMADO') ||
+        statusDet.toUpperCase() === 'PENDENTE' ||
+        statusDet.toUpperCase() === 'A DEFINIR' ||
+        statusDet.toUpperCase() === 'SEM STATUS'
+      ) {
+        statusDet = 'STATUS_NAO_INFORMADO';
+      } else if (statusDet.toUpperCase().includes('INATIV') || statusDet.toUpperCase().includes('CANCEL')) {
+        statusGeral = 'INATIVO';
+      }
+
+      // Categoria documental semântica
+      let cat: CategoriaDocumental = 'PROCEDIMENTOS_INTERNOS';
+      const catRaw = String(dados.tipoDocumento || dados.categoria || '').toUpperCase();
+      if (catRaw.includes('MANUAL') || catRaw.includes('MOMQ') || catRaw.includes('MOE')) {
+        cat = 'MANUAL_EMPRESA';
+      } else if (catRaw.includes('NORMATIV') || catRaw.includes('RBAC') || catRaw.includes('LEGISLACAO')) {
+        cat = 'LEGISLACOES_NORMAS';
+      } else if (catRaw.includes('FABRICANTE') || catRaw.includes('AMM') || catRaw.includes('IPC') || catRaw.includes('CMM') || catRaw.includes('SB')) {
+        cat = 'DOCUMENTOS_FABRICANTES';
+      } else if (catRaw.includes('CLIENTE') || catRaw.includes('PROGRAMA')) {
+        cat = 'DOCUMENTOS_CLIENTES';
+      } else if (catRaw.includes('FORMULARIO') || catRaw.includes('FORM') || catRaw.includes('REGISTRO')) {
+        cat = 'FORMULARIOS_REGISTROS';
+      }
+
+      const novoDoc: DocumentoControlado = {
+        id: docId,
+        organizationId,
+        codigo: dados.codigo || dadosExistentes?.codigo || 'DOC-GEN',
+        titulo: dados.titulo || dadosExistentes?.titulo || 'Documento sem título',
+        categoria: cat,
+        tipoSubcategoria: dados.tipoDocumento || dadosExistentes?.tipoSubcategoria || 'Procedimento',
+        emissor: dados.emissor || dadosExistentes?.emissor || 'Impacto Aviation MRO',
+        responsavelNome: dados.responsavel || dadosExistentes?.responsavelNome || (user?.displayName || 'Gestor SGQ'),
+        revisaoVigenteNumero: revisaoStr,
+        statusGeral,
+        status: statusDet,
+        exigeEvidenciaLeitura: false,
+        aplicabilidadePadrao: {
+          tipo: 'TODAS_AS_BASES',
+          statusDeterminacao: 'DETERMINADA',
+        },
+        createdAt: dadosExistentes?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      await saveDocumentoControlado(organizationId, novoDoc, user, dadosExistentes);
+
+      // Criar registro da revisão na coleção document_revisions
+      const revId = `rev-imp-${docId}-${Date.now().toString(36)}`;
+      const novaRevisao: RevisaoDocumental = {
+        id: revId,
+        organizationId,
+        documentoId: docId,
+        codigoDocumento: novoDoc.codigo,
+        tituloDocumento: novoDoc.titulo,
+        numeroRevisao: revisaoStr,
+        dataEmissao: dados.dataAprovacao || hoje,
+        dataEntradaVigor: dados.dataAprovacao || hoje,
+        statusCicloVida: 'VIGENTE',
+        origemRevisao: 'IMPORTACAO',
+        aprovadoPorNome: dados.responsavel || user?.displayName || 'Importação SGQ',
+        dataAprovacao: dados.dataAprovacao || hoje,
+        escopoAlteracoes: dados.observacoes || `Importado via Smart Import do arquivo ${nomeArquivo}`,
+      };
+
+      await saveRevisaoDocumental(organizationId, novaRevisao, user);
+
+      if ((callbacksEstado as any)?.adicionarDocumento) {
+        (callbacksEstado as any).adicionarDocumento(novoDoc);
+      }
+
+      idsGerados.push(docId);
+
+      if (isAtualizacao && dadosExistentes) {
+        totalAtualizados++;
+        registrosAtualizadosSnapshot.push({
+          modulo: 'CONTROLLED_DOCUMENT',
+          id: docId,
+          dadosAnteriores: dadosExistentes,
+          dadosNovos: novoDoc,
+        });
+      } else {
+        totalCriados++;
+        registrosCriadosSnapshot.push({
+          modulo: 'CONTROLLED_DOCUMENT',
+          id: docId,
+          dados: novoDoc,
+        });
+      }
+    }
+  }
+
+  // 4. Gravar auditoria geral da operação
   await recordOrganizationAudit(organizationId, {
     entity: 'SMART_IMPORT',
     entityId: importId,
@@ -778,6 +902,15 @@ export async function reverterImportacaoNoQualigest(
         batch.delete(docRef);
         if (callbacksEstado?.removerQualificacao) callbacksEstado.removerQualificacao(item.id);
         criadosExcluidos++;
+      } else if (item.modulo === 'CONTROLLED_DOCUMENT') {
+        const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', item.id);
+        batch.delete(docRef);
+        if ((callbacksEstado as any)?.removerDocumento) (callbacksEstado as any).removerDocumento(item.id);
+        criadosExcluidos++;
+      } else if (item.modulo === 'DOCUMENT_REVISION') {
+        const docRef = doc(db, 'organizations', organizationId, 'document_revisions', item.id);
+        batch.delete(docRef);
+        criadosExcluidos++;
       }
     }
   } else if (importRecord.registrosGeradosIds && importRecord.registrosGeradosIds.length > 0) {
@@ -792,6 +925,11 @@ export async function reverterImportacaoNoQualigest(
         const docRef = doc(db, 'organizations', organizationId, 'trainingRecords', id);
         batch.delete(docRef);
         if (callbacksEstado?.removerRegistroTreinamento) callbacksEstado.removerRegistroTreinamento(id);
+        criadosExcluidos++;
+      } else if (importRecord.tipoControle === 'CONTROLE_DOCUMENTAL') {
+        const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', id);
+        batch.delete(docRef);
+        if ((callbacksEstado as any)?.removerDocumento) (callbacksEstado as any).removerDocumento(id);
         criadosExcluidos++;
       }
     }
@@ -819,6 +957,15 @@ export async function reverterImportacaoNoQualigest(
         const docRef = doc(db, 'organizations', organizationId, 'trainingCourses', item.id);
         batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
         if (callbacksEstado?.adicionarCurso) callbacksEstado.adicionarCurso(item.dadosAnteriores);
+        atualizadosRestaurados++;
+      } else if (item.modulo === 'CONTROLLED_DOCUMENT') {
+        const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', item.id);
+        batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
+        if ((callbacksEstado as any)?.adicionarDocumento) (callbacksEstado as any).adicionarDocumento(item.dadosAnteriores);
+        atualizadosRestaurados++;
+      } else if (item.modulo === 'DOCUMENT_REVISION') {
+        const docRef = doc(db, 'organizations', organizationId, 'document_revisions', item.id);
+        batch.set(docRef, sanitizeForFirestore(item.dadosAnteriores), { merge: true });
         atualizadosRestaurados++;
       }
     }
@@ -943,5 +1090,73 @@ export async function deleteFerramentaCalibrada(
     });
   } catch (err) {
     console.warn('Erro ao excluir ferramenta:', err);
+  }
+}
+
+export async function registrarAfericaoCalibracao(
+  organizationId: string,
+  toolId: string,
+  registro: {
+    data: string;
+    certificado: string;
+    laboratorio: string;
+    validadeAte: string;
+    observacao?: string;
+  },
+  user: UserProfile | null
+): Promise<void> {
+  const toolRef = doc(db, 'organizations', organizationId, 'calibrated_tools', toolId);
+  try {
+    const snap = await getDoc(toolRef);
+    const existing = snap.data() as FerramentaCalibracao | undefined;
+    const historico = existing?.historicoCalibracoes || [];
+
+    const novoHist = {
+      id: `calib-${Date.now()}`,
+      data: registro.data,
+      certificado: registro.certificado,
+      laboratorio: registro.laboratorio,
+      validadeAte: registro.validadeAte,
+      observacao: registro.observacao,
+      registradoPor: user?.displayName || user?.email || 'Inspetor Metrologia',
+    };
+
+    const hoje = new Date().toISOString().split('T')[0];
+    const dataVal = registro.validadeAte;
+    let novoStatus: FerramentaCalibracao['status'] = 'CALIBRADA';
+    if (dataVal < hoje) {
+      novoStatus = 'VENCIDA';
+    } else {
+      const diffMs = new Date(dataVal).getTime() - new Date(hoje).getTime();
+      const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      if (diffDias <= 30) {
+        novoStatus = 'PROXIMA_VENCIMENTO';
+      }
+    }
+
+    await setDoc(
+      toolRef,
+      {
+        dataUltimaCalibracao: registro.data,
+        dataProximaCalibracao: registro.validadeAte,
+        numeroCertificado: registro.certificado,
+        laboratorioCalibrador: registro.laboratorio,
+        status: novoStatus,
+        historicoCalibracoes: [novoHist, ...historico],
+        atualizadoEm: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'CALIBRATED_TOOL',
+      entityId: toolId,
+      action: 'CALIBRATE',
+      changedByUid: user?.uid || auth.currentUser?.uid || 'system',
+      changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
+      summary: `Nova calibração registrada para ${toolId}: Certificado ${registro.certificado}, validade até ${registro.validadeAte}`,
+    });
+  } catch (err) {
+    console.warn('Erro ao registrar calibração:', err);
   }
 }

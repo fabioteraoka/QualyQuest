@@ -152,6 +152,112 @@ export const PRESETS_AMOSTRAS_IMPORTACAO: PresetAmostraImportacao[] = [
     ]
   },
   {
+    id: 'amostra-documento-real-xlsx',
+    nomeArquivo: 'Contole de documento.xlsx',
+    formato: 'XLSX',
+    tipoEsperado: 'CONTROLE_DOCUMENTAL',
+    descricaoCenario: 'Planilha operacional homologada "Contole de documento.xlsx" com revisões alfanuméricas ("Rev. 08", "Rev. D", "02"), variações de datas e teste estrito de governança de status.',
+    destaqueTeste: 'TESTE HOMOLOGADO: Revisões alfanuméricas mantidas como STRING, governança estrita de status (STATUS_NAO_INFORMADO proibido de virar ATIVO) e limpeza de cabeçalhos.',
+    colunas: ['Código do Documento', 'Título Oficial', 'Tipo / Categoria', 'Revisão Vigente', 'Data de Aprovação', 'Data Próxima Revisão', 'Responsável Elaboração', 'Status', 'Observações'],
+    linhasAmostra: [
+      {
+        'Código do Documento': 'MOMQ',
+        'Título Oficial': 'Manual da Organização de Manutenção QualiGest',
+        'Tipo / Categoria': 'Manual da Empresa',
+        'Revisão Vigente': 'Rev. 08',
+        'Data de Aprovação': 'Ago.26',
+        'Data Próxima Revisão': '2027-08-01',
+        'Responsável Elaboração': 'Eng. Responsável Técnico',
+        'Status': 'Vigente',
+        'Observações': 'Atualizado com nova emenda do RBAC 145.'
+      },
+      {
+        'Código do Documento': 'POP-MNT-04',
+        'Título Oficial': 'Procedimento Operacional de Testes e Calibração de Ferramental',
+        'Tipo / Categoria': 'Procedimento Operacional',
+        'Revisão Vigente': 'Rev. D',
+        'Data de Aprovação': '2025-11-10',
+        'Data Próxima Revisão': '2026-11-10',
+        'Responsável Elaboração': 'Inspetora Juliana Ramos',
+        'Status': 'STATUS_NAO_INFORMADO',
+        'Observações': 'Requer classificação operacional pelo SGQ (preservação estrita da governança).'
+      },
+      {
+        'Código do Documento': 'IT-STR-01',
+        'Título Oficial': 'Instrução de Trabalho: Reparo Estrutural em Chapa de Alumínio Aeronáutico',
+        'Tipo / Categoria': 'Instrução de Trabalho',
+        'Revisão Vigente': '02',
+        'Data de Aprovação': '15/03/2026',
+        'Data Próxima Revisão': '15/03/2027',
+        'Responsável Elaboração': 'Mecânico Líder Estruturas',
+        'Status': 'ATIVO',
+        'Observações': 'Em conformidade com FAA AC 43.13-1B.'
+      },
+      {
+        'Código do Documento': 'F 001-29',
+        'Título Oficial': 'Formulário de Relatório de Não Conformidade (RNC)',
+        'Tipo / Categoria': 'Formulário SGQ',
+        'Revisão Vigente': 'Rev. 03',
+        'Data de Aprovação': '01/01/2026',
+        'Data Próxima Revisão': '01/01/2028',
+        'Responsável Elaboração': 'Gestor da Qualidade',
+        'Status': 'Vigente',
+        'Observações': 'Formulário homologado para emissão e encerramento de RNCs.'
+      }
+    ]
+  },
+  {
+    id: 'amostra-documental-normativas-pdf',
+    nomeArquivo: 'F 001-02-1 - Controle de Documentações Normativas - Ago.26.pdf',
+    formato: 'PDF',
+    tipoEsperado: 'CONTROLE_DOCUMENTAL',
+    descricaoCenario: 'Formulário F 001-02-1 em PDF para Controle de Documentações Normativas da Autoridade (RBACs ANAC, IS, ICA) com corte temporal Ago.26 e rodapé SGQ.',
+    destaqueTeste: 'TESTE HOMOLOGADO: Extração tabular de PDF com formato de data "Ago.26", revisões emendas ("Emenda 07", "Rev. B") e eliminação de rodapés/preâmbulos institucionais.',
+    colunas: ['Código da Norma / Regulamento', 'Título da Documentação Normativa', 'Categoria Normativa', 'Revisão / Emenda Vigente', 'Data da Revisão / Emenda', 'Órgão Regulador', 'Status de Adoção', 'Observações'],
+    linhasAmostra: [
+      {
+        'Código da Norma / Regulamento': 'RBAC 145',
+        'Título da Documentação Normativa': 'Organizações de Manutenção de Produto Aeronáutico',
+        'Categoria Normativa': 'Legislação Aeronáutica ANAC',
+        'Revisão / Emenda Vigente': 'Emenda 07',
+        'Data da Revisão / Emenda': 'Ago.26',
+        'Órgão Regulador': 'ANAC / SPO',
+        'Status de Adoção': 'Vigente',
+        'Observações': 'Base regulatória primordial para certificação MRO Impacto Aviation'
+      },
+      {
+        'Código da Norma / Regulamento': 'RBAC 43',
+        'Título da Documentação Normativa': 'Manutenção, Manutenção Preventiva, Reconstrução e Alteração',
+        'Categoria Normativa': 'Legislação Aeronáutica ANAC',
+        'Revisão / Emenda Vigente': 'Emenda 05',
+        'Data da Revisão / Emenda': '2025-06-15',
+        'Órgão Regulador': 'ANAC',
+        'Status de Adoção': 'Vigente',
+        'Observações': 'Critérios de liberação de aeronaves após serviço de manutenção'
+      },
+      {
+        'Código da Norma / Regulamento': 'IS 145-009',
+        'Título da Documentação Normativa': 'Procedimentos para Homologação de Ferramental Equivalente',
+        'Categoria Normativa': 'Instrução Suplementar',
+        'Revisão / Emenda Vigente': 'Rev. B',
+        'Data da Revisão / Emenda': '12/04/2025',
+        'Órgão Regulador': 'ANAC',
+        'Status de Adoção': 'Vigente',
+        'Observações': 'Requisitos de rastreabilidade RBC e equivalência metrológica'
+      },
+      {
+        'Código da Norma / Regulamento': 'IS 145-010',
+        'Título da Documentação Normativa': 'Qualificação e Autorização de Pessoal de Manutenção e Vistoria',
+        'Categoria Normativa': 'Instrução Suplementar',
+        'Revisão / Emenda Vigente': 'Rev. 01',
+        'Data da Revisão / Emenda': '2024-10-01',
+        'Órgão Regulador': 'ANAC',
+        'Status de Adoção': 'STATUS_NAO_INFORMADO',
+        'Observações': 'Aguardando homologação de nova revisão complementar pela diretoria'
+      }
+    ]
+  },
+  {
     id: 'amostra-documental-real',
     nomeArquivo: 'Master_List_Documental_Rev_2026.xlsx',
     formato: 'XLSX',

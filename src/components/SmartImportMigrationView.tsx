@@ -100,6 +100,8 @@ interface SmartImportMigrationViewProps {
   onRemoverCurso?: (courseId: string) => void;
   onAdicionarQualificacao?: (qualificacao: QualificacaoColaborador) => void;
   onRemoverQualificacao?: (qualId: string) => void;
+  onAdicionarDocumento?: (documento: DocumentoControlado) => void;
+  onRemoverDocumento?: (docId: string) => void;
   onCriarRncSugerida?: (dadosRnc: any) => void;
 }
 
@@ -125,6 +127,8 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   onRemoverCurso,
   onAdicionarQualificacao,
   onRemoverQualificacao,
+  onAdicionarDocumento,
+  onRemoverDocumento,
   onCriarRncSugerida
 }) => {
   const [tabPrincipal, setTabPrincipal] = useState<'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA'>(initialTab);
@@ -638,16 +642,19 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
           adicionarRegistroTreinamento: onAdicionarRegistroTreinamento,
           adicionarQualificacao: onAdicionarQualificacao,
           adicionarFerramenta: onAdicionarFerramenta,
+          adicionarDocumento: onAdicionarDocumento,
           removerFerramenta: onRemoverFerramenta,
           removerRegistroTreinamento: onRemoverRegistroTreinamento,
           removerPessoa: onRemoverPessoa,
           removerCurso: onRemoverCurso,
           removerQualificacao: onRemoverQualificacao,
+          removerDocumento: onRemoverDocumento,
         },
         {
           pessoasExistentes: pessoas,
           treinamentosExistentes: treinamentos,
           registrosTreinamentoExistentes: registrosTreinamento,
+          documentosExistentes: documentos,
         }
       );
 
@@ -908,15 +915,21 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
             Modelos Homologados ({templatesAprovados.length})
           </button>
           <button
-            onClick={() => setTabPrincipal('METROLOGIA')}
+            onClick={() => {
+              if (onNavigateToTab) {
+                onNavigateToTab('ferramentas-metrologia');
+              } else {
+                setTabPrincipal('METROLOGIA');
+              }
+            }}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
               tabPrincipal === 'METROLOGIA'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            <Award className="w-3.5 h-3.5" />
-            Metrologia & Ferramentas ({ferramentasCalibradas.length})
+            <Sliders className="w-3.5 h-3.5 text-amber-500" />
+            Módulo Ferramentas & Metrologia ({ferramentasCalibradas.length})
           </button>
         </div>
       </div>
@@ -2119,11 +2132,27 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
                 {tipoControle === 'CALIBRACAO_FERRAMENTAL' && (
                   <button
-                    onClick={() => setTabPrincipal('METROLOGIA')}
-                    className="p-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                    onClick={() => {
+                      if (onNavigateToTab) {
+                        onNavigateToTab('ferramentas-metrologia');
+                      } else {
+                        setTabPrincipal('METROLOGIA');
+                      }
+                    }}
+                    className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                   >
-                    <Award className="w-4 h-4" />
-                    Ver Ferramental Calibrado
+                    <Sliders className="w-4 h-4" />
+                    Abrir no Módulo Oficial de Ferramentas & Metrologia
+                  </button>
+                )}
+
+                {tipoControle === 'CONTROLE_DOCUMENTAL' && onNavigateToTab && (
+                  <button
+                    onClick={() => onNavigateToTab('controle-documental')}
+                    className="p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Abrir Controle Documental Oficial
                   </button>
                 )}
 
