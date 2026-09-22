@@ -17,7 +17,9 @@ import {
   DocumentoControlado,
 } from '../types';
 
-export { consolidarRNCsPorMatrizRisco } from '../utils/qualityHelpers';
+export { consolidarRNCsPorMatrizRisco, contabilizarColaboradoresPorStatus } from '../utils/qualityHelpers';
+import { contabilizarColaboradoresPorStatus } from '../utils/qualityHelpers';
+import { normalizarStatusColaborador } from '../utils/smartImportEngine';
 
 /**
  * Calcula a data de validade com base na periodicidade (em meses) e tolerância (em dias).
@@ -693,19 +695,13 @@ export function calcularMetricasDashboardCompetencias(
     };
   }
 
-  const ativos = colaboradores.filter((c) => c.status === 'ATIVO');
-  const emTreinamento = colaboradores.filter((c) => c.status === 'EM_TREINAMENTO');
-  const restritos = colaboradores.filter((c) => c.status === 'RESTRITO');
-  const suspensos = colaboradores.filter((c) => c.status === 'SUSPENSO');
-  const afastados = colaboradores.filter((c) => c.status === 'AFASTADO');
-  const desligados = colaboradores.filter((c) => c.status === 'DESLIGADO');
-  const inativos = colaboradores.filter((c) => c.status === 'INATIVO');
-  const outros = colaboradores.filter(
-    (c) => c.status === 'OUTRO' || (!['ATIVO', 'EM_TREINAMENTO', 'RESTRITO', 'SUSPENSO', 'AFASTADO', 'DESLIGADO', 'INATIVO'].includes(c.status))
-  );
-  const comRestricao = colaboradores.filter(
-    (c) => c.status === 'RESTRITO' || c.status === 'SUSPENSO' || c.restricaoOperacional?.possuiRestricao
-  );
+  const dist = contabilizarColaboradoresPorStatus(colaboradores);
+
+  const ativos = colaboradores.filter((c) => normalizarStatusColaborador(c.status) === 'ATIVO');
+  const comRestricao = colaboradores.filter((c) => {
+    const st = normalizarStatusColaborador(c.status);
+    return st === 'RESTRITO' || st === 'SUSPENSO' || Boolean(c.restricaoOperacional?.possuiRestricao);
+  });
 
   // Vencimentos consolidados
   const centralVencimentos = consolidarCentralVencimentos(
@@ -808,15 +804,17 @@ export function calcularMetricasDashboardCompetencias(
 
   return {
     totalColaboradores,
-    colaboradoresAtivos: ativos.length,
-    colaboradoresInativos: inativos.length,
+    colaboradoresAtivos: dist.ATIVO,
+    colaboradoresInativos: dist.INATIVO,
     colaboradoresComRestricao: comRestricao.length,
-    colaboradoresSuspensos: suspensos.length,
-    colaboradoresAfastados: afastados.length,
-    colaboradoresRestritos: restritos.length,
-    colaboradoresDesligados: desligados.length,
-    colaboradoresEmTreinamento: emTreinamento.length,
-    colaboradoresOutros: outros.length,
+    colaboradoresSuspensos: dist.SUSPENSO,
+    colaboradoresAfastados: dist.AFASTADO,
+    colaboradoresRestritos: dist.RESTRITO,
+    colaboradoresDesligados: dist.DESLIGADO,
+    colaboradoresEmTreinamento: dist.EM_TREINAMENTO,
+    colaboradoresStatusNaoInformado: dist.STATUS_NAO_INFORMADO,
+    colaboradoresOutros: dist.OUTRO,
+    distribuicaoPorStatus: dist,
     totalCompetencias: catalogoCompetencias.length,
     taxaColaboradoresQualificados,
     taxaTreinamentosEmDia,

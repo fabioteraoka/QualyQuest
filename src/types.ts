@@ -1082,6 +1082,7 @@ export interface SlideGraficoDados {
   itens: SlideGraficoDadoItem[];
   matriz5x5?: {
     contagem: Record<string, number>;
+    celulas?: MapaMatrizRisco5x5;
     totalCriticos: number;
     totalAltos: number;
     totalMedios: number;
@@ -1540,8 +1541,9 @@ export type StatusColaborador =
   | 'SUSPENSO' 
   | 'AFASTADO' 
   | 'DESLIGADO'
-  | 'OUTRO' 
-  | 'INATIVO'; // Preservado para retrocompatibilidade histórica sem perda de dados
+  | 'INATIVO' // Preservado para retrocompatibilidade histórica sem perda de dados
+  | 'STATUS_NAO_INFORMADO' // Regra obrigatória: registros sem status no cadastro original
+  | 'OUTRO';
 
 export interface ItemRNCMatrizRisco {
   id: string;
@@ -1948,7 +1950,9 @@ export interface CompetenciasDashboardMetrics {
   colaboradoresRestritos?: number;
   colaboradoresDesligados?: number;
   colaboradoresEmTreinamento?: number;
+  colaboradoresStatusNaoInformado?: number;
   colaboradoresOutros?: number;
+  distribuicaoPorStatus?: Record<StatusColaborador, number> | Record<string, number>;
   totalCompetencias: number;
   taxaColaboradoresQualificados: number; // 0 a 100
   taxaTreinamentosEmDia: number; // 0 a 100

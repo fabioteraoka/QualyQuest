@@ -56,7 +56,8 @@ import {
   calcularDiasParaVencimento,
   consolidarCentralVencimentos,
 } from '../services/competenciesEngine';
-import { obterConfiguracaoStatusColaborador } from '../utils/qualityHelpers';
+import { obterConfiguracaoStatusColaborador, contabilizarColaboradoresPorStatus } from '../utils/qualityHelpers';
+import { normalizarStatusColaborador } from '../utils/smartImportEngine';
 
 interface PersonsCompetenciesViewProps {
   organizationId: string;
@@ -164,28 +165,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
 
   // Contagens oficiais de colaboradores por status (Fonte Única da Verdade)
   const contagensPorStatus = useMemo(() => {
-    const counts: Record<string, number> = {
-      TODOS: persons.length,
-      ATIVO: 0,
-      EM_TREINAMENTO: 0,
-      RESTRITO: 0,
-      SUSPENSO: 0,
-      AFASTADO: 0,
-      DESLIGADO: 0,
-      INATIVO: 0,
-      OUTRO: 0,
-    };
-
-    persons.forEach((p) => {
-      const st = p.status || 'ATIVO';
-      if (counts[st] !== undefined) {
-        counts[st]++;
-      } else {
-        counts.OUTRO++;
-      }
-    });
-
-    return counts;
+    return contabilizarColaboradoresPorStatus(persons);
   }, [persons]);
 
   // Colaboradores filtrados
@@ -199,7 +179,8 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
         p.funcao.toLowerCase().includes(searchTerm.toLowerCase());
 
       const matchSetor = selectedSetor === 'TODOS' || p.setor === selectedSetor;
-      const matchStatus = selectedStatus === 'TODOS' || p.status === selectedStatus;
+      const statusNormalizado = normalizarStatusColaborador(p.status);
+      const matchStatus = selectedStatus === 'TODOS' || statusNormalizado === selectedStatus;
       const matchRestricao = !filterRestricao || (p.restricaoOperacional && p.restricaoOperacional.possuiRestricao);
 
       return matchSearch && matchSetor && matchStatus && matchRestricao;
@@ -516,7 +497,8 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   };
 
   const renderStatusBadge = (colab: ColaboradorPessoa) => {
-    const config = obterConfiguracaoStatusColaborador(colab.status);
+    const statusNorm = normalizarStatusColaborador(colab.status);
+    const config = obterConfiguracaoStatusColaborador(statusNorm);
     const label = colab.statusCustomizado || config.label;
 
     return (
@@ -735,6 +717,20 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     <span>Inativos ({contagensPorStatus.INATIVO})</span>
                   </button>
                 )}
+                {contagensPorStatus.STATUS_NAO_INFORMADO > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStatus('STATUS_NAO_INFORMADO')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                      selectedStatus === 'STATUS_NAO_INFORMADO'
+                        ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                        : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                    }`}
+                  >
+                    <span>⚠️</span>
+                    <span>Não Informados ({contagensPorStatus.STATUS_NAO_INFORMADO})</span>
+                  </button>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -768,6 +764,9 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   )}
                   {contagensPorStatus.INATIVO > 0 && (
                     <option value="INATIVO">🔘 Inativos ({contagensPorStatus.INATIVO})</option>
+                  )}
+                  {contagensPorStatus.STATUS_NAO_INFORMADO > 0 && (
+                    <option value="STATUS_NAO_INFORMADO">⚠️ Não Informados ({contagensPorStatus.STATUS_NAO_INFORMADO})</option>
                   )}
                 </select>
 
@@ -1953,6 +1952,9 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     defaultValue={colaboradorParaEditar?.status || 'ATIVO'}
                     className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                   >
+                    {colaboradorParaEditar?.status === 'STATUS_NAO_INFORMADO' && (
+                      <option value="STATUS_NAO_INFORMADO">⚠️ NÃO INFORMADO (Selecione um status abaixo para classificar)</option>
+                    )}
                     <option value="ATIVO">ATIVO (Disponível)</option>
                     <option value="EM_TREINAMENTO">EM TREINAMENTO (Capacitação / Formação)</option>
                     <option value="AFASTADO">AFASTADO (Licença / Atestado)</option>

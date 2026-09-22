@@ -501,6 +501,58 @@ export const CompetenciesDashboardView: React.FC<CompetenciesDashboardViewProps>
                   </td>
                 </tr>
               )}
+
+              {/* Linha Inativos (Legado) */}
+              {(metricas.colaboradoresInativos || 0) > 0 && (
+                <tr className="hover:bg-slate-50/70 transition">
+                  <td className="py-2.5 px-4 flex items-center gap-2 font-semibold text-slate-900">
+                    <span className="w-2.5 h-2.5 rounded-full bg-zinc-400"></span>
+                    <span>Inativos (Legado)</span>
+                  </td>
+                  <td className="py-2.5 px-4 text-center font-extrabold text-slate-900 text-base">
+                    {metricas.colaboradoresInativos}
+                  </td>
+                  <td className="py-2.5 px-4 text-center text-xs text-slate-600 font-medium">
+                    {metricas.totalColaboradores > 0
+                      ? `${Math.round(((metricas.colaboradoresInativos || 0) / metricas.totalColaboradores) * 100)}%`
+                      : '0%'}
+                  </td>
+                  <td className="py-2.5 px-4 text-right">
+                    <button
+                      onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('INATIVO') : onNavigateToPersons && onNavigateToPersons()}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-zinc-700 hover:text-zinc-800 bg-zinc-100 hover:bg-zinc-200 px-3 py-1 rounded-lg border border-zinc-300 transition"
+                    >
+                      Ver Lista ({metricas.colaboradoresInativos}) →
+                    </button>
+                  </td>
+                </tr>
+              )}
+
+              {/* Linha Status Não Informado */}
+              {(metricas.colaboradoresStatusNaoInformado || 0) > 0 && (
+                <tr className="bg-amber-50/70 hover:bg-amber-100/70 transition border-t border-amber-200">
+                  <td className="py-2.5 px-4 flex items-center gap-2 font-bold text-amber-900">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+                    <span>Status Não Informado (Requer Classificação)</span>
+                  </td>
+                  <td className="py-2.5 px-4 text-center font-extrabold text-amber-900 text-base">
+                    {metricas.colaboradoresStatusNaoInformado}
+                  </td>
+                  <td className="py-2.5 px-4 text-center text-xs text-amber-800 font-bold">
+                    {metricas.totalColaboradores > 0
+                      ? `${Math.round(((metricas.colaboradoresStatusNaoInformado || 0) / metricas.totalColaboradores) * 100)}%`
+                      : '0%'}
+                  </td>
+                  <td className="py-2.5 px-4 text-right">
+                    <button
+                      onClick={() => onNavigateToPersonsWithStatus ? onNavigateToPersonsWithStatus('STATUS_NAO_INFORMADO') : onNavigateToPersons && onNavigateToPersons()}
+                      className="inline-flex items-center gap-1 text-xs font-bold text-amber-900 hover:text-amber-950 bg-amber-200/80 hover:bg-amber-300 px-3 py-1 rounded-lg border border-amber-400 transition"
+                    >
+                      Classificar ({metricas.colaboradoresStatusNaoInformado}) →
+                    </button>
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

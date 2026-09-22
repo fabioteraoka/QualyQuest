@@ -11,11 +11,13 @@ import {
   VersaoDocumentoConfig,
   OrganizationSLAConfig,
   StatusColaborador,
+  ColaboradorPessoa,
   ConsolidadoMatrizRisco5x5,
   CelulaMatrizRisco5x5,
   ItemRNCMatrizRisco,
   MapaMatrizRisco5x5,
 } from '../types';
+import { normalizarStatusColaborador } from './smartImportEngine';
 
 export const SEVERIDADES = [
   { valor: '1', label: '1 - Catastrófica', desc: 'Impacto severo na segurança/aeronavegabilidade ou paralisação' },
@@ -155,6 +157,21 @@ export function obterConfiguracaoStatusColaborador(status?: StatusColaborador | 
         corBorda: 'border-zinc-300',
         descricao: 'Registro inativo pré-existente (compatibilidade legada)',
       };
+    case 'STATUS_NAO_INFORMADO':
+    case 'NAO_INFORMADO':
+    case 'NÃO INFORMADO':
+    case 'SEM STATUS':
+    case 'SEM_STATUS':
+      return {
+        status: 'STATUS_NAO_INFORMADO',
+        label: 'Não Informado',
+        badgeClass: 'bg-amber-50 text-amber-900 border-amber-300',
+        iconeEmoji: '⚠️',
+        corTexto: 'text-amber-900',
+        corBg: 'bg-amber-50',
+        corBorda: 'border-amber-300',
+        descricao: 'Status operacional não informado no cadastro original (requer classificação)',
+      };
     case 'OUTRO':
     default:
       return {
@@ -168,6 +185,56 @@ export function obterConfiguracaoStatusColaborador(status?: StatusColaborador | 
         descricao: 'Status administrativo não categorizado no rol principal',
       };
   }
+}
+
+export interface DistribuicaoStatusOficial {
+  ATIVO: number;
+  EM_TREINAMENTO: number;
+  RESTRITO: number;
+  SUSPENSO: number;
+  AFASTADO: number;
+  DESLIGADO: number;
+  INATIVO: number;
+  STATUS_NAO_INFORMADO: number;
+  OUTRO: number;
+  TODOS: number;
+}
+
+/**
+ * Função ÚNICA E CENTRALIZADA para contabilização oficial de colaboradores por status
+ * Consumida obrigatoriamente por: Dashboard, Lista, Filtros, Dossiê 360°, PPT e Cabeçalhos.
+ * Proibido assumir status ausente = ATIVO. Colaboradores sem status são classificados como STATUS_NAO_INFORMADO.
+ */
+export function contabilizarColaboradoresPorStatus(
+  colaboradores: ColaboradorPessoa[]
+): DistribuicaoStatusOficial {
+  const counts: DistribuicaoStatusOficial = {
+    ATIVO: 0,
+    EM_TREINAMENTO: 0,
+    RESTRITO: 0,
+    SUSPENSO: 0,
+    AFASTADO: 0,
+    DESLIGADO: 0,
+    INATIVO: 0,
+    STATUS_NAO_INFORMADO: 0,
+    OUTRO: 0,
+    TODOS: colaboradores ? colaboradores.length : 0,
+  };
+
+  if (!colaboradores || colaboradores.length === 0) {
+    return counts;
+  }
+
+  colaboradores.forEach((p) => {
+    const st = normalizarStatusColaborador(p.status);
+    if (counts[st] !== undefined) {
+      counts[st]++;
+    } else {
+      counts.OUTRO++;
+    }
+  });
+
+  return counts;
 }
 
 /**

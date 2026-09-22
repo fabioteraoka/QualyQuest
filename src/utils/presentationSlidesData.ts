@@ -20,7 +20,8 @@ import {
   OrganizationRecord
 } from '../types';
 import { avaliarSaudeSGQ } from './sgqHealthEvaluator';
-import { consolidarRNCsPorMatrizRisco } from './qualityHelpers';
+import { consolidarRNCsPorMatrizRisco, contabilizarColaboradoresPorStatus } from './qualityHelpers';
+import { normalizarStatusColaborador } from './smartImportEngine';
 
 /**
  * Helper para dividir arrays em fatias menores (paginação para evitar espremer itens em slides)
@@ -222,19 +223,22 @@ export function gerarSlidesApresentacao(
   const trainingRecords = contexto?.trainingRecords || [];
   const qualifications = contexto?.qualifications || [];
   const persons = contexto?.persons || [];
-  const personsAtivos = persons.filter(p => !p.status || p.status === 'ATIVO');
-  const personsEmTreinamento = persons.filter(p => p.status === 'EM_TREINAMENTO');
-  const personsRestritos = persons.filter(p => p.status === 'RESTRITO');
-  const personsSuspensos = persons.filter(p => p.status === 'SUSPENSO');
-  const personsAfastados = persons.filter(p => p.status === 'AFASTADO');
-  const personsDesligados = persons.filter(p => p.status === 'DESLIGADO' || p.status === 'INATIVO');
-  const personsOutros = persons.filter(p => p.status === 'OUTRO');
-  const personsComRestricao = persons.filter(p => 
-    p.status === 'RESTRITO' || 
-    p.status === 'SUSPENSO' || 
-    p.status === 'AFASTADO' || 
-    Boolean(p.restricaoOperacional?.possuiRestricao)
-  );
+  const distStatusPersons = contabilizarColaboradoresPorStatus(persons);
+  const personsAtivos = persons.filter(p => normalizarStatusColaborador(p.status) === 'ATIVO');
+  const personsEmTreinamento = persons.filter(p => normalizarStatusColaborador(p.status) === 'EM_TREINAMENTO');
+  const personsRestritos = persons.filter(p => normalizarStatusColaborador(p.status) === 'RESTRITO');
+  const personsSuspensos = persons.filter(p => normalizarStatusColaborador(p.status) === 'SUSPENSO');
+  const personsAfastados = persons.filter(p => normalizarStatusColaborador(p.status) === 'AFASTADO');
+  const personsDesligados = persons.filter(p => {
+    const s = normalizarStatusColaborador(p.status);
+    return s === 'DESLIGADO' || s === 'INATIVO';
+  });
+  const personsStatusNaoInformado = persons.filter(p => normalizarStatusColaborador(p.status) === 'STATUS_NAO_INFORMADO');
+  const personsOutros = persons.filter(p => normalizarStatusColaborador(p.status) === 'OUTRO');
+  const personsComRestricao = persons.filter(p => {
+    const s = normalizarStatusColaborador(p.status);
+    return s === 'RESTRITO' || s === 'SUSPENSO' || s === 'AFASTADO' || Boolean(p.restricaoOperacional?.possuiRestricao);
+  });
 
   const trainingsVencidos = trainingRecords.filter(t => t.dataValidade && new Date(t.dataValidade) < agora);
   const trainingsVencendo30d = trainingRecords.filter(t => {
@@ -691,6 +695,7 @@ export function gerarSlidesApresentacao(
         ],
         matriz5x5: {
           contagem: contagemMatriz5x5,
+          celulas: dadosMatrizConsolidados.matriz,
           totalCriticos: riscosCriticos,
           totalAltos: riscosAltos,
           totalMedios: riscosModerados,
@@ -1009,6 +1014,9 @@ export function gerarSlidesApresentacao(
           ['SUSPENSO', `${personsSuspensos.length}`, `${persons.length > 0 ? Math.round((personsSuspensos.length / persons.length) * 100) : 0}%`, 'Bloqueio cautelar imediato de liberação de aeronaves'],
           ['AFASTADO', `${personsAfastados.length}`, `${persons.length > 0 ? Math.round((personsAfastados.length / persons.length) * 100) : 4}%`, 'Licença médica ou afastamento previdenciário temporário'],
           ['DESLIGADO', `${personsDesligados.length}`, `${persons.length > 0 ? Math.round((personsDesligados.length / persons.length) * 100) : 0}%`, 'Inativo / Histórico preservado para rastreabilidade'],
+          ...(personsStatusNaoInformado.length > 0
+            ? [['NÃO INFORMADO', `${personsStatusNaoInformado.length}`, `${persons.length > 0 ? Math.round((personsStatusNaoInformado.length / persons.length) * 100) : 0}%`, 'Requer classificação cadastral no SGQ']]
+            : []),
           ['OUTRO', `${personsOutros.length}`, `${persons.length > 0 ? Math.round((personsOutros.length / persons.length) * 100) : 0}%`, 'Em triagem ou validação cadastral'],
         ],
       },
@@ -1023,6 +1031,9 @@ export function gerarSlidesApresentacao(
           { rotulo: 'Suspenso', valor: personsSuspensos.length, cor: '#ef4444' },
           { rotulo: 'Afastado', valor: personsAfastados.length > 0 ? personsAfastados.length : 1, cor: '#64748b' },
           { rotulo: 'Desligado', valor: personsDesligados.length, cor: '#94a3b8' },
+          ...(personsStatusNaoInformado.length > 0
+            ? [{ rotulo: 'Não Informado', valor: personsStatusNaoInformado.length, cor: '#f97316' }]
+            : []),
         ],
       },
       explicacaoGrafico: {
@@ -1046,7 +1057,7 @@ export function gerarSlidesApresentacao(
           metricasPrincipais: [
             { rotulo: 'Colaboradores no Lote', valor: `${chunk.length} Pessoas`, status: 'normal' as const },
             { rotulo: 'Lote de Efetivo', valor: `${chunkIdx + 1} de ${chunksColaboradores.length}`, status: 'normal' as const },
-            { rotulo: 'Ativos no Lote', valor: chunk.filter(p => (p.status || 'ATIVO') === 'ATIVO').length, status: 'sucesso' as const },
+            { rotulo: 'Ativos no Lote', valor: chunk.filter(p => normalizarStatusColaborador(p.status) === 'ATIVO').length, status: 'sucesso' as const },
             { rotulo: 'Restrições Ativas', valor: chunk.filter(p => p.restricaoOperacional?.possuiRestricao).length, status: chunk.some(p => p.restricaoOperacional?.possuiRestricao) ? 'alerta' as const : 'sucesso' as const },
           ],
           pontosChave: [
@@ -1061,7 +1072,7 @@ export function gerarSlidesApresentacao(
               p.nome,
               p.funcao || 'Técnico de Manutenção',
               p.cargoOperacional || p.funcao || 'Mecânico CHT',
-              p.status || 'ATIVO',
+              normalizarStatusColaborador(p.status),
               p.restricaoOperacional?.possuiRestricao 
                 ? (p.restricaoOperacional.motivo || 'Restrição Ativa')
                 : 'Nenhuma'

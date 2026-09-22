@@ -15,6 +15,7 @@ import { avaliarSaudeSGQ } from './sgqHealthEvaluator';
 import { gerarSlidesApresentacao, DadosContextoApresentacao } from './presentationSlidesData';
 import { executarTesteEspelho, RelatorioTesteEspelho, executarCertificacaoIntegrada } from './presentationConsistencyValidator';
 import { SAFE_BOUNDS_WIDESCREEN, executarAuditoriaVisual } from './presentationGeometryValidator';
+import { SEVERIDADES, PROBABILIDADES, calcularNivelRisco } from './qualityHelpers';
 import PptxGenJS from 'pptxgenjs';
 
 export type { DadosContextoApresentacao };
@@ -715,35 +716,42 @@ export async function exportarApresentacaoPPTX(
         });
       } else if (grafico.tipo === 'matriz-5x5') {
         // Renderiza a Matriz 5x5 em forma de Tabela Estruturada PPTX no lado esquerdo
-        const severidades = ['5 - Catastrófica', '4 - Crítica', '3 - Significativa', '2 - Menor', '1 - Desprezível'];
-        const probs = ['1-Imp', '2-Rem', '3-Remo', '4-Prov', '5-Freq'];
+        // Alinhamento estrito com SEVERIDADES (1-5) e PROBABILIDADES (A-E) de qualityHelpers.ts
+        const severidades = SEVERIDADES;
+        const probs = PROBABILIDADES;
         const contagem = grafico.matriz5x5?.contagem || {};
+        const celulasMap = grafico.matriz5x5?.celulas || {};
 
         const headerRow: any[] = [
           { text: 'Sev \\ Prob', options: { bold: true, fill: { color: COR_NAVY }, color: 'FFFFFF', fontSize: 7.5, align: 'center' as const } },
-          ...probs.map(p => ({ text: p, options: { bold: true, fill: { color: COR_BLUE }, color: 'FFFFFF', fontSize: 7.5, align: 'center' as const } }))
+          ...probs.map(p => ({ text: p.label.split('-')[0].trim() || p.valor, options: { bold: true, fill: { color: COR_BLUE }, color: 'FFFFFF', fontSize: 7.5, align: 'center' as const } }))
         ];
 
-        const bodyRows: any[][] = [5, 4, 3, 2, 1].map((s, sIdx) => {
+        const bodyRows: any[][] = severidades.map((s) => {
           const rowCells: any[] = [
-            { text: severidades[sIdx], options: { bold: true, fill: { color: 'F1F5F9' }, color: COR_TEXT_DARK, fontSize: 7.0 } }
+            { text: s.label, options: { bold: true, fill: { color: 'F1F5F9' }, color: COR_TEXT_DARK, fontSize: 6.8 } }
           ];
-          [1, 2, 3, 4, 5].forEach(p => {
-            const qtd = contagem[`${s}-${p}`] || 0;
-            const score = s * p;
-            let bgColor = 'E2E8F0';
-            let txtColor = '000000';
-            if (score >= 15) { bgColor = 'FEE2E2'; txtColor = '991B1B'; }
-            else if (score >= 10) { bgColor = 'FFEDD5'; txtColor = '9A3412'; }
-            else if (score >= 5) { bgColor = 'FEF9C3'; txtColor = '854D0E'; }
-            else { bgColor = 'DCFCE7'; txtColor = '166534'; }
+          probs.forEach(p => {
+            const code = `${s.valor}${p.valor}`;
+            const altCode = `${s.valor}-${p.valor}`;
+            const celula = celulasMap[code];
+            const qtd = celula ? celula.quantidade : (contagem[code] ?? contagem[altCode] ?? 0);
+            const nivel = calcularNivelRisco(s.valor, p.valor);
+
+            let bgColor = 'DCFCE7';
+            let txtColor = '166534';
+            if (nivel === 'Crítico') { bgColor = 'FEE2E2'; txtColor = '991B1B'; }
+            else if (nivel === 'Alto') { bgColor = 'FFEDD5'; txtColor = '9A3412'; }
+            else if (nivel === 'Médio') { bgColor = 'FEF9C3'; txtColor = '854D0E'; }
+
+            const cellText = qtd > 0 ? `${code} (${qtd})` : `${code} (0)`;
 
             rowCells.push({
-              text: `${qtd}`,
+              text: cellText,
               options: {
                 fill: { color: bgColor },
                 color: txtColor,
-                fontSize: 8.0,
+                fontSize: 7.5,
                 bold: qtd > 0,
                 align: 'center' as const,
               }
@@ -773,7 +781,7 @@ export async function exportarApresentacaoPPTX(
           rectRadius: 0.05,
         });
 
-        slide.addText('Faixas de Risco: 🔴 Crítico (P1: 15-25) | 🟠 Alto (P2: 10-14) | 🟡 Médio (P3: 5-9) | 🟢 Baixo (P4: 1-4)', {
+        slide.addText('Faixas de Risco: 🔴 Crítico (P1) | 🟠 Alto (P2) | 🟡 Médio (P3) | 🟢 Baixo (P4)', {
           x: 0.9,
           y: posYConteudo + 0.1 + (6 * 0.28) + 0.12,
           w: temTabela ? 5.4 : 11.5,

@@ -349,10 +349,10 @@ export async function efetivarImportacaoNoQualigest(
           const cargoMec = dados.funcao || 'Mecânico de Manutenção de Aeronaves';
           const funcaoPadrao = cargoMec.toUpperCase().includes('INSPETOR') ? 'INSPETOR_QUALIDADE' : 'TECNICO_MANUTENCAO';
           const rawStatus = dados.statusColaborador || dados.status || '';
-          const statusFinal = rawStatus ? normalizarStatusColaborador(rawStatus) : 'ATIVO';
-          const obsStatus = rawStatus 
+          const statusFinal = normalizarStatusColaborador(rawStatus);
+          const obsStatus = statusFinal !== 'STATUS_NAO_INFORMADO'
             ? `Status operacional "${statusFinal}" normalizado a partir de "${rawStatus}" na planilha de origem.`
-            : `Status não informado na planilha de origem ("STATUS NÃO INFORMADO"); atribuído como ATIVO mediante homologação humana de importação.`;
+            : `Status não informado na planilha de origem ("STATUS_NAO_INFORMADO"); preservado para classificação humana formal (proibido presumir ATIVO).`;
 
           const novaPessoa: ColaboradorPessoa = {
             id: pessoaId,

@@ -29,16 +29,36 @@ export interface ResultadoNormalizacaoStatusColaborador {
 export function normalizarStatusColaboradorCompleto(valor: any): ResultadoNormalizacaoStatusColaborador {
   if (valor === undefined || valor === null || String(valor).trim() === '') {
     return {
-      status: 'OUTRO',
+      status: 'STATUS_NAO_INFORMADO',
       statusOriginal: '',
       informado: false,
       statusNaoInformado: true,
-      aviso: 'STATUS NÃO INFORMADO na planilha — Requer validação humana antes de cadastrar.',
+      aviso: 'STATUS NÃO INFORMADO no cadastro/planilha — Requer classificação operacional (proibido presumir ATIVO).',
     };
   }
 
   const raw = String(valor).trim();
   const str = raw.toUpperCase();
+
+  if (
+    str === 'STATUS_NAO_INFORMADO' ||
+    str === 'NAO_INFORMADO' ||
+    str === 'NÃO INFORMADO' ||
+    str === 'NAO INFORMADO' ||
+    str === 'SEM STATUS' ||
+    str === 'SEM_STATUS' ||
+    str === 'PENDENTE' ||
+    str === 'A DEFINIR' ||
+    str === 'INDEFINIDO'
+  ) {
+    return {
+      status: 'STATUS_NAO_INFORMADO',
+      statusOriginal: raw,
+      informado: false,
+      statusNaoInformado: true,
+      aviso: 'Status não informado no cadastro original.',
+    };
+  }
 
   if (
     str.includes('TREINAMENTO') || 
@@ -79,10 +99,6 @@ export function normalizarStatusColaboradorCompleto(valor: any): ResultadoNormal
 
 export function normalizarStatusColaborador(valor: any): StatusColaborador {
   const res = normalizarStatusColaboradorCompleto(valor);
-  if (res.statusNaoInformado) {
-    // Quando não informado, não assume 'ATIVO' silenciosamente; mantém 'OUTRO' para indicar ausência de status
-    return 'OUTRO';
-  }
   return res.status;
 }
 

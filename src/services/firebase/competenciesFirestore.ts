@@ -36,6 +36,7 @@ import {
   INITIAL_PERSON_DOCUMENTS,
   INITIAL_ACTIVITY_REQUIREMENTS,
 } from '../../data/initialCompetenciesData';
+import { normalizarStatusColaborador } from '../../utils/smartImportEngine';
 
 // ============================================================================
 // 1. PESSOAS / COLABORADORES
@@ -76,7 +77,13 @@ export function subscribeToPersons(
 
       const list: ColaboradorPessoa[] = [];
       snapshot.forEach((snap) => {
-        list.push({ id: snap.id, ...snap.data() } as ColaboradorPessoa);
+        const data = snap.data() as Partial<ColaboradorPessoa>;
+        const statusNormalizado = normalizarStatusColaborador(data.status);
+        list.push({
+          id: snap.id,
+          ...data,
+          status: statusNormalizado,
+        } as ColaboradorPessoa);
       });
       list.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
       callback(list);
@@ -84,7 +91,7 @@ export function subscribeToPersons(
     (err) => {
       console.warn('Erro ao escutar persons no Firestore:', err?.message);
       if (organizationId === DEFAULT_ORGANIZATION_ID) {
-        callback(INITIAL_PERSONS);
+        callback(INITIAL_PERSONS.map((p) => ({ ...p, status: normalizarStatusColaborador(p.status) })));
       } else {
         callback([]);
       }
