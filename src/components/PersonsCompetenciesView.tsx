@@ -28,6 +28,8 @@ import {
   RotateCcw,
   AlertOctagon,
   ShieldAlert,
+  Tag,
+  Power,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -58,6 +60,13 @@ import {
 } from '../services/competenciesEngine';
 import { obterConfiguracaoStatusColaborador, contabilizarColaboradoresPorStatus } from '../utils/qualityHelpers';
 import { normalizarStatusColaborador } from '../utils/smartImportEngine';
+import {
+  analisarLoteColaboradores,
+  executarLoteColaboradores,
+  TipoAcaoLoteColaborador,
+  ResultadoAnaliseLote,
+} from '../services/bulkManagementService';
+import { BulkActionModal } from './common/BulkActionModal';
 
 interface PersonsCompetenciesViewProps {
   organizationId: string;
@@ -131,6 +140,13 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
 
   const [isSubmittingAcao, setIsSubmittingAcao] = useState(false);
 
+  // Gestão em Lote de Colaboradores (Fase Corretiva Integrada)
+  const [selectedColabIds, setSelectedColabIds] = useState<Set<string>>(new Set());
+  const [modalLoteAberto, setModalLoteAberto] = useState(false);
+  const [acaoLote, setAcaoLote] = useState<TipoAcaoLoteColaborador>('INATIVAR');
+  const [analiseLote, setAnaliseLote] = useState<ResultadoAnaliseLote<ColaboradorPessoa> | null>(null);
+  const [sucessoLoteMsg, setSucessoLoteMsg] = useState<string | null>(null);
+
   // Modal de Nova / Editar Competência
   const [modalCompetenciaOpen, setModalCompetenciaOpen] = useState(false);
   const [competenciaParaEditar, setCompetenciaParaEditar] = useState<CompetenciaItem | null>(null);
@@ -171,17 +187,20 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   // Colaboradores filtrados
   const colaboradoresFiltrados = useMemo(() => {
     return persons.filter((p) => {
+      const term = (searchTerm || '').trim().toLowerCase();
       const matchSearch =
-        searchTerm === '' ||
-        p.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.matricula.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (p.cargoOperacional && p.cargoOperacional.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        p.funcao.toLowerCase().includes(searchTerm.toLowerCase());
+        !term ||
+        (p.nome || '').toLowerCase().includes(term) ||
+        (p.matricula || '').toLowerCase().includes(term) ||
+        (p.cargoOperacional || '').toLowerCase().includes(term) ||
+        (p.funcao || '').toLowerCase().includes(term) ||
+        (p.setor || '').toLowerCase().includes(term) ||
+        (p.contatoCorporativo || '').toLowerCase().includes(term);
 
       const matchSetor = selectedSetor === 'TODOS' || p.setor === selectedSetor;
       const statusNormalizado = normalizarStatusColaborador(p.status);
       const matchStatus = selectedStatus === 'TODOS' || statusNormalizado === selectedStatus;
-      const matchRestricao = !filterRestricao || (p.restricaoOperacional && p.restricaoOperacional.possuiRestricao);
+      const matchRestricao = !filterRestricao || Boolean(p.restricaoOperacional && p.restricaoOperacional.possuiRestricao);
 
       return matchSearch && matchSetor && matchStatus && matchRestricao;
     });
@@ -254,7 +273,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       setor: String(formData.get('setor') || '').trim(),
       funcao: String(formData.get('funcao') || '').trim(),
       cargoOperacional: String(formData.get('cargoOperacional') || '').trim(),
-      status: (formData.get('status') as StatusColaborador) || 'ATIVO',
+      status: (formData.get('status') as StatusColaborador) || 'STATUS_NAO_INFORMADO',
       statusCustomizado: String(formData.get('statusCustomizado') || '').trim() || undefined,
       dataAdmissao: String(formData.get('dataAdmissao') || ''),
       contatoCorporativo: String(formData.get('contatoCorporativo') || '').trim(),
@@ -285,6 +304,50 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     } catch (err: any) {
       alert(`Erro ao salvar colaborador: ${err.message}`);
     }
+  };
+
+  // Handlers para Gestão em Lote (Fase Corretiva Integrada)
+  const handleAbrirAcaoLote = (acao: TipoAcaoLoteColaborador) => {
+    const colabsSelecionados = persons.filter((p) => selectedColabIds.has(p.id));
+    if (colabsSelecionados.length === 0) return;
+
+    const res = analisarLoteColaboradores(colabsSelecionados, acao, {
+      trainingRecords,
+      personCompetencies,
+      qualifications,
+      documents,
+      nonConformities: [],
+    });
+
+    setAnaliseLote(res);
+    setAcaoLote(acao);
+    setModalLoteAberto(true);
+  };
+
+  const handleConfirmarAcaoLote = async (dados: {
+    somentePermitidos: boolean;
+    motivo: string;
+    novoStatus?: StatusColaborador;
+    statusCustomizado?: string;
+  }) => {
+    if (!analiseLote) return;
+    const alvos = analiseLote.permitidos.map((x) => x.item);
+    const resultado = await executarLoteColaboradores(
+      organizationId,
+      alvos,
+      acaoLote,
+      {
+        motivo: dados.motivo,
+        novoStatus: dados.novoStatus,
+        statusCustomizado: dados.statusCustomizado,
+      },
+      userProfile
+    );
+
+    setSelectedColabIds(new Set());
+    setModalLoteAberto(false);
+    setSucessoLoteMsg(resultado.mensagem);
+    setTimeout(() => setSucessoLoteMsg(null), 5000);
   };
 
   // Abrir Modal de Inativação Lógica
@@ -689,48 +752,42 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   <span>⚫</span>
                   <span>Desligados ({contagensPorStatus.DESLIGADO})</span>
                 </button>
-                {contagensPorStatus.OUTRO > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedStatus('OUTRO')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
-                      selectedStatus === 'OUTRO'
-                        ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
-                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>⚪</span>
-                    <span>Outros ({contagensPorStatus.OUTRO})</span>
-                  </button>
-                )}
-                {contagensPorStatus.INATIVO > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedStatus('INATIVO')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
-                      selectedStatus === 'INATIVO'
-                        ? 'bg-zinc-700 text-white border-zinc-800 shadow-xs'
-                        : 'bg-zinc-100 text-zinc-700 border-zinc-300 hover:bg-zinc-200'
-                    }`}
-                  >
-                    <span>🔘</span>
-                    <span>Inativos ({contagensPorStatus.INATIVO})</span>
-                  </button>
-                )}
-                {contagensPorStatus.STATUS_NAO_INFORMADO > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedStatus('STATUS_NAO_INFORMADO')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
-                      selectedStatus === 'STATUS_NAO_INFORMADO'
-                        ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
-                        : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                    }`}
-                  >
-                    <span>⚠️</span>
-                    <span>Não Informados ({contagensPorStatus.STATUS_NAO_INFORMADO})</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('INATIVO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'INATIVO'
+                      ? 'bg-zinc-700 text-white border-zinc-800 shadow-xs'
+                      : 'bg-zinc-100 text-zinc-700 border-zinc-300 hover:bg-zinc-200'
+                  }`}
+                >
+                  <span>🔘</span>
+                  <span>Inativos ({contagensPorStatus.INATIVO})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('STATUS_NAO_INFORMADO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'STATUS_NAO_INFORMADO'
+                      ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                      : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                  }`}
+                >
+                  <span>⚠️</span>
+                  <span>Não Informados ({contagensPorStatus.STATUS_NAO_INFORMADO})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStatus('OUTRO')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                    selectedStatus === 'OUTRO'
+                      ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>⚪</span>
+                  <span>Outros ({contagensPorStatus.OUTRO})</span>
+                </button>
               </div>
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -759,18 +816,12 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   <option value="SUSPENSO">🔴 Suspensos ({contagensPorStatus.SUSPENSO})</option>
                   <option value="AFASTADO">🟣 Afastados ({contagensPorStatus.AFASTADO})</option>
                   <option value="DESLIGADO">⚫ Desligados ({contagensPorStatus.DESLIGADO})</option>
-                  {contagensPorStatus.OUTRO > 0 && (
-                    <option value="OUTRO">⚪ Outros ({contagensPorStatus.OUTRO})</option>
-                  )}
-                  {contagensPorStatus.INATIVO > 0 && (
-                    <option value="INATIVO">🔘 Inativos ({contagensPorStatus.INATIVO})</option>
-                  )}
-                  {contagensPorStatus.STATUS_NAO_INFORMADO > 0 && (
-                    <option value="STATUS_NAO_INFORMADO">⚠️ Não Informados ({contagensPorStatus.STATUS_NAO_INFORMADO})</option>
-                  )}
+                  <option value="INATIVO">🔘 Inativos ({contagensPorStatus.INATIVO})</option>
+                  <option value="STATUS_NAO_INFORMADO">⚠️ Não Informados ({contagensPorStatus.STATUS_NAO_INFORMADO})</option>
+                  <option value="OUTRO">⚪ Outros ({contagensPorStatus.OUTRO})</option>
                 </select>
 
-                <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none ml-auto">
+                <label className="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={filterRestricao}
@@ -779,7 +830,95 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   />
                   <span>Com Restrição</span>
                 </label>
+
+                {/* Seleção em lote de todos filtrados */}
+                {colaboradoresFiltrados.length > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-blue-700 cursor-pointer select-none ml-auto">
+                    <input
+                      type="checkbox"
+                      checked={
+                        colaboradoresFiltrados.length > 0 &&
+                        colaboradoresFiltrados.every((c) => selectedColabIds.has(c.id))
+                      }
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedColabIds(new Set(colaboradoresFiltrados.map((c) => c.id)));
+                        } else {
+                          setSelectedColabIds(new Set());
+                        }
+                      }}
+                      className="rounded text-blue-600 focus:ring-blue-500"
+                    />
+                    <span>Selecionar filtrados ({colaboradoresFiltrados.length})</span>
+                  </label>
+                )}
               </div>
+
+              {/* Barra de Gestão em Lote Ativa */}
+              {selectedColabIds.size > 0 && (
+                <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2.5 shadow-xs animate-in fade-in duration-200">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                      {selectedColabIds.size}
+                    </div>
+                    <div>
+                      <span className="font-bold text-blue-900 text-xs">
+                        {selectedColabIds.size} colaborador(es) selecionado(s)
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedColabIds(new Set())}
+                        className="text-[11px] text-blue-700 hover:text-blue-900 underline block font-medium"
+                      >
+                        Limpar seleção
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirAcaoLote('CLASSIFICAR_STATUS')}
+                      className="px-2.5 py-1 text-xs font-semibold bg-white text-blue-700 border border-blue-300 hover:bg-blue-50 rounded-lg shadow-2xs flex items-center gap-1 transition"
+                    >
+                      <Tag className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Classificar Status</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirAcaoLote('INATIVAR')}
+                      className="px-2.5 py-1 text-xs font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-50 rounded-lg shadow-2xs flex items-center gap-1 transition"
+                    >
+                      <Power className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Inativar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirAcaoLote('REATIVAR')}
+                      className="px-2.5 py-1 text-xs font-semibold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 rounded-lg shadow-2xs flex items-center gap-1 transition"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Reativar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAbrirAcaoLote('EXCLUIR')}
+                      className="px-2.5 py-1 text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 rounded-lg shadow-2xs flex items-center gap-1 transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Excluir Permitidos</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Mensagem de Feedback de Operação em Lote */}
+              {sucessoLoteMsg && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 shadow-2xs animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-medium">{sucessoLoteMsg}</span>
+                </div>
+              )}
             </div>
 
             {/* Lista dos Cards */}
@@ -792,6 +931,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
               ) : (
                 colaboradoresFiltrados.map((colab) => {
                   const isSelected = selectedColaborador?.id === colab.id;
+                  const isChecked = selectedColabIds.has(colab.id);
                   const temRestricao = colab.restricaoOperacional?.possuiRestricao;
                   const bloqueia = colab.restricaoOperacional?.impedeExecucao;
 
@@ -802,23 +942,40 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                       className={`p-4 rounded-xl border transition cursor-pointer relative ${
                         isSelected
                           ? 'border-blue-600 bg-blue-50/50 shadow-sm'
+                          : isChecked
+                          ? 'border-blue-300 bg-blue-50/20'
                           : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-slate-900 text-sm">{colab.nome}</span>
-                            <span className="text-xs font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                              {colab.matricula}
-                            </span>
+                        <div className="flex items-start gap-2.5">
+                          {/* Checkbox de Seleção em Lote */}
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const next = new Set(selectedColabIds);
+                              if (e.target.checked) next.add(colab.id);
+                              else next.delete(colab.id);
+                              setSelectedColabIds(next);
+                            }}
+                            className="mt-1 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          />
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-900 text-sm">{colab.nome}</span>
+                              <span className="text-xs font-mono text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                                {colab.matricula}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-600">
+                              <span className="font-medium text-slate-800">{colab.funcao}</span> • {colab.setor}
+                            </p>
+                            {colab.cargoOperacional && (
+                              <p className="text-xs text-slate-500">{colab.cargoOperacional}</p>
+                            )}
                           </div>
-                          <p className="text-xs text-slate-600">
-                            <span className="font-medium text-slate-800">{colab.funcao}</span> • {colab.setor}
-                          </p>
-                          {colab.cargoOperacional && (
-                            <p className="text-xs text-slate-500">{colab.cargoOperacional}</p>
-                          )}
                         </div>
 
                         <div className="flex flex-col items-end gap-1.5">
@@ -1949,20 +2106,18 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   <select
                     name="status"
                     required
-                    defaultValue={colaboradorParaEditar?.status || 'ATIVO'}
+                    defaultValue={colaboradorParaEditar?.status || 'STATUS_NAO_INFORMADO'}
                     className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                   >
-                    {colaboradorParaEditar?.status === 'STATUS_NAO_INFORMADO' && (
-                      <option value="STATUS_NAO_INFORMADO">⚠️ NÃO INFORMADO (Selecione um status abaixo para classificar)</option>
-                    )}
-                    <option value="ATIVO">ATIVO (Disponível)</option>
-                    <option value="EM_TREINAMENTO">EM TREINAMENTO (Capacitação / Formação)</option>
-                    <option value="AFASTADO">AFASTADO (Licença / Atestado)</option>
-                    <option value="SUSPENSO">SUSPENSO (Averiguação / Medida)</option>
-                    <option value="RESTRITO">RESTRITO (Atividades Limitadas)</option>
-                    <option value="INATIVO">INATIVO</option>
-                    <option value="DESLIGADO">DESLIGADO</option>
-                    <option value="OUTRO">OUTRO (Especificar abaixo)</option>
+                    <option value="STATUS_NAO_INFORMADO">⚠️ NÃO INFORMADO (Pendente de classificação cadastral)</option>
+                    <option value="ATIVO">🟢 ATIVO (Disponível para escalas e manutenção)</option>
+                    <option value="EM_TREINAMENTO">🔵 EM TREINAMENTO (Capacitação / Formação)</option>
+                    <option value="RESTRITO">🟡 RESTRITO (Restrição médica ou técnica ativa)</option>
+                    <option value="SUSPENSO">🔴 SUSPENSO (Bloqueio cautelar imediato)</option>
+                    <option value="AFASTADO">🟣 AFASTADO (Licença / Atestado / INSS)</option>
+                    <option value="INATIVO">🔘 INATIVO (Fora de operação com histórico)</option>
+                    <option value="DESLIGADO">⚫ DESLIGADO (Inativo / Histórico preservado)</option>
+                    <option value="OUTRO">⚪ OUTRO (Especificar abaixo)</option>
                   </select>
                 </div>
 
@@ -2662,6 +2817,18 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
             )}
           </div>
         </div>
+      )}
+
+      {/* Modal Reutilizável de Gestão em Lote (Fase Corretiva Integrada) */}
+      {analiseLote && (
+        <BulkActionModal
+          isOpen={modalLoteAberto}
+          onClose={() => setModalLoteAberto(false)}
+          tipoEntidade="COLABORADOR"
+          acao={acaoLote}
+          analise={analiseLote}
+          onConfirmar={handleConfirmarAcaoLote}
+        />
       )}
     </div>
   );

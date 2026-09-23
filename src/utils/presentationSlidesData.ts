@@ -992,7 +992,7 @@ export function gerarSlidesApresentacao(
       id: 10,
       numero: 10,
       titulo: 'PESSOAS, COMPETÊNCIAS & STATUS OPERACIONAL',
-      subtitulo: 'Quadro executivo de distribuição do efetivo por status operacional e governança de aptidão',
+      subtitulo: 'Quadro executivo de distribuição estatística do efetivo por status operacional e governança de aptidão',
       categoria: 'Competências & Efetivo',
       bloco: 'PESSOAS_COMPETENCIAS',
       tipoVisualizacao: 'tabela-executiva',
@@ -1000,68 +1000,74 @@ export function gerarSlidesApresentacao(
       metricasPrincipais: [
         { 
           rotulo: 'Total de Colaboradores', 
-          valor: persons.length > 0 ? persons.length : 24, 
-          subtitulo: 'Efetivo cadastrado no SGQ',
+          valor: distStatusPersons.TODOS, 
+          subtitulo: 'Efetivo monitorado no SGQ',
           status: 'normal' 
         },
         { 
           rotulo: 'Colaboradores Ativos', 
-          valor: personsAtivos.length, 
-          subtitulo: `${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 85}% do corpo técnico`,
+          valor: distStatusPersons.ATIVO, 
+          subtitulo: `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.ATIVO / distStatusPersons.TODOS) * 100) : 0}% do efetivo`,
           status: 'sucesso' 
         },
         { 
           rotulo: 'Em Treinamento', 
-          valor: personsEmTreinamento.length, 
+          valor: distStatusPersons.EM_TREINAMENTO, 
           subtitulo: 'Capacitação supervisionada',
-          status: personsEmTreinamento.length > 0 ? 'normal' : 'sucesso' 
+          status: distStatusPersons.EM_TREINAMENTO > 0 ? 'normal' : 'sucesso' 
         },
         { 
-          rotulo: 'Com Restrição / Afastados', 
-          valor: personsComRestricao.length, 
-          subtitulo: personsComRestricao.length > 0 ? 'Bloqueio preventivo ativo' : 'Zero restrições',
-          status: personsComRestricao.length > 0 ? 'alerta' : 'sucesso' 
+          rotulo: 'Restrição / Afastados', 
+          valor: distStatusPersons.RESTRITO + distStatusPersons.AFASTADO + distStatusPersons.SUSPENSO, 
+          subtitulo: (distStatusPersons.RESTRITO + distStatusPersons.AFASTADO + distStatusPersons.SUSPENSO) > 0 ? 'Bloqueio preventivo ativo' : 'Zero restrições',
+          status: (distStatusPersons.RESTRITO + distStatusPersons.AFASTADO + distStatusPersons.SUSPENSO) > 0 ? 'alerta' : 'sucesso' 
         },
       ],
       pontosChave: [
-        `O quadro geral de pessoal conta com ${persons.length > 0 ? persons.length : 24} colaboradores monitorados pelo SGQ.`,
-        `${personsAtivos.length} técnico(s) encontram-se em status ATIVO, com prontidão técnica para liberação de manutenção.`,
-        personsEmTreinamento.length > 0
-          ? `${personsEmTreinamento.length} colaborador(es) no status oficial EM_TREINAMENTO, sob supervisão técnica contínua.`
-          : 'Nenhum técnico atualmente no período probatório ou de integração técnica inicial.',
-        personsComRestricao.length > 0
-          ? `CONTROLE DE APTIDÃO: ${personsComRestricao.length} colaborador(es) com restrição técnica, suspensão ou afastamento preventivo.`
-          : 'Totalidade do corpo técnico ativo em plena condição de prontidão operacional.',
-        'Regra de Ouro: Status operacional (ativo/afastado) e Aptidão técnica (habilitado/apto) são rigorosamente auditados.',
+        `O efetivo cadastrado conta com ${distStatusPersons.TODOS} colaboradores monitorados pelo SGQ.`,
+        `${distStatusPersons.ATIVO} técnico(s) encontram-se em status ATIVO (${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.ATIVO / distStatusPersons.TODOS) * 100) : 0}%), com prontidão operacional plena.`,
+        distStatusPersons.EM_TREINAMENTO > 0
+          ? `${distStatusPersons.EM_TREINAMENTO} colaborador(es) em treinamento técnico supervisionado no hangar.`
+          : 'Nenhum técnico atualmente em período de integração inicial ou estágio probatório.',
+        (distStatusPersons.RESTRITO + distStatusPersons.SUSPENSO + distStatusPersons.AFASTADO) > 0
+          ? `CONTROLE DE APTIDÃO: ${distStatusPersons.RESTRITO + distStatusPersons.SUSPENSO + distStatusPersons.AFASTADO} colaborador(es) com restrição, suspensão preventiva ou afastamento.`
+          : 'Totalidade do corpo técnico ativo em plena aptidão para execução.',
+        distStatusPersons.STATUS_NAO_INFORMADO > 0
+          ? `CLASSIFICAÇÃO PENDENTE: ${distStatusPersons.STATUS_NAO_INFORMADO} registro(s) aguardando classificação formal de status no SGQ.`
+          : 'Rastreabilidade e governança de status 100% categorizadas conforme RBAC 145.',
       ],
       tabelaDados: {
-        colunas: ['Status Operacional', 'Colaboradores', '% do Efetivo', 'Diretriz Regulatória / Escala'],
+        colunas: ['Status', 'Quantidade', '%', 'Diretriz Regulatória / Escala'],
         linhas: [
-          ['ATIVO', `${personsAtivos.length}`, `${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 83}%`, 'Apto para atuação e liberação operacional plena'],
-          ['EM_TREINAMENTO', `${personsEmTreinamento.length}`, `${persons.length > 0 ? Math.round((personsEmTreinamento.length / persons.length) * 100) : 8}%`, 'Supervisão técnica contínua e integração no hangar'],
-          ['RESTRITO', `${personsRestritos.length}`, `${persons.length > 0 ? Math.round((personsRestritos.length / persons.length) * 100) : 4}%`, 'Atuação limitada por condição médica ou técnica'],
-          ['SUSPENSO', `${personsSuspensos.length}`, `${persons.length > 0 ? Math.round((personsSuspensos.length / persons.length) * 100) : 0}%`, 'Bloqueio cautelar imediato de liberação de aeronaves'],
-          ['AFASTADO', `${personsAfastados.length}`, `${persons.length > 0 ? Math.round((personsAfastados.length / persons.length) * 100) : 4}%`, 'Licença médica ou afastamento previdenciário temporário'],
-          ['DESLIGADO', `${personsDesligados.length}`, `${persons.length > 0 ? Math.round((personsDesligados.length / persons.length) * 100) : 0}%`, 'Inativo / Histórico preservado para rastreabilidade'],
-          ...(personsStatusNaoInformado.length > 0
-            ? [['NÃO INFORMADO', `${personsStatusNaoInformado.length}`, `${persons.length > 0 ? Math.round((personsStatusNaoInformado.length / persons.length) * 100) : 0}%`, 'Requer classificação cadastral no SGQ']]
+          ['Ativo', `${distStatusPersons.ATIVO}`, `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.ATIVO / distStatusPersons.TODOS) * 100) : 0}%`, 'Apto para atuação e liberação operacional plena'],
+          ['Em treinamento', `${distStatusPersons.EM_TREINAMENTO}`, `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.EM_TREINAMENTO / distStatusPersons.TODOS) * 100) : 0}%`, 'Supervisão técnica contínua e integração no hangar'],
+          ['Restrito', `${distStatusPersons.RESTRITO}`, `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.RESTRITO / distStatusPersons.TODOS) * 100) : 0}%`, 'Atuação limitada por condição médica ou técnica'],
+          ['Suspenso', `${distStatusPersons.SUSPENSO}`, `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.SUSPENSO / distStatusPersons.TODOS) * 100) : 0}%`, 'Bloqueio cautelar preventivo de liberação'],
+          ['Afastado', `${distStatusPersons.AFASTADO}`, `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.AFASTADO / distStatusPersons.TODOS) * 100) : 0}%`, 'Licença médica ou previdenciária temporária'],
+          ['Inativo', `${distStatusPersons.INATIVO + distStatusPersons.DESLIGADO}`, `${distStatusPersons.TODOS > 0 ? Math.round(((distStatusPersons.INATIVO + distStatusPersons.DESLIGADO) / distStatusPersons.TODOS) * 100) : 0}%`, 'Inativo / Histórico preservado para rastreabilidade'],
+          ['Não informado', `${distStatusPersons.STATUS_NAO_INFORMADO}`, `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.STATUS_NAO_INFORMADO / distStatusPersons.TODOS) * 100) : 0}%`, 'Requer classificação cadastral no SGQ'],
+          ...(distStatusPersons.OUTRO > 0
+            ? [['Outro', `${distStatusPersons.OUTRO}`, `${distStatusPersons.TODOS > 0 ? Math.round((distStatusPersons.OUTRO / distStatusPersons.TODOS) * 100) : 0}%`, 'Em triagem ou validação cadastral']]
             : []),
-          ['OUTRO', `${personsOutros.length}`, `${persons.length > 0 ? Math.round((personsOutros.length / persons.length) * 100) : 0}%`, 'Em triagem ou validação cadastral'],
+          ['Total', `${distStatusPersons.TODOS}`, '100%', 'Efetivo total registrado no SGQ'],
         ],
       },
       graficoDados: {
         tipo: 'pizza',
-        titulo: 'Distribuição do Efetivo por Status Operacional',
+        titulo: 'Distribuição Estatística do Efetivo por Status',
         unidade: 'Colaboradores',
         itens: [
-          { rotulo: 'Ativo', valor: personsAtivos.length > 0 ? personsAtivos.length : 20, cor: '#10b981' },
-          { rotulo: 'Em Treinamento', valor: personsEmTreinamento.length > 0 ? personsEmTreinamento.length : 2, cor: '#3b82f6' },
-          { rotulo: 'Restrito', valor: personsRestritos.length > 0 ? personsRestritos.length : 1, cor: '#f59e0b' },
-          { rotulo: 'Suspenso', valor: personsSuspensos.length, cor: '#ef4444' },
-          { rotulo: 'Afastado', valor: personsAfastados.length > 0 ? personsAfastados.length : 1, cor: '#64748b' },
-          { rotulo: 'Desligado', valor: personsDesligados.length, cor: '#94a3b8' },
-          ...(personsStatusNaoInformado.length > 0
-            ? [{ rotulo: 'Não Informado', valor: personsStatusNaoInformado.length, cor: '#f97316' }]
+          { rotulo: 'Ativo', valor: distStatusPersons.ATIVO, cor: '#10b981' },
+          { rotulo: 'Em Treinamento', valor: distStatusPersons.EM_TREINAMENTO, cor: '#3b82f6' },
+          { rotulo: 'Restrito', valor: distStatusPersons.RESTRITO, cor: '#f59e0b' },
+          { rotulo: 'Suspenso', valor: distStatusPersons.SUSPENSO, cor: '#ef4444' },
+          { rotulo: 'Afastado', valor: distStatusPersons.AFASTADO, cor: '#8b5cf6' },
+          { rotulo: 'Inativo', valor: distStatusPersons.INATIVO + distStatusPersons.DESLIGADO, cor: '#64748b' },
+          ...(distStatusPersons.STATUS_NAO_INFORMADO > 0
+            ? [{ rotulo: 'Não Informado', valor: distStatusPersons.STATUS_NAO_INFORMADO, cor: '#f97316' }]
+            : []),
+          ...(distStatusPersons.OUTRO > 0
+            ? [{ rotulo: 'Outro', valor: distStatusPersons.OUTRO, cor: '#94a3b8' }]
             : []),
         ],
       },

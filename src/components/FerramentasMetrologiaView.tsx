@@ -23,6 +23,8 @@ import {
   Save,
   Layers,
   ChevronRight,
+  RotateCcw,
+  Info,
 } from 'lucide-react';
 import { FerramentaCalibracao, OrganizationRecord, UserProfile } from '../types';
 import {
@@ -31,6 +33,13 @@ import {
   deleteFerramentaCalibrada,
   registrarAfericaoCalibracao,
 } from '../services/firebase/smartImportFirestore';
+import {
+  analisarLoteFerramentas,
+  executarLoteFerramentas,
+  TipoAcaoLoteFerramenta,
+  ResultadoAnaliseLote,
+} from '../services/bulkManagementService';
+import { BulkActionModal } from './common/BulkActionModal';
 
 interface FerramentasMetrologiaViewProps {
   organization: OrganizationRecord | null;
@@ -53,7 +62,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
 
   // Estados de filtros
   const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState<'TODAS' | 'CALIBRADA' | 'PROXIMA_VENCIMENTO' | 'VENCIDA' | 'INATIVAS'>('TODAS');
+  const [filtroStatus, setFiltroStatus] = useState<'TODAS' | 'CALIBRADA' | 'PROXIMA_VENCIMENTO' | 'VENCIDA' | 'QUARENTENA' | 'INATIVAS'>('TODAS');
   const [filtroSetor, setFiltroSetor] = useState<string>('TODOS');
 
   // Estados de modais
@@ -73,6 +82,16 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
   const [modalHistoricoAberta, setModalHistoricoAberta] = useState(false);
   const [ferramentaHistorico, setFerramentaHistorico] = useState<FerramentaCalibracao | null>(null);
 
+  // Modal de Detalhes de Origem / Rastreabilidade
+  const [ferramentaOrigem, setFerramentaOrigem] = useState<FerramentaCalibracao | null>(null);
+
+  // Estados de Gestão em Lote (Fase Corretiva Integrada)
+  const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
+  const [modalLoteAberto, setModalLoteAberto] = useState(false);
+  const [acaoLote, setAcaoLote] = useState<TipoAcaoLoteFerramenta>('INATIVAR');
+  const [analiseLote, setAnaliseLote] = useState<ResultadoAnaliseLote<FerramentaCalibracao> | null>(null);
+  const [sucessoLoteMsg, setSucessoLoteMsg] = useState<string | null>(null);
+
   const [salvando, setSalvando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
 
@@ -90,6 +109,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
     let calibradas = 0;
     let proximaVencimento = 0;
     let vencidas = 0;
+    let quarentena = 0;
     let inativas = 0;
 
     ferramentasCalibradas.forEach((f) => {
@@ -97,7 +117,8 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
         inativas++;
         return;
       }
-      if (f.status === 'VENCIDA' || f.status === 'QUARENTENA') vencidas++;
+      if (f.status === 'QUARENTENA') quarentena++;
+      else if (f.status === 'VENCIDA') vencidas++;
       else if (f.status === 'PROXIMA_VENCIMENTO') proximaVencimento++;
       else calibradas++;
     });
@@ -107,6 +128,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
       calibradas,
       proximaVencimento,
       vencidas,
+      quarentena,
       inativas,
     };
   }, [ferramentasCalibradas]);
@@ -124,7 +146,9 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
       } else if (filtroStatus === 'PROXIMA_VENCIMENTO') {
         if (!isAtivo || f.status !== 'PROXIMA_VENCIMENTO') return false;
       } else if (filtroStatus === 'VENCIDA') {
-        if (!isAtivo || (f.status !== 'VENCIDA' && f.status !== 'QUARENTENA')) return false;
+        if (!isAtivo || f.status !== 'VENCIDA') return false;
+      } else if (filtroStatus === 'QUARENTENA') {
+        if (!isAtivo || f.status !== 'QUARENTENA') return false;
       }
 
       // Filtro de setor
@@ -144,6 +168,38 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
       return true;
     });
   }, [ferramentasCalibradas, filtroStatus, filtroSetor, busca]);
+
+  // Handlers para Gestão em Lote
+  const handleAbrirAcaoLote = (acao: TipoAcaoLoteFerramenta) => {
+    const ferramentasSelecionadas = ferramentasCalibradas.filter((f) => selectedToolIds.has(f.id));
+    if (ferramentasSelecionadas.length === 0) return;
+
+    const res = analisarLoteFerramentas(ferramentasSelecionadas, acao);
+
+    setAnaliseLote(res);
+    setAcaoLote(acao);
+    setModalLoteAberto(true);
+  };
+
+  const handleConfirmarAcaoLote = async (dados: {
+    somentePermitidos: boolean;
+    motivo: string;
+  }) => {
+    if (!analiseLote) return;
+    const alvos = analiseLote.permitidos.map((x) => x.item);
+    const resultado = await executarLoteFerramentas(
+      orgId,
+      alvos,
+      acaoLote,
+      { motivo: dados.motivo },
+      user
+    );
+
+    setSelectedToolIds(new Set());
+    setModalLoteAberto(false);
+    setSucessoLoteMsg(resultado.mensagem);
+    setTimeout(() => setSucessoLoteMsg(null), 5000);
+  };
 
   // Handler para Salvar Instrumento (Novo ou Editado)
   const handleSalvarInstrumento = async (e: React.FormEvent) => {
@@ -410,7 +466,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
         </div>
 
         {/* Cards de Status Metrológico Interativos */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-100">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-6 pt-6 border-t border-slate-100">
           <div
             onClick={() => setFiltroStatus(filtroStatus === 'CALIBRADA' ? 'TODAS' : 'CALIBRADA')}
             className={`p-3.5 rounded-xl border cursor-pointer transition ${
@@ -440,7 +496,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
               <Clock className="w-4 h-4 text-amber-600" />
             </div>
             <p className="text-2xl font-black text-amber-950 mt-1">{contadores.proximaVencimento}</p>
-            <span className="text-[11px] text-amber-700">Requer agendamento laboratório</span>
+            <span className="text-[11px] text-amber-700">Requer agendamento</span>
           </div>
 
           <div
@@ -452,11 +508,27 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs text-red-800 font-bold">Vencidas / Quarentena</span>
+              <span className="text-xs text-red-800 font-bold">Vencidas</span>
               <AlertTriangle className="w-4 h-4 text-red-600" />
             </div>
             <p className="text-2xl font-black text-red-950 mt-1">{contadores.vencidas}</p>
-            <span className="text-[11px] text-red-700">Bloqueio compulsório de uso</span>
+            <span className="text-[11px] text-red-700">Bloqueio de uso imediato</span>
+          </div>
+
+          <div
+            onClick={() => setFiltroStatus(filtroStatus === 'QUARENTENA' ? 'TODAS' : 'QUARENTENA')}
+            className={`p-3.5 rounded-xl border cursor-pointer transition ${
+              filtroStatus === 'QUARENTENA'
+                ? 'bg-purple-100/80 border-purple-400 ring-2 ring-purple-500'
+                : 'bg-purple-50 border-purple-200 hover:bg-purple-100/50'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-purple-800 font-bold">Quarentena</span>
+              <Ban className="w-4 h-4 text-purple-600" />
+            </div>
+            <p className="text-2xl font-black text-purple-950 mt-1">{contadores.quarentena}</p>
+            <span className="text-[11px] text-purple-700">Aguardando laudo técnico</span>
           </div>
 
           <div
@@ -520,7 +592,8 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                 <option value="TODAS">Todos os Status</option>
                 <option value="CALIBRADA">Calibradas</option>
                 <option value="PROXIMA_VENCIMENTO">Próximas ao Vencimento</option>
-                <option value="VENCIDA">Vencidas / Quarentena</option>
+                <option value="VENCIDA">Vencidas</option>
+                <option value="QUARENTENA">Quarentena</option>
                 <option value="INATIVAS">Inativas</option>
               </select>
             </div>
@@ -538,12 +611,87 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
               </button>
             )}
 
-            <div className="text-xs text-slate-500 ml-auto md:ml-2">
-              Exibindo <span className="font-bold text-slate-900">{ferramentasFiltradas.length}</span> de{' '}
-              <span className="font-bold text-slate-900">{ferramentasCalibradas.length}</span>
-            </div>
+            {/* Selecionar todos filtrados */}
+            {ferramentasFiltradas.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 cursor-pointer select-none ml-auto">
+                <input
+                  type="checkbox"
+                  checked={
+                    ferramentasFiltradas.length > 0 &&
+                    ferramentasFiltradas.every((f) => selectedToolIds.has(f.id))
+                  }
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedToolIds(new Set(ferramentasFiltradas.map((f) => f.id)));
+                    } else {
+                      setSelectedToolIds(new Set());
+                    }
+                  }}
+                  className="rounded text-blue-600 focus:ring-blue-500"
+                />
+                <span>Selecionar filtradas ({ferramentasFiltradas.length})</span>
+              </label>
+            )}
           </div>
         </div>
+
+        {/* Barra de Gestão em Lote Ativa */}
+        {selectedToolIds.size > 0 && (
+          <div className="bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2.5 shadow-xs animate-in fade-in duration-200">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
+                {selectedToolIds.size}
+              </div>
+              <div>
+                <span className="font-bold text-blue-900 text-xs">
+                  {selectedToolIds.size} instrumento(s) selecionado(s)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedToolIds(new Set())}
+                  className="text-[11px] text-blue-700 hover:text-blue-900 underline block font-medium"
+                >
+                  Limpar seleção
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => handleAbrirAcaoLote('INATIVAR')}
+                className="px-2.5 py-1 text-xs font-semibold bg-white text-amber-700 border border-amber-300 hover:bg-amber-50 rounded-lg shadow-2xs flex items-center gap-1 transition"
+              >
+                <Power className="w-3.5 h-3.5 text-amber-600" />
+                <span>Inativar Selecionadas</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAbrirAcaoLote('REATIVAR')}
+                className="px-2.5 py-1 text-xs font-semibold bg-white text-emerald-700 border border-emerald-300 hover:bg-emerald-50 rounded-lg shadow-2xs flex items-center gap-1 transition"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Reativar Selecionadas</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleAbrirAcaoLote('EXCLUIR')}
+                className="px-2.5 py-1 text-xs font-semibold bg-rose-600 text-white hover:bg-rose-700 rounded-lg shadow-2xs flex items-center gap-1 transition"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Excluir Permitidas</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Mensagem de Feedback de Operação em Lote */}
+        {sucessoLoteMsg && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2 shadow-2xs animate-in fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="font-medium">{sucessoLoteMsg}</span>
+          </div>
+        )}
       </div>
 
       {/* Tabela de Instrumentos */}
@@ -552,6 +700,23 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
           <table className="w-full text-xs text-left">
             <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
               <tr>
+                <th className="p-3.5 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={
+                      ferramentasFiltradas.length > 0 &&
+                      ferramentasFiltradas.every((f) => selectedToolIds.has(f.id))
+                    }
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedToolIds(new Set(ferramentasFiltradas.map((f) => f.id)));
+                      } else {
+                        setSelectedToolIds(new Set());
+                      }
+                    }}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
                 <th className="p-3.5">Tag / Patrimônio</th>
                 <th className="p-3.5">Descrição do Instrumento</th>
                 <th className="p-3.5">Fabricante & Modelo</th>
@@ -560,13 +725,13 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                 <th className="p-3.5">Próxima Calibração</th>
                 <th className="p-3.5">Certificado RBC</th>
                 <th className="p-3.5 text-center">Status</th>
-                <th className="p-3.5 text-center w-48">Ações Metrológicas</th>
+                <th className="p-3.5 text-center w-52">Ações Metrológicas</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {ferramentasFiltradas.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-slate-500">
+                  <td colSpan={10} className="p-8 text-center text-slate-500">
                     <Wrench className="w-8 h-8 text-slate-300 mx-auto mb-2" />
                     <p className="font-bold text-slate-700">Nenhum instrumento encontrado com os filtros selecionados.</p>
                     <p className="text-xs text-slate-400 mt-1">
@@ -577,8 +742,10 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
               ) : (
                 ferramentasFiltradas.map((tool) => {
                   const isAtivo = tool.ativo !== false;
-                  const isVencida = tool.status === 'VENCIDA' || tool.status === 'QUARENTENA';
+                  const isQuarentena = tool.status === 'QUARENTENA';
+                  const isVencida = tool.status === 'VENCIDA' || isQuarentena;
                   const isProx = tool.status === 'PROXIMA_VENCIMENTO';
+                  const isChecked = selectedToolIds.has(tool.id);
 
                   // Dias restantes
                   const hoje = new Date().toISOString().split('T')[0];
@@ -589,8 +756,12 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                     <tr
                       key={tool.id}
                       className={`transition ${
-                        !isAtivo
+                        isChecked
+                          ? 'bg-blue-50/50'
+                          : !isAtivo
                           ? 'bg-slate-50/70 opacity-60'
+                          : isQuarentena
+                          ? 'bg-purple-50/40 hover:bg-purple-50/70'
                           : isVencida
                           ? 'bg-red-50/40 hover:bg-red-50/70'
                           : isProx
@@ -598,6 +769,20 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                           : 'hover:bg-slate-50'
                       }`}
                     >
+                      <td className="p-3.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const next = new Set(selectedToolIds);
+                            if (e.target.checked) next.add(tool.id);
+                            else next.delete(tool.id);
+                            setSelectedToolIds(next);
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        />
+                      </td>
+
                       <td className="p-3.5 font-mono font-bold text-slate-900">
                         <div className="flex items-center gap-1.5">
                           <span>{tool.codigoPatrimonio}</span>
@@ -632,11 +817,13 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                       <td className="p-3.5 text-slate-600 whitespace-nowrap">{tool.dataUltimaCalibracao}</td>
 
                       <td className="p-3.5 whitespace-nowrap font-bold">
-                        <div className={isVencida ? 'text-red-700' : isProx ? 'text-amber-800' : 'text-slate-900'}>
+                        <div className={isQuarentena ? 'text-purple-700' : isVencida ? 'text-red-700' : isProx ? 'text-amber-800' : 'text-slate-900'}>
                           {tool.dataProximaCalibracao}
                         </div>
                         <div className="text-[10px] font-normal">
-                          {diffDias < 0 ? (
+                          {isQuarentena ? (
+                            <span className="text-purple-700 font-bold">Bloqueio Quarentena</span>
+                          ) : diffDias < 0 ? (
                             <span className="text-red-600 font-bold">Vencida há {Math.abs(diffDias)}d</span>
                           ) : diffDias <= 30 ? (
                             <span className="text-amber-700 font-bold">Vence em {diffDias}d</span>
@@ -654,7 +841,12 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                       </td>
 
                       <td className="p-3.5 text-center whitespace-nowrap">
-                        {isVencida ? (
+                        {isQuarentena ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-800 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full">
+                            <Ban className="w-3 h-3" />
+                            QUARENTENA
+                          </span>
+                        ) : isVencida ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-red-800 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full">
                             <Ban className="w-3 h-3" />
                             VENCIDA
@@ -673,7 +865,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                       </td>
 
                       <td className="p-3.5 text-center">
-                        <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                        <div className="flex items-center justify-center gap-1 flex-wrap">
                           <button
                             onClick={() => {
                               setFerramentaParaCalibrar(tool);
@@ -704,6 +896,16 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                             className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition cursor-pointer"
                           >
                             <History className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              setFerramentaOrigem(tool);
+                            }}
+                            title="Consultar origem e rastreabilidade cadastral"
+                            className="p-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded transition cursor-pointer"
+                          >
+                            <Info className="w-3.5 h-3.5" />
                           </button>
 
                           <button
@@ -1153,6 +1355,131 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
             </div>
           </div>
         </div>
+      )}
+
+      {/* MODAL: ORIGEM E RASTREABILIDADE CADASTRAL DO INSTRUMENTO */}
+      {ferramentaOrigem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-[16px] max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">Origem & Rastreabilidade Cadastral</h3>
+              </div>
+              <button
+                onClick={() => setFerramentaOrigem(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-sm">{ferramentaOrigem.descricao}</span>
+                  <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+                    {ferramentaOrigem.codigoPatrimonio}
+                  </span>
+                </div>
+                <p className="text-slate-600">
+                  {ferramentaOrigem.fabricante} {ferramentaOrigem.modelo && `• ${ferramentaOrigem.modelo}`} • Série: {ferramentaOrigem.numeroSerie || 'S/N'}
+                </p>
+                <p className="text-slate-500 text-[11px]">Setor / Localização: {ferramentaOrigem.setor || 'Hangar Geral'}</p>
+              </div>
+
+              <div className="border border-slate-200 rounded-xl divide-y divide-slate-100">
+                <div className="p-3 flex items-start justify-between">
+                  <div>
+                    <span className="font-bold text-slate-700 block">Canal de Entrada / Origem</span>
+                    <span className="text-slate-500 text-[11px]">
+                      {(ferramentaOrigem.observacoes && ferramentaOrigem.observacoes.toLowerCase().includes('smart import')) ||
+                      (ferramentaOrigem as any).origemImportacao
+                        ? 'Importado via Smart Import (Planilha Metrológica homologada)'
+                        : 'Cadastro Manual no Módulo Operacional de Metrologia'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                    {(ferramentaOrigem.observacoes && ferramentaOrigem.observacoes.toLowerCase().includes('smart import')) ||
+                    (ferramentaOrigem as any).origemImportacao
+                      ? 'Smart Import'
+                      : 'Manual'}
+                  </span>
+                </div>
+
+                <div className="p-3 flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">Coleção Firestore</span>
+                  <code className="text-[11px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-800 font-mono">
+                    organizations/{orgId}/calibrated_tools/{ferramentaOrigem.id}
+                  </code>
+                </div>
+
+                <div className="p-3 flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">Data de Cadastro Inicial</span>
+                  <span className="text-slate-600 font-mono text-[11px]">
+                    {ferramentaOrigem.criadoEm ? new Date(ferramentaOrigem.criadoEm).toLocaleString('pt-BR') : 'Data inicial do sistema'}
+                  </span>
+                </div>
+
+                <div className="p-3 flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">Última Atualização Registrada</span>
+                  <span className="text-slate-600 font-mono text-[11px]">
+                    {ferramentaOrigem.atualizadoEm ? new Date(ferramentaOrigem.atualizadoEm).toLocaleString('pt-BR') : 'Sem alterações recentes'}
+                  </span>
+                </div>
+
+                <div className="p-3 flex items-center justify-between">
+                  <span className="font-semibold text-slate-700">Calibrações Registradas no Histórico</span>
+                  <span className="text-slate-800 font-bold">
+                    {ferramentaOrigem.historicoCalibracoes?.length || 0} calibração(ões)
+                  </span>
+                </div>
+
+                {ferramentaOrigem.observacoes && (
+                  <div className="p-3 space-y-1">
+                    <span className="font-semibold text-slate-700 block">Observações & Anotações de Rastreabilidade</span>
+                    <p className="text-slate-600 bg-slate-50 p-2 rounded border border-slate-200 text-[11px] leading-relaxed">
+                      {ferramentaOrigem.observacoes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+              {onNavigateToTab && (
+                <button
+                  onClick={() => {
+                    setFerramentaOrigem(null);
+                    onNavigateToTab('importacao-inteligente');
+                  }}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Ver Gateway Smart Import</span>
+                </button>
+              )}
+              <button
+                onClick={() => setFerramentaOrigem(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold ml-auto"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL REUTILIZÁVEL DE GESTÃO EM LOTE (Fase Corretiva Integrada) */}
+      {analiseLote && (
+        <BulkActionModal
+          isOpen={modalLoteAberto}
+          onClose={() => setModalLoteAberto(false)}
+          tipoEntidade="FERRAMENTA"
+          acao={acaoLote}
+          analise={analiseLote}
+          onConfirmar={handleConfirmarAcaoLote}
+        />
       )}
     </div>
   );
