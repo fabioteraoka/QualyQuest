@@ -1473,6 +1473,8 @@ export default function App() {
                   onRemoverCurso={(courseId) => setTrainingCourses((prev) => prev.filter((x) => x.id !== courseId))}
                   onAdicionarQualificacao={(q) => setQualifications((prev) => [q, ...prev.filter((x) => x.id !== q.id)])}
                   onRemoverQualificacao={(qualId) => setQualifications((prev) => prev.filter((x) => x.id !== qualId))}
+                  onAdicionarDocumento={(doc) => setDocumentosControlados((prev) => [doc, ...prev.filter((x) => x.id !== doc.id)])}
+                  onRemoverDocumento={(docId) => setDocumentosControlados((prev) => prev.filter((x) => x.id !== docId))}
                   onCriarRncSugerida={(dadosRnc) => {
                     handleNewNC();
                   }}

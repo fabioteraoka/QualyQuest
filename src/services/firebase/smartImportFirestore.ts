@@ -296,16 +296,19 @@ export async function efetivarImportacaoNoQualigest(
     adicionarRegistroTreinamento?: (registro: RegistroTreinamentoColaborador) => void;
     adicionarQualificacao?: (qualificacao: QualificacaoColaborador) => void;
     adicionarFerramenta?: (ferramenta: FerramentaCalibracao) => void;
+    adicionarDocumento?: (documento: DocumentoControlado) => void;
     removerFerramenta?: (toolId: string) => void;
     removerRegistroTreinamento?: (recordId: string) => void;
     removerPessoa?: (personId: string) => void;
     removerCurso?: (courseId: string) => void;
     removerQualificacao?: (qualId: string) => void;
+    removerDocumento?: (docId: string) => void;
   },
   contextoExistente?: {
     pessoasExistentes?: ColaboradorPessoa[];
     treinamentosExistentes?: CursoTreinamento[];
     registrosTreinamentoExistentes?: RegistroTreinamentoColaborador[];
+    documentosExistentes?: DocumentoControlado[];
   }
 ): Promise<ResultadoGravacaoImportacao> {
   let totalCriados = 0;
@@ -732,18 +735,16 @@ export async function efetivarImportacaoNoQualigest(
       }
 
       // Categoria documental semântica
-      let cat: CategoriaDocumental = 'PROCEDIMENTOS_INTERNOS';
+      let cat: CategoriaDocumental = 'DOCUMENTO_INTERNO';
       const catRaw = String(dados.tipoDocumento || dados.categoria || '').toUpperCase();
-      if (catRaw.includes('MANUAL') || catRaw.includes('MOMQ') || catRaw.includes('MOE')) {
-        cat = 'MANUAL_EMPRESA';
-      } else if (catRaw.includes('NORMATIV') || catRaw.includes('RBAC') || catRaw.includes('LEGISLACAO')) {
-        cat = 'LEGISLACOES_NORMAS';
-      } else if (catRaw.includes('FABRICANTE') || catRaw.includes('AMM') || catRaw.includes('IPC') || catRaw.includes('CMM') || catRaw.includes('SB')) {
-        cat = 'DOCUMENTOS_FABRICANTES';
+      if (catRaw.includes('NORMATIV') || catRaw.includes('RBAC') || catRaw.includes('LEGISLACAO') || catRaw.includes('ANAC') || catRaw.includes('IS 145')) {
+        cat = 'DOCUMENTO_AUTORIDADE';
+      } else if (catRaw.includes('FABRICANTE') || catRaw.includes('AMM') || catRaw.includes('IPC') || catRaw.includes('CMM') || catRaw.includes('SB') || catRaw.includes('CESSNA') || catRaw.includes('BOEING')) {
+        cat = 'DOCUMENTO_FABRICANTE';
       } else if (catRaw.includes('CLIENTE') || catRaw.includes('PROGRAMA')) {
-        cat = 'DOCUMENTOS_CLIENTES';
-      } else if (catRaw.includes('FORMULARIO') || catRaw.includes('FORM') || catRaw.includes('REGISTRO')) {
-        cat = 'FORMULARIOS_REGISTROS';
+        cat = 'DOCUMENTO_CLIENTE';
+      } else {
+        cat = 'DOCUMENTO_INTERNO';
       }
 
       const novoDoc: DocumentoControlado = {
@@ -760,7 +761,6 @@ export async function efetivarImportacaoNoQualigest(
         status: statusDet,
         exigeEvidenciaLeitura: false,
         aplicabilidadePadrao: {
-          tipo: 'TODAS_AS_BASES',
           statusDeterminacao: 'DETERMINADA',
         },
         createdAt: dadosExistentes?.createdAt || new Date().toISOString(),
@@ -785,12 +785,15 @@ export async function efetivarImportacaoNoQualigest(
         aprovadoPorNome: dados.responsavel || user?.displayName || 'Importação SGQ',
         dataAprovacao: dados.dataAprovacao || hoje,
         escopoAlteracoes: dados.observacoes || `Importado via Smart Import do arquivo ${nomeArquivo}`,
+        ehImutavel: false,
+        createdAt: dadosExistentes?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
 
       await saveRevisaoDocumental(organizationId, novaRevisao, user);
 
-      if ((callbacksEstado as any)?.adicionarDocumento) {
-        (callbacksEstado as any).adicionarDocumento(novoDoc);
+      if (callbacksEstado.adicionarDocumento) {
+        callbacksEstado.adicionarDocumento(novoDoc);
       }
 
       idsGerados.push(docId);
@@ -859,11 +862,13 @@ export async function reverterImportacaoNoQualigest(
     removerPessoa?: (personId: string) => void;
     removerCurso?: (courseId: string) => void;
     removerQualificacao?: (qualId: string) => void;
+    removerDocumento?: (docId: string) => void;
     adicionarFerramenta?: (tool: FerramentaCalibracao) => void;
     adicionarPessoa?: (pessoa: ColaboradorPessoa) => void;
     adicionarCurso?: (curso: CursoTreinamento) => void;
     adicionarRegistroTreinamento?: (registro: RegistroTreinamentoColaborador) => void;
     adicionarQualificacao?: (qual: QualificacaoColaborador) => void;
+    adicionarDocumento?: (documento: DocumentoControlado) => void;
   }
 ): Promise<{ sucesso: boolean; mensagem: string }> {
   if (importRecord.revertida) {
