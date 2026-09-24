@@ -1308,6 +1308,7 @@ export default function App() {
                   initialStatusFilter={initialPersonStatusFilter}
                   onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
                   onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
+                  onNavigateToImport={() => setActiveTab('importacao-inteligente')}
                 />
               )}
 
@@ -1322,6 +1323,8 @@ export default function App() {
                   qualifications={qualifications}
                   documents={personDocuments}
                   initialTab={activeTab === 'cht-qualificacoes' ? 'QUALIFICACOES' : 'CURSOS'}
+                  onNavigateToImport={() => setActiveTab('importacao-inteligente')}
+                  onRegistrosRemovidos={(ids) => setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))}
                 />
               )}
 
@@ -1342,6 +1345,8 @@ export default function App() {
                   documentosControlados={documentosControlados}
                   recordsNC={records}
                   initialSubTab={activeTab === 'aptidao-operacional' ? 'SIMULADOR' : 'VENCIMENTOS'}
+                  onNavigateToImport={() => setActiveTab('importacao-inteligente')}
+                  onRegistrosRemovidos={(ids) => setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))}
                 />
               )}
 

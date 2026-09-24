@@ -30,6 +30,7 @@ import {
   ShieldAlert,
   Tag,
   Power,
+  UploadCloud,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -82,6 +83,7 @@ interface PersonsCompetenciesViewProps {
   initialStatusFilter?: string;
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
+  onNavigateToImport?: () => void;
 }
 
 export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = ({
@@ -98,6 +100,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   initialStatusFilter,
   onNavigateToTrainings,
   onNavigateToExpirations,
+  onNavigateToImport,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'COLABORADORES' | 'MATRIZ' | 'CATALOGO'>('COLABORADORES');
   const [searchTerm, setSearchTerm] = useState('');
@@ -217,26 +220,60 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     return qualifications.filter((q) => q.colaboradorId === selectedColaborador.id);
   }, [qualifications, selectedColaborador]);
 
-  const colabTreinos = useMemo(() => {
+  // Controle de exibição enxuta: apenas último treinamento por curso vs histórico completo
+  const [exibirApenasUltimoTreino, setExibirApenasUltimoTreino] = useState(true);
+
+  // Todos os registros de treinamento do colaborador
+  const colabTreinosTodos = useMemo(() => {
     if (!selectedColaborador) return [];
     return trainingRecords.filter((t) => t.colaboradorId === selectedColaborador.id);
   }, [trainingRecords, selectedColaborador]);
+
+  // Treinamentos consolidados e deduplicados (apenas a última conclusão de cada curso)
+  const colabTreinosUltimos = useMemo(() => {
+    if (!selectedColaborador) return [];
+    const map = new Map<string, RegistroTreinamentoColaborador>();
+
+    // Ordenar do mais recente para o mais antigo por data de realização ou createdAt
+    const ordenados = [...colabTreinosTodos].sort((a, b) => {
+      const dataA = a.dataRealizacao || a.createdAt || '';
+      const dataB = b.dataRealizacao || b.createdAt || '';
+      return dataB.localeCompare(dataA);
+    });
+
+    for (const tr of ordenados) {
+      const chaveCurso = (tr.treinamentoTitulo || tr.treinamentoId || tr.treinamentoCodigo || 'geral')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+
+      if (!map.has(chaveCurso)) {
+        map.set(chaveCurso, tr);
+      }
+    }
+
+    return Array.from(map.values());
+  }, [colabTreinosTodos, selectedColaborador]);
+
+  // Registros exibidos na listagem conforme preferência do usuário (padrão: mais recente)
+  const colabTreinos = exibirApenasUltimoTreino ? colabTreinosUltimos : colabTreinosTodos;
 
   const colabDocs = useMemo(() => {
     if (!selectedColaborador) return [];
     return documents.filter((d) => d.colaboradorId === selectedColaborador.id);
   }, [documents, selectedColaborador]);
 
-  // Vencimentos consolidados específicos do colaborador 360
+  // Vencimentos consolidados específicos do colaborador 360 (utiliza a última reciclagem de cada curso para evitar alertas falsos de cursos antigos)
   const vencimentosColaborador = useMemo(() => {
     if (!selectedColaborador) return [];
     return consolidarCentralVencimentos(
       colabQualifs,
-      colabTreinos,
+      colabTreinosUltimos,
       colabDocs,
       colabComps
     );
-  }, [selectedColaborador, colabQualifs, colabTreinos, colabDocs, colabComps]);
+  }, [selectedColaborador, colabQualifs, colabTreinosUltimos, colabDocs, colabComps]);
 
   // Checagem da atividade selecionada para o colaborador 360
   const resultadoAtividade = useMemo(() => {
@@ -592,6 +629,15 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {onNavigateToImport && (
+            <button
+              onClick={onNavigateToImport}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-lg text-sm font-medium transition shadow-xs"
+              title="Acessar Central de Importação de Dados SGQ"
+            >
+              <UploadCloud className="w-4 h-4 text-sky-600" /> Importação de Dados
+            </button>
+          )}
           <button
             onClick={() => {
               setColaboradorParaEditar(null);
@@ -1551,18 +1597,43 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
               {/* SUB-ABA 3: TREINAMENTOS & RECICLAGENS */}
               {aba360 === 'TREINAMENTOS' && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                      <BookOpen className="w-4 h-4 text-sky-600" /> Treinamentos & Reciclagens ({colabTreinos.length})
-                    </h3>
-                    {onNavigateToTrainings && (
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <BookOpen className="w-4 h-4 text-sky-600" /> Treinamentos & Reciclagens ({colabTreinos.length})
+                      </h3>
+                      {colabTreinosTodos.length > colabTreinosUltimos.length && (
+                        <span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full font-medium">
+                          {colabTreinosTodos.length - colabTreinosUltimos.length} duplicidade(s) / reciclagens anteriores consolidadas
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
                       <button
-                        onClick={onNavigateToTrainings}
-                        className="text-xs text-blue-600 hover:underline font-medium"
+                        onClick={() => setExibirApenasUltimoTreino(!exibirApenasUltimoTreino)}
+                        className={`text-[11px] px-2.5 py-1 rounded-md font-medium border transition flex items-center gap-1.5 ${
+                          exibirApenasUltimoTreino
+                            ? 'bg-sky-50 border-sky-300 text-sky-800 shadow-xs'
+                            : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                        }`}
+                        title="Alternar entre exibir apenas o último curso concluído ou o histórico completo com repetições"
                       >
-                        Gerenciar Treinamentos →
+                        <span>{exibirApenasUltimoTreino ? '✓ Apenas Último por Curso' : 'Histórico Completo'}</span>
+                        <span className="text-[10px] opacity-75">
+                          ({exibirApenasUltimoTreino ? `${colabTreinosUltimos.length} cursos` : `${colabTreinosTodos.length} registros`})
+                        </span>
                       </button>
-                    )}
+
+                      {onNavigateToTrainings && (
+                        <button
+                          onClick={onNavigateToTrainings}
+                          className="text-xs text-blue-600 hover:underline font-medium ml-1"
+                        >
+                          Gerenciar Treinamentos →
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {colabTreinos.length === 0 ? (

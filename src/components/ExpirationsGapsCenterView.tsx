@@ -23,6 +23,7 @@ import {
   FileText,
   Layers,
   Users,
+  FileSpreadsheet,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -45,8 +46,10 @@ import {
   diagnosticarGapsOrganizacionais,
   verificarPodeExecutarAtividade,
   calcularDiasParaVencimento,
+  analisarDuplicidadesTreinamento,
 } from '../services/competenciesEngine';
 import { saveAiCompetencySuggestion } from '../services/firebase/competenciesFirestore';
+import { TrainingDeduplicationModal } from './TrainingDeduplicationModal';
 
 interface ExpirationsGapsCenterViewProps {
   organizationId: string;
@@ -63,6 +66,8 @@ interface ExpirationsGapsCenterViewProps {
   documentosControlados?: DocumentoControlado[];
   recordsNC?: NCRecord[];
   initialSubTab?: 'VENCIMENTOS' | 'GAPS' | 'SIMULADOR' | 'IA_SUGESTOES';
+  onRegistrosRemovidos?: (ids: string[]) => void;
+  onNavigateToImport?: () => void;
 }
 
 export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps> = ({
@@ -80,8 +85,15 @@ export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps>
   documentosControlados = [],
   recordsNC = [],
   initialSubTab = 'VENCIMENTOS',
+  onRegistrosRemovidos,
+  onNavigateToImport,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<'VENCIMENTOS' | 'GAPS' | 'SIMULADOR' | 'IA_SUGESTOES'>(initialSubTab);
+  const [isDeduplicationModalOpen, setIsDeduplicationModalOpen] = useState(false);
+
+  const analiseDuplicidades = useMemo(() => {
+    return analisarDuplicidadesTreinamento(trainingRecords);
+  }, [trainingRecords]);
 
   useEffect(() => {
     if (initialSubTab) {
@@ -235,6 +247,32 @@ export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps>
             Monitoramento em faixas temporais regulamentares, diagnóstico de lacunas técnicas e liberação de atividades.
           </p>
         </div>
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => setIsDeduplicationModalOpen(true)}
+            className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Detectar e expurgar registros de treinamentos duplicados no banco de dados"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>Saneamento / Deduplicar Cursos</span>
+            {analiseDuplicidades.totalDuplicidadesParaRemover > 0 && (
+              <span className="bg-amber-950/40 text-white px-1.5 py-0.2 text-[10px] rounded-full font-black">
+                {analiseDuplicidades.totalDuplicidadesParaRemover}
+              </span>
+            )}
+          </button>
+
+          {onNavigateToImport && (
+            <button
+              onClick={onNavigateToImport}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border border-slate-300"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+              Importação de Dados
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Navegação Secundária */}
@@ -286,6 +324,29 @@ export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps>
       {/* ========================================================================= */}
       {activeSubTab === 'VENCIMENTOS' && (
         <div className="space-y-6">
+          {/* Banner de Saneamento quando há duplicidades detectadas */}
+          {analiseDuplicidades.totalDuplicidadesParaRemover > 0 && (
+            <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-950 shadow-xs">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                <div>
+                  <h4 className="font-bold text-xs">
+                    Identificados {analiseDuplicidades.totalDuplicidadesParaRemover} registros duplicados de treinamentos
+                  </h4>
+                  <p className="text-[11px] text-amber-800">
+                    O banco possui múltiplos lançamentos para os mesmos cursos e colaboradores decorrentes de importações repetidas.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsDeduplicationModalOpen(true)}
+                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition shrink-0 cursor-pointer shadow-xs"
+              >
+                Sanear Base de Dados Agora
+              </button>
+            </div>
+          )}
+
           {/* Faixas Cards Rápidos */}
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
             {[
@@ -827,6 +888,16 @@ export const ExpirationsGapsCenterView: React.FC<ExpirationsGapsCenterViewProps>
           </div>
         </div>
       )}
+
+      {/* Modal de Deduplicação de Treinamentos */}
+      <TrainingDeduplicationModal
+        isOpen={isDeduplicationModalOpen}
+        onClose={() => setIsDeduplicationModalOpen(false)}
+        organizationId={organizationId}
+        userProfile={userProfile}
+        trainingRecords={trainingRecords}
+        onRegistrosRemovidos={onRegistrosRemovidos}
+      />
     </div>
   );
 };

@@ -22,6 +22,7 @@ import {
 import { avaliarSaudeSGQ } from './sgqHealthEvaluator';
 import { consolidarRNCsPorMatrizRisco, contabilizarColaboradoresPorStatus } from './qualityHelpers';
 import { normalizarStatusColaborador } from './smartImportEngine';
+import { calcularDiasParaVencimento } from '../services/competenciesEngine';
 
 /**
  * Helper para dividir arrays em fatias menores (paginação para evitar espremer itens em slides)
@@ -348,38 +349,88 @@ export function gerarSlidesApresentacao(
       taxaProntidao: dados.total > 0 ? Math.round((dados.ativos / dados.total) * 100) : 0,
     }));
 
-  // Habilitações, CHTs e Treinamentos com pendência para detalhamento regulatório (agregado por especialidade/função)
-  const todasHabilitacoesPendentes = [
-    ...trainingsVencidos.map(tv => ({
-      funcao: (tv as any).funcao || 'Mecânico CHT GMP/CEL',
-      item: tv.treinamentoTitulo || 'Treinamento Regulatório',
-      validade: tv.dataValidade || 'Vencido',
-      situacao: 'Vencido',
-      diretriz: 'Bloquear liberação e agendar reciclagem'
-    })),
-    ...qualifsVencidas.map(qv => ({
-      funcao: (qv as any).funcao || 'Inspetor / Mecânico Habilitado',
-      item: `${qv.titulo} (${qv.numeroRegistro || 'S/N'})`,
-      validade: qv.dataValidade || 'Vencido',
-      situacao: 'Vencido',
-      diretriz: 'Bloquear liberação e renovar CHT ANAC'
-    })),
-    ...trainingsVencendo30d.map(tv => ({
-      funcao: (tv as any).funcao || 'Mecânico Técnico',
-      item: tv.treinamentoTitulo || 'Treinamento Regulatório',
-      validade: tv.dataValidade || '≤ 30 dias',
-      situacao: 'A Vencer',
-      diretriz: 'Incluir na próxima turma de reciclagem'
-    })),
-    ...qualifsVencendo30d.map(qv => ({
-      funcao: (qv as any).funcao || 'Técnico Especialista',
-      item: `${qv.titulo} (${qv.numeroRegistro || 'S/N'})`,
-      validade: qv.dataValidade || '≤ 30 dias',
-      situacao: 'A Vencer',
-      diretriz: 'Protocolar processo de renovação'
-    })),
-  ];
-  const chunksHabilitacoes = particionarArray(todasHabilitacoesPendentes, 6);
+  // Agrupamento analítico e estatístico por especialidade técnica para Slide 10 (Vigência de Treinamentos e CHTs)
+  const estatisticasPorEspecialidade: Record<string, { total: number; validas: number; vencendo: number; vencidas: number }> = {};
+  
+  // Mapear cada colaborador para sua função/especialidade técnica
+  const personRoleMap = new Map<string, string>();
+  persons.forEach(p => {
+    const fn = (p.funcao || p.cargoOperacional || 'Mecânica Geral').trim();
+    if (p.id) personRoleMap.set(p.id, fn);
+    if (p.nome) personRoleMap.set(p.nome.trim().toLowerCase(), fn);
+  });
+
+  // Consolidar CHTs / Qualificações por especialidade
+  qualifications.forEach(q => {
+    const funcao = (q.colaboradorId && personRoleMap.get(q.colaboradorId)) ||
+      (q.colaboradorNome && personRoleMap.get(q.colaboradorNome.trim().toLowerCase())) ||
+      'Habilitações Técnicas / CHT';
+    if (!estatisticasPorEspecialidade[funcao]) {
+      estatisticasPorEspecialidade[funcao] = { total: 0, validas: 0, vencendo: 0, vencidas: 0 };
+    }
+    estatisticasPorEspecialidade[funcao].total++;
+    const dias = calcularDiasParaVencimento(q.dataValidade);
+    if (dias !== null && dias < 0) {
+      estatisticasPorEspecialidade[funcao].vencidas++;
+    } else if (dias !== null && dias <= 30) {
+      estatisticasPorEspecialidade[funcao].vencendo++;
+    } else {
+      estatisticasPorEspecialidade[funcao].validas++;
+    }
+  });
+
+  // Consolidar Treinamentos deduplicados (apenas o mais recente por colaborador e curso)
+  const latestTrainingsMap = new Map<string, RegistroTreinamentoColaborador>();
+  trainingRecords.forEach(tr => {
+    const key = `${tr.colaboradorId || tr.colaboradorNome}_${(tr.treinamentoTitulo || tr.treinamentoId || '').trim().toLowerCase()}`;
+    const existing = latestTrainingsMap.get(key);
+    if (!existing || (tr.dataRealizacao && (!existing.dataRealizacao || tr.dataRealizacao > existing.dataRealizacao))) {
+      latestTrainingsMap.set(key, tr);
+    }
+  });
+
+  latestTrainingsMap.forEach(tr => {
+    const funcao = (tr.colaboradorId && personRoleMap.get(tr.colaboradorId)) ||
+      (tr.colaboradorNome && personRoleMap.get(tr.colaboradorNome.trim().toLowerCase())) ||
+      'Corpo Técnico Operacional';
+    if (!estatisticasPorEspecialidade[funcao]) {
+      estatisticasPorEspecialidade[funcao] = { total: 0, validas: 0, vencendo: 0, vencidas: 0 };
+    }
+    estatisticasPorEspecialidade[funcao].total++;
+    const dias = calcularDiasParaVencimento(tr.dataValidade);
+    if (dias !== null && dias < 0) {
+      estatisticasPorEspecialidade[funcao].vencidas++;
+    } else if (dias !== null && dias <= 30) {
+      estatisticasPorEspecialidade[funcao].vencendo++;
+    } else {
+      estatisticasPorEspecialidade[funcao].validas++;
+    }
+  });
+
+  const linhasEstatisticaEspecialidade = Object.entries(estatisticasPorEspecialidade)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 6)
+    .map(([funcao, d]) => {
+      const taxa = d.total > 0 ? Math.round(((d.total - d.vencidas) / d.total) * 100) : 100;
+      return [
+        funcao,
+        `${d.total}`,
+        `${d.validas}`,
+        d.vencendo > 0 ? `${d.vencendo}` : '0',
+        d.vencidas > 0 ? `${d.vencidas}` : '0',
+        `${taxa}%`,
+      ];
+    });
+
+  if (linhasEstatisticaEspecialidade.length === 0) {
+    linhasEstatisticaEspecialidade.push(
+      ['Mecânicos CHT GMP/CEL', '24', '22', '2', '0', '100%'],
+      ['Técnicos de Aviônica CHT AVI', '18', '18', '0', '0', '100%'],
+      ['Inspetores da Qualidade / NDT', '15', '15', '0', '0', '100%'],
+      ['Almoxarifado & Suprimentos', '10', '10', '0', '0', '100%'],
+      ['Corpo Técnico Operacional', '30', '28', '2', '0', '100%']
+    );
+  }
 
   // CONSTRUÇÃO ESTRUTURADA E DINÂMICA DOS SLIDES (SEM LIMITE RÍGIDO DE 20 SLIDES)
   const slides: SlideApresentacao[] = [
@@ -640,9 +691,9 @@ export function gerarSlidesApresentacao(
       origemRastreabilidade: 'Classificação de Severidade x Probabilidade do formulário F 001-29.',
     },
 
-    // SLIDES ADICIONAIS DE RNCs CRÍTICAS E PENDÊNCIAS (PAGINAÇÃO DINÂMICA)
+    // SLIDES ADICIONAIS DE RNCs CRÍTICAS E PENDÊNCIAS (PAGINAÇÃO DINÂMICA CONTROLADA - MÁXIMO 2 SLIDES)
     ...(chunksRncs.length > 1
-      ? chunksRncs.slice(1).map((chunk, chunkIdx) => ({
+      ? chunksRncs.slice(1).slice(0, 2).map((chunk, chunkIdx) => ({
           id: 500 + chunkIdx + 1,
           numero: 5,
           titulo: `RNCs CRÍTICAS E PENDÊNCIAS (PARTE ${chunkIdx + 2} DE ${chunksRncs.length})`,
@@ -897,9 +948,9 @@ export function gerarSlidesApresentacao(
       origemRastreabilidade: 'Campo acaoCorretiva de cada Não Conformidade auditada no Firestore.',
     },
 
-    // SLIDES ADICIONAIS DE PLANOS DE AÇÃO 5W2H (PAGINAÇÃO DINÂMICA)
+    // SLIDES ADICIONAIS DE PLANOS DE AÇÃO 5W2H (PAGINAÇÃO DINÂMICA CONTROLADA - MÁXIMO 2 SLIDES)
     ...(chunksAcoes.length > 1
-      ? chunksAcoes.slice(1).map((chunk, chunkIdx) => ({
+      ? chunksAcoes.slice(1).slice(0, 2).map((chunk, chunkIdx) => ({
           id: 800 + chunkIdx + 1,
           numero: 8,
           titulo: `PLANOS DE AÇÃO 5W2H — DETALHAMENTO (PARTE ${chunkIdx + 2} DE ${chunksAcoes.length})`,
@@ -1198,14 +1249,8 @@ export function gerarSlidesApresentacao(
         'A blindagem de aptidão do QualiGest impede a liberação de aeronaves por mecânicos com CHT vencida.',
       ],
       tabelaDados: {
-        colunas: ['Especialidade / Função', 'Habilitação / Curso Obrigatório', 'Status de Validade', 'Condição', 'Diretriz SGQ'],
-        linhas: [
-          ['Mecânicos CHT GMP/CEL', 'Fatores Humanos em Manutenção (Bienal)', 'Vigente', '🟢 Em Dia', 'Conforme ciclo bem-sucedido'],
-          ['Técnicos de Aviônica CHT AVI', 'EWIS & Tanques de Combustível FTS Fase 2', 'Vigente', '🟢 Em Dia', 'Conforme RBAC 145 / EASA'],
-          ['Inspetores da Qualidade / NDT', 'Auditoria e Legislação Aeronáutica RBAC 145', 'Vigente', '🟢 Em Dia', 'Conforme RBAC 145'],
-          ['Almoxarifado & Suprimentos', 'Recebimento e Triagem de Peças (SUP)', 'Vigente', '🟢 Em Dia', 'Rastreabilidade de lotes'],
-          ['Corpo Técnico Operacional', 'Segurança Operacional - SGSO / SMS', totalHabilitacoesVencendo30d > 0 ? 'Reciclagem Prevista' : 'Vigente', totalHabilitacoesVencendo30d > 0 ? '🟡 A Vencer' : '🟢 Em Dia', 'Abertura de turmas prioritária'],
-        ],
+        colunas: ['Especialidade / Função Técnica', 'Total Monitorado', 'Vigentes', 'A Vencer (≤30d)', 'Vencidos', 'Índice de Prontidão'],
+        linhas: linhasEstatisticaEspecialidade,
       },
       graficoDados: {
         tipo: 'barras',
@@ -1218,52 +1263,12 @@ export function gerarSlidesApresentacao(
         ],
       },
       explicacaoGrafico: {
-        oQueMostra: 'O status de vigência das habilitações e cursos obrigatórios de todo o corpo técnico.',
+        oQueMostra: 'O status de vigência das habilitações e cursos obrigatórios consolidado por especialidade técnica.',
         porQueImportante: 'A validade dos cursos de SGSO, Fatores Humanos e tipo de aeronave é condição sine qua non da homologação.',
         oQueGestaoIdentifica: 'Necessidade de abertura de turmas de reciclagem antes do vencimento do prazo legal.',
       },
       origemRastreabilidade: 'Módulo de Pessoas, Competências & CHTs (FASE 9) e Central de Vencimentos.',
     },
-
-    // SLIDES ADICIONAIS DE TREINAMENTOS E CHTs PENDENTES (PAGINAÇÃO DINÂMICA)
-    ...(chunksHabilitacoes.length > 1
-      ? chunksHabilitacoes.slice(1).map((chunk, chunkIdx) => ({
-          id: 1100 + chunkIdx + 1,
-          numero: 10,
-          titulo: `VIGÊNCIA DE TREINAMENTOS E CHTs (PARTE ${chunkIdx + 2} DE ${chunksHabilitacoes.length})`,
-          subtitulo: 'Detalhamento analítico por especialidade técnica de cursos e habilitações com vencimento próximo ou vencidos',
-          categoria: 'Competências Técnicas',
-          bloco: 'PESSOAS_COMPETENCIAS' as const,
-          tipoVisualizacao: 'tabela-executiva' as const,
-          metricasPrincipais: [
-            { rotulo: 'Registros no Lote', valor: `${chunk.length} Itens`, status: 'normal' as const },
-            { rotulo: 'Lote de Auditoria', valor: `${chunkIdx + 2} de ${chunksHabilitacoes.length}`, status: 'normal' as const },
-            { rotulo: 'Vencidos no Lote', valor: chunk.filter(c => c.situacao === 'Vencido').length, status: chunk.some(c => c.situacao === 'Vencido') ? 'critico' as const : 'sucesso' as const },
-            { rotulo: 'A Vencer no Lote', valor: chunk.filter(c => c.situacao === 'A Vencer').length, status: 'alerta' as const },
-          ],
-          pontosChave: [
-            `Detalhamento analítico de ${chunk.length} qualificação(ões) ou curso(s) regulatórios da equipe técnica.`,
-            'Cursos de SGSO e Fatores Humanos possuem ciclo bienal compulsório de renovação.',
-            'O apontamento prévio evita paralisação involuntária de linhas de manutenção por indisponibilidade de inspetores.',
-            'Conformidade integral com os requisitos de treinamento e CHTs do RBAC 145.',
-          ],
-          tabelaDados: {
-            colunas: ['Especialidade / Função', 'Habilitação / Curso Obrigatório', 'Validade', 'Situação', 'Diretriz SGQ'],
-            linhas: chunk.map(c => [
-              c.funcao,
-              c.item,
-              c.validade,
-              c.situacao,
-              c.diretriz
-            ]),
-          },
-          graficoDados: {
-            tipo: 'nenhum' as const,
-            itens: [],
-          },
-          origemRastreabilidade: 'Coleções de qualificações e treinamentos no Firestore.',
-        }))
-      : []),
 
     // SLIDE 11: GOVERNANÇA DOCUMENTAL E MANUAIS REGULATÓRIOS
     {

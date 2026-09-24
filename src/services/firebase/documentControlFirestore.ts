@@ -5,6 +5,11 @@ import {
   deleteDoc,
   onSnapshot,
   writeBatch,
+  query,
+  where,
+  getDocs,
+  getDoc,
+  updateDoc,
 } from 'firebase/firestore';
 import { db, auth } from './config';
 import {
@@ -313,15 +318,98 @@ export async function reactivateDocumentoControlado(
 }
 
 /**
- * Exclusão Física de Documento Controlado (Apenas se não possuir histórico ou revisões)
+ * Exclusão Física de Documento Controlado
  */
 export async function deleteDocumentoControlado(
   organizationId: string,
   documentoId: string,
-  codigoDocumento: string,
-  currentUser?: UserProfile | null,
+  codigoDocumentoOuUser?: string | UserProfile | null,
+  currentUser?: UserProfile | null | string,
   motivoExclusao?: string,
-  dependencias?: DependenciasDocumentoResult
+  dependencias?: DependenciasDocumentoResult,
+  forcarExclusaoComHistorico: boolean = false
+): Promise<void> {
+  // Normalizar parâmetros caso seja chamado com (orgId, docId, currentUser, motivo, ...)
+  let codigoDoc = '';
+  let userParam: UserProfile | null = null;
+  let motivo = motivoExclusao || '';
+
+  if (typeof codigoDocumentoOuUser === 'string') {
+    codigoDoc = codigoDocumentoOuUser;
+    userParam = (currentUser as UserProfile) || null;
+  } else {
+    userParam = (codigoDocumentoOuUser as UserProfile) || null;
+    if (typeof currentUser === 'string') {
+      motivo = currentUser;
+    }
+  }
+
+  const user = userParam || {
+    displayName: auth.currentUser?.displayName || 'Sistema SGQ',
+    email: auth.currentUser?.email || 'sgq@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+  };
+
+  if (user.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil CONSULTA não tem permissão para excluir documentos.');
+  }
+
+  if (dependencias && !dependencias.podeExcluir && !forcarExclusaoComHistorico) {
+    throw new Error(
+      `Exclusão física bloqueada: este documento possui ${dependencias.motivosBloqueio?.join(
+        ', '
+      ) || 'vínculos históricos'}. Para manter conformidade aeronáutica (RBAC 145 / MOMQ / EASA), confirme a remoção de histórico ou utilize a Inativação/Obsolescência.`
+    );
+  }
+
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
+    await deleteDoc(docRef);
+
+    // Se solicitado excluir junto o histórico/revisões vinculadas (limpeza de importações/duplicidades)
+    if (forcarExclusaoComHistorico !== false) {
+      try {
+        const revsCol = collection(db, 'organizations', organizationId, 'document_revisions');
+        const qRev = query(revsCol, where('documentoId', '==', documentoId));
+        const revSnap = await getDocs(qRev);
+        if (!revSnap.empty) {
+          const batch = writeBatch(db);
+          revSnap.forEach((snap) => {
+            batch.delete(snap.ref);
+          });
+          await batch.commit();
+        }
+      } catch (errRev) {
+        console.warn('Aviso: Erro ao limpar revisões do documento excluído:', errRev);
+      }
+    }
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'DOCUMENT_CONTROL',
+      entityId: documentoId,
+      action: 'DELETE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `Exclusão definitiva de documento: ${codigoDoc || documentoId} (${documentoId})`,
+      reason: motivo || 'Exclusão física solicitada pelo usuário no Acervo Documental',
+      origin: 'CONTROLE_DOCUMENTAL',
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, 'controlled_documents');
+    throw err;
+  }
+}
+
+/**
+ * Exclui fisicamente uma revisão documental específica de um documento.
+ */
+export async function deleteRevisaoDocumental(
+  organizationId: string,
+  revisaoId: string,
+  documentoId: string,
+  currentUser?: UserProfile | null,
+  motivo?: string
 ): Promise<void> {
   const user = currentUser || {
     displayName: auth.currentUser?.displayName || 'Sistema SGQ',
@@ -330,34 +418,58 @@ export async function deleteDocumentoControlado(
     role: 'ADMIN',
   };
 
-  if (user.role !== 'ADMIN' && user.role !== 'GESTOR_SGQ') {
-    throw new Error('Permissão negada: Exclusão física de documentos é restrita a GESTOR_SGQ e ADMIN.');
-  }
-
-  if (dependencias && !dependencias.podeExcluir) {
-    throw new Error(
-      `Exclusão física bloqueada: este documento possui ${dependencias.motivosBloqueio.join(
-        ', '
-      )}. Para manter conformidade aeronáutica (RBAC 145 / MOMQ / EASA), utilize a Inativação/Obsolescência para preservar o histórico documental.`
-    );
+  if (user.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil CONSULTA não tem permissão para excluir revisões.');
   }
 
   try {
-    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
-    await deleteDoc(docRef);
+    const revRef = doc(db, 'organizations', organizationId, 'document_revisions', revisaoId);
+    await deleteDoc(revRef);
+
+    // Verificar se o documento possui esta revisão como a vigente e atualizar se necessário
+    try {
+      const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.revisaoVigenteId === revisaoId) {
+          const revsCol = collection(db, 'organizations', organizationId, 'document_revisions');
+          const qRev = query(revsCol, where('documentoId', '==', documentoId));
+          const remSnap = await getDocs(qRev);
+          if (!remSnap.empty) {
+            const remainingRevs = remSnap.docs.map((d) => d.data() as RevisaoDocumental);
+            remainingRevs.sort((a, b) => (b.dataEntradaVigor || '').localeCompare(a.dataEntradaVigor || ''));
+            const novaVigente = remainingRevs[0];
+            await updateDoc(docRef, {
+              revisaoVigenteId: novaVigente.id,
+              revisaoVigenteNumero: novaVigente.numeroRevisao,
+              updatedAt: new Date().toISOString(),
+            });
+          } else {
+            await updateDoc(docRef, {
+              revisaoVigenteId: null,
+              revisaoVigenteNumero: 'S/R',
+              updatedAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Aviso ao sincronizar documento pai após exclusão da revisão:', e);
+    }
 
     await recordOrganizationAudit(organizationId, {
       entity: 'DOCUMENT_CONTROL',
-      entityId: documentoId,
+      entityId: revisaoId,
       action: 'DELETE',
       changedByUid: user.uid,
       changedByEmail: user.email,
-      summary: `Exclusão definitiva de documento órfão sem revisões: ${codigoDocumento} (${documentoId})`,
-      reason: motivoExclusao || 'Exclusão física de cadastro órfão sem revisões ou histórico',
+      summary: `Exclusão de revisão documental: ${revisaoId} (Doc: ${documentoId})`,
+      reason: motivo || 'Exclusão física de revisão solicitada no SGQ',
       origin: 'CONTROLE_DOCUMENTAL',
     });
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, 'controlled_documents');
+    handleFirestoreError(err, OperationType.DELETE, 'document_revisions');
     throw err;
   }
 }

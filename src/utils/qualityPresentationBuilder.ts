@@ -62,14 +62,43 @@ export function calcularLargurasColunasTabela(colunas: string[], larguraTotal: n
 
   const pesos = colunas.map(col => {
     const nome = col.toLowerCase();
-    if (nome.includes('título') || nome.includes('titulo') || nome.includes('descri') || nome.includes('denomina') || nome.includes('curso')) {
-      return 2.4; // Descrições precisam de mais largura
+    if (
+      nome.includes('título') ||
+      nome.includes('titulo') ||
+      nome.includes('descri') ||
+      nome.includes('denomina') ||
+      nome.includes('curso') ||
+      nome.includes('indicador') ||
+      nome.includes('especialidade') ||
+      nome.includes('função') ||
+      nome.includes('funcao')
+    ) {
+      return 2.5; // Títulos, Indicadores e Especialidades precisam de mais largura
     }
-    if (nome.includes('código') || nome.includes('codigo') || nome.includes('rnc') || nome.includes('id') || nome.includes('rev')) {
-      return 1.1; // Códigos curtos
+    if (
+      nome.includes('avaliação') ||
+      nome.includes('avaliacao') ||
+      nome.includes('diretriz') ||
+      nome.includes('condição') ||
+      nome.includes('condicao')
+    ) {
+      return 1.8;
     }
-    if (nome.includes('status') || nome.includes('situa') || nome.includes('prazo') || nome.includes('data') || nome.includes('severidade') || nome.includes('risco')) {
-      return 1.1; // Badges curtos
+    if (
+      nome.includes('código') ||
+      nome.includes('codigo') ||
+      nome.includes('rnc') ||
+      nome.includes('id') ||
+      nome.includes('rev') ||
+      nome.includes('meta') ||
+      nome.includes('valor') ||
+      nome.includes('total') ||
+      nome.includes('vigente') ||
+      nome.includes('vencid') ||
+      nome.includes('%') ||
+      nome.includes('taxa')
+    ) {
+      return 0.9; // Valores numéricos e códigos curtos
     }
     if (nome.includes('setor') || nome.includes('área') || nome.includes('area') || nome.includes('colaborador')) {
       return 1.4; // Nomes médios
@@ -831,20 +860,20 @@ export async function exportarApresentacaoPPTX(
       if (temTabela && slideData.tabelaDados) {
         const colunas = slideData.tabelaDados.colunas;
         const linhasOriginais = slideData.tabelaDados.linhas;
-        const maxLinhasVisiveis = 5;
+        const maxLinhasVisiveis = 8;
         const precisaResumo = linhasOriginais.length > maxLinhasVisiveis;
-        const linhasExibidas = precisaResumo ? linhasOriginais.slice(0, 4) : linhasOriginais;
+        const linhasExibidas = precisaResumo ? linhasOriginais.slice(0, 7) : linhasOriginais;
 
         // Distribuição inteligente de larguras para 5.80 polegadas
         const largurasColunas = calcularLargurasColunasTabela(colunas, 5.80);
 
         const headerRow = colunas.map(c => ({
-          text: truncarTexto(c, 24),
+          text: truncarTexto(c, 45),
           options: {
             bold: true,
             fill: { color: COR_BLUE },
             color: 'FFFFFF',
-            fontSize: 8.0,
+            fontSize: 7.5,
             fontFace: 'Arial',
             align: 'left' as const,
           },
@@ -852,14 +881,14 @@ export async function exportarApresentacaoPPTX(
 
         const bodyRows = linhasExibidas.map((linha, rIdx) =>
           linha.map((celula, cIdx) => {
-            const ehDescricao = cIdx === 1 || colunas[cIdx].toLowerCase().includes('título') || colunas[cIdx].toLowerCase().includes('descri');
-            const maxChars = ehDescricao ? 28 : 16;
+            const ehDescricao = cIdx === 1 || colunas[cIdx].toLowerCase().includes('título') || colunas[cIdx].toLowerCase().includes('descri') || colunas[cIdx].toLowerCase().includes('indicador') || colunas[cIdx].toLowerCase().includes('especialidade');
+            const maxChars = ehDescricao ? 80 : 45;
             return {
               text: truncarTexto(String(celula), maxChars),
               options: {
                 fill: { color: rIdx % 2 === 0 ? 'FFFFFF' : 'F1F5F9' },
                 color: COR_TEXT_DARK,
-                fontSize: 7.5,
+                fontSize: 7.0,
                 fontFace: 'Arial',
                 align: 'left' as const,
               },
@@ -868,22 +897,22 @@ export async function exportarApresentacaoPPTX(
         );
 
         if (precisaResumo) {
-          const totalOmitidas = linhasOriginais.length - 4;
-          const textoResumo = `Exibindo 4 de ${linhasOriginais.length} registros (+ ${totalOmitidas} omitidos)`;
+          const totalOmitidas = linhasOriginais.length - 7;
+          const textoResumo = `Exibindo 7 de ${linhasOriginais.length} registros (+ ${totalOmitidas} omitidos)`;
           bodyRows.push(colunas.map((_, cIdx) => ({
             text: cIdx === 0 ? textoResumo : '',
             options: { fill: { color: 'E2E8F0' }, color: COR_TEXT_MUTED, fontSize: 7.0, fontFace: 'Arial', italic: true, align: 'left' as const },
           })));
         }
 
-        const alturaTabela = 0.30 + linhasExibidas.length * 0.28 + (precisaResumo ? 0.28 : 0);
+        const alturaTabela = 0.28 + linhasExibidas.length * 0.25 + (precisaResumo ? 0.25 : 0);
 
         slide.addTable([headerRow, ...bodyRows], {
           x: 6.7,
           y: posYConteudo + 0.1,
           w: 5.8,
           colW: largurasColunas,
-          rowH: 0.28,
+          rowH: 0.25,
           border: { pt: 0.5, color: COR_BORDER },
         });
 
@@ -973,21 +1002,21 @@ export async function exportarApresentacaoPPTX(
     else if (slideData.tabelaDados && slideData.tabelaDados.linhas.length > 0) {
       const colunas = slideData.tabelaDados.colunas;
       const linhasOriginais = slideData.tabelaDados.linhas;
-      const maxLinhasVisiveis = 6;
+      const maxLinhasVisiveis = 10;
       const precisaResumo = linhasOriginais.length > maxLinhasVisiveis;
-      const linhasExibidas = precisaResumo ? linhasOriginais.slice(0, 5) : linhasOriginais;
+      const linhasExibidas = precisaResumo ? linhasOriginais.slice(0, 9) : linhasOriginais;
 
       const largurasColunas = calcularLargurasColunasTabela(colunas, 11.70);
-      const rowHeight = 0.30;
-      const tableFontSize = 8.5;
+      const rowHeight = 0.28;
+      const tableFontSize = 8.0;
 
       const headerRow = colunas.map(c => ({
-        text: truncarTexto(c, 30),
+        text: truncarTexto(c, 55),
         options: {
           bold: true,
           fill: { color: COR_BLUE },
           color: 'FFFFFF',
-          fontSize: 9.0,
+          fontSize: 8.5,
           fontFace: 'Arial',
           align: 'left' as const,
         },
@@ -995,8 +1024,8 @@ export async function exportarApresentacaoPPTX(
 
       const bodyRows = linhasExibidas.map((linha, rIdx) => 
         linha.map((celula, cIdx) => {
-          const ehDescricao = cIdx === 1 || colunas[cIdx].toLowerCase().includes('título') || colunas[cIdx].toLowerCase().includes('descri');
-          const maxChars = ehDescricao ? 42 : 22;
+          const ehDescricao = cIdx === 1 || colunas[cIdx].toLowerCase().includes('título') || colunas[cIdx].toLowerCase().includes('descri') || colunas[cIdx].toLowerCase().includes('especialidade') || colunas[cIdx].toLowerCase().includes('indicador');
+          const maxChars = ehDescricao ? 100 : 55;
           return {
             text: truncarTexto(String(celula), maxChars),
             options: {
@@ -1011,13 +1040,13 @@ export async function exportarApresentacaoPPTX(
       );
 
       if (precisaResumo) {
-        const totalOmitidas = linhasOriginais.length - 5;
+        const totalOmitidas = linhasOriginais.length - 9;
         const resumoLinha = colunas.map((_, cIdx) => ({
-          text: cIdx === 0 ? `Exibindo 5 de ${linhasOriginais.length} registros (+ ${totalOmitidas} omitidos)` : '',
+          text: cIdx === 0 ? `Exibindo 9 de ${linhasOriginais.length} registros (+ ${totalOmitidas} omitidos)` : '',
           options: {
             fill: { color: 'E2E8F0' },
             color: COR_TEXT_MUTED,
-            fontSize: 8.0,
+            fontSize: 7.5,
             fontFace: 'Arial',
             italic: true,
             align: 'left' as const,

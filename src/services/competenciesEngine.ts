@@ -453,6 +453,91 @@ export function diagnosticarGapsOrganizacao(
 
 export const diagnosticarGapsOrganizacionais = diagnosticarGapsOrganizacao;
 
+export interface GrupoDuplicidadeTreinamento {
+  chave: string;
+  colaboradorId: string;
+  colaboradorNome: string;
+  treinamentoTitulo: string;
+  totalRegistros: number;
+  registroPreservado: RegistroTreinamentoColaborador;
+  registrosRemover: RegistroTreinamentoColaborador[];
+  idsParaRemover: string[];
+}
+
+export interface AnaliseDuplicidadesTreinamentoResult {
+  totalRegistrosGerais: number;
+  totalGruposUnicos: number;
+  totalDuplicidadesParaRemover: number;
+  gruposComDuplicidade: GrupoDuplicidadeTreinamento[];
+  todosIdsParaRemover: string[];
+}
+
+/**
+ * Inspeciona toda a base de treinamentos e detecta duplicações oriundas de importações repetidas.
+ * Mantém o registro mais recente/com maior validade e separa os IDs duplicados para limpeza.
+ */
+export function analisarDuplicidadesTreinamento(
+  treinamentos: RegistroTreinamentoColaborador[] = []
+): AnaliseDuplicidadesTreinamentoResult {
+  const gruposMap = new Map<string, RegistroTreinamentoColaborador[]>();
+
+  for (const tr of treinamentos) {
+    const nomeNorm = (tr.colaboradorNome || tr.colaboradorId || '').toLowerCase().trim();
+    const cursoNorm = (tr.treinamentoTitulo || tr.treinamentoId || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+    const chave = `${nomeNorm}__${cursoNorm}`;
+
+    const lista = gruposMap.get(chave) || [];
+    lista.push(tr);
+    gruposMap.set(chave, lista);
+  }
+
+  const gruposComDuplicidade: GrupoDuplicidadeTreinamento[] = [];
+  const todosIdsParaRemover: string[] = [];
+
+  for (const [chave, lista] of gruposMap.entries()) {
+    if (lista.length > 1) {
+      lista.sort((a, b) => {
+        const valA = a.dataValidade || '';
+        const valB = b.dataValidade || '';
+        if (valA !== valB) return valB.localeCompare(valA);
+
+        const realA = a.dataRealizacao || '';
+        const realB = b.dataRealizacao || '';
+        if (realA !== realB) return realB.localeCompare(realA);
+
+        const crA = a.createdAt || '';
+        const crB = b.createdAt || '';
+        return crB.localeCompare(crA);
+      });
+
+      const registroPreservado = lista[0];
+      const registrosRemover = lista.slice(1);
+      const idsParaRemover = registrosRemover.map((r) => r.id);
+
+      todosIdsParaRemover.push(...idsParaRemover);
+
+      gruposComDuplicidade.push({
+        chave,
+        colaboradorId: registroPreservado.colaboradorId,
+        colaboradorNome: registroPreservado.colaboradorNome,
+        treinamentoTitulo: registroPreservado.treinamentoTitulo,
+        totalRegistros: lista.length,
+        registroPreservado,
+        registrosRemover,
+        idsParaRemover,
+      });
+    }
+  }
+
+  return {
+    totalRegistrosGerais: treinamentos.length,
+    totalGruposUnicos: gruposMap.size,
+    totalDuplicidadesParaRemover: todosIdsParaRemover.length,
+    gruposComDuplicidade,
+    todosIdsParaRemover,
+  };
+}
+
 /**
  * Monta a lista consolidada da Central de Vencimentos em faixas temporais.
  */
@@ -494,9 +579,29 @@ export function consolidarCentralVencimentos(
     });
   }
 
-  // 2. Treinamentos Recorrentes
+  // 2. Treinamentos Recorrentes (Consolidar por Colaborador + Curso mantendo a vigência mais recente)
+  const mapUltimoTreino = new Map<string, RegistroTreinamentoColaborador>();
   for (const tr of treinamentos) {
     if (!tr.dataValidade) continue;
+    const nomeNorm = (tr.colaboradorNome || tr.colaboradorId || '').toLowerCase().trim();
+    const cursoNorm = (tr.treinamentoTitulo || tr.treinamentoId || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+    const chave = `${nomeNorm}__${cursoNorm}`;
+
+    const existente = mapUltimoTreino.get(chave);
+    if (!existente) {
+      mapUltimoTreino.set(chave, tr);
+    } else {
+      const valAtual = tr.dataValidade || '';
+      const valExistente = existente.dataValidade || '';
+      if (valAtual > valExistente) {
+        mapUltimoTreino.set(chave, tr);
+      } else if (valAtual === valExistente && (tr.dataRealizacao || '') > (existente.dataRealizacao || '')) {
+        mapUltimoTreino.set(chave, tr);
+      }
+    }
+  }
+
+  for (const tr of Array.from(mapUltimoTreino.values())) {
     const dias = calcularDiasParaVencimento(tr.dataValidade);
     if (dias === null) continue;
     const faixa = classificarFaixaVencimento(dias, true);

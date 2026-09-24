@@ -349,7 +349,7 @@ service cloud.firestore {
         allow create, update: if userBelongsToOrg(organizationId) &&
                                  (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(documentId);
         allow delete: if userBelongsToOrg(organizationId) &&
-                         isSystemAdmin() && isValidId(organizationId) && isValidId(documentId);
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(documentId);
       }
 
       // ----------------------------------------------------
@@ -363,7 +363,7 @@ service cloud.firestore {
         allow update: if userBelongsToOrg(organizationId) &&
                          (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(revisionId);
         allow delete: if userBelongsToOrg(organizationId) &&
-                         isSystemAdmin() && isValidId(organizationId) && isValidId(revisionId);
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(revisionId);
       }
 
       // ----------------------------------------------------

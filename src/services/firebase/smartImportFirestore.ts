@@ -257,7 +257,7 @@ export async function saveImportTemplate(
       action: 'CREATE',
       changedByUid: user?.uid || auth.currentUser?.uid || 'system',
       changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
-      summary: `Modelo de importação "${template.nomeTemplate || template.nome}" aprovado`,
+      summary: `Modelo de importação "${template.nomeTemplate || template.nome}" homologado`,
       details: JSON.stringify({
         nome: template.nomeTemplate || template.nome,
         tipoControle: template.tipoControle,
@@ -265,6 +265,33 @@ export async function saveImportTemplate(
     });
   } catch (err) {
     console.warn('Erro ao salvar template de importação:', err);
+    throw err;
+  }
+}
+
+export async function deleteImportTemplate(
+  organizationId: string,
+  templateId: string,
+  user: UserProfile | null,
+  templateNome?: string
+): Promise<void> {
+  if (!organizationId || !templateId) return;
+  const docRef = doc(db, 'organizations', organizationId, 'import_templates', templateId);
+
+  try {
+    await deleteDoc(docRef);
+    await recordOrganizationAudit(organizationId, {
+      entity: 'IMPORT_TEMPLATE',
+      entityId: templateId,
+      action: 'DELETE',
+      changedByUid: user?.uid || auth.currentUser?.uid || 'system',
+      changedByEmail: user?.email || auth.currentUser?.email || 'admin@qualigest.aero',
+      summary: `Modelo de importação "${templateNome || templateId}" excluído`,
+      details: JSON.stringify({ templateId, templateNome }),
+    });
+  } catch (err) {
+    console.warn('Erro ao excluir template de importação:', err);
+    throw err;
   }
 }
 
@@ -313,6 +340,7 @@ export async function efetivarImportacaoNoQualigest(
 ): Promise<ResultadoGravacaoImportacao> {
   let totalCriados = 0;
   let totalAtualizados = 0;
+  let totalIgnorados = 0;
   const idsGerados: string[] = [];
   const registrosCriadosSnapshot: SnapshotRegistroCriado[] = [];
   const registrosAtualizadosSnapshot: SnapshotRegistroAtualizado[] = [];
@@ -505,6 +533,12 @@ export async function efetivarImportacaoNoQualigest(
       // 1.3 PERSISTÊNCIA DO REGISTRO DE TREINAMENTO (quando houver curso)
       // ====================================================================
       if (dados.cursoTitulo || cursoId) {
+        if (linha.decisaoUsuario === 'IGNORAR') {
+          // Registro idêntico ou usuário optou por manter existente: não criar duplicidade
+          totalIgnorados++;
+          continue;
+        }
+
         const isAtualizacaoTreino = linha.decisaoUsuario === 'ATUALIZAR' && Boolean(linha.registroExistenteId);
         const registroTreinoId = isAtualizacaoTreino && linha.registroExistenteId
           ? linha.registroExistenteId

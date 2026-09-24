@@ -21,6 +21,8 @@ import {
   ExternalLink,
   ShieldCheck,
   AlertCircle,
+  UploadCloud,
+  Sparkles,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -47,6 +49,7 @@ import {
   calcularDiasParaVencimento,
   calcularDataValidadeComTolerancia,
 } from '../services/competenciesEngine';
+import { TrainingDeduplicationModal } from './TrainingDeduplicationModal';
 
 interface TrainingsQualificationsViewProps {
   organizationId: string;
@@ -57,6 +60,8 @@ interface TrainingsQualificationsViewProps {
   qualifications: QualificacaoColaborador[];
   documents: DocumentoEvidenciaPessoa[];
   initialTab?: 'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS';
+  onNavigateToImport?: () => void;
+  onRegistrosRemovidos?: (ids: string[]) => void;
 }
 
 export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewProps> = ({
@@ -68,14 +73,23 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
   qualifications = [],
   documents = [],
   initialTab = 'QUALIFICACOES',
+  onNavigateToImport,
+  onRegistrosRemovidos,
 }) => {
   const [activeTab, setActiveTab] = useState<'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS'>(initialTab);
+  const [isDeduplicationModalOpen, setIsDeduplicationModalOpen] = useState(false);
 
   useEffect(() => {
     if (initialTab) {
       setActiveTab(initialTab);
     }
   }, [initialTab]);
+
+  const handleTabChange = (tab: 'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS') => {
+    setActiveTab(tab);
+    setFilterStatus('TODOS');
+    setFilterTipo('TODOS');
+  };
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState('TODOS');
@@ -108,7 +122,25 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
         (q.escopo && q.escopo.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchTipo = filterTipo === 'TODOS' || q.tipo === filterTipo;
-      const matchStatus = filterStatus === 'TODOS' || q.status === filterStatus;
+
+      const dias = calcularDiasParaVencimento(q.dataValidade);
+      const isVencida = (dias !== null && dias < 0) || q.status === 'VENCIDA';
+      const isVencendo = dias !== null && dias >= 0 && dias <= 30;
+
+      let matchStatus = true;
+      if (filterStatus === 'TODOS') {
+        matchStatus = true;
+      } else if (filterStatus === 'VENCIDA') {
+        matchStatus = isVencida;
+      } else if (filterStatus === 'VENCENDO') {
+        matchStatus = isVencendo && !isVencida;
+      } else if (filterStatus === 'VALIDA') {
+        matchStatus = !isVencida && q.status !== 'SUSPENSA' && q.status !== 'REVOGADA';
+      } else if (filterStatus === 'SUSPENSA') {
+        matchStatus = q.status === 'SUSPENSA';
+      } else {
+        matchStatus = q.status === filterStatus;
+      }
 
       return matchSearch && matchTipo && matchStatus;
     });
@@ -375,6 +407,22 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
 
         <div className="flex items-center gap-2 flex-wrap">
           <button
+            onClick={() => setIsDeduplicationModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-sm font-medium transition shadow-xs cursor-pointer"
+            title="Saneamento de duplicidades em treinamentos"
+          >
+            <Sparkles className="w-4 h-4" /> Deduplicar Cursos
+          </button>
+          {onNavigateToImport && (
+            <button
+              onClick={onNavigateToImport}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 rounded-lg text-sm font-medium transition shadow-xs cursor-pointer"
+              title="Acessar Central de Importação de Dados SGQ"
+            >
+              <UploadCloud className="w-4 h-4 text-sky-600" /> Importação de Dados
+            </button>
+          )}
+          <button
             onClick={() => {
               setQualifParaEditar(null);
               setModalQualifOpen(true);
@@ -398,7 +446,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       {/* Navegação Secundária */}
       <div className="flex border-b border-slate-200 gap-6">
         <button
-          onClick={() => setActiveTab('QUALIFICACOES')}
+          onClick={() => handleTabChange('QUALIFICACOES')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
             activeTab === 'QUALIFICACOES'
               ? 'border-blue-600 text-blue-600'
@@ -408,7 +456,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
           <Shield className="w-4 h-4 text-blue-600" /> Habilitações & CHTs ({qualifications.length})
         </button>
         <button
-          onClick={() => setActiveTab('TREINAMENTOS_HISTORICO')}
+          onClick={() => handleTabChange('TREINAMENTOS_HISTORICO')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
             activeTab === 'TREINAMENTOS_HISTORICO'
               ? 'border-blue-600 text-blue-600'
@@ -418,7 +466,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
           <GraduationCap className="w-4 h-4 text-sky-600" /> Histórico de Treinamentos ({trainingRecords.length})
         </button>
         <button
-          onClick={() => setActiveTab('CURSOS')}
+          onClick={() => handleTabChange('CURSOS')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
             activeTab === 'CURSOS'
               ? 'border-blue-600 text-blue-600'
@@ -428,7 +476,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
           <Award className="w-4 h-4 text-amber-600" /> Catálogo de Cursos ({trainingCourses.length})
         </button>
         <button
-          onClick={() => setActiveTab('DOCUMENTOS')}
+          onClick={() => handleTabChange('DOCUMENTOS')}
           className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
             activeTab === 'DOCUMENTOS'
               ? 'border-blue-600 text-blue-600'
@@ -1431,6 +1479,16 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
           </div>
         </div>
       )}
+
+      {/* Modal de Saneamento e Deduplicação em Massa */}
+      <TrainingDeduplicationModal
+        isOpen={isDeduplicationModalOpen}
+        onClose={() => setIsDeduplicationModalOpen(false)}
+        organizationId={organizationId}
+        userProfile={userProfile}
+        trainingRecords={trainingRecords}
+        onRegistrosRemovidos={onRegistrosRemovidos}
+      />
     </div>
   );
 };

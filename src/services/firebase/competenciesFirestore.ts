@@ -833,6 +833,43 @@ export async function deleteTrainingRecord(
   }
 }
 
+export async function batchDeleteTrainingRecords(
+  organizationId: string,
+  recordIds: string[],
+  userProfile?: UserProfile | null,
+  onProgress?: (removidos: number, total: number) => void
+): Promise<{ totalRemovidos: number }> {
+  if (!organizationId || !recordIds.length) return { totalRemovidos: 0 };
+
+  const CHUNK_SIZE = 400;
+  let removidos = 0;
+
+  for (let i = 0; i < recordIds.length; i += CHUNK_SIZE) {
+    const chunk = recordIds.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    for (const id of chunk) {
+      const docRef = doc(db, 'organizations', organizationId, 'trainingRecords', id);
+      batch.delete(docRef);
+    }
+    await batch.commit();
+    removidos += chunk.length;
+    if (onProgress) {
+      onProgress(removidos, recordIds.length);
+    }
+  }
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'ORGANIZATION' as any,
+    entityId: `dedup-${Date.now()}`,
+    action: 'DELETE',
+    changedByUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
+    changedByEmail: userProfile?.email || auth.currentUser?.email || 'admin@qualigest.aero',
+    summary: `Deduplicação de base de dados: ${removidos} registros de treinamento redundantes removidos em lote`,
+  });
+
+  return { totalRemovidos: removidos };
+}
+
 // ============================================================================
 // 6. QUALIFICAÇÕES, HABILITAÇÕES E AUTORIZAÇÕES (CHTs, RTS, RII, NDT)
 // ============================================================================

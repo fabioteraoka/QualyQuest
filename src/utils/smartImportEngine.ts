@@ -245,7 +245,27 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Código de Patrimônio / Tag',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['patrimonio', 'codigo', 'tag', 'id', 'identificacao', 'num patrimonio', 'cod ferramenta'],
+      sinonimos: [
+        'patrimonio',
+        'codigo',
+        'tag',
+        'id',
+        'identificacao',
+        'num patrimonio',
+        'cod ferramenta',
+        'ferramenta',
+        'codigo da ferramenta',
+        'n patrimonio',
+        'nº patrimonio',
+        'no patrimonio',
+        'ativo',
+        'n ativo',
+        'nr patrimonio',
+        'tombo',
+        'cod',
+        'item id',
+        'tag id',
+      ],
       descricao: 'Identificador único da ferramenta na oficina (ex: TQ-023, MULT-004)',
     },
     {
@@ -253,7 +273,21 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Descrição do Instrumento',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['descricao', 'instrumento', 'ferramenta', 'equipamento', 'nome', 'item', 'tipo'],
+      sinonimos: [
+        'descricao',
+        'instrumento',
+        'ferramenta',
+        'equipamento',
+        'nome',
+        'item',
+        'tipo',
+        'especificacao',
+        'denominacao',
+        'discriminacao',
+        'aparelho',
+        'nome da ferramenta',
+        'descricao da ferramenta',
+      ],
       descricao: 'Nome técnico e faixa de medição do instrumento (ex: Torquímetro de Estalo 20-100 Nm)',
     },
     {
@@ -261,7 +295,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Fabricante',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['fabricante', 'marca', 'fornecedor', 'manufaturador'],
+      sinonimos: ['fabricante', 'marca', 'fornecedor', 'manufaturador', 'mfr', 'brand'],
       descricao: 'Fabricante original do instrumento (ex: Stahlwille, Snap-on, Fluke, Mitutoyo)',
     },
     {
@@ -269,15 +303,27 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Modelo',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['modelo', 'part number', 'pn', 'tipo modelo'],
+      sinonimos: ['modelo', 'part number', 'pn', 'tipo modelo', 'p/n', 'mod'],
       descricao: 'Modelo comercial ou part number do instrumento',
     },
     {
       campo: 'numeroSerie',
       label: 'Número de Série (S/N)',
       tipo: 'string',
-      obrigatorio: true,
-      sinonimos: ['serie', 'numero de serie', 'sn', 's/n', 'serial', 'nr serie'],
+      obrigatorio: false,
+      sinonimos: [
+        'serie',
+        'numero de serie',
+        'sn',
+        's/n',
+        'serial',
+        'nr serie',
+        'n serie',
+        'nº serie',
+        'no serie',
+        'serial number',
+        'n. serie',
+      ],
       descricao: 'Número de série gravado no instrumento para rastreabilidade metrológica',
     },
     {
@@ -285,15 +331,26 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Setor / Oficina Alocada',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['setor', 'oficina', 'local', 'localizacao', 'area', 'base', 'hangar'],
+      sinonimos: ['setor', 'oficina', 'local', 'localizacao', 'area', 'base', 'hangar', 'departamento', 'custodia', 'responsavel'],
       descricao: 'Setor operacional onde a ferramenta é utilizada ou custodiada',
     },
     {
       campo: 'dataUltimaCalibracao',
       label: 'Data da Última Calibração',
       tipo: 'date',
-      obrigatorio: true,
-      sinonimos: ['ultima calibracao', 'data calibracao', 'calibrado em', 'data afericao', 'afericao'],
+      obrigatorio: false,
+      sinonimos: [
+        'ultima calibracao',
+        'data calibracao',
+        'calibrado em',
+        'data afericao',
+        'afericao',
+        'dt calibracao',
+        'data da calibracao',
+        'ult calibracao',
+        'data ult calib',
+        'dt calib',
+      ],
       descricao: 'Data em que o instrumento foi aferido pelo laboratório credenciado',
     },
     {
@@ -301,7 +358,22 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Data da Próxima Calibração (Validade)',
       tipo: 'date',
       obrigatorio: true,
-      sinonimos: ['proxima calibracao', 'validade', 'vencimento', 'validade calibracao', 'expiracao'],
+      sinonimos: [
+        'proxima calibracao',
+        'validade',
+        'vencimento',
+        'validade calibracao',
+        'expiracao',
+        'dt validade',
+        'dt vencimento',
+        'prox calibracao',
+        'proxima afericao',
+        'vencimento calibracao',
+        'calibrar ate',
+        'data vencto',
+        'vencimento da calibracao',
+        'proximo vencimento',
+      ],
       descricao: 'Data limite após a qual o uso do instrumento é terminantemente proibido sem nova calibração',
     },
     {
@@ -317,7 +389,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Laboratório Calibrador RBC',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['laboratorio', 'calibrador', 'entidade rbc', 'lab', 'laboratorio acreditado'],
+      sinonimos: ['laboratorio', 'calibrador', 'entidade rbc', 'lab', 'laboratorio acreditado', 'fornecedor', 'entidade calibradora', 'empresa calibradora', 'laboratorio credenciado'],
       descricao: 'Laboratório credenciado pela Rede Brasileira de Calibração (RBC/Inmetro/NIST)',
     },
     {
@@ -325,7 +397,20 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       label: 'Nº do Certificado de Calibração',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['certificado', 'numero certificado', 'nr cert', 'laudo', 'relatorio calibracao'],
+      sinonimos: [
+        'certificado',
+        'numero certificado',
+        'nr cert',
+        'laudo',
+        'relatorio calibracao',
+        'n certificado',
+        'nº certificado',
+        'no certificado',
+        'cert rbc',
+        'certificado de calibracao',
+        'cert',
+        'num certificado',
+      ],
       descricao: 'Número oficial do certificado emitido pelo laboratório credenciado',
     },
     {
@@ -1402,7 +1487,7 @@ export function validarECompararLinhasImportacao(
               mensagensValidacao.push(`Registro existente com dados complementares (${camposDivergentes.map((c) => c.label).join(', ')}). Sugestão: Atualizar.`);
             }
           } else {
-            // Checar se existe treinamento do mesmo curso com data diferente
+            // Checar se existe treinamento do mesmo curso para o colaborador (mesmo curso, data diferente ou reimportação)
             const mesmoCursoOutraData = (contexto.registrosTreinamentoExistentes || []).find((r) => {
               const matchColaborador =
                 (pessoaIdVinculada && r.colaboradorId === pessoaIdVinculada) ||
@@ -1414,11 +1499,18 @@ export function validarECompararLinhasImportacao(
             });
 
             if (mesmoCursoOutraData) {
-              classificacaoReconciliacao = 'NOVO';
-              decisaoUsuario = 'CRIAR';
-              acaoDuplicidade = 'CRIAR_NOVO';
-              totalNovos++;
-              mensagensValidacao.push(`Nova reciclagem periódica do treinamento "${dadosMapeados.cursoTitulo}" para ${dadosMapeados.pessoaNome}. O histórico anterior será preservado.`);
+              // Comparar com a data existente: atualizar o registro mantendo a base enxuta
+              registroExistenteId = mesmoCursoOutraData.id;
+              dadosExistentesSnapshot = { ...mesmoCursoOutraData };
+              registroExistenteResumo = `Treinamento existente: ${mesmoCursoOutraData.treinamentoTitulo} (Última realização: ${mesmoCursoOutraData.dataRealizacao || 'N/A'}, Validade: ${mesmoCursoOutraData.dataValidade || 'N/A'})`;
+
+              classificacaoReconciliacao = 'EXISTENTE_ALTERADO';
+              decisaoUsuario = 'ATUALIZAR';
+              acaoDuplicidade = 'ATUALIZAR';
+              duplicidadeDetectada = true;
+              totalAlterados++;
+              if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
+              mensagensValidacao.push(`Curso "${dadosMapeados.cursoTitulo || mesmoCursoOutraData.treinamentoTitulo}" já cadastrado para ${dadosMapeados.pessoaNome || mesmoCursoOutraData.colaboradorNome}. O registro será atualizado com a data mais recente (${dataRealizacao}), mantendo a base unificada sem duplicidades.`);
             } else {
               classificacaoReconciliacao = 'NOVO';
               decisaoUsuario = 'CRIAR';

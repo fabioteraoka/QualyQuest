@@ -35,7 +35,9 @@ import {
   Plus,
   Trash2,
   ShieldAlert,
-  History
+  History,
+  Edit2,
+  X
 } from 'lucide-react';
 import {
   OrganizationRecord,
@@ -72,11 +74,13 @@ import {
   reverterImportacaoNoQualigest,
   excluirRegistroImportacaoHistorico,
   toggleAtivoFerramenta,
-  deleteFerramentaCalibrada
+  deleteFerramentaCalibrada,
+  deleteImportTemplate
 } from '../services/firebase/smartImportFirestore';
 import { ReconciliationDiffModal } from './smart-import/ReconciliationDiffModal';
 import { ImportReversalModal } from './smart-import/ImportReversalModal';
 import { ToolCalibrationHistoryModal } from './smart-import/ToolCalibrationHistoryModal';
+import { TemplateEditModal } from './smart-import/TemplateEditModal';
 
 interface SmartImportMigrationViewProps {
   organization: OrganizationRecord | null;
@@ -208,9 +212,60 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   const [oportunidades, setOportunidades] = useState<OportunidadeMelhoriaImportacao[]>([]);
   const [oportunidadesTratadas, setOportunidadesTratadas] = useState<Record<string, string>>({});
 
+  // Estado de Gestão de Modelos Homologados (Templates)
+  const [modalEditarTemplateAberta, setModalEditarTemplateAberta] = useState(false);
+  const [templateEmEdicao, setTemplateEmEdicao] = useState<Partial<TemplateMapeamentoAprovado> | null>(null);
+  const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+
   const orgId = organization?.id || 'org-impacto-aviation';
   const orgName = organization?.name || 'Impacto Aviation MRO';
   const isConsultaOnly = user?.role === 'CONSULTA';
+
+  const handleAbrirNovoTemplate = () => {
+    setTemplateEmEdicao(null);
+    setModalEditarTemplateAberta(true);
+  };
+
+  const handleAbrirEditarTemplate = (tpl: TemplateMapeamentoAprovado) => {
+    setTemplateEmEdicao(tpl);
+    setModalEditarTemplateAberta(true);
+  };
+
+  const handleSalvarTemplate = async (tpl: TemplateMapeamentoAprovado) => {
+    await saveImportTemplate(orgId, tpl, user);
+    setMensagemSucesso(`Modelo "${tpl.nome || tpl.nomeTemplate}" homologado e salvo com sucesso!`);
+    setTimeout(() => setMensagemSucesso(null), 4000);
+  };
+
+  const handleExcluirTemplate = async (tpl: TemplateMapeamentoAprovado) => {
+    const nome = tpl.nome || tpl.nomeTemplate || 'Modelo';
+    if (!window.confirm(`Confirma a exclusão definitiva do modelo homologado "${nome}"?`)) return;
+    try {
+      await deleteImportTemplate(orgId, tpl.id, user, nome);
+      setMensagemSucesso(`Modelo "${nome}" excluído com sucesso!`);
+      setTimeout(() => setMensagemSucesso(null), 4000);
+    } catch (err: any) {
+      alert(`Erro ao excluir modelo: ${err?.message || 'Erro desconhecido'}`);
+    }
+  };
+
+  const aplicarTemplateManual = (tpl: TemplateMapeamentoAprovado) => {
+    if (!tpl.mapeamentos) return;
+    const novos = mapeamentos.map((item) => {
+      const match = tpl.mapeamentos[item.colunaOrigem];
+      if (match) {
+        return {
+          ...item,
+          campoQualigest: match,
+          statusMapeamento: 'MANUAL' as any,
+          confiancaScore: 100,
+        };
+      }
+      return item;
+    });
+    setMapeamentos(novos);
+    setTemplateReconhecido(tpl);
+  };
 
   // ============================================================================
   // FUNÇÃO 1: CARREGAR AMOSTRA PRÉ-CONFIGURADA PARA TESTE IMEDIATO (1 CLIQUE)
@@ -1321,12 +1376,43 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
-                      <strong>Modelo Homologado Reconhecido Automaticamente:</strong> "{templateReconhecido.nome}" (Utilizado {templateReconhecido.vezesUtilizado} vezes pela empresa).
+                      <strong>Modelo Homologado Reconhecido Automaticamente:</strong> "{templateReconhecido.nome || templateReconhecido.nomeTemplate}" (Utilizado {templateReconhecido.vezesUtilizado || templateReconhecido.totalVezesUsado || 0} vezes pela empresa).
                     </span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-200/80 rounded text-emerald-950">
                     Mapeamento Aprovado
                   </span>
+                </div>
+              )}
+
+              {/* Seletor Manual de Modelo Homologado Existente */}
+              {templatesAprovados.filter((t) => t.tipoControle === tipoControle).length > 0 && (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-purple-900 font-semibold">
+                    <Layers className="w-4 h-4 text-purple-600 shrink-0" />
+                    <span>Aplicar Modelo Homologado da Empresa a esta Planilha:</span>
+                  </div>
+                  <select
+                    onChange={(e) => {
+                      const tplId = e.target.value;
+                      if (!tplId) return;
+                      const selectedTpl = templatesAprovados.find((t) => t.id === tplId);
+                      if (selectedTpl) {
+                        aplicarTemplateManual(selectedTpl);
+                      }
+                    }}
+                    className="border border-purple-300 rounded-lg p-1.5 text-xs bg-white text-purple-900 font-medium cursor-pointer"
+                    defaultValue=""
+                  >
+                    <option value="">Selecione um modelo homologado para aplicar...</option>
+                    {templatesAprovados
+                      .filter((t) => t.tipoControle === tipoControle)
+                      .map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.nome || t.nomeTemplate} ({t.colunasDetectadas?.length || 0} colunas mapeadas)
+                        </option>
+                      ))}
+                  </select>
                 </div>
               )}
 
@@ -2482,54 +2568,127 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
       {/* ======================================================================== */}
       {tabPrincipal === 'TEMPLATES' && (
         <div className="bg-white border border-slate-200 rounded-[12px] p-6 shadow-xs space-y-6">
-          <div className="border-b border-slate-100 pb-4">
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Layers className="w-5 h-5 text-blue-600" />
-              Modelos de Mapeamento Homologados da Empresa
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              O QualiGest aprende com os padrões de planilhas usados na empresa para reconhecer automaticamente colunas em importações futuras.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Layers className="w-5 h-5 text-blue-600" />
+                Modelos de Mapeamento Homologados da Empresa
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                O QualiGest memoriza e aplica os padrões de planilhas usados na sua organização para associar colunas instantaneamente em novas importações.
+              </p>
+            </div>
+
+            <button
+              onClick={handleAbrirNovoTemplate}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Modelo de Mapeamento
+            </button>
           </div>
 
+          {mensagemSucesso && (
+            <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{mensagemSucesso}</span>
+              </div>
+              <button onClick={() => setMensagemSucesso(null)} className="text-emerald-700 hover:text-emerald-900">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           {templatesAprovados.length === 0 ? (
-            <div className="p-12 text-center text-slate-500 space-y-2 border border-dashed border-slate-200 rounded-xl">
+            <div className="p-12 text-center text-slate-500 space-y-2 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
               <Layers className="w-12 h-12 text-slate-300 mx-auto" />
               <p className="text-sm font-bold text-slate-700">Nenhum modelo homologado salvo ainda</p>
-              <p className="text-xs text-slate-500">
-                Ao realizar uma importação na Etapa 3, marque a opção "Salvar como Modelo Homologado".
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Você pode criar modelos proativamente para os formatos de planilhas da sua oficina ou salvar ao importar um novo arquivo na Etapa 3.
               </p>
+              <button
+                onClick={handleAbrirNovoTemplate}
+                className="mt-3 px-3.5 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-bold border border-blue-200 transition"
+              >
+                + Criar Primeiro Modelo Homologado
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {templatesAprovados.map((tpl) => (
-                <div key={tpl.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-sm text-slate-900">{tpl.nome}</h3>
-                    <span className="text-[10px] font-bold text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {tpl.tipoControle}
-                    </span>
+                <div key={tpl.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 hover:border-slate-300 transition shadow-2xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900">{tpl.nome || tpl.nomeTemplate}</h3>
+                      <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-200 mt-1 inline-block">
+                        {tpl.tipoControle}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => handleAbrirEditarTemplate(tpl)}
+                        className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg border border-slate-200 bg-white transition cursor-pointer"
+                        title="Editar Modelo de Mapeamento"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleExcluirTemplate(tpl)}
+                        className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 bg-white transition cursor-pointer"
+                        title="Excluir Modelo Homologado"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
-                  <p className="text-xs text-slate-600">
-                    Homologado por {tpl.criadoPorNome} em {new Date(tpl.criadoEm).toLocaleDateString('pt-BR')}.
+                  <p className="text-xs text-slate-500">
+                    Homologado por <span className="font-semibold text-slate-700">{tpl.criadoPorNome || 'SGQ'}</span> em {new Date(tpl.criadoEm || tpl.dataAprovacao || Date.now()).toLocaleDateString('pt-BR')}.
                   </p>
 
-                  <div className="text-xs text-slate-700 bg-white p-2.5 rounded border border-slate-200 space-y-1">
-                    <span className="font-bold text-slate-800 block text-[11px]">Colunas Reconhecidas:</span>
-                    <p className="text-[11px] text-slate-500 truncate">
-                      {tpl.colunasDetectadas.join(', ')}
+                  <div className="text-xs text-slate-700 bg-white p-2.5 rounded-lg border border-slate-200 space-y-1">
+                    <span className="font-bold text-slate-800 block text-[11px]">
+                      Colunas Reconhecidas ({tpl.colunasDetectadas?.length || 0}):
+                    </span>
+                    <p className="text-[11px] text-slate-500 line-clamp-2">
+                      {tpl.colunasDetectadas?.join(', ') || 'Nenhuma coluna configurada'}
                     </p>
                   </div>
 
-                  <div className="text-[11px] font-semibold text-emerald-800 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    Utilizado {tpl.vezesUtilizado} vez(es) com sucesso
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
+                    <div className="text-[11px] font-semibold text-emerald-800 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Utilizado {tpl.vezesUtilizado || tpl.totalVezesUsado || 0} vez(es)
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setTipoControle(tpl.tipoControle);
+                        setTabPrincipal('WIZARD');
+                        setEtapaAtual(1);
+                      }}
+                      className="text-[11px] font-bold text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Usar no Assistente</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
+
+          {/* Modal de Edição / Criação de Modelo */}
+          <TemplateEditModal
+            isOpen={modalEditarTemplateAberta}
+            onClose={() => setModalEditarTemplateAberta(false)}
+            template={templateEmEdicao}
+            organizationId={orgId}
+            user={user}
+            onSave={handleSalvarTemplate}
+          />
         </div>
       )}
 

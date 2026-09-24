@@ -34,6 +34,7 @@ import {
   inactivateDocumentoControlado,
   reactivateDocumentoControlado,
   deleteDocumentoControlado,
+  deleteRevisaoDocumental,
   verificarDependenciasDocumento,
 } from '../services/firebase/documentControlFirestore';
 import {
@@ -143,6 +144,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   const [docToDelete, setDocToDelete] = useState<DocumentoControlado | null>(null);
   const [isDocDeleteModalOpen, setIsDocDeleteModalOpen] = useState(false);
   const [motivoExclusaoDoc, setMotivoExclusaoDoc] = useState('');
+  const [forcarExclusaoDoc, setForcarExclusaoDoc] = useState(false);
   const [analiseDependenciasDoc, setAnaliseDependenciasDoc] = useState<{
     podeExcluir: boolean;
     totalVinculos: number;
@@ -264,6 +266,9 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     }
   };
 
+  const [revisaoToDelete, setRevisaoToDelete] = useState<RevisaoDocumental | null>(null);
+  const [isDeletingRevisao, setIsDeletingRevisao] = useState(false);
+
   const handleOpenDeleteDoc = (doc: DocumentoControlado) => {
     const analise = verificarDependenciasDocumento(
       doc.id,
@@ -275,25 +280,24 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     );
     setDocToDelete(doc);
     setAnaliseDependenciasDoc(analise);
-    setMotivoExclusaoDoc('');
+    setMotivoExclusaoDoc('Exclusão solicitada pelo usuário no SGQ');
+    setForcarExclusaoDoc(true);
     setIsDocDeleteModalOpen(true);
   };
 
   const handleConfirmDeleteDoc = async () => {
     if (!docToDelete) return;
-    if (!analiseDependenciasDoc?.podeExcluir) {
-      alert('Exclusão física bloqueada por requisitos regulatórios. Utilize a Inativação Lógica.');
-      return;
-    }
 
     try {
       setIsSubmittingDocAction(true);
       await deleteDocumentoControlado(
         organizationId,
         docToDelete.id,
+        docToDelete.codigo,
         currentUser,
-        motivoExclusaoDoc.trim() || 'Exclusão de rascunho sem revisões vinculadas',
-        analiseDependenciasDoc
+        motivoExclusaoDoc.trim() || 'Exclusão física solicitada pelo usuário',
+        analiseDependenciasDoc,
+        forcarExclusaoDoc !== false
       );
       setIsDocDeleteModalOpen(false);
       if (selectedDocForDetail?.id === docToDelete.id) {
@@ -301,11 +305,33 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       }
       setDocToDelete(null);
       setAnaliseDependenciasDoc(null);
-      showToast('Documento excluído com sucesso.');
+      setForcarExclusaoDoc(true);
+      showToast(`Documento ${docToDelete.codigo} e registros associados foram excluídos com sucesso.`);
     } catch (err: any) {
       alert(`Erro ao excluir documento: ${err.message}`);
     } finally {
       setIsSubmittingDocAction(false);
+    }
+  };
+
+  const handleConfirmDeleteRevisao = async () => {
+    if (!revisaoToDelete || !selectedDocForDetail) return;
+
+    try {
+      setIsDeletingRevisao(true);
+      await deleteRevisaoDocumental(
+        organizationId,
+        revisaoToDelete.id,
+        selectedDocForDetail.id,
+        currentUser,
+        'Exclusão de revisão solicitada pelo usuário'
+      );
+      showToast(`Revisão ${revisaoToDelete.numeroRevisao} excluída com sucesso.`);
+      setRevisaoToDelete(null);
+    } catch (err: any) {
+      alert(`Erro ao excluir revisão: ${err.message}`);
+    } finally {
+      setIsDeletingRevisao(false);
     }
   };
 
@@ -1021,14 +1047,24 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                                 )}
                               </div>
 
-                              <div className="text-xs text-slate-400 font-mono">
-                                Vigor: <strong className="text-slate-200">{rev.dataEntradaVigor}</strong>
-                                {rev.dataSubstituicao && (
-                                  <>
-                                    {' '}
-                                    até <strong className="text-slate-200">{rev.dataSubstituicao}</strong>
-                                  </>
-                                )}
+                              <div className="flex items-center gap-3">
+                                <div className="text-xs text-slate-400 font-mono">
+                                  Vigor: <strong className="text-slate-200">{rev.dataEntradaVigor}</strong>
+                                  {rev.dataSubstituicao && (
+                                    <>
+                                      {' '}
+                                      até <strong className="text-slate-200">{rev.dataSubstituicao}</strong>
+                                    </>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setRevisaoToDelete(rev)}
+                                  className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors cursor-pointer"
+                                  title="Excluir esta revisão"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
 
@@ -2810,31 +2846,20 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: EXCLUSÃO SEGURA DE DOCUMENTO CONTROLADO COM ANÁLISE DE DEPENDÊNCIAS*/}
+      {/* MODAL: EXCLUSÃO OU INATIVAÇÃO DE DOCUMENTO CONTROLADO                    */}
       {/* ========================================================================= */}
-      {isDocDeleteModalOpen && docToDelete && analiseDependenciasDoc && (
+      {isDocDeleteModalOpen && docToDelete && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl animate-scale-in">
+            {/* Cabeçalho */}
             <div className="flex items-start justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <div
-                  className={`p-2 rounded-lg border ${
-                    analiseDependenciasDoc.podeExcluir
-                      ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                  }`}
-                >
-                  {analiseDependenciasDoc.podeExcluir ? (
-                    <Trash2 className="w-5 h-5" />
-                  ) : (
-                    <AlertOctagon className="w-5 h-5" />
-                  )}
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                  <Trash2 className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white">
-                    {analiseDependenciasDoc.podeExcluir
-                      ? 'Confirmar Exclusão de Documento'
-                      : 'Exclusão Física Bloqueada (RBAC 145 / MOMQ)'}
+                    Excluir Documento Controlado
                   </h3>
                   <p className="text-xs text-slate-400 font-mono">{docToDelete.codigo}</p>
                 </div>
@@ -2847,108 +2872,162 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               </button>
             </div>
 
-            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1">
-              <p className="font-semibold text-white text-sm">{docToDelete.titulo}</p>
-              <p className="text-slate-400">
-                Categoria: {docToDelete.categoria.replace('DOCUMENTO_', '')} • Emissor: {docToDelete.emissor}
-              </p>
+            {/* Resumo do Documento */}
+            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs space-y-1.5">
+              <p className="font-bold text-white text-sm">{docToDelete.titulo}</p>
+              <div className="flex items-center justify-between text-slate-400">
+                <span>Categoria: <strong className="text-slate-200">{docToDelete.categoria.replace('DOCUMENTO_', '')}</strong></span>
+                <span>Emissor: <strong className="text-slate-200">{docToDelete.emissor}</strong></span>
+              </div>
+              {analiseDependenciasDoc && analiseDependenciasDoc.totalRevisoes > 0 && (
+                <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center gap-2 text-amber-300 font-medium">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Este documento possui <strong>{analiseDependenciasDoc.totalRevisoes} revisão(ões) vinculada(s)</strong> no acervo.</span>
+                </div>
+              )}
             </div>
 
-            {!analiseDependenciasDoc.podeExcluir ? (
-              <div className="space-y-3 text-xs">
-                <div className="bg-rose-950/30 border border-rose-500/30 rounded-xl p-4 text-rose-200 space-y-2">
-                  <div className="flex items-center gap-2 font-bold text-sm text-rose-300">
-                    <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
-                    Exclusão Física Proibida por Integridade Técnica
+            {/* Painel de Exclusão Definitiva */}
+            <div className="space-y-3 text-xs">
+              <div className="p-3.5 bg-rose-950/20 border border-rose-500/30 rounded-xl space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <Trash2 className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <h4 className="font-bold text-rose-200 text-sm">Apagar Definitivamente do Sistema</h4>
+                    <p className="text-rose-200/80 text-[11px] leading-relaxed">
+                      Esta ação remove permanentemente este documento e todas as revisões vinculadas do banco de dados. Ideal para limpeza de duplicidades, cadastros incorretos ou testes.
+                    </p>
                   </div>
-                  <p className="text-[11px] leading-relaxed text-rose-200/90">
-                    Este documento possui <strong>{analiseDependenciasDoc.totalVinculos || analiseDependenciasDoc.motivosBloqueio?.length || analiseDependenciasDoc.detalhes?.length || 0} vínculo(s) histórico(s)</strong> no SGQ
-                    que impedem a exclusão física definitiva:
-                  </p>
-                  <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] font-medium text-rose-300">
-                    {(analiseDependenciasDoc.detalhes || analiseDependenciasDoc.motivosBloqueio || []).map((det, idx) => (
-                      <li key={idx}>{det}</li>
-                    ))}
-                  </ul>
-                  <p className="text-[11px] text-rose-300/80 pt-1 border-t border-rose-500/20">
-                    💡 <strong>Solução Regulatória:</strong> Utilize a <strong>Inativação Lógica</strong>. O documento
-                    deixará o acervo ativo, mas todos os registros de revisões e evidências passadas permanecerão
-                    intactos para auditorias da ANAC/FAA.
-                  </p>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setIsDocDeleteModalOpen(false)}
-                    className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
-                  >
-                    Fechar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsDocDeleteModalOpen(false);
-                      handleOpenInactivateDoc(docToDelete);
-                    }}
-                    className="px-4 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold flex items-center gap-1.5"
-                  >
-                    <PowerOff className="w-3.5 h-3.5" />
-                    <span>Inativar em vez de Excluir</span>
-                  </button>
+                <div className="space-y-2 pt-2 border-t border-rose-500/20">
+                  <label className="flex items-center gap-2 cursor-pointer text-rose-200 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={forcarExclusaoDoc}
+                      onChange={(e) => setForcarExclusaoDoc(e.target.checked)}
+                      className="rounded text-rose-600 focus:ring-rose-500 bg-slate-900 border-rose-500/40"
+                    />
+                    <span>
+                      Excluir também as revisões associadas para evitar registros órfãos
+                    </span>
+                  </label>
+
+                  <div className="space-y-1">
+                    <label className="block text-slate-300 text-[11px] font-semibold">
+                      Motivo da Exclusão Definitiva:
+                    </label>
+                    <input
+                      type="text"
+                      value={motivoExclusaoDoc}
+                      onChange={(e) => setMotivoExclusaoDoc(e.target.value)}
+                      placeholder="Ex: Exclusão solicitada pelo usuário no SGQ"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
                 </div>
               </div>
-            ) : (
-              <div className="space-y-3 text-xs">
-                <div className="bg-amber-950/30 border border-amber-500/30 rounded-xl p-3 text-amber-200 space-y-1">
-                  <p className="font-semibold flex items-center gap-1.5 text-amber-300">
-                    <AlertTriangle className="w-4 h-4" />
-                    Atenção: Ação Irreversível
-                  </p>
-                  <p className="text-[11px] text-amber-200/90">
-                    Nenhuma revisão ou histórico foi encontrado para este documento (cadastro recém-criado sem vínculos).
-                    A exclusão removerá definitivamente o registro.
-                  </p>
-                </div>
 
-                <div className="space-y-1">
-                  <label className="block text-slate-300 font-semibold">Motivo da Exclusão Definitiva *</label>
-                  <input
-                    type="text"
-                    value={motivoExclusaoDoc}
-                    onChange={(e) => setMotivoExclusaoDoc(e.target.value)}
-                    placeholder="Ex: Documento cadastrado duplicado por engano"
-                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-rose-500"
-                  />
+              {/* Opção Alternativa: Inativação Regulatória */}
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl flex items-center justify-between gap-3 text-slate-300">
+                <div className="space-y-0.5">
+                  <span className="font-semibold text-slate-200 flex items-center gap-1.5 text-xs">
+                    <PowerOff className="w-3.5 h-3.5 text-amber-400" />
+                    Prefere apenas inativar?
+                  </span>
+                  <p className="text-[11px] text-slate-400">
+                    Mantém o histórico para auditorias (RBAC 145) sem apagar do banco.
+                  </p>
                 </div>
-
-                <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => setIsDocDeleteModalOpen(false)}
-                    disabled={isSubmittingDocAction}
-                    className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleConfirmDeleteDoc}
-                    disabled={isSubmittingDocAction}
-                    className="px-4 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    {isSubmittingDocAction ? (
-                      <span>Excluindo...</span>
-                    ) : (
-                      <>
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>Confirmar Exclusão</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDocDeleteModalOpen(false);
+                    handleOpenInactivateDoc(docToDelete);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600/30 text-amber-300 text-xs font-semibold shrink-0 transition-colors cursor-pointer"
+                >
+                  Inativar Documento
+                </button>
               </div>
-            )}
+            </div>
+
+            {/* Rodapé com Botões */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsDocDeleteModalOpen(false)}
+                disabled={isSubmittingDocAction}
+                className="px-3.5 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-medium cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDoc}
+                disabled={isSubmittingDocAction}
+                className="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 shadow-md cursor-pointer transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isSubmittingDocAction ? 'Apagando...' : 'Apagar Definitivamente'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EXCLUSÃO DE REVISÃO DOCUMENTAL ESPECÍFICA                         */}
+      {/* ========================================================================= */}
+      {revisaoToDelete && selectedDocForDetail && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-4 shadow-2xl animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-rose-400">
+                <Trash2 className="w-5 h-5" />
+                <h3 className="text-base font-bold text-white">Excluir Revisão Documental</h3>
+              </div>
+              <button
+                onClick={() => setRevisaoToDelete(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300">
+              Deseja realmente apagar a revisão <strong>{revisaoToDelete.numeroRevisao}</strong> do documento{' '}
+              <strong>{selectedDocForDetail.codigo}</strong>?
+            </p>
+
+            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs space-y-1 text-slate-400">
+              <p>Status: <strong className="text-slate-200">{revisaoToDelete.statusCicloVida}</strong></p>
+              <p>Vigência: <strong className="text-slate-200">{revisaoToDelete.dataEntradaVigor}</strong></p>
+              {revisaoToDelete.escopoAlteracoes && (
+                <p className="text-[11px] truncate">Escopo: {revisaoToDelete.escopoAlteracoes}</p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setRevisaoToDelete(null)}
+                disabled={isDeletingRevisao}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs font-medium cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRevisao}
+                disabled={isDeletingRevisao}
+                className="px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingRevisao ? 'Excluindo...' : 'Excluir Revisão'}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
