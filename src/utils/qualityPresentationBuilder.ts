@@ -62,6 +62,23 @@ export function calcularLargurasColunasTabela(colunas: string[], larguraTotal: n
 
   const pesos = colunas.map(col => {
     const nome = col.toLowerCase();
+    // Ações corretivas, descrições detalhadas e planos precisam de largura prioritária máxima
+    if (
+      nome.includes('ação') ||
+      nome.includes('acao') ||
+      nome.includes('o quê') ||
+      nome.includes('o que') ||
+      nome.includes('corretiva') ||
+      nome.includes('plano') ||
+      nome.includes('resolução') ||
+      nome.includes('resolucao') ||
+      nome.includes('procedimento') ||
+      nome.includes('contenção') ||
+      nome.includes('contencao') ||
+      nome.includes('causa')
+    ) {
+      return 4.2; // Ações corretivas e planos 5W2H ocupam a maior fatia da tabela
+    }
     if (
       nome.includes('título') ||
       nome.includes('titulo') ||
@@ -71,16 +88,18 @@ export function calcularLargurasColunasTabela(colunas: string[], larguraTotal: n
       nome.includes('indicador') ||
       nome.includes('especialidade') ||
       nome.includes('função') ||
-      nome.includes('funcao')
+      nome.includes('funcao') ||
+      nome.includes('observa')
     ) {
-      return 2.5; // Títulos, Indicadores e Especialidades precisam de mais largura
+      return 2.8; // Títulos, Indicadores e Especialidades precisam de boa largura
     }
     if (
       nome.includes('avaliação') ||
       nome.includes('avaliacao') ||
       nome.includes('diretriz') ||
       nome.includes('condição') ||
-      nome.includes('condicao')
+      nome.includes('condicao') ||
+      nome.includes('impacto')
     ) {
       return 1.8;
     }
@@ -96,12 +115,20 @@ export function calcularLargurasColunasTabela(colunas: string[], larguraTotal: n
       nome.includes('vigente') ||
       nome.includes('vencid') ||
       nome.includes('%') ||
-      nome.includes('taxa')
+      nome.includes('taxa') ||
+      nome.includes('status') ||
+      nome.includes('grau') ||
+      nome.includes('score') ||
+      nome.includes('severidade') ||
+      nome.includes('probabilidade')
     ) {
-      return 0.9; // Valores numéricos e códigos curtos
+      return 0.85; // Valores numéricos, status e códigos curtos
     }
-    if (nome.includes('setor') || nome.includes('área') || nome.includes('area') || nome.includes('colaborador')) {
-      return 1.4; // Nomes médios
+    if (nome.includes('setor') || nome.includes('área') || nome.includes('area') || nome.includes('colaborador') || nome.includes('responsável') || nome.includes('responsavel') || nome.includes('quem')) {
+      return 1.35; // Nomes médios e responsáveis
+    }
+    if (nome.includes('prazo') || nome.includes('quando') || nome.includes('data')) {
+      return 1.05; // Prazos e datas
     }
     return 1.2;
   });
@@ -880,15 +907,15 @@ export async function exportarApresentacaoPPTX(
         }));
 
         const bodyRows = linhasExibidas.map((linha, rIdx) =>
-          linha.map((celula, cIdx) => {
-            const ehDescricao = cIdx === 1 || colunas[cIdx].toLowerCase().includes('título') || colunas[cIdx].toLowerCase().includes('descri') || colunas[cIdx].toLowerCase().includes('indicador') || colunas[cIdx].toLowerCase().includes('especialidade');
-            const maxChars = ehDescricao ? 80 : 45;
+          linha.map((celula) => {
+            const cellStr = String(celula ?? '');
+            const fontSize = cellStr.length > 80 ? 6.2 : cellStr.length > 40 ? 6.8 : 7.0;
             return {
-              text: truncarTexto(String(celula), maxChars),
+              text: cellStr.length > 300 ? truncarTexto(cellStr, 300) : cellStr,
               options: {
                 fill: { color: rIdx % 2 === 0 ? 'FFFFFF' : 'F1F5F9' },
                 color: COR_TEXT_DARK,
-                fontSize: 7.0,
+                fontSize,
                 fontFace: 'Arial',
                 align: 'left' as const,
               },
@@ -1023,15 +1050,15 @@ export async function exportarApresentacaoPPTX(
       }));
 
       const bodyRows = linhasExibidas.map((linha, rIdx) => 
-        linha.map((celula, cIdx) => {
-          const ehDescricao = cIdx === 1 || colunas[cIdx].toLowerCase().includes('título') || colunas[cIdx].toLowerCase().includes('descri') || colunas[cIdx].toLowerCase().includes('especialidade') || colunas[cIdx].toLowerCase().includes('indicador');
-          const maxChars = ehDescricao ? 100 : 55;
+        linha.map((celula) => {
+          const cellStr = String(celula ?? '');
+          const cellFontSize = cellStr.length > 120 ? 6.8 : cellStr.length > 60 ? 7.4 : tableFontSize;
           return {
-            text: truncarTexto(String(celula), maxChars),
+            text: cellStr.length > 400 ? truncarTexto(cellStr, 400) : cellStr,
             options: {
               fill: { color: rIdx % 2 === 0 ? 'FFFFFF' : 'F1F5F9' },
               color: COR_TEXT_DARK,
-              fontSize: tableFontSize,
+              fontSize: cellFontSize,
               fontFace: 'Arial',
               align: 'left' as const,
             },

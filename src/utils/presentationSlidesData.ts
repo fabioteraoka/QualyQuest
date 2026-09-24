@@ -660,7 +660,7 @@ export function gerarSlidesApresentacao(
         linhas: rncsCriticas.length > 0
           ? rncsCriticas.map(r => [
               r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
-              (r.titulo || r.descricaoNC || 'Desvio Operacional').substring(0, 35) + '...',
+              r.titulo || r.descricaoNC || 'Desvio Operacional',
               r.setor || 'Geral',
               r.avaliacaoRiscoInicial?.nivel || 'Alto',
               r.statusGeral || 'Em Análise',
@@ -717,7 +717,7 @@ export function gerarSlidesApresentacao(
             colunas: ['Código RNC', 'Título / Descrição do Desvio', 'Setor', 'Severidade', 'Status Atual', 'Prazo'],
             linhas: chunk.map(r => [
               r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
-              (r.titulo || r.descricaoNC || 'Desvio Operacional').substring(0, 35) + '...',
+              r.titulo || r.descricaoNC || 'Desvio Operacional',
               r.setor || 'Geral',
               r.avaliacaoRiscoInicial?.nivel || 'Alto',
               r.statusGeral || 'Em Análise',
@@ -824,7 +824,7 @@ export function gerarSlidesApresentacao(
                 `Nível ${prob}`,
                 `${r.avaliacaoRiscoInicial?.codigo || `${sev}${prob}`} (${r.avaliacaoRiscoInicial?.nivel || 'Alto'})`,
                 r.setor || 'Geral',
-                contencao.substring(0, 30) + '...'
+                contencao
               ];
             }),
           },
@@ -974,7 +974,7 @@ export function gerarSlidesApresentacao(
             colunas: ['Código RNC', 'Ação Corretiva (O Quê)', 'Responsável (Quem)', 'Prazo (Quando)', 'Status'],
             linhas: chunk.map(r => [
               r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
-              (r.acaoCorretiva?.descricao || 'Plano de eliminação de causa raiz').substring(0, 35) + '...',
+              r.acaoCorretiva?.descricao || 'Plano de eliminação de causa raiz',
               r.acaoCorretiva?.responsavel || 'Gestor da Área',
               r.acaoCorretiva?.dataPrazo || 'Conforme SLA',
               r.acaoCorretiva?.status || 'Em Andamento'
