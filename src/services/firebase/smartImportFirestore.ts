@@ -280,6 +280,12 @@ export async function deleteImportTemplate(
 
   try {
     await deleteDoc(docRef);
+  } catch (err) {
+    console.warn('Erro ao excluir template de importação:', err);
+    throw err;
+  }
+
+  try {
     await recordOrganizationAudit(organizationId, {
       entity: 'IMPORT_TEMPLATE',
       entityId: templateId,
@@ -289,9 +295,8 @@ export async function deleteImportTemplate(
       summary: `Modelo de importação "${templateNome || templateId}" excluído`,
       details: JSON.stringify({ templateId, templateNome }),
     });
-  } catch (err) {
-    console.warn('Erro ao excluir template de importação:', err);
-    throw err;
+  } catch (auditErr) {
+    console.warn('Aviso: falha não-bloqueante ao registrar auditoria de exclusão do modelo:', auditErr);
   }
 }
 

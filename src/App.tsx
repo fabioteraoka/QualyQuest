@@ -1466,6 +1466,7 @@ export default function App() {
                   ferramentasCalibradas={ferramentasCalibradas}
                   smartImports={smartImports}
                   templatesAprovados={templatesAprovados}
+                  onRemoverTemplate={(id) => setTemplatesAprovados((prev) => prev.filter((t) => t.id !== id))}
                   initialTab="WIZARD"
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}
                   onAdicionarPessoa={(p) => setPersons((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}

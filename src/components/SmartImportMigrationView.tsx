@@ -106,6 +106,7 @@ interface SmartImportMigrationViewProps {
   onRemoverQualificacao?: (qualId: string) => void;
   onAdicionarDocumento?: (documento: DocumentoControlado) => void;
   onRemoverDocumento?: (docId: string) => void;
+  onRemoverTemplate?: (templateId: string) => void;
   onCriarRncSugerida?: (dadosRnc: any) => void;
 }
 
@@ -133,6 +134,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   onRemoverQualificacao,
   onAdicionarDocumento,
   onRemoverDocumento,
+  onRemoverTemplate,
   onCriarRncSugerida
 }) => {
   const [tabPrincipal, setTabPrincipal] = useState<'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA'>(initialTab);
@@ -217,6 +219,21 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   const [templateEmEdicao, setTemplateEmEdicao] = useState<Partial<TemplateMapeamentoAprovado> | null>(null);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
 
+  // Estados de confirmação segura in-app para exclusão (evita bloqueio de window.confirm em iframes)
+  const [deletedTemplateIds, setDeletedTemplateIds] = useState<Set<string>>(new Set());
+  const [templateParaExcluir, setTemplateParaExcluir] = useState<TemplateMapeamentoAprovado | null>(null);
+  const [isExcluindoTemplate, setIsExcluindoTemplate] = useState(false);
+
+  const [historicoParaExcluir, setHistoricoParaExcluir] = useState<string | null>(null);
+  const [isExcluindoHistorico, setIsExcluindoHistorico] = useState(false);
+
+  const [ferramentaParaExcluir, setFerramentaParaExcluir] = useState<string | null>(null);
+  const [isExcluindoFerramenta, setIsExcluindoFerramenta] = useState(false);
+
+  const templatesAprovadosFiltrados = useMemo(() => {
+    return templatesAprovados.filter((t) => !deletedTemplateIds.has(t.id));
+  }, [templatesAprovados, deletedTemplateIds]);
+
   const orgId = organization?.id || 'org-impacto-aviation';
   const orgName = organization?.name || 'Impacto Aviation MRO';
   const isConsultaOnly = user?.role === 'CONSULTA';
@@ -237,15 +254,24 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     setTimeout(() => setMensagemSucesso(null), 4000);
   };
 
-  const handleExcluirTemplate = async (tpl: TemplateMapeamentoAprovado) => {
-    const nome = tpl.nome || tpl.nomeTemplate || 'Modelo';
-    if (!window.confirm(`Confirma a exclusão definitiva do modelo homologado "${nome}"?`)) return;
+  const handleConfirmExcluirTemplate = async () => {
+    if (!templateParaExcluir) return;
+    const nome = templateParaExcluir.nome || templateParaExcluir.nomeTemplate || 'Modelo';
     try {
-      await deleteImportTemplate(orgId, tpl.id, user, nome);
-      setMensagemSucesso(`Modelo "${nome}" excluído com sucesso!`);
+      setIsExcluindoTemplate(true);
+      await deleteImportTemplate(orgId, templateParaExcluir.id, user, nome);
+      setDeletedTemplateIds((prev) => new Set([...prev, templateParaExcluir.id]));
+      if (onRemoverTemplate) {
+        onRemoverTemplate(templateParaExcluir.id);
+      }
+      setMensagemSucesso(`Modelo homologado "${nome}" excluído com sucesso!`);
+      setTemplateParaExcluir(null);
       setTimeout(() => setMensagemSucesso(null), 4000);
     } catch (err: any) {
+      console.error('Erro ao excluir modelo:', err);
       alert(`Erro ao excluir modelo: ${err?.message || 'Erro desconhecido'}`);
+    } finally {
+      setIsExcluindoTemplate(false);
     }
   };
 
@@ -443,7 +469,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     linhas: Record<string, any>[]
   ) => {
     // Verificar se a organização possui um template aprovado compatível com estas colunas
-    const checkTemplate = tentarAplicarTemplateAprovado(colunas, templatesAprovados);
+    const checkTemplate = tentarAplicarTemplateAprovado(colunas, templatesAprovadosFiltrados);
     setTemplateReconhecido(checkTemplate.templateEncontrado);
 
     const mapeamentoGerado = gerarMapeamentoAutomaticoCampos(colunas, tipo, linhas);
@@ -776,19 +802,18 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     }
   };
 
-  const handleExcluirHistorico = async (importId: string) => {
-    if (
-      !confirm(
-        'Deseja excluir este registro do histórico de importações? Os cadastros oficiais já consolidados no QualiGest SERÃO MANTIDOS intactos.'
-      )
-    ) {
-      return;
-    }
+  const handleConfirmExcluirHistorico = async () => {
+    if (!historicoParaExcluir) return;
     try {
-      await excluirRegistroImportacaoHistorico(orgId, importId, user);
-      alert('Registro de histórico removido. Os cadastros oficiais no QualiGest permaneceram intactos.');
+      setIsExcluindoHistorico(true);
+      await excluirRegistroImportacaoHistorico(orgId, historicoParaExcluir, user);
+      setMensagemSucesso('Registro de histórico removido. Os cadastros oficiais no QualiGest permaneceram intactos.');
+      setHistoricoParaExcluir(null);
+      setTimeout(() => setMensagemSucesso(null), 4000);
     } catch (err: any) {
       alert('Erro ao excluir registro de histórico: ' + err.message);
+    } finally {
+      setIsExcluindoHistorico(false);
     }
   };
 
@@ -804,22 +829,21 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     }
   };
 
-  const handleDeleteFerramenta = async (toolId: string) => {
-    if (
-      !confirm(
-        'Tem certeza que deseja excluir esta ferramenta do cadastro oficial de calibração? Esta ação requer perfil Gestor SGQ / Admin.'
-      )
-    ) {
-      return;
-    }
+  const handleConfirmDeleteFerramenta = async () => {
+    if (!ferramentaParaExcluir) return;
     try {
-      await deleteFerramentaCalibrada(orgId, toolId, user);
+      setIsExcluindoFerramenta(true);
+      await deleteFerramentaCalibrada(orgId, ferramentaParaExcluir, user);
       if (onRemoverFerramenta) {
-        onRemoverFerramenta(toolId);
+        onRemoverFerramenta(ferramentaParaExcluir);
       }
-      alert('Ferramenta removida do cadastro oficial de calibração.');
+      setMensagemSucesso('Ferramenta removida do cadastro oficial de calibração.');
+      setFerramentaParaExcluir(null);
+      setTimeout(() => setMensagemSucesso(null), 4000);
     } catch (err: any) {
       alert('Erro ao excluir ferramenta: ' + err.message);
+    } finally {
+      setIsExcluindoFerramenta(false);
     }
   };
 
@@ -969,7 +993,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            Modelos Homologados ({templatesAprovados.length})
+            Modelos Homologados ({templatesAprovadosFiltrados.length})
           </button>
           <button
             onClick={() => {
@@ -1386,7 +1410,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
               )}
 
               {/* Seletor Manual de Modelo Homologado Existente */}
-              {templatesAprovados.filter((t) => t.tipoControle === tipoControle).length > 0 && (
+              {templatesAprovadosFiltrados.filter((t) => t.tipoControle === tipoControle).length > 0 && (
                 <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2 text-purple-900 font-semibold">
                     <Layers className="w-4 h-4 text-purple-600 shrink-0" />
@@ -1396,7 +1420,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                     onChange={(e) => {
                       const tplId = e.target.value;
                       if (!tplId) return;
-                      const selectedTpl = templatesAprovados.find((t) => t.id === tplId);
+                      const selectedTpl = templatesAprovadosFiltrados.find((t) => t.id === tplId);
                       if (selectedTpl) {
                         aplicarTemplateManual(selectedTpl);
                       }
@@ -1405,7 +1429,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                     defaultValue=""
                   >
                     <option value="">Selecione um modelo homologado para aplicar...</option>
-                    {templatesAprovados
+                    {templatesAprovadosFiltrados
                       .filter((t) => t.tipoControle === tipoControle)
                       .map((t) => (
                         <option key={t.id} value={t.id}>
@@ -2545,7 +2569,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                               <span className="text-[10px] text-slate-400 font-semibold italic">Reversão feita</span>
                             )}
                             <button
-                              onClick={() => handleExcluirHistorico(imp.id)}
+                              onClick={() => setHistoricoParaExcluir(imp.id)}
                               title="Excluir este item da fila/histórico (mantém dados oficiais)"
                               className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
                             >
@@ -2600,7 +2624,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
             </div>
           )}
 
-          {templatesAprovados.length === 0 ? (
+          {templatesAprovadosFiltrados.length === 0 ? (
             <div className="p-12 text-center text-slate-500 space-y-2 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
               <Layers className="w-12 h-12 text-slate-300 mx-auto" />
               <p className="text-sm font-bold text-slate-700">Nenhum modelo homologado salvo ainda</p>
@@ -2616,7 +2640,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {templatesAprovados.map((tpl) => (
+              {templatesAprovadosFiltrados.map((tpl) => (
                 <div key={tpl.id} className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3 hover:border-slate-300 transition shadow-2xs">
                   <div className="flex items-start justify-between gap-2">
                     <div>
@@ -2635,7 +2659,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => handleExcluirTemplate(tpl)}
+                        onClick={() => setTemplateParaExcluir(tpl)}
                         className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 bg-white transition cursor-pointer"
                         title="Excluir Modelo Homologado"
                       >
@@ -2940,7 +2964,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                               <ShieldAlert className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => handleDeleteFerramenta(tool.id)}
+                              onClick={() => setFerramentaParaExcluir(tool.id)}
                               title="Excluir ferramenta do cadastro oficial"
                               className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
                             >
@@ -2990,6 +3014,181 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
         isOpen={Boolean(ferramentaHistoricoModal)}
         onClose={() => setFerramentaHistoricoModal(null)}
       />
+
+      {/* ======================================================================== */}
+      {/* MODAL DE CONFIRMAÇÃO: EXCLUSÃO DEFINITIVA DE MODELO HOMOLOGADO           */}
+      {/* ======================================================================== */}
+      {templateParaExcluir && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Excluir Modelo Homologado</h3>
+                  <p className="text-xs text-slate-500">Mapeamento da Empresa</p>
+                </div>
+              </div>
+              <button
+                onClick={() => !isExcluindoTemplate && setTemplateParaExcluir(null)}
+                disabled={isExcluindoTemplate}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Nome do Modelo:</span>
+                <strong className="text-slate-900 font-semibold">{templateParaExcluir.nome || templateParaExcluir.nomeTemplate}</strong>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Módulo / Tipo:</span>
+                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-bold">
+                  {templateParaExcluir.tipoControle}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Colunas Mapeadas:</span>
+                <span className="text-slate-700 font-semibold">
+                  {templateParaExcluir.colunasDetectadas?.length || 0} coluna(s)
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Tem certeza que deseja apagar o modelo homologado <strong>"{templateParaExcluir.nome || templateParaExcluir.nomeTemplate}"</strong>? Ele será excluído definitivamente do banco de dados e deixará de ser reconhecido automaticamente em futuras importações.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setTemplateParaExcluir(null)}
+                disabled={isExcluindoTemplate}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExcluirTemplate}
+                disabled={isExcluindoTemplate}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isExcluindoTemplate ? 'Excluindo...' : 'Apagar Definitivamente'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================== */}
+      {/* MODAL DE CONFIRMAÇÃO: EXCLUSÃO DE HISTÓRICO DE IMPORTAÇÃO                */}
+      {/* ======================================================================== */}
+      {historicoParaExcluir && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Excluir Registro de Histórico</h3>
+                  <p className="text-xs text-slate-500">Auditoria de importação</p>
+                </div>
+              </div>
+              <button
+                onClick={() => !isExcluindoHistorico && setHistoricoParaExcluir(null)}
+                disabled={isExcluindoHistorico}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Deseja excluir este registro do histórico de importações? Os cadastros oficiais já consolidados no QualiGest <strong>permanecerão intactos</strong>.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setHistoricoParaExcluir(null)}
+                disabled={isExcluindoHistorico}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmExcluirHistorico}
+                disabled={isExcluindoHistorico}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isExcluindoHistorico ? 'Excluindo...' : 'Excluir Histórico'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================== */}
+      {/* MODAL DE CONFIRMAÇÃO: EXCLUSÃO DE FERRAMENTA CALIBRADA                   */}
+      {/* ======================================================================== */}
+      {ferramentaParaExcluir && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Excluir Ferramenta / Instrumento</h3>
+                  <p className="text-xs text-slate-500">Controle Metrológico RBAC 145.109</p>
+                </div>
+              </div>
+              <button
+                onClick={() => !isExcluindoFerramenta && setFerramentaParaExcluir(null)}
+                disabled={isExcluindoFerramenta}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Tem certeza que deseja excluir esta ferramenta do cadastro oficial de calibração metrológica?
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setFerramentaParaExcluir(null)}
+                disabled={isExcluindoFerramenta}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteFerramenta}
+                disabled={isExcluindoFerramenta}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isExcluindoFerramenta ? 'Excluindo...' : 'Excluir Ferramenta'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
