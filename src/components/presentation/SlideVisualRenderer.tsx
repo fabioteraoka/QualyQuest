@@ -49,6 +49,23 @@ export const SlideVisualRenderer: React.FC<SlideVisualRendererProps> = ({ slide 
     );
   }
 
+  // 1.1 IMAGEM DE DESTAQUE COM OBJETO CONTAIN (0 TRUNCAMENTO)
+  if (slide.imagemDestaque) {
+    const rawPath = slide.imagemDestaque.replace(/^\/public\//, '/');
+    return (
+      <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 text-white flex flex-col items-center justify-center">
+        <img
+          src={rawPath}
+          alt={slide.titulo}
+          className="max-h-[460px] w-auto max-w-full object-contain rounded-lg border border-slate-700/60 shadow-lg"
+        />
+        <span className="text-[11px] text-slate-400 mt-2 font-mono">
+          Evidência Visual Integrada • {slide.categoria}
+        </span>
+      </div>
+    );
+  }
+
   const grafico = slide.graficoDados;
   if (!grafico || grafico.tipo === 'nenhum') {
     return null;
@@ -168,11 +185,11 @@ export const SlideVisualRenderer: React.FC<SlideVisualRendererProps> = ({ slide 
         <span className="text-xs font-bold uppercase tracking-wider text-slate-400 font-mono block mb-2">
           {grafico.titulo || 'Indicador Gráfico Consolidado'}
         </span>
-        <div className="h-44 w-full">
+        <div className="h-52 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={itens} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+            <BarChart data={itens} margin={{ top: 10, right: 10, left: -20, bottom: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-              <XAxis dataKey="rotulo" stroke="#94a3b8" fontSize={11} interval={0} angle={-15} textAnchor="end" />
+              <XAxis dataKey="rotulo" stroke="#94a3b8" fontSize={10} interval={0} angle={-15} textAnchor="end" height={40} />
               <YAxis stroke="#94a3b8" fontSize={11} allowDecimals={false} />
               <Tooltip 
                 contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#fff', fontSize: '12px' }} 

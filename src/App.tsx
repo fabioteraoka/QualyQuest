@@ -1305,6 +1305,7 @@ export default function App() {
                   documents={personDocuments}
                   activities={activityRequirements}
                   nonConformities={records}
+                  bases={basesOperacionais}
                   initialStatusFilter={initialPersonStatusFilter}
                   onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
                   onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
@@ -1467,6 +1468,7 @@ export default function App() {
                   smartImports={smartImports}
                   templatesAprovados={templatesAprovados}
                   onRemoverTemplate={(id) => setTemplatesAprovados((prev) => prev.filter((t) => t.id !== id))}
+                  onSalvarTemplate={(tpl) => setTemplatesAprovados((prev) => [tpl, ...prev.filter((t) => t.id !== tpl.id)])}
                   initialTab="WIZARD"
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}
                   onAdicionarPessoa={(p) => setPersons((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}

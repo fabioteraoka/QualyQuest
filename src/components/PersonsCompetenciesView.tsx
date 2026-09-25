@@ -31,6 +31,7 @@ import {
   Tag,
   Power,
   UploadCloud,
+  MapPin,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -44,6 +45,7 @@ import {
   StatusColaborador,
   CriticidadeCompetencia,
   FaixaVencimentoItem,
+  BaseEstacaoOperacao,
 } from '../types';
 import {
   savePerson,
@@ -80,6 +82,7 @@ interface PersonsCompetenciesViewProps {
   documents: DocumentoEvidenciaPessoa[];
   activities: AtividadeCompetenciaRequerida[];
   nonConformities?: any[];
+  bases?: BaseEstacaoOperacao[];
   initialStatusFilter?: string;
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
@@ -97,6 +100,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   documents = [],
   activities = [],
   nonConformities = [],
+  bases = [],
   initialStatusFilter,
   onNavigateToTrainings,
   onNavigateToExpirations,
@@ -105,6 +109,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [activeSubTab, setActiveSubTab] = useState<'COLABORADORES' | 'MATRIZ' | 'CATALOGO'>('COLABORADORES');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSetor, setSelectedSetor] = useState('TODOS');
+  const [selectedBase, setSelectedBase] = useState('TODAS');
   const [selectedStatus, setSelectedStatus] = useState<string>(initialStatusFilter || 'TODOS');
   const [filterRestricao, setFilterRestricao] = useState(false);
 
@@ -182,6 +187,35 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     return Array.from(s).sort();
   }, [persons]);
 
+  // Bases operacionais disponíveis (Combinação das bases cadastradas e das atribuídas aos colaboradores)
+  const basesDisponiveis = useMemo(() => {
+    const mapa = new Map<string, { id: string; nome: string }>();
+    (bases || []).forEach((b) => {
+      const label = b.codigo ? `${b.codigo} - ${b.nome}` : b.nome;
+      mapa.set(b.id, { id: b.id, nome: label });
+    });
+    // Padrões de bases do SGQ caso nenhuma tenha sido criada ainda
+    if (mapa.size === 0) {
+      mapa.set('base-rec-hub', { id: 'base-rec-hub', nome: 'REC - Recife / Hub Central' });
+      mapa.set('BASE-SOD', { id: 'BASE-SOD', nome: 'SOD - Sorocaba / Base Principal' });
+      mapa.set('BASE-GRU', { id: 'BASE-GRU', nome: 'GRU - Guarulhos / Estação de Linha' });
+      mapa.set('BASE-VCP', { id: 'BASE-VCP', nome: 'VCP - Campinas / Viracopos' });
+      mapa.set('BASE-GIG', { id: 'BASE-GIG', nome: 'GIG - Rio de Janeiro / Galeão' });
+    }
+    persons.forEach((p) => {
+      if (p.baseOperacional) {
+        const jaExiste = Array.from(mapa.values()).some((item) => item.nome === p.baseOperacional);
+        if (!jaExiste) {
+          mapa.set(p.baseOperacionalId || p.baseOperacional, {
+            id: p.baseOperacionalId || p.baseOperacional,
+            nome: p.baseOperacional,
+          });
+        }
+      }
+    });
+    return Array.from(mapa.values());
+  }, [bases, persons]);
+
   // Contagens oficiais de colaboradores por status (Fonte Única da Verdade)
   const contagensPorStatus = useMemo(() => {
     return contabilizarColaboradoresPorStatus(persons);
@@ -198,16 +232,22 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
         (p.cargoOperacional || '').toLowerCase().includes(term) ||
         (p.funcao || '').toLowerCase().includes(term) ||
         (p.setor || '').toLowerCase().includes(term) ||
+        (p.baseOperacional || '').toLowerCase().includes(term) ||
         (p.contatoCorporativo || '').toLowerCase().includes(term);
 
       const matchSetor = selectedSetor === 'TODOS' || p.setor === selectedSetor;
+      const matchBase =
+        selectedBase === 'TODAS' ||
+        p.baseOperacional === selectedBase ||
+        p.baseOperacionalId === selectedBase ||
+        (p.baseOperacional && selectedBase && p.baseOperacional.toLowerCase().includes(selectedBase.split(' - ')[0].toLowerCase()));
       const statusNormalizado = normalizarStatusColaborador(p.status);
       const matchStatus = selectedStatus === 'TODOS' || statusNormalizado === selectedStatus;
       const matchRestricao = !filterRestricao || Boolean(p.restricaoOperacional && p.restricaoOperacional.possuiRestricao);
 
-      return matchSearch && matchSetor && matchStatus && matchRestricao;
+      return matchSearch && matchSetor && matchBase && matchStatus && matchRestricao;
     });
-  }, [persons, searchTerm, selectedSetor, selectedStatus, filterRestricao]);
+  }, [persons, searchTerm, selectedSetor, selectedBase, selectedStatus, filterRestricao]);
 
   // Dados 360° do colaborador selecionado
   const colabComps = useMemo(() => {
@@ -308,6 +348,8 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       nome: String(formData.get('nome') || '').trim(),
       matricula: String(formData.get('matricula') || '').trim(),
       setor: String(formData.get('setor') || '').trim(),
+      baseOperacional: String(formData.get('baseOperacional') || '').trim() || undefined,
+      baseOperacionalId: String(formData.get('baseOperacionalId') || '').trim() || undefined,
       funcao: String(formData.get('funcao') || '').trim(),
       cargoOperacional: String(formData.get('cargoOperacional') || '').trim(),
       status: (formData.get('status') as StatusColaborador) || 'STATUS_NAO_INFORMADO',
@@ -713,6 +755,65 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 />
               </div>
 
+              {/* Chips Rápidos de Filtro por Base Operacional (Filtro por Base Solicitado) */}
+              <div className="space-y-1.5 p-2.5 bg-blue-50/40 rounded-xl border border-blue-100">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                  <span className="flex items-center gap-1.5 text-blue-950 font-bold text-xs">
+                    <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                    Filtrar por Base Operacional:
+                  </span>
+                  {selectedBase !== 'TODAS' && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBase('TODAS')}
+                      className="text-[11px] text-blue-700 hover:text-blue-900 underline font-semibold cursor-pointer"
+                    >
+                      Limpar filtro de base
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBase('TODAS')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border cursor-pointer ${
+                      selectedBase === 'TODAS'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-100/50 hover:border-blue-200'
+                    }`}
+                  >
+                    📍 Todas as Bases ({persons.length})
+                  </button>
+                  {basesDisponiveis.map((b) => {
+                    const qtd = persons.filter((p) =>
+                      p.baseOperacional === b.nome ||
+                      p.baseOperacionalId === b.id ||
+                      (p.baseOperacional && p.baseOperacional.toLowerCase().includes(b.nome.split(' - ')[0].toLowerCase()))
+                    ).length;
+                    const isSelected = selectedBase === b.nome;
+                    return (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setSelectedBase(b.nome)}
+                        className={`px-2.5 py-1 rounded-lg text-xs whitespace-nowrap transition border flex items-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-700 text-white border-blue-800 shadow-xs font-bold'
+                            : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50 hover:border-blue-300'
+                        }`}
+                      >
+                        <span>📍</span>
+                        <span>{b.nome.split(' - ')[0]}</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                          {qtd}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Chips Rápidos de Filtro por Status Operacional */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
                 <button
@@ -848,6 +949,26 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                       {s}
                     </option>
                   ))}
+                </select>
+
+                <select
+                  value={selectedBase}
+                  onChange={(e) => setSelectedBase(e.target.value)}
+                  className="text-xs border border-blue-300 rounded-md px-2 py-1.5 bg-blue-50/50 text-blue-900 font-semibold"
+                >
+                  <option value="TODAS">📍 Todas as Bases ({persons.length})</option>
+                  {basesDisponiveis.map((b) => {
+                    const qtd = persons.filter((p) =>
+                      p.baseOperacional === b.nome ||
+                      p.baseOperacionalId === b.id ||
+                      (p.baseOperacional && p.baseOperacional.toLowerCase().includes(b.nome.split(' - ')[0].toLowerCase()))
+                    ).length;
+                    return (
+                      <option key={b.id} value={b.nome}>
+                        📍 {b.nome} ({qtd})
+                      </option>
+                    );
+                  })}
                 </select>
 
                 <select
@@ -1015,9 +1136,16 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                                 {colab.matricula}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-600">
-                              <span className="font-medium text-slate-800">{colab.funcao}</span> • {colab.setor}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                              <span className="font-medium text-slate-800">{colab.funcao}</span>
+                              <span>•</span>
+                              <span>{colab.setor}</span>
+                              {colab.baseOperacional && (
+                                <span className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                  📍 {colab.baseOperacional}
+                                </span>
+                              )}
+                            </div>
                             {colab.cargoOperacional && (
                               <p className="text-xs text-slate-500">{colab.cargoOperacional}</p>
                             )}
@@ -1131,6 +1259,17 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     <span className="font-mono text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded font-semibold">
                       {selectedColaborador.matricula}
                     </span>
+                    {selectedColaborador.baseOperacional && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBase(selectedColaborador.baseOperacional!)}
+                        className="text-xs px-2.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-800 rounded-full font-semibold border border-blue-200 flex items-center gap-1 transition cursor-pointer"
+                        title="Filtrar colaboradores desta base"
+                      >
+                        <span>📍 {selectedColaborador.baseOperacional}</span>
+                        <Filter className="w-3 h-3 text-blue-600 ml-0.5" />
+                      </button>
+                    )}
                     {renderStatusBadge(selectedColaborador)}
                   </div>
                   <p className="text-sm text-slate-600 mt-1">
@@ -1909,15 +2048,61 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 Visualização cruzada dos níveis de proficiência (1 a 5) atribuídos por colaborador ativo.
               </p>
             </div>
-            <div className="flex items-center gap-3 text-xs">
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block" /> Qualificado (Nível 3+)
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-blue-600" /> Base:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedBase('TODAS')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border cursor-pointer ${
+                    selectedBase === 'TODAS'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50'
+                  }`}
+                >
+                  📍 Todas ({persons.filter((p) => p.status === 'ATIVO').length})
+                </button>
+                {basesDisponiveis.map((b) => {
+                  const qtd = persons.filter((p) =>
+                    p.status === 'ATIVO' &&
+                    (p.baseOperacional === b.nome ||
+                    p.baseOperacionalId === b.id ||
+                    (p.baseOperacional && p.baseOperacional.toLowerCase().includes(b.nome.split(' - ')[0].toLowerCase())))
+                  ).length;
+                  const isSelected = selectedBase === b.nome;
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setSelectedBase(b.nome)}
+                      className={`px-2 py-1 rounded-lg text-xs whitespace-nowrap transition border flex items-center gap-1 cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-700 text-white border-blue-800 shadow-xs font-bold'
+                          : 'bg-white text-slate-700 border-slate-200 hover:bg-blue-50'
+                      }`}
+                    >
+                      <span>📍 {b.nome.split(' - ')[0]}</span>
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${isSelected ? 'bg-blue-800 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        {qtd}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-xs bg-amber-400 inline-block" /> Em Desenvolvimento (Nível 1-2)
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-3 h-3 rounded-xs bg-slate-200 inline-block" /> Não Mapeado
+
+              <div className="flex items-center gap-3 text-xs ml-auto">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-emerald-500 inline-block" /> Qualificado (Nível 3+)
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-amber-400 inline-block" /> Em Desenvolvimento (Nível 1-2)
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-xs bg-slate-200 inline-block" /> Não Mapeado
+                </div>
               </div>
             </div>
           </div>
@@ -1930,6 +2115,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     Colaborador / Função
                   </th>
                   <th className="p-3 font-semibold w-24">Setor</th>
+                  <th className="p-3 font-semibold w-36">Base Operacional</th>
                   {competencies.map((c) => (
                     <th key={c.id} className="p-3 font-semibold text-center border-l border-slate-200 min-w-[140px]">
                       <div className="font-mono text-[10px] text-slate-500">{c.codigo}</div>
@@ -1941,7 +2127,17 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {persons.filter((p) => p.status === 'ATIVO').map((p) => (
+                {persons
+                  .filter((p) => {
+                    if (p.status !== 'ATIVO') return false;
+                    if (selectedBase === 'TODAS') return true;
+                    return (
+                      p.baseOperacional === selectedBase ||
+                      p.baseOperacionalId === selectedBase ||
+                      (p.baseOperacional && selectedBase && p.baseOperacional.toLowerCase().includes(selectedBase.split(' - ')[0].toLowerCase()))
+                    );
+                  })
+                  .map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/60 transition">
                     <td className="p-3 font-medium text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-200">
                       <div>{p.nome}</div>
@@ -1950,6 +2146,15 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                       </div>
                     </td>
                     <td className="p-3 text-slate-600">{p.setor}</td>
+                    <td className="p-3 text-slate-600 text-[11px] whitespace-nowrap">
+                      {p.baseOperacional ? (
+                        <span className="bg-blue-50 border border-blue-200 text-blue-800 px-1.5 py-0.5 rounded font-medium flex items-center gap-1 w-fit">
+                          📍 {p.baseOperacional}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-mono">—</span>
+                      )}
+                    </td>
                     {competencies.map((c) => {
                       const vinculo = personCompetencies.find(
                         (pc) => pc.colaboradorId === p.id && pc.competenciaId === c.id
@@ -2138,6 +2343,21 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     <option value="Engenharia / Publicações Técnicas">Engenharia / Publicações Técnicas</option>
                     <option value="REC - Manutenção / Calibração">REC - Manutenção / Calibração</option>
                     <option value="Treinamento / RH Operacional">Treinamento / RH Operacional</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Base Operacional / Estação *</label>
+                  <select
+                    name="baseOperacional"
+                    defaultValue={colaboradorParaEditar?.baseOperacional || basesDisponiveis[0]?.nome || 'REC - Recife / Hub Central'}
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    {basesDisponiveis.map((b) => (
+                      <option key={b.id} value={b.nome}>
+                        📍 {b.nome}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

@@ -1607,6 +1607,8 @@ export interface ColaboradorPessoa {
   nome: string;
   matricula: string; // Código interno, ex: 'IMP-1042'
   setor: string; // Setor controlado pela organização
+  baseOperacional?: string; // Ex: 'REC - Recife / Hub Central', 'SOD - Sorocaba'
+  baseOperacionalId?: string; // Ex: 'base-rec-hub', 'BASE-SOD'
   funcao: FuncaoOperacionalColaborador;
   cargoOperacional?: string;
   status: StatusColaborador;

@@ -281,8 +281,7 @@ export async function deleteImportTemplate(
   try {
     await deleteDoc(docRef);
   } catch (err) {
-    console.warn('Erro ao excluir template de importação:', err);
-    throw err;
+    console.warn('Erro ao excluir template de importação no Firestore (operação local mantida):', err);
   }
 
   try {

@@ -895,12 +895,12 @@ export async function exportarApresentacaoPPTX(
         const largurasColunas = calcularLargurasColunasTabela(colunas, 5.80);
 
         const headerRow = colunas.map(c => ({
-          text: truncarTexto(c, 45),
+          text: c,
           options: {
             bold: true,
             fill: { color: COR_BLUE },
             color: 'FFFFFF',
-            fontSize: 7.5,
+            fontSize: 8.0,
             fontFace: 'Arial',
             align: 'left' as const,
           },
@@ -909,9 +909,9 @@ export async function exportarApresentacaoPPTX(
         const bodyRows = linhasExibidas.map((linha, rIdx) =>
           linha.map((celula) => {
             const cellStr = String(celula ?? '');
-            const fontSize = cellStr.length > 80 ? 6.2 : cellStr.length > 40 ? 6.8 : 7.0;
+            const fontSize = cellStr.length > 120 ? 7.0 : cellStr.length > 60 ? 7.5 : 8.0;
             return {
-              text: cellStr.length > 300 ? truncarTexto(cellStr, 300) : cellStr,
+              text: cellStr,
               options: {
                 fill: { color: rIdx % 2 === 0 ? 'FFFFFF' : 'F1F5F9' },
                 color: COR_TEXT_DARK,
@@ -928,18 +928,17 @@ export async function exportarApresentacaoPPTX(
           const textoResumo = `Exibindo 7 de ${linhasOriginais.length} registros (+ ${totalOmitidas} omitidos)`;
           bodyRows.push(colunas.map((_, cIdx) => ({
             text: cIdx === 0 ? textoResumo : '',
-            options: { fill: { color: 'E2E8F0' }, color: COR_TEXT_MUTED, fontSize: 7.0, fontFace: 'Arial', italic: true, align: 'left' as const },
+            options: { fill: { color: 'E2E8F0' }, color: COR_TEXT_MUTED, fontSize: 7.2, fontFace: 'Arial', italic: true, align: 'left' as const },
           })));
         }
 
-        const alturaTabela = 0.28 + linhasExibidas.length * 0.25 + (precisaResumo ? 0.25 : 0);
+        const alturaTabela = 0.30 + linhasExibidas.length * 0.28 + (precisaResumo ? 0.25 : 0);
 
         slide.addTable([headerRow, ...bodyRows], {
           x: 6.7,
           y: posYConteudo + 0.1,
           w: 5.8,
           colW: largurasColunas,
-          rowH: 0.25,
           border: { pt: 0.5, color: COR_BORDER },
         });
 
@@ -1034,11 +1033,9 @@ export async function exportarApresentacaoPPTX(
       const linhasExibidas = precisaResumo ? linhasOriginais.slice(0, 9) : linhasOriginais;
 
       const largurasColunas = calcularLargurasColunasTabela(colunas, 11.70);
-      const rowHeight = 0.28;
-      const tableFontSize = 8.0;
 
       const headerRow = colunas.map(c => ({
-        text: truncarTexto(c, 55),
+        text: c,
         options: {
           bold: true,
           fill: { color: COR_BLUE },
@@ -1052,9 +1049,9 @@ export async function exportarApresentacaoPPTX(
       const bodyRows = linhasExibidas.map((linha, rIdx) => 
         linha.map((celula) => {
           const cellStr = String(celula ?? '');
-          const cellFontSize = cellStr.length > 120 ? 6.8 : cellStr.length > 60 ? 7.4 : tableFontSize;
+          const cellFontSize = cellStr.length > 200 ? 7.6 : cellStr.length > 100 ? 8.0 : 8.5;
           return {
-            text: cellStr.length > 400 ? truncarTexto(cellStr, 400) : cellStr,
+            text: cellStr,
             options: {
               fill: { color: rIdx % 2 === 0 ? 'FFFFFF' : 'F1F5F9' },
               color: COR_TEXT_DARK,
@@ -1073,7 +1070,7 @@ export async function exportarApresentacaoPPTX(
           options: {
             fill: { color: 'E2E8F0' },
             color: COR_TEXT_MUTED,
-            fontSize: 7.5,
+            fontSize: 7.8,
             fontFace: 'Arial',
             italic: true,
             align: 'left' as const,
@@ -1087,60 +1084,82 @@ export async function exportarApresentacaoPPTX(
         y: posYConteudo + 0.1,
         w: 11.7,
         colW: largurasColunas,
-        rowH: rowHeight,
         border: { pt: 0.5, color: COR_BORDER },
       });
     }
 
     // -------------------------------------------------------------
-    // CENÁRIO D: PONTOS-CHAVE E ANÁLISE TÉCNICA (LARGURA COMPLETA)
+    // CENÁRIO D: PONTOS-CHAVE E ANÁLISE TÉCNICA (LARGURA COMPLETA) OU IMAGEM
     // -------------------------------------------------------------
     else {
-      const boxHeight = Math.min(availH - 0.2, 3.8);
+      if (slideData.imagemDestaque) {
+        const rawPath = slideData.imagemDestaque.replace(/^\/public\//, '/');
+        const imgUrl = (typeof window !== 'undefined' && window.location?.origin)
+          ? `${window.location.origin}${rawPath.startsWith('/') ? '' : '/'}${rawPath}`
+          : rawPath;
+        try {
+          const imgW = 11.7;
+          const imgH = availH - 0.2;
+          slide.addImage({
+            path: imgUrl,
+            x: 0.8,
+            y: posYConteudo + 0.1,
+            w: imgW,
+            h: imgH,
+            sizing: { type: 'contain', w: imgW, h: imgH }
+          });
+        } catch {
+          // Continua normalmente se a imagem remota não puder ser resolvida no ambiente
+        }
+      }
 
-      slide.addShape(pptx.ShapeType.roundRect, {
-        x: 0.8,
-        y: posYConteudo + 0.1,
-        w: 11.7,
-        h: boxHeight,
-        fill: { color: COR_CARD_BG },
-        line: { color: COR_BORDER, width: 1 },
-        rectRadius: 0.08,
-      });
+      if (!slideData.imagemDestaque) {
+        const boxHeight = Math.min(availH - 0.2, 3.8);
 
-      slide.addText('Destaques e Análise Técnica SGQ', {
-        x: 1.1,
-        y: posYConteudo + 0.25,
-        w: 11.1,
-        h: 0.30,
-        fontSize: 11,
-        fontFace: 'Arial',
-        bold: true,
-        color: COR_NAVY,
-      });
+        slide.addShape(pptx.ShapeType.roundRect, {
+          x: 0.8,
+          y: posYConteudo + 0.1,
+          w: 11.7,
+          h: boxHeight,
+          fill: { color: COR_CARD_BG },
+          line: { color: COR_BORDER, width: 1 },
+          rectRadius: 0.08,
+        });
 
-      const qtdBullets = slideData.pontosChave.length;
-      const bulletFontSize = qtdBullets <= 4 ? 10.0 : qtdBullets <= 5 ? 9.0 : 8.5;
-      const bulletLineSpacing = qtdBullets <= 4 ? 18 : qtdBullets <= 5 ? 15 : 13;
-      const maxCharPorBullet = qtdBullets <= 4 ? 160 : 130;
-
-      const bullets = slideData.pontosChave.map(p => ({
-        text: truncarTexto(p, maxCharPorBullet),
-        options: {
-          bullet: true,
-          fontSize: bulletFontSize,
+        slide.addText('Destaques e Análise Técnica SGQ', {
+          x: 1.1,
+          y: posYConteudo + 0.25,
+          w: 11.1,
+          h: 0.30,
+          fontSize: 11,
           fontFace: 'Arial',
-          color: COR_TEXT_DARK,
-          lineSpacing: bulletLineSpacing,
-        },
-      }));
+          bold: true,
+          color: COR_NAVY,
+        });
 
-      slide.addText(bullets, {
-        x: 1.1,
-        y: posYConteudo + 0.65,
-        w: 11.1,
-        h: Math.min(boxHeight - 0.8, 3.0),
-      });
+        const qtdBullets = slideData.pontosChave.length;
+        const bulletFontSize = qtdBullets <= 4 ? 10.0 : qtdBullets <= 5 ? 9.0 : 8.5;
+        const bulletLineSpacing = qtdBullets <= 4 ? 18 : qtdBullets <= 5 ? 15 : 13;
+        const maxCharPorBullet = qtdBullets <= 4 ? 220 : 180;
+
+        const bullets = slideData.pontosChave.map(p => ({
+          text: p.length > maxCharPorBullet ? truncarTexto(p, maxCharPorBullet) : p,
+          options: {
+            bullet: true,
+            fontSize: bulletFontSize,
+            fontFace: 'Arial',
+            color: COR_TEXT_DARK,
+            lineSpacing: bulletLineSpacing,
+          },
+        }));
+
+        slide.addText(bullets, {
+          x: 1.1,
+          y: posYConteudo + 0.65,
+          w: 11.1,
+          h: Math.min(boxHeight - 0.8, 3.0),
+        });
+      }
     }
 
     // RODAPÉ DO SLIDE

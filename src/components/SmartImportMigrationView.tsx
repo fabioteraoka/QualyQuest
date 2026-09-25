@@ -107,6 +107,7 @@ interface SmartImportMigrationViewProps {
   onAdicionarDocumento?: (documento: DocumentoControlado) => void;
   onRemoverDocumento?: (docId: string) => void;
   onRemoverTemplate?: (templateId: string) => void;
+  onSalvarTemplate?: (template: TemplateMapeamentoAprovado) => void;
   onCriarRncSugerida?: (dadosRnc: any) => void;
 }
 
@@ -135,7 +136,8 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   onAdicionarDocumento,
   onRemoverDocumento,
   onRemoverTemplate,
-  onCriarRncSugerida
+  onSalvarTemplate,
+  onCriarRncSugerida,
 }) => {
   const [tabPrincipal, setTabPrincipal] = useState<'WIZARD' | 'HISTORICO' | 'TEMPLATES' | 'METROLOGIA'>(initialTab);
 
@@ -234,6 +236,14 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     return templatesAprovados.filter((t) => !deletedTemplateIds.has(t.id));
   }, [templatesAprovados, deletedTemplateIds]);
 
+  // Estado de Edição de Colunas e Homologação na Etapa 2
+  const [isEditandoColunasEtapa2, setIsEditandoColunasEtapa2] = useState(false);
+  const [colunasEditadasEtapa2, setColunasEditadasEtapa2] = useState<string[]>([]);
+  const [modalHomologarEtapa2Aberta, setModalHomologarEtapa2Aberta] = useState(false);
+  const [nomeModeloEtapa2, setNomeModeloEtapa2] = useState('');
+  const [isSalvandoModeloEtapa2, setIsSalvandoModeloEtapa2] = useState(false);
+  const [avisoRechecagemEtapa2, setAvisoRechecagemEtapa2] = useState<string | null>(null);
+
   const orgId = organization?.id || 'org-impacto-aviation';
   const orgName = organization?.name || 'Impacto Aviation MRO';
   const isConsultaOnly = user?.role === 'CONSULTA';
@@ -249,27 +259,42 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   };
 
   const handleSalvarTemplate = async (tpl: TemplateMapeamentoAprovado) => {
-    await saveImportTemplate(orgId, tpl, user);
-    setMensagemSucesso(`Modelo "${tpl.nome || tpl.nomeTemplate}" homologado e salvo com sucesso!`);
-    setTimeout(() => setMensagemSucesso(null), 4000);
+    try {
+      await saveImportTemplate(orgId, tpl, user);
+      if (onSalvarTemplate) {
+        onSalvarTemplate(tpl);
+      }
+      setMensagemSucesso(`Modelo "${tpl.nome || tpl.nomeTemplate}" homologado e salvo com sucesso!`);
+      setTimeout(() => setMensagemSucesso(null), 4000);
+    } catch (err: any) {
+      console.warn('Aviso ao sincronizar modelo com Firebase (mantido salvo na sessão):', err);
+      if (onSalvarTemplate) {
+        onSalvarTemplate(tpl);
+      }
+      setMensagemSucesso(`Modelo "${tpl.nome || tpl.nomeTemplate}" registrado na sessão com sucesso!`);
+      setTimeout(() => setMensagemSucesso(null), 4000);
+    }
   };
 
   const handleConfirmExcluirTemplate = async () => {
     if (!templateParaExcluir) return;
+    const tplId = templateParaExcluir.id;
     const nome = templateParaExcluir.nome || templateParaExcluir.nomeTemplate || 'Modelo';
     try {
       setIsExcluindoTemplate(true);
-      await deleteImportTemplate(orgId, templateParaExcluir.id, user, nome);
-      setDeletedTemplateIds((prev) => new Set([...prev, templateParaExcluir.id]));
+      // 1. Atualiza estado imediatamente (otimista) para não travar a interface
+      setDeletedTemplateIds((prev) => new Set([...prev, tplId]));
       if (onRemoverTemplate) {
-        onRemoverTemplate(templateParaExcluir.id);
+        onRemoverTemplate(tplId);
       }
-      setMensagemSucesso(`Modelo homologado "${nome}" excluído com sucesso!`);
       setTemplateParaExcluir(null);
+      setMensagemSucesso(`Modelo homologado "${nome}" excluído com sucesso!`);
       setTimeout(() => setMensagemSucesso(null), 4000);
+
+      // 2. Sincroniza exclusão no Firestore
+      await deleteImportTemplate(orgId, tplId, user, nome);
     } catch (err: any) {
-      console.error('Erro ao excluir modelo:', err);
-      alert(`Erro ao excluir modelo: ${err?.message || 'Erro desconhecido'}`);
+      console.warn('Erro ao sincronizar exclusão com Firebase (mantido removido na sessão):', err);
     } finally {
       setIsExcluindoTemplate(false);
     }
@@ -291,6 +316,98 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     });
     setMapeamentos(novos);
     setTemplateReconhecido(tpl);
+  };
+
+  // Funções de Edição de Colunas e Homologação na Etapa 2
+  const handleIniciarEdicaoColunasEtapa2 = () => {
+    setIsEditandoColunasEtapa2(true);
+    setColunasEditadasEtapa2([...colunasDetectadas]);
+  };
+
+  const handleCancelarEdicaoColunasEtapa2 = () => {
+    setIsEditandoColunasEtapa2(false);
+    setColunasEditadasEtapa2([]);
+  };
+
+  const handleRechecarColunasComArquivo = () => {
+    if (!colunasEditadasEtapa2.length) return;
+    const nomesValidos = colunasEditadasEtapa2.map((c, i) => c?.trim() || colunasDetectadas[i] || `Coluna_${i + 1}`);
+
+    // Remapear linhasOriginais de acordo com os novos nomes de colunas
+    const novasLinhas = linhasOriginais.map((row) => {
+      const novaLinha: Record<string, any> = {};
+      colunasDetectadas.forEach((oldCol, idx) => {
+        const novaCol = nomesValidos[idx];
+        novaLinha[novaCol] = row[oldCol] !== undefined ? row[oldCol] : row[novaCol];
+      });
+      return novaLinha;
+    });
+
+    setColunasDetectadas(nomesValidos);
+    setLinhasOriginais(novasLinhas);
+    setIsEditandoColunasEtapa2(false);
+
+    // Reanalisar e regenerar mapeamento inicial de campos com o motor local/IA
+    gerarMapeamentoInicial(nomesValidos, tipoControle, novasLinhas);
+
+    setAvisoRechecagemEtapa2('Colunas atualizadas e rechecadas com sucesso contra o arquivo enviado! O diagnóstico e mapeamento de campos foram sincronizados.');
+    setTimeout(() => setAvisoRechecagemEtapa2(null), 5000);
+  };
+
+  const handleAbrirHomologarModeloEtapa2 = () => {
+    const nomePadrao = `Modelo Homologado - ${arquivoNome ? arquivoNome.replace(/\.[^/.]+$/, '') : 'Arquivo'} (${tipoControle})`;
+    setNomeModeloEtapa2(nomePadrao);
+    setModalHomologarEtapa2Aberta(true);
+  };
+
+  const handleConfirmarHomologarModeloEtapa2 = async () => {
+    if (!nomeModeloEtapa2.trim()) return;
+    setIsSalvandoModeloEtapa2(true);
+    try {
+      const mapaCampos: Record<string, string> = {};
+      mapeamentos.forEach((m) => {
+        if (m.campoQualigest && m.campoQualigest !== 'ignorar') {
+          mapaCampos[m.colunaOrigem] = m.campoQualigest;
+        }
+      });
+
+      const novoTemplate: TemplateMapeamentoAprovado = {
+        id: `tpl-${Date.now()}`,
+        organizationId: orgId,
+        nomeTemplate: nomeModeloEtapa2.trim(),
+        nome: nomeModeloEtapa2.trim(),
+        tipoControle,
+        colunasDetectadas,
+        mapeamentos: mapaCampos,
+        criadoPor: user?.displayName || user?.email || 'Gestor SGQ',
+        criadoPorUid: user?.uid || 'system',
+        criadoPorNome: user?.displayName || 'Gestor SGQ',
+        dataAprovacao: new Date().toISOString(),
+        criadoEm: new Date().toISOString(),
+        atualizadoEm: new Date().toISOString(),
+        totalVezesUsado: 1,
+        vezesUtilizado: 1,
+      };
+
+      try {
+        await saveImportTemplate(orgId, novoTemplate, user);
+      } catch (saveErr) {
+        console.warn('Aviso ao sincronizar modelo homologado com Firebase (mantido salvo na sessão):', saveErr);
+      }
+
+      if (onSalvarTemplate) {
+        onSalvarTemplate(novoTemplate);
+      }
+      setTemplateReconhecido(novoTemplate);
+      setModalHomologarEtapa2Aberta(false);
+      setMensagemSucesso(`Modelo "${novoTemplate.nome}" homologado e registrado com sucesso!`);
+      setTimeout(() => setMensagemSucesso(null), 5000);
+    } catch (err: any) {
+      console.error('Erro ao homologar modelo:', err);
+      setMensagemSucesso(`Modelo salvo na sessão com sucesso!`);
+    } finally {
+      setIsSalvandoModeloEtapa2(false);
+    }
   };
 
   // ============================================================================
@@ -1306,17 +1423,99 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
               </div>
 
               {/* Amostra dos Dados Originais */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide">
-                  Prévia das Primeiras 3 Linhas Originais do Arquivo:
-                </h4>
-                <div className="border border-slate-200 rounded-lg overflow-x-auto">
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                      <span>Prévia das Primeiras 3 Linhas Originais do Arquivo:</span>
+                      {isEditandoColunasEtapa2 && (
+                        <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-bold">
+                          MODO EDIÇÃO DE COLUNAS ATIVO
+                        </span>
+                      )}
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      {isEditandoColunasEtapa2
+                        ? 'Edite os nomes das colunas nos campos abaixo e clique em "Rechecar com o Arquivo Enviado" para sincronizar.'
+                        : 'Você pode editar as colunas detectadas e revalidar o arquivo para gerar um modelo homologado de imediato.'}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {!isEditandoColunasEtapa2 ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleIniciarEdicaoColunasEtapa2}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Editar Colunas da Prévia</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAbrirHomologarModeloEtapa2}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <Award className="w-3.5 h-3.5 text-white" />
+                          <span>Gerar Modelo Homologado</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleCancelarEdicaoColunasEtapa2}
+                          className="px-3 py-1.5 border border-slate-300 text-slate-600 hover:bg-slate-50 rounded text-xs font-semibold transition cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRechecarColunasComArquivo}
+                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Rechecar com o Arquivo Enviado</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {avisoRechecagemEtapa2 && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-center gap-2 animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span className="font-semibold">{avisoRechecagemEtapa2}</span>
+                  </div>
+                )}
+
+                <div className="border border-slate-200 rounded-lg overflow-x-auto shadow-2xs">
                   <table className="w-full text-xs text-left">
                     <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                       <tr>
                         {colunasDetectadas.map((col, idx) => (
                           <th key={idx} className="p-2.5 whitespace-nowrap border-r border-slate-200 last:border-r-0">
-                            {col}
+                            {isEditandoColunasEtapa2 ? (
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-blue-600 font-mono block font-bold">
+                                  Coluna #{idx + 1}
+                                </span>
+                                <input
+                                  type="text"
+                                  value={colunasEditadasEtapa2[idx] ?? col}
+                                  onChange={(e) => {
+                                    const novos = [...colunasEditadasEtapa2];
+                                    novos[idx] = e.target.value;
+                                    setColunasEditadasEtapa2(novos);
+                                  }}
+                                  className="w-full min-w-[140px] px-2 py-1 bg-white border-2 border-blue-500 rounded text-xs text-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                  placeholder={`Coluna ${idx + 1}`}
+                                />
+                              </div>
+                            ) : (
+                              <span>{col}</span>
+                            )}
                           </th>
                         ))}
                       </tr>
@@ -3014,6 +3213,100 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
         isOpen={Boolean(ferramentaHistoricoModal)}
         onClose={() => setFerramentaHistoricoModal(null)}
       />
+
+      {/* ======================================================================== */}
+      {/* MODAL DE HOMOLOGAÇÃO DIRETA DE MODELO NA ETAPA 2                        */}
+      {/* ======================================================================== */}
+      {modalHomologarEtapa2Aberta && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
+                  <Award className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-slate-900">Gerar Modelo Homologado da Empresa</h3>
+                  <p className="text-xs text-slate-500">Mapeamento Oficial Baseado nas Colunas Revalidadas</p>
+                </div>
+              </div>
+              <button
+                onClick={() => !isSalvandoModeloEtapa2 && setModalHomologarEtapa2Aberta(false)}
+                disabled={isSalvandoModeloEtapa2}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Nome do Modelo Homologado *
+                </label>
+                <input
+                  type="text"
+                  value={nomeModeloEtapa2}
+                  onChange={(e) => setNomeModeloEtapa2(e.target.value)}
+                  placeholder="Ex: Planilha Padrão de Calibração Metrológica REC"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-medium">Módulo SGQ:</span>
+                  <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[10px] font-bold">
+                    {tipoControle}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-medium">Arquivo de Origem:</span>
+                  <span className="text-slate-800 font-semibold truncate max-w-[200px]" title={arquivoNome}>
+                    {arquivoNome || 'Arquivo enviado'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-medium block mb-1">
+                    Colunas Homologadas ({colunasDetectadas.length}):
+                  </span>
+                  <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto p-1.5 bg-white border border-slate-200 rounded-md">
+                    {colunasDetectadas.map((col, idx) => (
+                      <span key={idx} className="px-1.5 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-mono rounded border border-slate-200">
+                        {col}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-slate-600 text-xs leading-relaxed">
+                Ao salvar, este modelo se tornará um padrão homologado da empresa. Qualquer novo arquivo enviado com cabeçalhos correspondentes será reconhecido automaticamente com 100% de precisão.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setModalHomologarEtapa2Aberta(false)}
+                disabled={isSalvandoModeloEtapa2}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarHomologarModeloEtapa2}
+                disabled={isSalvandoModeloEtapa2 || !nomeModeloEtapa2.trim()}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{isSalvandoModeloEtapa2 ? 'Salvando...' : 'Homologar Modelo Agora'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================================== */}
       {/* MODAL DE CONFIRMAÇÃO: EXCLUSÃO DEFINITIVA DE MODELO HOMOLOGADO           */}
