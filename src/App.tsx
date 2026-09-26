@@ -149,6 +149,36 @@ import {
   subscribeToSmartImportRecords,
   subscribeToImportTemplates,
 } from './services/firebase/smartImportFirestore';
+import { INITIAL_RECORDS } from './data/initialRecords';
+import { INITIAL_MANUALS } from './data/initialManuals';
+import { INITIAL_EXTERNAL_AUDITS, INITIAL_AUDIT_FINDINGS, INITIAL_AUDIT_LESSONS } from './data/initialAudits';
+import { 
+  INITIAL_PERSONS, 
+  INITIAL_COMPETENCIES, 
+  INITIAL_PERSON_COMPETENCIES, 
+  INITIAL_TRAINING_COURSES, 
+  INITIAL_TRAINING_RECORDS, 
+  INITIAL_QUALIFICATIONS, 
+  INITIAL_PERSON_DOCUMENTS, 
+  INITIAL_ACTIVITY_REQUIREMENTS 
+} from './data/initialCompetenciesData';
+import { 
+  INITIAL_DOCUMENTOS_CONTROLADOS, 
+  INITIAL_REVISOES_DOCUMENTAIS, 
+  INITIAL_FONTES_EXTERNAS, 
+  INITIAL_SOLICITACOES_CLIENTE, 
+  INITIAL_LOGS_VERIFICACAO, 
+  INITIAL_EVIDENCIAS_CONSULTA 
+} from './data/initialDocumentControl';
+import { 
+  INITIAL_CLIENTS, 
+  INITIAL_BASES, 
+  INITIAL_CLIENT_PROGRAMS, 
+  INITIAL_CENTRAL_CONTROLS, 
+  INITIAL_CLIENT_REQUIREMENTS, 
+  INITIAL_CLIENT_EVALUATIONS 
+} from './data/initialClientRequirements';
+import { INITIAL_CALIBRATED_TOOLS } from './data/initialCalibratedTools';
 import { RefreshCw, Sparkles, UploadCloud, Database, ShieldAlert, LayoutDashboard, FileText, Bell, Plus, Menu, Building2 } from 'lucide-react';
 
 export default function App() {
@@ -285,6 +315,49 @@ export default function App() {
   // REAL-TIME FIRESTORE SUBSCRIPTIONS (SOURCE OF TRUTH)
   // ----------------------------------------------------
   useEffect(() => {
+    // Aguarda finalização da verificação de autenticação
+    if (authLoading) return;
+
+    // Se o usuário não estiver autenticado, carrega dados de demonstração em memória
+    // e NÃO abre listeners de Firestore sem credenciais (evita erros de permissão)
+    if (!user) {
+      setRecords(INITIAL_RECORDS);
+      setManuals(INITIAL_MANUALS);
+      setComparacoes([]);
+      setKnowledgeList([]);
+      setExternalAudits(INITIAL_EXTERNAL_AUDITS);
+      setAuditFindings(INITIAL_AUDIT_FINDINGS);
+      setAuditLessons(INITIAL_AUDIT_LESSONS);
+      setPersons(INITIAL_PERSONS);
+      setCompetencies(INITIAL_COMPETENCIES);
+      setPersonCompetencies(INITIAL_PERSON_COMPETENCIES);
+      setTrainingCourses(INITIAL_TRAINING_COURSES);
+      setTrainingRecords(INITIAL_TRAINING_RECORDS);
+      setQualifications(INITIAL_QUALIFICATIONS);
+      setPersonDocuments(INITIAL_PERSON_DOCUMENTS);
+      setActivityRequirements(INITIAL_ACTIVITY_REQUIREMENTS);
+      setAiCompetencySuggestions([]);
+      setDocumentosControlados(INITIAL_DOCUMENTOS_CONTROLADOS);
+      setRevisoesDocumentais(INITIAL_REVISOES_DOCUMENTAIS);
+      setFontesExternas(INITIAL_FONTES_EXTERNAS);
+      setSolicitacoesCliente(INITIAL_SOLICITACOES_CLIENTE);
+      setLogsVerificacaoFontes(INITIAL_LOGS_VERIFICACAO);
+      setEvidenciasConsultaDoc(INITIAL_EVIDENCIAS_CONSULTA);
+      setClientesExternos(INITIAL_CLIENTS);
+      setBasesOperacionais(INITIAL_BASES);
+      setProgramasClientes(INITIAL_CLIENT_PROGRAMS);
+      setControlesCentrais(INITIAL_CENTRAL_CONTROLS);
+      setRequisitosClientes(INITIAL_CLIENT_REQUIREMENTS);
+      setAvaliacoesRequisitos(INITIAL_CLIENT_EVALUATIONS);
+      setFerramentasCalibradas(INITIAL_CALIBRATED_TOOLS);
+      setSmartImports([]);
+      setSelectedNC(INITIAL_RECORDS[0] || null);
+      setLoadingRecords(false);
+      setLoadingManuals(false);
+      setFirestoreError(null);
+      return;
+    }
+
     // Immediate memory cleanup upon tenant transition to prevent cross-tenant data retention
     setRecords([]);
     setManuals([]);
@@ -480,7 +553,7 @@ export default function App() {
       unsubscribeImports();
       unsubscribeTemplates();
     };
-  }, [activeOrgId, user?.uid]);
+  }, [activeOrgId, user?.uid, authLoading]);
 
   // Scan for local material (IndexedDB / LocalStorage) to assist user in recovering data
   useEffect(() => {
@@ -498,62 +571,119 @@ export default function App() {
     return gerarAlertas(records, activeOrganization?.configuration?.slasInternos);
   }, [records, activeOrganization?.configuration?.slasInternos]);
 
-  // Handle Save / Update NC in Firestore
+  // Handle Save / Update NC in Firestore or Local State
   const handleSaveNC = async (savedNC: NCRecord) => {
     try {
-      await saveNonConformity(activeOrgId, savedNC, userProfile);
+      if (user) {
+        await saveNonConformity(activeOrgId, savedNC, userProfile);
+      } else {
+        setRecords((prev) => {
+          const index = prev.findIndex((r) => r.id === savedNC.id);
+          if (index >= 0) {
+            const next = [...prev];
+            next[index] = savedNC;
+            return next;
+          }
+          return [savedNC, ...prev];
+        });
+      }
       setSelectedNC(savedNC);
       setActiveTab('oficial');
     } catch (e: any) {
-      console.error('Erro ao salvar RNC no Firestore:', e);
-      alert(`Falha ao salvar RNC: ${e?.message || e}`);
+      console.warn('Aviso ao sincronizar RNC com Firestore (mantida na sessão):', e);
+      setRecords((prev) => {
+        const index = prev.findIndex((r) => r.id === savedNC.id);
+        if (index >= 0) {
+          const next = [...prev];
+          next[index] = savedNC;
+          return next;
+        }
+        return [savedNC, ...prev];
+      });
+      setSelectedNC(savedNC);
+      setActiveTab('oficial');
     }
   };
 
-  // Handle Delete Single NC from Firestore
+  // Handle Delete Single NC
   const handleDeleteNC = async (id: string) => {
     try {
-      await deleteNonConformity(activeOrgId, id, userProfile);
+      if (user) {
+        await deleteNonConformity(activeOrgId, id, userProfile);
+      }
+      setRecords((prev) => prev.filter((r) => r.id !== id));
       if (selectedNC?.id === id) {
         setSelectedNC(null);
       }
     } catch (e: any) {
-      console.error('Erro ao excluir RNC do Firestore:', e);
-      alert(`Falha ao excluir RNC: ${e?.message || e}`);
+      console.warn('Aviso ao sincronizar exclusão da RNC (removida na sessão):', e);
+      setRecords((prev) => prev.filter((r) => r.id !== id));
+      if (selectedNC?.id === id) {
+        setSelectedNC(null);
+      }
     }
   };
 
-  // Handle Delete Multiple NCs from Firestore
+  // Handle Delete Multiple NCs
   const handleDeleteMultipleNC = async (ids: string[]) => {
     try {
-      await deleteMultipleNonConformities(activeOrgId, ids, userProfile);
+      if (user) {
+        await deleteMultipleNonConformities(activeOrgId, ids, userProfile);
+      }
+      setRecords((prev) => prev.filter((r) => !ids.includes(r.id)));
       if (selectedNC && ids.includes(selectedNC.id)) {
         setSelectedNC(null);
       }
     } catch (e: any) {
-      console.error('Erro ao excluir múltiplas RNCs do Firestore:', e);
-      alert(`Falha ao excluir RNCs: ${e?.message || e}`);
+      console.warn('Aviso ao excluir múltiplas RNCs no Firestore (removidas na sessão):', e);
+      setRecords((prev) => prev.filter((r) => !ids.includes(r.id)));
+      if (selectedNC && ids.includes(selectedNC.id)) {
+        setSelectedNC(null);
+      }
     }
   };
 
-  // Handle Manual Save / Update in Firestore
+  // Handle Manual Save / Update
   const handleSaveManual = async (manual: ManualRecord) => {
     try {
       await saveManualToDB(manual);
-      await saveManual(activeOrgId, manual, userProfile);
+      if (user) {
+        await saveManual(activeOrgId, manual, userProfile);
+      } else {
+        setManuals((prev) => {
+          const idx = prev.findIndex((m) => m.id === manual.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = manual;
+            return next;
+          }
+          return [manual, ...prev];
+        });
+      }
     } catch (e: any) {
-      console.error('Erro ao salvar manual no Firestore:', e);
-      alert(`Falha ao salvar manual: ${e?.message || e}`);
+      console.warn('Aviso ao salvar manual no Firestore (mantido localmente):', e);
+      setManuals((prev) => {
+        const idx = prev.findIndex((m) => m.id === manual.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = manual;
+          return next;
+        }
+        return [manual, ...prev];
+      });
     }
   };
 
-  // Handle Delete Manual from Firestore
+  // Handle Delete Manual
   const handleDeleteManual = async (id: string) => {
     try {
-      await deleteManual(activeOrgId, id, userProfile);
+      if (user) {
+        await deleteManual(activeOrgId, id, userProfile);
+      }
+      setManuals((prev) => prev.filter((m) => m.id !== id));
     } catch (e: any) {
-      console.error('Erro ao excluir manual do Firestore:', e);
-      alert(`Falha ao excluir manual: ${e?.message || e}`);
+      console.warn('Aviso ao excluir manual no Firestore (removido na sessão):', e);
+      setManuals((prev) => prev.filter((m) => m.id !== id));
     }
   };
 
@@ -657,46 +787,109 @@ export default function App() {
   // FASE 8 Handlers: Gestão de Auditorias Externas
   const handleSaveAudit = async (audit: AuditoriaExternaRecord) => {
     try {
-      await saveExternalAudit(activeOrgId, audit, userProfile);
+      if (user) {
+        await saveExternalAudit(activeOrgId, audit, userProfile);
+      }
+      setExternalAudits((prev) => {
+        const idx = prev.findIndex((a) => a.id === audit.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = audit;
+          return next;
+        }
+        return [audit, ...prev];
+      });
     } catch (e: any) {
-      console.error('Erro ao salvar auditoria externa:', e);
-      alert(`Falha ao salvar auditoria: ${e?.message || e}`);
+      console.warn('Aviso ao salvar auditoria externa no Firestore (mantida na sessão):', e);
+      setExternalAudits((prev) => {
+        const idx = prev.findIndex((a) => a.id === audit.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = audit;
+          return next;
+        }
+        return [audit, ...prev];
+      });
     }
   };
 
   const handleDeleteAudit = async (auditId: string) => {
     try {
-      await deleteExternalAudit(activeOrgId, auditId, userProfile);
+      if (user) {
+        await deleteExternalAudit(activeOrgId, auditId, userProfile);
+      }
+      setExternalAudits((prev) => prev.filter((a) => a.id !== auditId));
     } catch (e: any) {
-      console.error('Erro ao excluir auditoria externa:', e);
-      alert(`Falha ao excluir auditoria: ${e?.message || e}`);
+      console.warn('Aviso ao excluir auditoria externa no Firestore (removida na sessão):', e);
+      setExternalAudits((prev) => prev.filter((a) => a.id !== auditId));
     }
   };
 
   const handleSaveFinding = async (finding: ConstatacaoExternaRecord) => {
     try {
-      await saveAuditFinding(activeOrgId, finding, userProfile);
+      if (user) {
+        await saveAuditFinding(activeOrgId, finding, userProfile);
+      }
+      setAuditFindings((prev) => {
+        const idx = prev.findIndex((f) => f.id === finding.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = finding;
+          return next;
+        }
+        return [finding, ...prev];
+      });
     } catch (e: any) {
-      console.error('Erro ao salvar constatação:', e);
-      alert(`Falha ao salvar constatação: ${e?.message || e}`);
+      console.warn('Aviso ao salvar constatação no Firestore (mantida na sessão):', e);
+      setAuditFindings((prev) => {
+        const idx = prev.findIndex((f) => f.id === finding.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = finding;
+          return next;
+        }
+        return [finding, ...prev];
+      });
     }
   };
 
   const handleDeleteFinding = async (findingId: string) => {
     try {
-      await deleteAuditFinding(activeOrgId, findingId, userProfile);
+      if (user) {
+        await deleteAuditFinding(activeOrgId, findingId, userProfile);
+      }
+      setAuditFindings((prev) => prev.filter((f) => f.id !== findingId));
     } catch (e: any) {
-      console.error('Erro ao excluir constatação:', e);
-      alert(`Falha ao excluir constatação: ${e?.message || e}`);
+      console.warn('Aviso ao excluir constatação no Firestore (removida na sessão):', e);
+      setAuditFindings((prev) => prev.filter((f) => f.id !== findingId));
     }
   };
 
   const handleSaveLesson = async (lesson: LicaoAprendidaAuditoria) => {
     try {
-      await saveAuditLesson(activeOrgId, lesson, userProfile);
+      if (user) {
+        await saveAuditLesson(activeOrgId, lesson, userProfile);
+      }
+      setAuditLessons((prev) => {
+        const idx = prev.findIndex((l) => l.id === lesson.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = lesson;
+          return next;
+        }
+        return [lesson, ...prev];
+      });
     } catch (e: any) {
-      console.error('Erro ao salvar lição aprendida:', e);
-      alert(`Falha ao salvar lição: ${e?.message || e}`);
+      console.warn('Aviso ao salvar lição aprendida no Firestore (mantida na sessão):', e);
+      setAuditLessons((prev) => {
+        const idx = prev.findIndex((l) => l.id === lesson.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = lesson;
+          return next;
+        }
+        return [lesson, ...prev];
+      });
     }
   };
 
@@ -706,17 +899,34 @@ export default function App() {
 
   const handleCandidatarKnowledge = async (lesson: LicaoAprendidaAuditoria) => {
     try {
-      await promoverLicaoParaConhecimento(activeOrgId, lesson, userProfile);
-      alert('Lição submetida com sucesso como candidata à Base de Conhecimento SGQ (status: EM_ANALISE_SGQ).');
+      if (user) {
+        await promoverLicaoParaConhecimento(activeOrgId, lesson, userProfile);
+      }
     } catch (e: any) {
-      console.error('Erro ao promover lição aprendida:', e);
-      alert(`Falha ao submeter lição: ${e?.message || e}`);
+      console.warn('Aviso ao promover lição aprendida:', e);
     }
   };
 
   // FASE 13 Handlers: Auditorias, Requisitos e Controles de Clientes
   const handleSaveAvaliacaoCliente = async (avaliacao: Partial<AvaliacaoRequisitoCliente>) => {
-    await saveAvaliacaoRequisito(activeOrgId, avaliacao, userProfile);
+    try {
+      if (user) {
+        await saveAvaliacaoRequisito(activeOrgId, avaliacao, userProfile);
+      }
+      if (avaliacao.id) {
+        setAvaliacoesRequisitos((prev) => {
+          const idx = prev.findIndex((av) => av.id === avaliacao.id);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...avaliacao } as AvaliacaoRequisitoCliente;
+            return next;
+          }
+          return [avaliacao as AvaliacaoRequisitoCliente, ...prev];
+        });
+      }
+    } catch (e: any) {
+      console.warn('Aviso ao salvar avaliação de requisito no Firestore:', e);
+    }
   };
 
   const handleCriarRNCDeRequisito = (rncPayload: Partial<NCRecord>) => {

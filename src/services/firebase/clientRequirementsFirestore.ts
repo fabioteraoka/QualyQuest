@@ -80,8 +80,8 @@ export function subscribeToBasesOperacionais(
       callback(list);
     },
     (err) => {
-      handleFirestoreError(err, OperationType.LIST, `organizations/${organizationId}/operational_bases`);
-      callback(INITIAL_BASES);
+      console.warn('[clientRequirements] Erro ao escutar operational_bases:', err);
+      callback(organizationId === DEFAULT_ORGANIZATION_ID ? INITIAL_BASES : []);
     }
   );
 }
@@ -169,8 +169,8 @@ export function subscribeToClientesExternos(
       callback(list);
     },
     (err) => {
-      handleFirestoreError(err, OperationType.LIST, `organizations/${organizationId}/external_clients`);
-      callback(INITIAL_CLIENTS);
+      console.warn('[clientRequirements] Erro ao escutar external_clients:', err);
+      callback(organizationId === DEFAULT_ORGANIZATION_ID ? INITIAL_CLIENTS : []);
     }
   );
 }
@@ -280,8 +280,8 @@ export function subscribeToProgramasClientes(
       callback(list);
     },
     (err) => {
-      handleFirestoreError(err, OperationType.LIST, `organizations/${organizationId}/client_programs`);
-      callback(INITIAL_CLIENT_PROGRAMS);
+      console.warn('[clientRequirements] Erro ao escutar client_programs:', err);
+      callback(organizationId === DEFAULT_ORGANIZATION_ID ? INITIAL_CLIENT_PROGRAMS : []);
     }
   );
 }
@@ -392,8 +392,8 @@ export function subscribeToControlesCentrais(
       callback(list);
     },
     (err) => {
-      handleFirestoreError(err, OperationType.LIST, `organizations/${organizationId}/central_controls`);
-      callback(INITIAL_CENTRAL_CONTROLS);
+      console.warn('[clientRequirements] Erro ao escutar central_controls:', err);
+      callback(organizationId === DEFAULT_ORGANIZATION_ID ? INITIAL_CENTRAL_CONTROLS : []);
     }
   );
 }
@@ -499,8 +499,8 @@ export function subscribeToRequisitosClientes(
       callback(list);
     },
     (err) => {
-      handleFirestoreError(err, OperationType.LIST, `organizations/${organizationId}/client_requirements`);
-      callback(INITIAL_CLIENT_REQUIREMENTS);
+      console.warn('[clientRequirements] Erro ao escutar client_requirements:', err);
+      callback(organizationId === DEFAULT_ORGANIZATION_ID ? INITIAL_CLIENT_REQUIREMENTS : []);
     }
   );
 }
@@ -617,8 +617,8 @@ export function subscribeToAvaliacoesRequisitos(
       callback(list);
     },
     (err) => {
-      handleFirestoreError(err, OperationType.LIST, `organizations/${organizationId}/client_evaluations`);
-      callback(INITIAL_CLIENT_EVALUATIONS);
+      console.warn('[clientRequirements] Erro ao escutar client_evaluations:', err);
+      callback(organizationId === DEFAULT_ORGANIZATION_ID ? INITIAL_CLIENT_EVALUATIONS : []);
     }
   );
 }

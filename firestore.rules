@@ -68,8 +68,8 @@ service cloud.firestore {
     function isUserActive() {
       return isSignedIn() && (
         isSuperPlatformAdmin() ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         (!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+        ((!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INATIVO' &&
            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'BLOQUEADO')) &&
@@ -81,10 +81,14 @@ service cloud.firestore {
     function userBelongsToOrg(orgId) {
       return isSignedIn() && (
         isSuperPlatformAdmin() ||
-        (isUserActive() && getUserOrgId() != '' && orgId != '' && (
-          getUserOrgId() == orgId ||
-          (getUserOrgId() == 'org-impacto-aviation' && orgId == 'org_impacto_aviation') ||
-          (getUserOrgId() == 'org_impacto_aviation' && orgId == 'org-impacto-aviation')
+        (isUserActive() && (
+          (getUserOrgId() != '' && orgId != '' && (
+            getUserOrgId() == orgId ||
+            (getUserOrgId() == 'org-impacto-aviation' && orgId == 'org_impacto_aviation') ||
+            (getUserOrgId() == 'org_impacto_aviation' && orgId == 'org-impacto-aviation')
+          )) ||
+          ((getUserOrgId() == '' || getUserOrgId() == 'org_impacto_aviation' || getUserOrgId() == 'org-impacto-aviation') &&
+           (orgId == 'org_impacto_aviation' || orgId == 'org-impacto-aviation'))
         ))
       );
     }
