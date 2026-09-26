@@ -14,6 +14,65 @@ export interface PresetAmostraImportacao {
 
 export const PRESETS_AMOSTRAS_IMPORTACAO: PresetAmostraImportacao[] = [
   {
+    id: 'amostra-f001-normativas-4colunas',
+    nomeArquivo: 'F_001_02_1_Controle_Documentacoes_Normativas.xlsx',
+    formato: 'XLSX',
+    tipoEsperado: 'CONTROLE_DOCUMENTAL',
+    descricaoCenario: 'Formulário aeronáutico oficial F 001-02-1 com 4 colunas: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão.',
+    destaqueTeste: 'FORMULÁRIO 4 COLUNAS: Reconhecimento das 4 colunas originais e adaptação inteligente pela IA desdobrando "Número da Revisão" e "Data da Revisão".',
+    colunas: ['Publicação', 'Título', 'Proprietário / Cessor', 'Número e data da revisão'],
+    linhasAmostra: [
+      {
+        'Publicação': 'MOMQ',
+        'Título': 'Manual de organização de Manutenção e da Qualidade',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 08 – 06/Ago/2026'
+      },
+      {
+        'Publicação': 'PTM',
+        'Título': 'Programa de Treinamento da Manutenção',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 08 – 11/Mai/2026'
+      },
+      {
+        'Publicação': 'MGSO',
+        'Título': 'Manual de Gerenciamento de Segurança Operacional',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 02 - 12/Set/2025'
+      },
+      {
+        'Publicação': 'RBAC 145',
+        'Título': 'Organizações de manutenção de produto aeronáutico',
+        'Proprietário / Cessor': 'ANAC',
+        'Número e data da revisão': 'Rev. 09 - 07/Jul/2023'
+      },
+      {
+        'Publicação': 'IS 145.109-001',
+        'Título': 'Publicações técnicas: obtenção e controle pelas organizações de manutenção de produto aeronáutico',
+        'Proprietário / Cessor': 'ANAC',
+        'Número e data da revisão': 'Rev. C - 16/Jul/2017'
+      },
+      {
+        'Publicação': 'AMM',
+        'Título': 'Aircraft Maintenance Manual 777 (D633W101-DHA)',
+        'Proprietário / Cessor': 'BOEING (KAT)',
+        'Número e data da revisão': 'Rev. 107 – 05/Mai/2026'
+      },
+      {
+        'Publicação': 'SRM',
+        'Título': 'Structure Repair Manual 777F (D634W215)',
+        'Proprietário / Cessor': 'BOEING (CMA)',
+        'Número e data da revisão': 'Rev. 53 – 15/Mai/2026'
+      },
+      {
+        'Publicação': 'MPD',
+        'Título': 'Maintenance Planning Data 747-400 (D621U400)',
+        'Proprietário / Cessor': 'BOEING (KAT)',
+        'Número e data da revisão': 'Rev. N/A - 15/Jul/2026'
+      }
+    ]
+  },
+  {
     id: 'amostra-treinamentos-real',
     nomeArquivo: 'Controle_Treinamentos_Impacto_2026.xlsx',
     formato: 'XLSX',
@@ -208,52 +267,108 @@ export const PRESETS_AMOSTRAS_IMPORTACAO: PresetAmostraImportacao[] = [
   },
   {
     id: 'amostra-documental-normativas-pdf',
-    nomeArquivo: 'F 001-02-1 - Controle de Documentações Normativas - Ago.26.pdf',
+    nomeArquivo: 'F 001-02-1 - Controle de Documentações Normativas.pdf',
     formato: 'PDF',
     tipoEsperado: 'CONTROLE_DOCUMENTAL',
-    descricaoCenario: 'Formulário F 001-02-1 em PDF para Controle de Documentações Normativas da Autoridade (RBACs ANAC, IS, ICA) com corte temporal Ago.26 e rodapé SGQ.',
-    destaqueTeste: 'TESTE HOMOLOGADO: Extração tabular de PDF com formato de data "Ago.26", revisões emendas ("Emenda 07", "Rev. B") e eliminação de rodapés/preâmbulos institucionais.',
-    colunas: ['Código da Norma / Regulamento', 'Título da Documentação Normativa', 'Categoria Normativa', 'Revisão / Emenda Vigente', 'Data da Revisão / Emenda', 'Órgão Regulador', 'Status de Adoção', 'Observações'],
+    descricaoCenario: 'Formulário oficial F 001-02-1: "RELATÓRIO DE CONTROLE DE DOCUMENTAÇÕES NORMATIVAS" (Listagem de Publicações Técnicas Controladas da IMPACTO, Fabricantes e Autoridades Aeronáuticas).',
+    destaqueTeste: 'TESTE FORMULÁRIO 4 COLUNAS: Reconhecimento exato das 4 colunas ("Publicação", "Título", "Proprietário / Cessor", "Número e data da revisão") com adaptação em "Número da Revisão" e "Data da Revisão".',
+    colunas: ['Publicação', 'Título', 'Proprietário / Cessor', 'Número e data da revisão', 'Número da Revisão', 'Data da Revisão'],
     linhasAmostra: [
       {
-        'Código da Norma / Regulamento': 'RBAC 145',
-        'Título da Documentação Normativa': 'Organizações de Manutenção de Produto Aeronáutico',
-        'Categoria Normativa': 'Legislação Aeronáutica ANAC',
-        'Revisão / Emenda Vigente': 'Emenda 07',
-        'Data da Revisão / Emenda': 'Ago.26',
-        'Órgão Regulador': 'ANAC / SPO',
-        'Status de Adoção': 'Vigente',
-        'Observações': 'Base regulatória primordial para certificação MRO Impacto Aviation'
+        'Publicação': 'MOMQ',
+        'Título': 'Manual de organização de Manutenção e da Qualidade',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 08 – 06/Ago/2026',
+        'Número da Revisão': 'Rev. 08',
+        'Data da Revisão': '06/Ago/2026',
       },
       {
-        'Código da Norma / Regulamento': 'RBAC 43',
-        'Título da Documentação Normativa': 'Manutenção, Manutenção Preventiva, Reconstrução e Alteração',
-        'Categoria Normativa': 'Legislação Aeronáutica ANAC',
-        'Revisão / Emenda Vigente': 'Emenda 05',
-        'Data da Revisão / Emenda': '2025-06-15',
-        'Órgão Regulador': 'ANAC',
-        'Status de Adoção': 'Vigente',
-        'Observações': 'Critérios de liberação de aeronaves após serviço de manutenção'
+        'Publicação': 'PTM',
+        'Título': 'Programa de Treinamento da Manutenção',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 08 – 11/Mai/2026',
+        'Número da Revisão': 'Rev. 08',
+        'Data da Revisão': '11/Mai/2026',
       },
       {
-        'Código da Norma / Regulamento': 'IS 145-009',
-        'Título da Documentação Normativa': 'Procedimentos para Homologação de Ferramental Equivalente',
-        'Categoria Normativa': 'Instrução Suplementar',
-        'Revisão / Emenda Vigente': 'Rev. B',
-        'Data da Revisão / Emenda': '12/04/2025',
-        'Órgão Regulador': 'ANAC',
-        'Status de Adoção': 'Vigente',
-        'Observações': 'Requisitos de rastreabilidade RBC e equivalência metrológica'
+        'Publicação': 'MGSO',
+        'Título': 'Manual de Gerenciamento de Segurança Operacional',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 02 - 12/Set/2025',
+        'Número da Revisão': 'Rev. 02',
+        'Data da Revisão': '12/Set/2025',
       },
       {
-        'Código da Norma / Regulamento': 'IS 145-010',
-        'Título da Documentação Normativa': 'Qualificação e Autorização de Pessoal de Manutenção e Vistoria',
-        'Categoria Normativa': 'Instrução Suplementar',
-        'Revisão / Emenda Vigente': 'Rev. 01',
-        'Data da Revisão / Emenda': '2024-10-01',
-        'Órgão Regulador': 'ANAC',
-        'Status de Adoção': 'STATUS_NAO_INFORMADO',
-        'Observações': 'Aguardando homologação de nova revisão complementar pela diretoria'
+        'Publicação': 'PPSP',
+        'Título': 'Programa de Prevenção de Substâncias Psicoativas',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 03 - 17/Out/2024',
+        'Número da Revisão': 'Rev. 03',
+        'Data da Revisão': '17/Out/2024',
+      },
+      {
+        'Publicação': 'EASA Supplement',
+        'Título': 'Impacto/EASA Supplement MNT-004',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 02 – 09/Out/2025',
+        'Número da Revisão': 'Rev. 02',
+        'Data da Revisão': '09/Out/2025',
+      },
+      {
+        'Publicação': 'RBAC 11',
+        'Título': 'Regras Gerais para petição de emissão, alteração, revogação e isenção de cumprimento de regra.',
+        'Proprietário / Cessor': 'ANAC',
+        'Número e data da revisão': 'Rev. 04 - 21/Jan/2026',
+        'Número da Revisão': 'Rev. 04',
+        'Data da Revisão': '21/Jan/2026',
+      },
+      {
+        'Publicação': 'RBAC 145',
+        'Título': 'Organizações de manutenção de produto aeronáutico',
+        'Proprietário / Cessor': 'ANAC',
+        'Número e data da revisão': 'Rev. 09 - 07/Jul/2023',
+        'Número da Revisão': 'Rev. 09',
+        'Data da Revisão': '07/Jul/2023',
+      },
+      {
+        'Publicação': 'IS 145-001',
+        'Título': 'Certificação de organizações de manutenção domésticas',
+        'Proprietário / Cessor': 'ANAC',
+        'Número e data da revisão': 'Rev. H – 01/Nov/2024',
+        'Número da Revisão': 'Rev. H',
+        'Data da Revisão': '01/Nov/2024',
+      },
+      {
+        'Publicação': 'F 001-01',
+        'Título': 'Designação de Inspetor Chefe',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'Rev. 02 – 21/Mar/2023',
+        'Número da Revisão': 'Rev. 02',
+        'Data da Revisão': '21/Mar/2023',
+      },
+      {
+        'Publicação': 'AMM',
+        'Título': 'Aircraft Maintenance Manual 767-300 (D633T131)',
+        'Proprietário / Cessor': 'BOEING (EUR)',
+        'Número e data da revisão': 'Rev. 148 – 22/Abr/2026',
+        'Número da Revisão': 'Rev. 148',
+        'Data da Revisão': '22/Abr/2026',
+      },
+      {
+        'Publicação': 'AMM',
+        'Título': 'Aircraft Maintenance Manual A330',
+        'Proprietário / Cessor': 'AIRBUS (EUR)',
+        'Número e data da revisão': 'Rev. 01/Jul/2026',
+        'Número da Revisão': 'Rev. Vigente',
+        'Data da Revisão': '01/Jul/2026',
+      },
+      {
+        'Publicação': 'F 001-16',
+        'Título': 'RESERVADO',
+        'Proprietário / Cessor': 'IMPACTO',
+        'Número e data da revisão': 'N/A',
+        'Número da Revisão': 'N/A',
+        'Data da Revisão': '',
       }
     ]
   },

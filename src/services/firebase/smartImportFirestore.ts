@@ -785,15 +785,21 @@ export async function efetivarImportacaoNoQualigest(
         cat = 'DOCUMENTO_INTERNO';
       }
 
+      const docCodigo = dados.codigo || dados.publicacao || dadosExistentes?.codigo || 'DOC-GEN';
+      const docTitulo = dados.titulo || dadosExistentes?.titulo || 'Documento sem título';
+      const docEmissor = dados.emissor || dados.proprietarioCessor || dados.responsavel || dadosExistentes?.emissor || 'IMPACTO';
+      const docResponsavel = dados.responsavel || dados.proprietarioCessor || dadosExistentes?.responsavelNome || (user?.displayName || 'Gestor SGQ');
+      const docDataAprovacao = dados.dataAprovacao || dados.dataRevisao || hoje;
+
       const novoDoc: DocumentoControlado = {
         id: docId,
         organizationId,
-        codigo: dados.codigo || dadosExistentes?.codigo || 'DOC-GEN',
-        titulo: dados.titulo || dadosExistentes?.titulo || 'Documento sem título',
+        codigo: docCodigo,
+        titulo: docTitulo,
         categoria: cat,
         tipoSubcategoria: dados.tipoDocumento || dadosExistentes?.tipoSubcategoria || 'Procedimento',
-        emissor: dados.emissor || dadosExistentes?.emissor || 'Impacto Aviation MRO',
-        responsavelNome: dados.responsavel || dadosExistentes?.responsavelNome || (user?.displayName || 'Gestor SGQ'),
+        emissor: docEmissor,
+        responsavelNome: docResponsavel,
         revisaoVigenteNumero: revisaoStr,
         statusGeral,
         status: statusDet,
@@ -816,12 +822,12 @@ export async function efetivarImportacaoNoQualigest(
         codigoDocumento: novoDoc.codigo,
         tituloDocumento: novoDoc.titulo,
         numeroRevisao: revisaoStr,
-        dataEmissao: dados.dataAprovacao || hoje,
-        dataEntradaVigor: dados.dataAprovacao || hoje,
+        dataEmissao: docDataAprovacao,
+        dataEntradaVigor: docDataAprovacao,
         statusCicloVida: 'VIGENTE',
         origemRevisao: 'IMPORTACAO',
-        aprovadoPorNome: dados.responsavel || user?.displayName || 'Importação SGQ',
-        dataAprovacao: dados.dataAprovacao || hoje,
+        aprovadoPorNome: docResponsavel,
+        dataAprovacao: docDataAprovacao,
         escopoAlteracoes: dados.observacoes || `Importado via Smart Import do arquivo ${nomeArquivo}`,
         ehImutavel: false,
         createdAt: dadosExistentes?.createdAt || new Date().toISOString(),

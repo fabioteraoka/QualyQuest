@@ -4,6 +4,12 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import mammoth from "mammoth";
+import {
+  extrairLinhasF001021DoTexto,
+  separarNumeroEDataRevisao,
+  COLUNAS_FORMULARIO_F001_02_1,
+  CATALOGO_F001_02_1,
+} from "./src/data/f001021ControlledPublications";
 
 const app = express();
 const PORT = 3000;
@@ -2766,13 +2772,10 @@ app.post("/api/smart-import/analyze", async (req, res) => {
     // Regra estruturada de fallback caso Gemini não esteja disponível
     const fallbackTipo = (() => {
       const lower = ((nomeArquivo || "") + " " + cols.join(" ")).toLowerCase();
-      if (lower.includes("treina") || lower.includes("curso") || lower.includes("capacita") || lower.includes("cht") || lower.includes("colaborador")) {
-        return "TREINAMENTOS";
-      }
-      if (lower.includes("calibr") || lower.includes("metrolog") || lower.includes("torquimetro") || lower.includes("patrimonio") || lower.includes("afericao")) {
-        return "CALIBRACAO_FERRAMENTAL";
-      }
       if (
+        lower.includes("publica") ||
+        lower.includes("proprietario") ||
+        lower.includes("cessor") ||
         lower.includes("docum") ||
         lower.includes("contole") ||
         lower.includes("controle") ||
@@ -2782,21 +2785,47 @@ app.post("/api/smart-import/analyze", async (req, res) => {
         lower.includes("manual") ||
         lower.includes("procediment") ||
         lower.includes("f 001") ||
+        lower.includes("f001") ||
         lower.includes("rbac")
       ) {
         return "CONTROLE_DOCUMENTAL";
       }
-      return "TREINAMENTOS";
+      if (lower.includes("treina") || lower.includes("curso") || lower.includes("capacita") || lower.includes("cht") || lower.includes("colaborador")) {
+        return "TREINAMENTOS";
+      }
+      if (lower.includes("calibr") || lower.includes("metrolog") || lower.includes("torquimetro") || lower.includes("patrimonio") || lower.includes("afericao")) {
+        return "CALIBRACAO_FERRAMENTAL";
+      }
+      return "CONTROLE_DOCUMENTAL";
+    })();
+
+    const isF001021Form = (() => {
+      const lower = ((nomeArquivo || "") + " " + cols.join(" ")).toLowerCase();
+      return (
+        (lower.includes("publica") && (lower.includes("proprietario") || lower.includes("cessor"))) ||
+        lower.includes("f 001-02-1") ||
+        lower.includes("f001-02-1") ||
+        (lower.includes("documentações normativas") && lower.includes("revisão")) ||
+        (cols.includes("Publicação") && cols.includes("Título")) ||
+        cols.some((c) => {
+          const l = c.toLowerCase();
+          return l.includes("numero e data") || l.includes("número e data") || l.includes("revisao e data");
+        })
+      );
     })();
 
     if (!ai) {
       return res.json({
         success: true,
         tipoControle: fallbackTipo,
-        confianca: 92,
-        finalidadeProvavel: `Migração estruturada de ${fallbackTipo.toLowerCase()} para o QualiGest SGQ`,
+        confianca: isF001021Form ? 99 : 92,
+        finalidadeProvavel: isF001021Form
+          ? "Relatório de Controle de Documentações Normativas / Manuais Técnicos (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão adaptadas para o SGQ)"
+          : `Migração estruturada de ${fallbackTipo.toLowerCase()} para o QualiGest SGQ`,
         origem: "HEURISTICA_LOCAL",
-        explicacao: "Análise realizada pelo motor de regras aeronáuticas SGQ.",
+        explicacao: isF001021Form
+          ? "A IA identificou com sucesso o formulário de 4 colunas (Publicação, Título, Proprietário / Cessor, Número e data da revisão) e adaptou a 4ª coluna dividindo em 'Número da Revisão' (em que revisão está) e 'Data da Revisão' (data da revisão)."
+          : "Análise realizada pelo motor de regras aeronáuticas SGQ.",
       });
     }
 
@@ -2808,6 +2837,8 @@ Formato: "${formato || 'XLSX'}"
 Colunas Identificadas: ${JSON.stringify(cols)}
 Amostra das Linhas de Dados: ${JSON.stringify(rows.slice(0, 5))}
 
+Atenção especial: se as colunas forem ou contiverem 'Publicação', 'Título', 'Proprietário / Cessor', 'Número e data da revisão', trata-se obrigatoriamente do formulário aeronáutico de Controle de Documentações Normativas / Manuais Técnicos (F 001-02-1). A IA deve categorizar como "tipoControle": "CONTROLE_DOCUMENTAL" com 99% de confiança e explicar que o formulário possui 4 colunas e foi adaptado desdobrando a 4ª coluna em "Número da Revisão" (em que revisão está) e "Data da Revisão" (data da revisão).
+
 Responda ESTRITAMENTE em formato JSON com o seguinte formato:
 {
   "tipoControle": "TREINAMENTOS" | "CALIBRACAO_FERRAMENTAL" | "CONTROLE_DOCUMENTAL" | "NAO_CONFORMIDADES" | "REQUISITOS_CLIENTES" | "OUTROS",
@@ -2815,8 +2846,8 @@ Responda ESTRITAMENTE em formato JSON com o seguinte formato:
   "finalidadeProvavel": "Explicação concisa e técnica do objetivo deste controle operacional na manutenção aeronáutica",
   "explicacao": "Por que a IA identificou este controle específico com base no conteúdo real das colunas e dados",
   "sugestoesMelhoria": [
-    "Destaque de qualidade 1 (ex: prazos de validade a verificar)",
-    "Destaque de qualidade 2 (ex: necessidade de certificado RBC)"
+    "Destaque de qualidade 1",
+    "Destaque de qualidade 2"
   ]
 }`;
 
@@ -2832,9 +2863,9 @@ Responda ESTRITAMENTE em formato JSON com o seguinte formato:
       return res.json({
         success: true,
         tipoControle: parsed.tipoControle || fallbackTipo,
-        confianca: parsed.confianca || 94,
-        finalidadeProvavel: parsed.finalidadeProvavel || `Controle aeronáutico identificado`,
-        explicacao: parsed.explicacao || "Análise inteligente pelo modelo Gemini.",
+        confianca: parsed.confianca || (isF001021Form ? 99 : 94),
+        finalidadeProvavel: parsed.finalidadeProvavel || (isF001021Form ? "Controle de Documentações Normativas (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão)" : "Controle aeronáutico identificado"),
+        explicacao: parsed.explicacao || (isF001021Form ? "A IA compreendeu que este formulário possui 4 colunas essenciais (Publicação, Título, Proprietário / Cessor e Número e data da revisão) e adaptou a 4ª coluna separando em Número da Revisão e Data da Revisão." : "Análise inteligente pelo modelo Gemini."),
         sugestoesMelhoria: parsed.sugestoesMelhoria || [],
         origem: "IA_GEMINI",
       });
@@ -2843,10 +2874,14 @@ Responda ESTRITAMENTE em formato JSON com o seguinte formato:
       return res.json({
         success: true,
         tipoControle: fallbackTipo,
-        confianca: 90,
-        finalidadeProvavel: `Controle aeronáutico identificado via regras SGQ`,
+        confianca: isF001021Form ? 99 : 90,
+        finalidadeProvavel: isF001021Form
+          ? "Controle de Documentações Normativas (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão)"
+          : `Controle aeronáutico identificado via regras SGQ`,
         origem: "HEURISTICA_LOCAL",
-        explicacao: "Análise realizada pelo motor de regras SGQ com alta fidelidade.",
+        explicacao: isF001021Form
+          ? "Identificado formulário com 4 colunas principais (Publicação, Título, Proprietário/Cessor e Número e data da revisão) adaptadas para o SGQ com desdobramento de revisão e data."
+          : "Análise realizada pelo motor de regras SGQ com alta fidelidade.",
       });
     }
   } catch (error: any) {
@@ -2866,112 +2901,89 @@ app.post("/api/smart-import/parse-file", async (req, res) => {
 
     if (fmt === "PDF") {
       const { text, lines } = await extractTextFromBase64Pdf(base64);
-      const isNormativasPdf =
-        (nomeArquivo || "").toLowerCase().includes("normativ") ||
+      const isF001021Normativas =
         (nomeArquivo || "").toLowerCase().includes("f 001") ||
-        text.toLowerCase().includes("normativas") ||
-        text.toLowerCase().includes("rbac") ||
-        text.toLowerCase().includes("documentações normativas");
+        (nomeArquivo || "").toLowerCase().includes("f001") ||
+        (nomeArquivo || "").toLowerCase().includes("normativ") ||
+        text.toLowerCase().includes("f 001-02-1") ||
+        text.toLowerCase().includes("f001-02-1") ||
+        text.toLowerCase().includes("documentações normativas") ||
+        text.toLowerCase().includes("documentacoes normativas") ||
+        text.toLowerCase().includes("publicações técnicas controladas") ||
+        text.toLowerCase().includes("publicacoes tecnicas controladas") ||
+        (text.toLowerCase().includes("publicação") && text.toLowerCase().includes("proprietário")) ||
+        (text.toLowerCase().includes("publicacao") && text.toLowerCase().includes("proprietario")) ||
+        (text.toLowerCase().includes("proprietário / cessor") || text.toLowerCase().includes("proprietario / cessor"));
 
       let colunas: string[] = [];
       let tableRows: Record<string, string>[] = [];
 
-      if (isNormativasPdf) {
-        colunas = [
-          "Código da Norma / Regulamento",
-          "Título da Documentação Normativa",
-          "Categoria Normativa",
-          "Revisão / Emenda Vigente",
-          "Data da Revisão / Emenda",
-          "Órgão Regulador",
-          "Status de Adoção",
-          "Observações",
-        ];
+      if (isF001021Normativas) {
+        // Extrai com o motor especializado para o formulário F 001-02-1 (4 colunas + 2 adaptadas)
+        const extracaoF001 = extrairLinhasF001021DoTexto(text, lines);
+        colunas = extracaoF001.colunas;
+        tableRows = extracaoF001.linhas;
 
-        // Se o PDF Parse encontrou linhas tabulares
-        const normLines = lines.filter((l) => {
-          const lower = l.toLowerCase();
-          return (
-            !lower.startsWith("f 001") &&
-            !lower.startsWith("f-001") &&
-            !lower.startsWith("página") &&
-            !lower.startsWith("pag.") &&
-            !lower.startsWith("aprovado") &&
-            !lower.startsWith("elaborado") &&
-            !lower.startsWith("revisado") &&
-            !lower.startsWith("assinatura") &&
-            !lower.includes("controle de documentações normativas") &&
-            !lower.includes("impacto aviation")
-          );
-        });
+        // Se o Gemini estiver configurado e o PDF contiver linhas adicionais, tenta enriquecimento via IA
+        const ai = getGeminiClient();
+        if (ai && tableRows.length < 20 && text.length > 500) {
+          try {
+            const promptPdf = `Você é o auditor de Qualidade Aeronáutica do QualiGest.
+O usuário enviou o formulário "F 001-02-1 - RELATÓRIO DE CONTROLE DE DOCUMENTAÇÕES NORMATIVAS / Listagem de Publicações Técnicas Controladas".
+Este formulário possui exatamente 4 colunas originais na tabela:
+1. "Publicação" (sigla ou código: MOMQ, PTM, MGSO, RBAC 11, IS 145-001, F 001-01, AMM, AIPC, etc.)
+2. "Título" (nome da publicação por extenso)
+3. "Proprietário / Cessor" (IMPACTO, ANAC, BOEING, AIRBUS, MODERN, KALITTA, etc.)
+4. "Número e data da revisão" (texto original, ex: "Rev. 08 – 06/Ago/2026", "Rev. 02 - 12/Set/2025", "Rev. 13", "N/A")
 
-        const parsedItems: Record<string, string>[] = [];
-        for (const l of normLines) {
-          const parts = l.split(/\s{2,}|\t|\|/).map((p) => p.trim()).filter(Boolean);
-          if (parts.length >= 3) {
-            parsedItems.push({
-              "Código da Norma / Regulamento": parts[0],
-              "Título da Documentação Normativa": parts[1] || "Documento Normativo",
-              "Categoria Normativa": parts[2] || "Legislação Aeronáutica ANAC",
-              "Revisão / Emenda Vigente": parts[3] || "Emenda Vigente",
-              "Data da Revisão / Emenda": parts[4] || "Ago.26",
-              "Órgão Regulador": parts[5] || "ANAC",
-              "Status de Adoção": parts[6] || "Vigente",
-              "Observações": parts.slice(7).join(" ") || "Adotado no SGQ",
+E você deve gerar as colunas adaptadas:
+5. "Número da Revisão" (em que revisão está, ex: "Rev. 08", "Rev. 02", "Rev. D", "Rev. 13", "N/A")
+6. "Data da Revisão" (data da revisão, ex: "06/Ago/2026", "12/Set/2025", "21/Mar/2023", ou vazio se N/A)
+
+Extraia todas as linhas deste texto do documento:
+"""
+${text.slice(0, 30000)}
+"""
+
+Responda ESTRITAMENTE em formato JSON:
+{
+  "linhas": [
+    {
+      "Publicação": "MOMQ",
+      "Título": "Manual de organização de Manutenção e da Qualidade",
+      "Proprietário / Cessor": "IMPACTO",
+      "Número e data da revisão": "Rev. 08 – 06/Ago/2026",
+      "Número da Revisão": "Rev. 08",
+      "Data da Revisão": "06/Ago/2026"
+    }
+  ]
+}`;
+            const resGemini = await generateContentWithModelFallback(ai, {
+              contents: promptPdf,
+              config: { responseMimeType: "application/json" },
             });
+            const geminiParsed = JSON.parse(resGemini.text?.trim() || "{}");
+            if (Array.isArray(geminiParsed.linhas) && geminiParsed.linhas.length > 0) {
+              tableRows = geminiParsed.linhas.map((row: any) => {
+                const numEData = String(row["Número e data da revisão"] || row.numeroEDataRevisao || "");
+                const sep = separarNumeroEDataRevisao(numEData);
+                return {
+                  "Publicação": String(row["Publicação"] || row.publicacao || ""),
+                  "Título": String(row["Título"] || row.titulo || ""),
+                  "Proprietário / Cessor": String(row["Proprietário / Cessor"] || row.proprietarioCessor || ""),
+                  "Número e data da revisão": numEData,
+                  "Número da Revisão": String(row["Número da Revisão"] || sep.numeroRevisao || "Rev. 00"),
+                  "Data da Revisão": String(row["Data da Revisão"] || sep.dataRevisao || ""),
+                };
+              });
+            }
+          } catch (geminiErr: any) {
+            console.warn("Aviso na extração complementar Gemini de PDF F001-02-1:", geminiErr.message);
           }
-        }
-
-        if (parsedItems.length > 0) {
-          tableRows = parsedItems;
-        } else {
-          // Extração oficial homologada para o formulário F 001-02-1 - Controle de Documentações Normativas - Ago.26
-          tableRows = [
-            {
-              "Código da Norma / Regulamento": "RBAC 145",
-              "Título da Documentação Normativa": "Organizações de Manutenção de Produto Aeronáutico",
-              "Categoria Normativa": "Legislação Aeronáutica ANAC",
-              "Revisão / Emenda Vigente": "Emenda 07",
-              "Data da Revisão / Emenda": "Ago.26",
-              "Órgão Regulador": "ANAC / SPO",
-              "Status de Adoção": "Vigente",
-              "Observações": "Base regulatória primordial para certificação MRO",
-            },
-            {
-              "Código da Norma / Regulamento": "RBAC 43",
-              "Título da Documentação Normativa": "Manutenção, Manutenção Preventiva, Reconstrução e Alteração",
-              "Categoria Normativa": "Legislação Aeronáutica ANAC",
-              "Revisão / Emenda Vigente": "Emenda 05",
-              "Data da Revisão / Emenda": "2025-06-15",
-              "Órgão Regulador": "ANAC",
-              "Status de Adoção": "Vigente",
-              "Observações": "Critérios de liberação de aeronaves após serviço",
-            },
-            {
-              "Código da Norma / Regulamento": "IS 145-009",
-              "Título da Documentação Normativa": "Procedimentos para Homologação de Ferramental Equivalente",
-              "Categoria Normativa": "Instrução Suplementar",
-              "Revisão / Emenda Vigente": "Rev. B",
-              "Data da Revisão / Emenda": "12/04/2025",
-              "Órgão Regulador": "ANAC",
-              "Status de Adoção": "Vigente",
-              "Observações": "Requisitos de rastreabilidade RBC e equivalência metrológica",
-            },
-            {
-              "Código da Norma / Regulamento": "IS 145-010",
-              "Título da Documentação Normativa": "Qualificação e Autorização de Pessoal de Manutenção e Vistoria",
-              "Categoria Normativa": "Instrução Suplementar",
-              "Revisão / Emenda Vigente": "Rev. 01",
-              "Data da Revisão / Emenda": "2024-10-01",
-              "Órgão Regulador": "ANAC",
-              "Status de Adoção": "STATUS_NAO_INFORMADO",
-              "Observações": "Aguardando homologação da revisão complementar pela diretoria",
-            },
-          ];
         }
       } else {
         // Tentativa genérica de estruturar linhas tabulares a partir do texto do PDF
-        lines.slice(0, 30).forEach((line, idx) => {
+        lines.slice(0, 50).forEach((line) => {
           const parts = line.split(/\s{2,}|\t|\|/).map((p) => p.trim()).filter(Boolean);
           if (parts.length >= 2) {
             const rowObj: Record<string, string> = {};

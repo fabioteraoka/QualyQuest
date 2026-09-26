@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { separarNumeroEDataRevisao } from '../data/f001021ControlledPublications';
 import {
   TipoControleImportacao,
   MapeamentoCampoItem,
@@ -434,19 +435,52 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
   CONTROLE_DOCUMENTAL: [
     {
       campo: 'codigo',
-      label: 'Código do Documento',
+      label: 'Publicação / Código do Documento',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['codigo', 'codigo documento', 'codigo do documento', 'codigo da norma', 'codigo da norma / regulamento', 'norma', 'regulamento', 'numero', 'identificador', 'doc id', 'cod'],
-      descricao: 'Identificador formal do documento (ex: MOMQ, MPO-04, IT-MNT-12, RBAC 145)',
+      sinonimos: [
+        'publicacao',
+        'publicação',
+        'publicacao tecnica',
+        'publicação técnica',
+        'publicacoes tecnicas',
+        'publicações técnicas',
+        'codigo',
+        'codigo documento',
+        'codigo do documento',
+        'codigo da norma',
+        'codigo da norma / regulamento',
+        'norma',
+        'regulamento',
+        'numero',
+        'identificador',
+        'doc id',
+        'cod',
+        'manual',
+        'publicacao / manual',
+        'sigla',
+      ],
+      descricao: 'Identificador formal da publicação ou manual técnico (ex: MOMQ, PTM, AMM, RBAC 145, IS 145-001, F 001-02-1)',
     },
     {
       campo: 'titulo',
-      label: 'Título Oficial do Documento',
+      label: 'Título Oficial / Título da Publicação',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['titulo', 'titulo oficial', 'titulo da documentacao normativa', 'nome documento', 'descricao', 'denominacao', 'documento'],
-      descricao: 'Nome por extenso do manual, instrução de trabalho, política técnica ou regulamento',
+      sinonimos: [
+        'titulo',
+        'titulo da publicacao',
+        'titulo da publicação',
+        'titulo oficial',
+        'titulo da documentacao normativa',
+        'nome documento',
+        'descricao',
+        'denominacao',
+        'documento',
+        'publicacao titulo',
+        'titulo do manual',
+      ],
+      descricao: 'Nome por extenso do manual, publicação técnica, instrução de trabalho ou regulamento aeronáutico',
     },
     {
       campo: 'tipoDocumento',
@@ -458,19 +492,47 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
     },
     {
       campo: 'numeroRevisao',
-      label: 'Revisão Vigente',
+      label: 'Número da Revisão (Em que revisão está)',
       tipo: 'string',
       obrigatorio: true,
-      sinonimos: ['revisao', 'rev', 'revisao vigente', 'revisao / emenda vigente', 'emenda', 'revisao atual', 'versao', 'edicao'],
-      descricao: 'Número ou letra da revisão atualmente aprovada (ex: Rev. 08, Rev. D, Emenda 07, 02)',
+      sinonimos: [
+        'numero da revisao',
+        'número da revisão',
+        'em que revisao esta',
+        'em que revisão está',
+        'numero revisao',
+        'revisao vigente',
+        'revisao / emenda vigente',
+        'revisao',
+        'revisão',
+        'rev',
+        'emenda',
+        'revisao atual',
+        'versao',
+        'edicao',
+        'em que revisao',
+      ],
+      descricao: 'Em que revisão está a publicação (ex: Rev. 08, Rev. 02, Rev. D, Rev. 15, Emenda 07, 00, N/A)',
     },
     {
       campo: 'dataAprovacao',
-      label: 'Data de Aprovação / Vigência',
+      label: 'Data da Revisão / Aprovação',
       tipo: 'date',
       obrigatorio: true,
-      sinonimos: ['data aprovacao', 'data de aprovacao', 'data da revisao / emenda', 'data vigencia', 'vigente desde', 'aprovado em', 'data revisao', 'data'],
-      descricao: 'Data de entrada em vigor da revisão atual (aceita formatos DD/MM/YYYY, YYYY-MM-DD e Ago.26)',
+      sinonimos: [
+        'data da revisao',
+        'data da revisão',
+        'data revisao',
+        'data da revisao / emenda',
+        'data aprovacao',
+        'data de aprovacao',
+        'data vigencia',
+        'vigente desde',
+        'aprovado em',
+        'data',
+        'data de revisao',
+      ],
+      descricao: 'Data de vigência da revisão da publicação (aceita formatos DD/MM/YYYY, DD/Mês/YYYY como 06/Ago/2026, e YYYY-MM-DD)',
     },
     {
       campo: 'dataProximaRevisao',
@@ -482,11 +544,47 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
     },
     {
       campo: 'responsavel',
-      label: 'Responsável / Elaborador / Órgão',
+      label: 'Proprietário / Cessor / Elaborador',
       tipo: 'string',
       obrigatorio: false,
-      sinonimos: ['responsavel', 'responsavel elaboracao', 'orgao regulador', 'elaborador', 'autor', 'aprovador', 'gestor', 'orgao emissor'],
-      descricao: 'Nome ou cargo do profissional responsável técnico ou órgão regulador (ANAC, FAA, etc.)',
+      sinonimos: [
+        'proprietario / cessor',
+        'proprietario/cessor',
+        'proprietario ou cessor',
+        'proprietario ou cessor do manual',
+        'proprietario',
+        'proprietário',
+        'cessor',
+        'proprietario cessor',
+        'emissor',
+        'fabricante',
+        'operador',
+        'responsavel',
+        'responsavel elaboracao',
+        'orgao regulador',
+        'elaborador',
+        'autor',
+        'aprovador',
+        'gestor',
+        'orgao emissor',
+      ],
+      descricao: 'Proprietário ou cessor do manual / entidade emissora (ex: IMPACTO, ANAC, BOEING, AIRBUS, KALITTA, FAA)',
+    },
+    {
+      campo: 'numeroEDataRevisao',
+      label: 'Número e Data da Revisão (Coluna Original)',
+      tipo: 'string',
+      obrigatorio: false,
+      sinonimos: [
+        'numero e data da revisao',
+        'número e data da revisão',
+        'numero e data de revisao',
+        'revisao e data',
+        'revisão e data',
+        'rev e data',
+        'revisao/data',
+      ],
+      descricao: 'Coluna combinada original do formulário, desdobrada pela IA em Número da Revisão e Data da Revisão',
     },
     {
       campo: 'status',
@@ -694,7 +792,26 @@ export function identificarTipoControleAutomatico(
   }
 
   // 3. Scoring para CONTROLE DOCUMENTAL
-  const palavrasDocColunas = ['documento', 'revisao', 'rev', 'vigencia', 'aprovacao', 'codigo doc', 'norma', 'regulamento', 'emenda', 'manual', 'procedimento', 'instrucao', 'master list', 'elaborador'];
+  const palavrasDocColunas = [
+    'documento',
+    'revisao',
+    'rev',
+    'vigencia',
+    'aprovacao',
+    'codigo doc',
+    'norma',
+    'regulamento',
+    'emenda',
+    'manual',
+    'procedimento',
+    'instrucao',
+    'master list',
+    'elaborador',
+    'publicacao',
+    'proprietario',
+    'cessor',
+    'numero e data',
+  ];
   const palavrasDocValores = ['momq', 'mpo', 'sgq', 'it mnt', 'rbac', 'anac', 'instrucao suplementar', 'procedimento operacional', 'rev 0', 'rev 1', 'vigente', 'obsoleto', 'aprovado', 'ago 26'];
 
   palavrasDocColunas.forEach((p) => {
@@ -711,9 +828,23 @@ export function identificarTipoControleAutomatico(
     nomeNorm.includes('f 001') ||
     nomeNorm.includes('master') ||
     nomeNorm.includes('manual') ||
-    nomeNorm.includes('procediment')
+    nomeNorm.includes('procediment') ||
+    nomeNorm.includes('publica')
   ) {
     pontuacoes.CONTROLE_DOCUMENTAL += 25;
+  }
+
+  // Detecção de Alta Prioridade: Formulário F 001-02-1 / Publicações Técnicas com 4 colunas
+  const isFormulario4ColunasNormativas =
+    (colunasNorm.some((c) => c.includes('publica')) &&
+      colunasNorm.some((c) => c.includes('proprietario') || c.includes('cessor'))) ||
+    colunasNorm.some((c) => c.includes('numero e data') || c.includes('revisao e data') || c.includes('rev e data')) ||
+    nomeNorm.includes('f 001-02-1') ||
+    nomeNorm.includes('f001-02-1') ||
+    (colunasNorm.some((c) => c === 'publicacao') && colunasNorm.some((c) => c === 'titulo'));
+
+  if (isFormulario4ColunasNormativas) {
+    pontuacoes.CONTROLE_DOCUMENTAL += 200;
   }
 
   // 4. Scoring para NÃO CONFORMIDADES
@@ -752,8 +883,16 @@ export function identificarTipoControleAutomatico(
     finalidadeProvavel = 'Gestão metrológica de ferramentas especiais e instrumentos com rastreabilidade RBC/Inmetro (RBAC 145.109)';
     explicacao = `Identificados campos de patrimônio de ferramentas, datas de calibração, laboratório RBC e números de série com ${confianca}% de aderência.`;
   } else if (melhorTipo === 'CONTROLE_DOCUMENTAL') {
-    finalidadeProvavel = 'Lista Mestra (Master List) de documentos controlados, manuais técnicos e histórico de revisões';
-    explicacao = `Identificados campos de codificação de manuais/procedimentos, números de revisão e controle de vigência com ${confianca}% de aderência.`;
+    if (isFormulario4ColunasNormativas) {
+      confianca = 99;
+      finalidadeProvavel =
+        'Relatório de Controle de Documentações Normativas / Manuais Técnicos Controlados (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão)';
+      explicacao =
+        'A IA identificou com 99% de confiança o formulário de 4 colunas: Publicação, Título da publicação, Proprietário ou Cessor do manual e Número e data da revisão. O sistema adaptou a estrutura desdobrando a 4ª coluna em "Número da Revisão" (em que revisão está) e "Data da Revisão" (data da revisão).';
+    } else {
+      finalidadeProvavel = 'Lista Mestra (Master List) de documentos controlados, manuais técnicos e histórico de revisões';
+      explicacao = `Identificados campos de codificação de manuais/procedimentos, números de revisão e controle de vigência com ${confianca}% de aderência.`;
+    }
   } else if (melhorTipo === 'NAO_CONFORMIDADES') {
     finalidadeProvavel = 'Registro histórico e tratativa de Não Conformidades (RNC F 001-29)';
     explicacao = `Identificadas colunas de desvios, ações corretivas e causas de qualidade.`;
@@ -947,6 +1086,36 @@ export function validarDataISO(valor: any): { valida: boolean; isoString?: strin
     }
   }
 
+  // Testar padrão aeronáutico DD/Mês/YYYY, ex: "06/Ago/2026", "12/Set/2025", "19/Nov/2021", "21/Jan/2026", "11/Mai/2026"
+  const ddMesAnoMatch = str.match(/^(\d{1,2})[\/\.\s-]+([a-zA-ZçÇãÃéÉ]+)[\/\.\s-]+(\d{2,4})$/);
+  if (ddMesAnoMatch) {
+    const dia = Number(ddMesAnoMatch[1]);
+    const nomeMes = ddMesAnoMatch[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    let ano = Number(ddMesAnoMatch[3]);
+    if (ano < 100) {
+      ano += ano >= 70 ? 1900 : 2000;
+    }
+    const mesesAeroMap: Record<string, number> = {
+      jan: 1, janeiro: 1, january: 1,
+      fev: 2, fevereiro: 2, feb: 2, february: 2,
+      mar: 3, marco: 3, march: 3,
+      abr: 4, abril: 4, apr: 4, april: 4,
+      mai: 5, maio: 5, may: 5,
+      jun: 6, junho: 6, june: 6,
+      jul: 7, julho: 7, july: 7,
+      ago: 8, agosto: 8, aug: 8, august: 8,
+      set: 9, setembro: 9, sep: 9, september: 9,
+      out: 10, outubro: 10, oct: 10, october: 10,
+      nov: 11, novembro: 11, november: 11,
+      dez: 12, dezembro: 12, dec: 12, december: 12,
+    };
+    const mesNum = mesesAeroMap[nomeMes] || mesesAeroMap[nomeMes.slice(0, 3)];
+    if (mesNum && dia >= 1 && dia <= 31 && ano >= 1970 && ano <= 2099) {
+      const iso = `${ano}-${String(mesNum).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+      return { valida: true, isoString: iso };
+    }
+  }
+
   // Testar formato Mês/Ano em português, ex: "Ago.26", "Ago/26", "Ago-26", "Ago.2026", "Agosto/2026"
   const mesesPt: Record<string, number> = {
     jan: 1, janeiro: 1,
@@ -1071,6 +1240,59 @@ export function validarECompararLinhasImportacao(
         dadosMapeados[campoAlvo] = valor !== undefined && valor !== null ? String(valor).trim() : '';
       }
     });
+
+    // Auto-recuperação e desdobramento para CONTROLE_DOCUMENTAL (Formulário F 001-02-1 com 4 colunas)
+    if (tipoControle === 'CONTROLE_DOCUMENTAL') {
+      if (!dadosMapeados.codigo) {
+        dadosMapeados.codigo = String(linhaOriginal['Publicação'] || linhaOriginal['publicacao'] || linhaOriginal['Publicacao'] || '').trim();
+      }
+      if (!dadosMapeados.titulo) {
+        dadosMapeados.titulo = String(linhaOriginal['Título'] || linhaOriginal['titulo'] || linhaOriginal['Titulo'] || '').trim();
+      }
+      if (!dadosMapeados.responsavel) {
+        dadosMapeados.responsavel = String(
+          linhaOriginal['Proprietário / Cessor'] ||
+          linhaOriginal['proprietarioCessor'] ||
+          linhaOriginal['Proprietário'] ||
+          linhaOriginal['Cessor'] ||
+          linhaOriginal['Proprietário ou Cessor'] ||
+          ''
+        ).trim();
+      }
+
+      const rawRevData =
+        linhaOriginal['Número e data da revisão'] ||
+        linhaOriginal['revisao e data'] ||
+        linhaOriginal['rev e data'] ||
+        dadosMapeados.numeroEDataRevisao ||
+        '';
+
+      const needsRevSeparation =
+        (!dadosMapeados.numeroRevisao || String(dadosMapeados.numeroRevisao).length > 25 || String(dadosMapeados.numeroRevisao).includes('/')) ||
+        !dadosMapeados.dataAprovacao;
+
+      if (needsRevSeparation && rawRevData) {
+        const { numeroRevisao, dataRevisao } = separarNumeroEDataRevisao(String(rawRevData));
+        if (numeroRevisao && (!dadosMapeados.numeroRevisao || String(dadosMapeados.numeroRevisao).includes('/'))) {
+          dadosMapeados.numeroRevisao = numeroRevisao;
+        }
+        if (dataRevisao && !dadosMapeados.dataAprovacao) {
+          dadosMapeados.dataAprovacao = dataRevisao;
+        }
+      }
+
+      if (!dadosMapeados.numeroRevisao && linhaOriginal['Número da Revisão']) {
+        dadosMapeados.numeroRevisao = String(linhaOriginal['Número da Revisão']).trim();
+      }
+      if (!dadosMapeados.dataAprovacao && linhaOriginal['Data da Revisão']) {
+        dadosMapeados.dataAprovacao = String(linhaOriginal['Data da Revisão']).trim();
+      }
+
+      // Se data ainda ausente ou N/A em manuais contínuos, assume data vigente padrão
+      if (!dadosMapeados.dataAprovacao || dadosMapeados.dataAprovacao === 'N/A' || dadosMapeados.dataAprovacao === '-') {
+        dadosMapeados.dataAprovacao = new Date().toISOString().split('T')[0];
+      }
+    }
 
     // 1. Validar campos obrigatórios
     for (const campoObrigatorio of camposObrigatorios) {
@@ -1715,6 +1937,94 @@ export function validarECompararLinhasImportacao(
 }
 
 // ============================================================================
+// ADAPTAÇÃO ESPECIALIZADA DO FORMULÁRIO F 001-02-1 (4 COLUNAS ORIGINAIS)
+// 1. Publicação, 2. Título, 3. Proprietário / Cessor, 4. Número e data da revisão
+// Adaptação: Desdobra a 4ª coluna em "Número da Revisão" e "Data da Revisão"
+// ============================================================================
+
+export function adaptarTabelaFormularioF001021(
+  colunas: string[],
+  linhasDados: Record<string, any>[]
+): { colunas: string[]; linhasDados: Record<string, any>[]; foiAdaptado: boolean } {
+  if (!colunas || colunas.length === 0) {
+    return { colunas, linhasDados, foiAdaptado: false };
+  }
+
+  const colunasNorm = colunas.map((c) => normalizarTexto(c));
+
+  // Encontra se existe uma coluna com revisão e data juntas
+  const idxRevData = colunas.findIndex((c) => {
+    const norm = normalizarTexto(c);
+    return (
+      norm.includes('numero e data') ||
+      norm.includes('revisao e data') ||
+      norm.includes('rev e data') ||
+      norm.includes('revisao/data') ||
+      norm.includes('revisao / data') ||
+      (norm.includes('revisao') && norm.includes('data'))
+    );
+  });
+
+  const temPublicacao = colunasNorm.some((c) => c.includes('publica'));
+  const temTitulo = colunasNorm.some((c) => c.includes('titulo'));
+  const temProprietario = colunasNorm.some((c) => c.includes('proprietario') || c.includes('cessor'));
+
+  // Se tem a coluna combinada de revisão+data OU se tem o formulário de 4 colunas clássico
+  if (idxRevData !== -1 || (temPublicacao && (temProprietario || temTitulo))) {
+    const colRevData = idxRevData !== -1 ? colunas[idxRevData] : '';
+    const novasColunas = [...colunas];
+
+    const temColNumRev = colunasNorm.some((c) => c === 'numero da revisao' || c === 'revisao vigente');
+    const temColDataRev = colunasNorm.some((c) => c === 'data da revisao' || c === 'data de aprovacao' || c === 'data revisao');
+
+    if (!temColNumRev) {
+      novasColunas.push('Número da Revisão');
+    }
+    if (!temColDataRev) {
+      novasColunas.push('Data da Revisão');
+    }
+
+    const linhasAdaptadas = (linhasDados || []).map((row) => {
+      const novoRow = { ...row };
+
+      const rawRevData = colRevData ? row[colRevData] : (row['Número e data da revisão'] || row['revisao'] || '');
+      const { numeroRevisao, dataRevisao } = separarNumeroEDataRevisao(String(rawRevData || ''));
+
+      if (!temColNumRev) {
+        novoRow['Número da Revisão'] = numeroRevisao || 'Rev. 00';
+      }
+      if (!temColDataRev) {
+        novoRow['Data da Revisão'] = dataRevisao || '';
+      }
+
+      // Garante que chaves com acentuação oficial estejam acessíveis
+      if (!novoRow['Publicação'] && (row['publicacao'] || row['Publicacao'] || row['Publicação / Manual'])) {
+        novoRow['Publicação'] = row['publicacao'] || row['Publicacao'] || row['Publicação / Manual'];
+      }
+      if (!novoRow['Título'] && (row['titulo'] || row['Titulo'] || row['Título da Publicação'])) {
+        novoRow['Título'] = row['titulo'] || row['Titulo'] || row['Título da Publicação'];
+      }
+      if (!novoRow['Proprietário / Cessor'] && (row['proprietarioCessor'] || row['Proprietário'] || row['Cessor'] || row['Proprietário ou Cessor'])) {
+        novoRow['Proprietário / Cessor'] = row['proprietarioCessor'] || row['Proprietário'] || row['Cessor'] || row['Proprietário ou Cessor'];
+      }
+      if (!novoRow['Número e data da revisão'] && rawRevData) {
+        novoRow['Número e data da revisão'] = String(rawRevData);
+      }
+
+      return novoRow;
+    });
+
+    return {
+      colunas: novasColunas,
+      linhasDados: linhasAdaptadas,
+      foiAdaptado: true,
+    };
+  }
+
+  return { colunas, linhasDados, foiAdaptado: false };
+}
+
+// ============================================================================
 // PARSER INTELIGENTE DE ESTRUTURAS TABULARES & PRÉ-CABEÇALHOS
 // ============================================================================
 
@@ -1788,12 +2098,14 @@ export function detectarEstruturaTabular(
       linhasDados.push(item);
     }
 
+    const adaptadoManual = adaptarTabelaFormularioF001021(colunas, linhasDados);
+
     return {
       linhaCabecalhoNumero: linhaCabecalhoManual,
       linhaCabecalhoIndex: idx,
       linhasPreambulo: preambulo,
-      colunas,
-      linhasDados,
+      colunas: adaptadoManual.colunas,
+      linhasDados: adaptadoManual.linhasDados,
       linhasRodape,
     };
   }
@@ -1804,7 +2116,9 @@ export function detectarEstruturaTabular(
     'serie', 'numero serie', 'n serie', 'validade', 'calibracao', 'proxima calibracao', 'ultima calibracao',
     'laboratorio', 'rbc', 'certificado', 'tolerancia', 'setor', 'funcionario', 'colaborador', 'pessoa',
     'nome', 'matricula', 'curso', 'treinamento', 'capacitacao', 'realizacao', 'carga horaria',
-    'documento', 'revisao', 'rev', 'vigencia', 'titulo', 'situacao', 'status'
+    'documento', 'revisao', 'rev', 'vigencia', 'titulo', 'situacao', 'status',
+    'publicacao', 'publicação', 'proprietario', 'proprietário', 'cessor',
+    'numero e data', 'revisao e data', 'numero da revisao', 'data da revisao'
   ];
 
   let melhorScore = -1;
@@ -1931,12 +2245,14 @@ export function detectarEstruturaTabular(
     linhasDados.push(item);
   }
 
+  const adaptado = adaptarTabelaFormularioF001021(colunas, linhasDados);
+
   return {
     linhaCabecalhoNumero: melhorLinhaIndex + 1,
     linhaCabecalhoIndex: melhorLinhaIndex,
     linhasPreambulo,
-    colunas,
-    linhasDados,
+    colunas: adaptado.colunas,
+    linhasDados: adaptado.linhasDados,
     linhasRodape,
   };
 }

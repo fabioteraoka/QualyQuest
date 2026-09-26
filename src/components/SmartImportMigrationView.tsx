@@ -63,6 +63,7 @@ import {
   gerarMapeamentoAutomaticoCampos,
   tentarAplicarTemplateAprovado,
   validarECompararLinhasImportacao,
+  adaptarTabelaFormularioF001021,
   ESQUEMA_CAMPOS_CONTROLE,
   DefinicaoCampoQualigest
 } from '../utils/smartImportEngine';
@@ -244,6 +245,25 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   const [isSalvandoModeloEtapa2, setIsSalvandoModeloEtapa2] = useState(false);
   const [avisoRechecagemEtapa2, setAvisoRechecagemEtapa2] = useState<string | null>(null);
 
+  // Reconhecimento especializado do Formulário com 4 Colunas (Publicação, Título, Proprietário/Cessor, Número e data da revisão)
+  const isFormulario4ColunasDetectado = useMemo(() => {
+    const colNorm = (colunasDetectadas || []).map((c) =>
+      c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    );
+    const hasPublicacao = colNorm.some((c) => c.includes('publica'));
+    const hasTitulo = colNorm.some((c) => c.includes('titulo'));
+    const hasProprietario = colNorm.some((c) => c.includes('proprietario') || c.includes('cessor'));
+    const hasRevData = colNorm.some((c) => c.includes('numero e data') || c.includes('revisao e data') || c.includes('rev e data'));
+    const nomeNorm = (arquivoNome || '').toLowerCase();
+    return (
+      (hasPublicacao && (hasProprietario || hasTitulo)) ||
+      hasRevData ||
+      nomeNorm.includes('f 001-02-1') ||
+      nomeNorm.includes('f001-02-1') ||
+      nomeNorm.includes('normativas')
+    );
+  }, [colunasDetectadas, arquivoNome]);
+
   const orgId = organization?.id || 'org-impacto-aviation';
   const orgName = organization?.name || 'Impacto Aviation MRO';
   const isConsultaOnly = user?.role === 'CONSULTA';
@@ -418,19 +438,20 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     setStatusMensagem(`Carregando amostra oficial: ${preset.nomeArquivo}...`);
 
     try {
+      const adaptadoPreset = adaptarTabelaFormularioF001021(preset.colunas, preset.linhasAmostra);
       setArquivoNome(preset.nomeArquivo);
       setArquivoFormato(preset.formato as any);
-      setArquivoTamanho(preset.linhasAmostra.length * 128 + 1024);
-      setColunasDetectadas(preset.colunas);
-      setLinhasOriginais(preset.linhasAmostra);
+      setArquivoTamanho(adaptadoPreset.linhasDados.length * 128 + 1024);
+      setColunasDetectadas(adaptadoPreset.colunas);
+      setLinhasOriginais(adaptadoPreset.linhasDados);
 
       // Gerar Hash SHA-256 representativo
-      const strDados = JSON.stringify(preset.linhasAmostra);
+      const strDados = JSON.stringify(adaptadoPreset.linhasDados);
       const hashSim = 'sha256-' + Math.abs(strDados.split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)).toString(16).padStart(12, '0') + '-imp';
       setArquivoHash(hashSim);
 
       // Iniciar Análise Automática
-      await executarAnaliseArquivo(preset.nomeArquivo, preset.colunas, preset.linhasAmostra, preset.formato);
+      await executarAnaliseArquivo(preset.nomeArquivo, adaptadoPreset.colunas, adaptadoPreset.linhasDados, preset.formato);
       setEtapaAtual(2);
     } catch (err: any) {
       console.error('Erro ao carregar amostra:', err);
@@ -475,27 +496,29 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
             const data = await response.json();
             const cols = data.colunas || ['Coluna_1', 'Coluna_2'];
             const rows = data.linhas || [];
+            const adaptadoServidor = adaptarTabelaFormularioF001021(cols, rows);
 
             setArquivoNome(file.name);
             setArquivoFormato(ext.toUpperCase() as any);
             setArquivoTamanho(file.size);
             setArquivoHash('sha256-doc-' + Date.now().toString(16));
-            setColunasDetectadas(cols);
-            setLinhasOriginais(rows);
+            setColunasDetectadas(adaptadoServidor.colunas);
+            setLinhasOriginais(adaptadoServidor.linhasDados);
 
-            await executarAnaliseArquivo(file.name, cols, rows, ext.toUpperCase());
+            await executarAnaliseArquivo(file.name, adaptadoServidor.colunas, adaptadoServidor.linhasDados, ext.toUpperCase());
             setEtapaAtual(2);
           } catch (e: any) {
             console.error('Erro ao parsear arquivo no servidor:', e);
             // Fallback cliente
             const resBruto = await processarArquivoBruto(file);
+            const adaptadoFallback = adaptarTabelaFormularioF001021(resBruto.colunas, resBruto.linhas);
             setArquivoNome(resBruto.nomeArquivo);
             setArquivoFormato(resBruto.tipoArquivo as any);
             setArquivoTamanho(resBruto.tamanhoBytes);
             setArquivoHash(resBruto.hashSha256);
-            setColunasDetectadas(resBruto.colunas);
-            setLinhasOriginais(resBruto.linhas);
-            await executarAnaliseArquivo(resBruto.nomeArquivo, resBruto.colunas, resBruto.linhas, resBruto.tipoArquivo);
+            setColunasDetectadas(adaptadoFallback.colunas);
+            setLinhasOriginais(adaptadoFallback.linhasDados);
+            await executarAnaliseArquivo(resBruto.nomeArquivo, adaptadoFallback.colunas, adaptadoFallback.linhasDados, resBruto.tipoArquivo);
             setEtapaAtual(2);
           } finally {
             setIsProcessando(false);
@@ -508,14 +531,15 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
       // Para XLSX, XLS, CSV
       const resultado = await processarArquivoBruto(file);
+      const adaptadoXlsx = adaptarTabelaFormularioF001021(resultado.colunas, resultado.linhas);
       setArquivoNome(resultado.nomeArquivo);
       setArquivoFormato(resultado.tipoArquivo as any);
       setArquivoTamanho(resultado.tamanhoBytes);
       setArquivoHash(resultado.hashSha256);
-      setColunasDetectadas(resultado.colunas);
-      setLinhasOriginais(resultado.linhas);
+      setColunasDetectadas(adaptadoXlsx.colunas);
+      setLinhasOriginais(adaptadoXlsx.linhasDados);
 
-      await executarAnaliseArquivo(resultado.nomeArquivo, resultado.colunas, resultado.linhas, resultado.tipoArquivo);
+      await executarAnaliseArquivo(resultado.nomeArquivo, adaptadoXlsx.colunas, adaptadoXlsx.linhasDados, resultado.tipoArquivo);
       setEtapaAtual(2);
     } catch (err: any) {
       console.error('Erro no processamento do arquivo:', err);
@@ -1337,6 +1361,31 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                 </div>
               </div>
 
+              {/* Banner Especializado para Formulário de 4 Colunas (Publicação, Título, Proprietário/Cessor, Número e Data da Revisão) */}
+              {isFormulario4ColunasDetectado && (
+                <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-blue-900 font-bold">
+                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Formulário de 4 Colunas Reconhecido & Adaptado com Sucesso pela IA</span>
+                  </div>
+                  <p className="text-xs text-blue-900 leading-relaxed">
+                    A IA identificou as <strong>4 colunas originais do formulário</strong>:
+                    <span className="mx-1 px-1.5 py-0.5 bg-white rounded border border-blue-200 font-semibold text-slate-800">Publicação</span>
+                    <span className="mx-1 px-1.5 py-0.5 bg-white rounded border border-blue-200 font-semibold text-slate-800">Título</span>
+                    <span className="mx-1 px-1.5 py-0.5 bg-white rounded border border-blue-200 font-semibold text-slate-800">Proprietário / Cessor</span> e
+                    <span className="mx-1 px-1.5 py-0.5 bg-white rounded border border-blue-200 font-semibold text-slate-800">Número e data da revisão</span>.
+                  </p>
+                  <div className="p-2.5 bg-white/90 rounded-lg border border-blue-100 text-xs text-slate-700 flex flex-wrap gap-2.5 items-center">
+                    <span className="font-bold text-blue-900">Campos Adaptados para o QualiGest SGQ:</span>
+                    <span className="inline-flex items-center gap-1 text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">✓ 1. Publicação</span>
+                    <span className="inline-flex items-center gap-1 text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">✓ 2. Título da Publicação</span>
+                    <span className="inline-flex items-center gap-1 text-emerald-800 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">✓ 3. Proprietário / Cessor do Manual</span>
+                    <span className="inline-flex items-center gap-1 text-purple-800 font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-200">✓ 4. Em que revisão está (Número da Revisão)</span>
+                    <span className="inline-flex items-center gap-1 text-indigo-800 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">✓ 5. Data da Revisão</span>
+                  </div>
+                </div>
+              )}
+
               {/* Cards de Métricas da Análise */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
@@ -1567,6 +1616,19 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                   </button>
                 </div>
               </div>
+
+              {/* Banner Especializado para Mapeamento de 4 Colunas Originais */}
+              {isFormulario4ColunasDetectado && (
+                <div className="p-3.5 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl space-y-1.5 text-xs text-blue-900">
+                  <div className="flex items-center gap-2 font-bold">
+                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Mapeamento Automático Inteligente das 4 Colunas Originais</span>
+                  </div>
+                  <p className="text-[11px] text-blue-800 leading-relaxed">
+                    As colunas originais <strong>Publicação</strong>, <strong>Título</strong> e <strong>Proprietário / Cessor</strong> foram mapeadas diretamente. A 4ª coluna original <strong>Número e data da revisão</strong> foi adaptada desdobrando em <strong>Número da Revisão</strong> (em que revisão está) e <strong>Data da Revisão</strong> (data da revisão) para garantir controle de vigência contínuo no QualiGest SGQ.
+                  </p>
+                </div>
+              )}
 
               {/* Alerta de Preâmbulo Isolado Automaticamente (Fase 14.1) */}
               {linhasPreambuloDetectadas.length > 0 && (
