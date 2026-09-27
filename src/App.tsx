@@ -1587,6 +1587,8 @@ export default function App() {
 
               {/* FASE 10: CONTROLE DOCUMENTAL, REVISÕES & FONTES EXTERNAS */}
               {(activeTab === 'controle-documental' ||
+                activeTab === 'verificacao-controle' ||
+                activeTab === 'historico-relatorios' ||
                 activeTab === 'consulta-temporal' ||
                 activeTab === 'fontes-externas' ||
                 activeTab === 'documentos-dashboard' ||
@@ -1605,16 +1607,10 @@ export default function App() {
                   evidenciasConsulta={evidenciasConsultaDoc}
                   nonConformities={records}
                   initialSubTab={
-                    activeTab === 'consulta-temporal'
-                      ? 'temporal'
-                      : activeTab === 'fontes-externas'
-                      ? 'fontes'
-                      : activeTab === 'documentos-dashboard'
-                      ? 'dashboard'
-                      : activeTab === 'documentos-solicitacoes'
-                      ? 'solicitacoes'
-                      : activeTab === 'documentos-comparador'
-                      ? 'comparador'
+                    activeTab === 'verificacao-controle' || activeTab === 'fontes-externas' || activeTab === 'documentos-solicitacoes'
+                      ? 'verificacao'
+                      : activeTab === 'historico-relatorios' || activeTab === 'documentos-revisoes' || activeTab === 'consulta-temporal' || activeTab === 'documentos-comparador'
+                      ? 'historico'
                       : 'acervo'
                   }
                   onOpenNCFormWithDoc={() => {

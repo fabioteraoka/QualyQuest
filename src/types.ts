@@ -2052,6 +2052,34 @@ export interface DocumentoControlado {
   dataAprovacao?: string;
   aprovadorNome?: string;
   tags?: string[];
+
+  // NOVOS CAMPOS: MÓDULO DE VERIFICAÇÃO AUTOMÁTICA VS. MANUAL & RELATÓRIO DE CONFORMIDADE
+  areaPublicacao?: string; // Área temática da publicação (ex: 'Regulamentação Aeronáutica', 'Manuais de Voo & Linha', 'SGQ & Procedimentos')
+  proprietarioCessor?: string; // Proprietário ou Cessor do manual (ex: 'IMPACTO', 'ANAC', 'BOEING', 'KALITTA')
+  numeroRevisao?: string; // Sinônimo direto para Número da Revisão (ex: 'Rev. 08', 'Emenda 09', 'Rev. 107')
+  dataRevisao?: string; // Sinônimo direto para Data da Revisão
+  tipoVerificacao?: 'AUTOMATICO' | 'MANUAL'; // Classificação de Automação
+  urlFonteVerificacao?: string; // Mapeamento de Fonte (URL pública para robô ou portal restrito)
+  statusVerificacao?: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO' | 'ERRO_FONTE';
+  dataUltimaVerificacao?: string; // ISO string da última verificação
+  detalhesUltimaVerificacao?: string; // Mensagem de conformidade ou detalhes da nova revisão encontrada
+  revisaoNaFonteIdentificada?: string; // Revisão encontrada na fonte oficial durante a última checagem
+  contatoClienteNome?: string; // Nome do ponto focal técnico do cliente
+  contatoClienteEmail?: string; // E-mail para notificação automática de solicitação de revisão
+  portalFabricanteUrl?: string; // URL do portal restrito do fabricante (MyBoeingFleet, AirbusWorld, Cessna 1View)
+  portalFabricanteInstrucoes?: string; // Orientações de login / credencial do fabricante
+  ultimaNotificacaoClienteEm?: string; // Data ISO da última notificação enviada ao cliente
+  ultimoAlertaFabricanteEm?: string; // Data ISO do último alerta / verificação do fabricante
+
+  // ARMAZENAMENTO DE ARQUIVOS / REPOSITÓRIO (ACERVO & BIBLIOTECA)
+  arquivoUrl?: string; // URL pública ou link de acesso do arquivo vigente
+  arquivoCaminho?: string; // Caminho no storage/repositório (ex: '/acervo/manuais/{docId}/{fileName}')
+  arquivoNome?: string; // Nome original do arquivo (ex: 'MOMQ_Rev08.pdf')
+  arquivoMimeType?: string; // MIME type (ex: 'application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+  arquivoTamanhoBytes?: number; // Tamanho em bytes
+  dataUpload?: string; // Data ISO do upload do arquivo vigente
+  arquivoBase64?: string; // Armazenamento do binário para download e visualização offline
+
   createdAt: string;
   updatedAt: string;
 }
@@ -2081,6 +2109,10 @@ export interface RevisaoDocumental {
   arquivoTamanhoBytes?: number;
   arquivoMimeType?: string;
   arquivoHashSha256?: string;
+  arquivoUrl?: string;
+  arquivoCaminho?: string;
+  dataUpload?: string;
+  arquivoBase64?: string;
   conteudoTextoIntegral?: string;
   capitulosIndexados?: ManualCapitulo[];
   observacoes?: string;

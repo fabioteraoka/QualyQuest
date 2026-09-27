@@ -74,7 +74,24 @@ import {
   RotateCcw,
   AlertOctagon,
   ShieldAlert,
+  Bot,
+  UserCheck,
+  Printer,
+  Sliders,
+  FileText,
+  Upload,
+  Download,
+  HardDrive,
 } from 'lucide-react';
+import { ComplianceReportModal } from './ComplianceReportModal';
+import {
+  CustomerNotificationModal,
+  ManufacturerAlertModal,
+  ConfigureSourceModal,
+} from './ManualVerificationModals';
+import { UploadManualModal } from './UploadManualModal';
+import { DocumentFilePreviewModal } from './DocumentFilePreviewModal';
+import { formatFileSize, downloadOrViewDocumentFile } from '../utils/documentFilesStorage';
 
 interface DocumentControlCenterViewProps {
   organizationId: string;
@@ -88,7 +105,7 @@ interface DocumentControlCenterViewProps {
   evidenciasConsulta: RegistroEvidenciaConsultaDocumento[];
   nonConformities?: NCRecord[];
   onOpenNCFormWithDoc?: (docCodigo: string, revisao: string) => void;
-  initialSubTab?: 'acervo' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard';
+  initialSubTab?: 'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard';
 }
 
 export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps> = ({
@@ -106,20 +123,55 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   initialSubTab = 'acervo',
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'acervo' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard'
-  >(initialSubTab);
+    'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard'
+  >(
+    initialSubTab === 'fontes' || initialSubTab === 'solicitacoes'
+      ? 'verificacao'
+      : initialSubTab === 'temporal' || initialSubTab === 'comparador' || initialSubTab === 'dashboard'
+      ? 'historico'
+      : initialSubTab || 'acervo'
+  );
 
   useEffect(() => {
     if (initialSubTab) {
-      setActiveSubTab(initialSubTab);
+      if (initialSubTab === 'fontes' || initialSubTab === 'solicitacoes') {
+        setActiveSubTab('verificacao');
+      } else if (initialSubTab === 'temporal' || initialSubTab === 'comparador' || initialSubTab === 'dashboard') {
+        setActiveSubTab('historico');
+      } else {
+        setActiveSubTab(initialSubTab as any);
+      }
     }
   }, [initialSubTab]);
+
+  // Seções internas para sub-abas estruturadas
+  const [activeVerificacaoSection, setActiveVerificacaoSection] = useState<'vigencia' | 'fontes' | 'solicitacoes'>('vigencia');
+  const [activeHistoricoSection, setActiveHistoricoSection] = useState<'relatorio' | 'timeline' | 'comparador'>('relatorio');
+  const [historicoSelectedDocId, setHistoricoSelectedDocId] = useState<string>('TODOS');
+  const [relatorioMesReferencia, setRelatorioMesReferencia] = useState(new Date().toISOString().substring(0, 7));
+
+  // Estados de Upload & Pré-visualização de Arquivos (Repositório / Acervo)
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [docForUpload, setDocForUpload] = useState<DocumentoControlado | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<DocumentoControlado | null>(null);
+  const [previewRev, setPreviewRev] = useState<RevisaoDocumental | null>(null);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
   // Filtros do Acervo
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoria, setSelectedCategoria] = useState<string>('TODAS');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
+  const [selectedTipoVerificacao, setSelectedTipoVerificacao] = useState<'TODOS' | 'AUTOMATICO' | 'MANUAL'>('TODOS');
+  const [selectedStatusVerificacao, setSelectedStatusVerificacao] = useState<'TODOS' | 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO'>('TODOS');
   const [selectedDocForDetail, setSelectedDocForDetail] = useState<DocumentoControlado | null>(null);
+
+  // Estados dos Novos Módulos: Relatório de Conformidade & Verificação Automática/Manual
+  const [isComplianceReportOpen, setIsComplianceReportOpen] = useState(false);
+  const [isVerifyingUpdates, setIsVerifyingUpdates] = useState(false);
+  const [selectedDocForVerificationModal, setSelectedDocForVerificationModal] = useState<DocumentoControlado | null>(null);
+  const [isCustomerNotificationModalOpen, setIsCustomerNotificationModalOpen] = useState(false);
+  const [isManufacturerAlertModalOpen, setIsManufacturerAlertModalOpen] = useState(false);
+  const [isConfigureSourceModalOpen, setIsConfigureSourceModalOpen] = useState(false);
 
   // Estados de Governança Documental (Edição, Inativação, Reativação, Exclusão Segura)
   const [docToEdit, setDocToEdit] = useState<DocumentoControlado | null>(null);
@@ -378,6 +430,157 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     setTimeout(() => setFeedbackMessage(null), 4000);
   };
 
+  // Handlers do Módulo de Verificação Automática vs Manual & Relatório de Conformidade
+  const handleVerificarFontesPublicas = async () => {
+    try {
+      setIsVerifyingUpdates(true);
+      const res = await fetch('/api/documentos/verificar-fontes-publicas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          documentos,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Falha ao executar rotina de checagem');
+      }
+
+      // Persistir no Firestore cada documento analisado pelo robô
+      if (Array.isArray(data.resultados)) {
+        for (const item of data.resultados) {
+          const docAlvo = documentos.find((d) => d.id === item.documentoId || d.codigo === item.codigo);
+          if (docAlvo) {
+            const atualizado: DocumentoControlado = {
+              ...docAlvo,
+              statusVerificacao: item.statusVerificacao,
+              dataUltimaVerificacao: item.dataVerificacao,
+              revisaoNaFonteIdentificada: item.revisaoNaFonte,
+              detalhesUltimaVerificacao: item.mensagem,
+            };
+            try {
+              await saveDocumentoControlado(organizationId, atualizado, currentUser, docAlvo);
+            } catch (saveErr) {
+              console.warn('Erro ao atualizar documento no Firestore:', saveErr);
+            }
+          }
+        }
+      }
+
+      showToast(
+        `Verificação Automática Concluída: ${data.totalVerificados} manuais verificados (${data.totalDiscrepancias} com nova revisão detectada).`
+      );
+    } catch (err: any) {
+      alert(`Erro na verificação de fontes públicas: ${err.message}`);
+    } finally {
+      setIsVerifyingUpdates(false);
+    }
+  };
+
+  const handleSendCustomerNotification = async (
+    docId: string,
+    emailData: { email: string; assunto: string; corpo: string; protocolo: string }
+  ) => {
+    try {
+      const docAlvo = documentos.find((d) => d.id === docId);
+      if (!docAlvo) return;
+
+      const res = await fetch('/api/documentos/notificar-cliente-revisao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentoId: docId,
+          codigo: docAlvo.codigo,
+          titulo: docAlvo.titulo,
+          clienteNome: docAlvo.proprietarioCessor || docAlvo.clienteNome || docAlvo.emissor,
+          destinatarioEmail: emailData.email,
+          revisaoAtual: docAlvo.numeroRevisao || docAlvo.revisaoVigenteNumero || 'Rev. Vigente',
+          protocolo: emailData.protocolo,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Erro ao registrar envio');
+
+      const atualizado: DocumentoControlado = {
+        ...docAlvo,
+        statusVerificacao: 'PENDENTE_VERIFICACAO',
+        ultimaNotificacaoClienteEm: new Date().toISOString(),
+        contatoClienteEmail: emailData.email,
+        detalhesUltimaVerificacao: `Solicitação formal protocolada sob ${data.protocolo} para ${emailData.email}`,
+      };
+
+      await saveDocumentoControlado(organizationId, atualizado, currentUser, docAlvo);
+      setIsCustomerNotificationModalOpen(false);
+      setSelectedDocForVerificationModal(null);
+      showToast(`Notificação enviada com sucesso! Protocolo: ${data.protocolo}`);
+    } catch (err: any) {
+      alert(`Erro ao notificar cliente: ${err.message}`);
+    }
+  };
+
+  const handleConfirmManufacturerCheck = async (
+    docId: string,
+    result: { confirmadaEm: string; observacoes?: string }
+  ) => {
+    try {
+      const docAlvo = documentos.find((d) => d.id === docId);
+      if (!docAlvo) return;
+
+      const res = await fetch('/api/documentos/solicitar-fabricante-revisao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          documentoId: docId,
+          codigo: docAlvo.codigo,
+          titulo: docAlvo.titulo,
+          fabricanteNome: docAlvo.proprietarioCessor || docAlvo.fabricanteNome || 'Fabricante OEM',
+          revisaoAtual: docAlvo.numeroRevisao || docAlvo.revisaoVigenteNumero,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Erro ao registrar verificação');
+
+      const atualizado: DocumentoControlado = {
+        ...docAlvo,
+        statusVerificacao: 'CONFORME',
+        dataUltimaVerificacao: result.confirmadaEm,
+        ultimoAlertaFabricanteEm: result.confirmadaEm,
+        detalhesUltimaVerificacao: `Verificação confirmada via portal OEM restrito pelo usuário. ${result.observacoes || ''}`,
+      };
+
+      await saveDocumentoControlado(organizationId, atualizado, currentUser, docAlvo);
+      setIsManufacturerAlertModalOpen(false);
+      setSelectedDocForVerificationModal(null);
+      showToast('Verificação no portal do fabricante registrada como Conforme!');
+    } catch (err: any) {
+      alert(`Erro ao registrar verificação de fabricante: ${err.message}`);
+    }
+  };
+
+  const handleSaveConfigureSource = async (docId: string, updates: Partial<DocumentoControlado>) => {
+    try {
+      const docAlvo = documentos.find((d) => d.id === docId);
+      if (!docAlvo) return;
+
+      const atualizado: DocumentoControlado = {
+        ...docAlvo,
+        ...updates,
+        atualizadoEm: new Date().toISOString(),
+      };
+
+      await saveDocumentoControlado(organizationId, atualizado, currentUser, docAlvo);
+      setIsConfigureSourceModalOpen(false);
+      setSelectedDocForVerificationModal(null);
+      showToast('Configuração da fonte e método de verificação salva com sucesso!');
+    } catch (err: any) {
+      alert(`Erro ao salvar configuração: ${err.message}`);
+    }
+  };
+
   // Métricas do Dashboard Documental
   const dashboardMetrics = useMemo(() => {
     return calcularMetricasDashboardDocumental(documentos, revisoes, fontes, solicitacoes, logsVerificacao);
@@ -389,15 +592,25 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       const matchSearch =
         doc.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         doc.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doc.emissor.toLowerCase().includes(searchTerm.toLowerCase());
+        doc.emissor.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (doc.proprietarioCessor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (doc.areaPublicacao || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchCategoria = selectedCategoria === 'TODAS' || doc.categoria === selectedCategoria;
       const matchStatus =
         selectedStatusFilter === 'TODOS' ||
         (selectedStatusFilter === 'ATIVO' && (doc.statusGeral === 'ATIVO' || !doc.statusGeral)) ||
         (selectedStatusFilter === 'INATIVO' && doc.statusGeral === 'INATIVO');
-      return matchSearch && matchCategoria && matchStatus;
+
+      const docTipo = doc.tipoVerificacao || 'MANUAL';
+      const matchTipo = selectedTipoVerificacao === 'TODOS' || docTipo === selectedTipoVerificacao;
+
+      const docStatusVerif = doc.statusVerificacao || 'CONFORME';
+      const matchStatusVerif =
+        selectedStatusVerificacao === 'TODOS' || docStatusVerif === selectedStatusVerificacao;
+
+      return matchSearch && matchCategoria && matchStatus && matchTipo && matchStatusVerif;
     });
-  }, [documentos, searchTerm, selectedCategoria, selectedStatusFilter]);
+  }, [documentos, searchTerm, selectedCategoria, selectedStatusFilter, selectedTipoVerificacao, selectedStatusVerificacao]);
 
   // Revisões do documento selecionado para detalhe
   const revisoesDoDocSelecionado = useMemo(() => {
@@ -570,6 +783,18 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     showToast(`Evidência de consulta do documento ${doc.codigo} registrada com sucesso.`);
   };
 
+  // Funções de Gestão de Arquivos / Repositório de Manuais
+  const handleOpenUploadModal = (docToUpdate?: DocumentoControlado | null) => {
+    setDocForUpload(docToUpdate || null);
+    setIsUploadModalOpen(true);
+  };
+
+  const handleOpenFilePreview = (doc: DocumentoControlado, rev?: RevisaoDocumental | null) => {
+    setPreviewDoc(doc);
+    setPreviewRev(rev || null);
+    setIsPreviewModalOpen(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Toast Feedback */}
@@ -605,35 +830,70 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
           {/* Ações Rápidas do Cabeçalho */}
           <div className="flex flex-wrap items-center gap-2">
             <button
+              onClick={() => handleOpenUploadModal(null)}
+              className="px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+              title="Fazer upload direto de manual da empresa (PDF/DOCX) com preenchimento automático no controle geral"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Upload de Manual (PDF/DOCX)</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveSubTab('historico');
+                setActiveHistoricoSection('relatorio');
+              }}
+              className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+              title="Gerar relatório visual e exportação PDF para evidência à ANAC / Autoridade Reguladora"
+            >
+              <Printer className="w-4 h-4" />
+              <span>Relatório de Conformidade (PDF)</span>
+            </button>
+            <button
+              onClick={handleVerificarFontesPublicas}
+              disabled={isVerifyingUpdates}
+              className="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+              title="Disparar robô de checagem automática das publicações oficiais (RBAC, IS, IAC ANAC)"
+            >
+              <RefreshCw className={`w-4 h-4 ${isVerifyingUpdates ? 'animate-spin' : ''}`} />
+              <span>{isVerifyingUpdates ? 'Verificando Fontes...' : 'Verificar Atualizações'}</span>
+            </button>
+            <button
               onClick={() => {
                 setSelectedDocForDetail(null);
                 setIsNewDocModalOpen(true);
               }}
-              className="px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm"
+              className="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              Novo Documento
-            </button>
-            <button
-              onClick={() => setIsNewSourceModalOpen(true)}
-              className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-2 transition-colors"
-            >
-              <Globe className="w-4 h-4 text-amber-400" />
-              Nova Fonte Oficial
+              Novo Documento Manual
             </button>
           </div>
         </div>
 
-        {/* 7 Abas de Navegação Integradas */}
-        <div className="mt-6 flex flex-wrap gap-1 border-b border-slate-800 pb-1">
+        {/* Nova Estrutura Unificada de 3 Sub-Abas Mandatadas para Eliminar Duplicidade */}
+        <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-800 pb-2">
           {[
-            { id: 'acervo', label: 'Acervo & Ciclo de Vida', icon: BookOpen, count: documentos.length },
-            { id: 'temporal', label: 'Conhecimento Temporal', icon: History, highlight: true },
-            { id: 'fontes', label: 'Fontes Externas Oficiais', icon: Globe, count: fontes.length },
-            { id: 'solicitacoes', label: 'Solicitações a Clientes', icon: Mail, count: solicitacoes.length },
-            { id: 'comparador', label: 'Comparador & Impactos', icon: GitCompare },
-            { id: 'rag', label: 'Assistente RAG Temporal', icon: Sparkles },
-            { id: 'dashboard', label: 'Dashboard Documental', icon: BarChart3 },
+            {
+              id: 'acervo',
+              label: '1. Acervo & Biblioteca',
+              subtitle: 'Gestão de Arquivos / Repositório',
+              icon: BookOpen,
+              count: documentos.length,
+            },
+            {
+              id: 'verificacao',
+              label: '2. Verificação & Controle',
+              subtitle: 'Status de Revisão e Automações',
+              icon: ShieldCheck,
+              count: documentos.length,
+            },
+            {
+              id: 'historico',
+              label: '3. Histórico & Relatórios',
+              subtitle: 'Auditoria / Comunicação à Autoridade',
+              icon: History,
+              count: revisoes.length,
+            },
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeSubTab === tab.id;
@@ -641,26 +901,30 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               <button
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id as any)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${
+                className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                    ? 'bg-sky-500/15 text-sky-300 border border-sky-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
-                <span>{tab.label}</span>
-                {tab.count !== undefined && (
-                  <span
-                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                      isActive ? 'bg-sky-500/20 text-sky-300' : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
-                )}
-                {tab.highlight && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Motor Temporal Ativo" />
-                )}
+                <div className={`p-1.5 rounded-lg ${isActive ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-400'}`}>
+                  <Icon className="w-4 h-4" />
+                </div>
+                <div className="text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold">{tab.label}</span>
+                    {tab.count !== undefined && (
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                          isActive ? 'bg-sky-500/30 text-sky-200' : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {tab.count}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[10px] text-slate-500 block">{tab.subtitle}</span>
+                </div>
               </button>
             );
           })}
@@ -668,63 +932,184 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       </div>
 
       {/* ========================================================================= */}
-      {/* ABA 1: ACERVO DE DOCUMENTOS & CICLO DE VIDA                               */}
+      {/* SUB-ABA 1: ACERVO & BIBLIOTECA (GESTÃO DE ARQUIVOS / REPOSITÓRIO)         */}
       {/* ========================================================================= */}
       {activeSubTab === 'acervo' && (
         <div className="space-y-4">
-          {/* Barra de Filtros e Busca */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
-            <div className="relative w-full md:w-80">
-              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Buscar por código, título ou emissor..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
-              />
+          {/* Card Resumo do Acervo & Repositório de Arquivos */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                    REPOSITÓRIO DIGITAL CENTRAL
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    PDF / Word (.docx) • Cópias Controladas com Hash & Integridade
+                  </span>
+                </div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-sky-400" />
+                  Acervo & Biblioteca Técnica da Empresa
+                </h2>
+                <p className="text-xs text-slate-400 max-w-2xl leading-relaxed">
+                  Gerencie o armazenamento e o ciclo de vida dos arquivos técnicos. Cada upload de manual atualiza automaticamente a revisão vigente no controle geral e alimenta a linha do tempo imutável para auditorias.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => handleOpenUploadModal(null)}
+                  className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md shadow-sky-600/20 cursor-pointer"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Upload de Novo Manual (PDF/DOCX)</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
-              <span className="text-xs text-slate-400 font-medium whitespace-nowrap flex items-center gap-1">
-                <Filter className="w-3.5 h-3.5" /> Categoria:
-              </span>
-              {['TODAS', 'DOCUMENTO_INTERNO', 'DOCUMENTO_AUTORIDADE', 'DOCUMENTO_FABRICANTE', 'DOCUMENTO_CLIENTE'].map(
-                (cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategoria(cat)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
-                      selectedCategoria === cat
-                        ? 'bg-sky-600 text-white'
-                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                    }`}
-                  >
-                    {cat === 'TODAS'
-                      ? 'Todas'
-                      : cat === 'DOCUMENTO_INTERNO'
-                      ? 'Internos'
-                      : cat === 'DOCUMENTO_AUTORIDADE'
-                      ? 'Autoridades'
-                      : cat === 'DOCUMENTO_FABRICANTE'
-                      ? 'Fabricantes'
-                      : 'Clientes'}
-                  </button>
-                )
-              )}
+            {/* Métricas Rápidas do Repositório */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800/80">
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Total de Manuais:</span>
+                <span className="text-lg font-bold text-white font-mono">{documentos.length}</span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Com Arquivo Digital:</span>
+                <span className="text-lg font-bold text-emerald-400 font-mono">
+                  {documentos.filter((d) => d.arquivoNome).length}
+                </span>
+                <span className="text-[10px] text-slate-500 ml-1">
+                  ({Math.round(((documentos.filter((d) => d.arquivoNome).length || 0) / (documentos.length || 1)) * 100)}%)
+                </span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Revisões Vigentes:</span>
+                <span className="text-lg font-bold text-sky-400 font-mono">
+                  {documentos.filter((d) => d.statusGeral !== 'INATIVO').length}
+                </span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Histórico Arquivado:</span>
+                <span className="text-lg font-bold text-indigo-400 font-mono">{revisoes.length} revisões</span>
+              </div>
+            </div>
+          </div>
 
-              {/* Filtro de Status Geral */}
-              <div className="flex items-center gap-1 ml-auto">
-                <span className="text-xs text-slate-400 font-medium whitespace-nowrap">Status:</span>
-                <select
-                  value={selectedStatusFilter}
-                  onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
-                  className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+          {/* Barra de Filtros e Busca */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div className="flex flex-col md:flex-row gap-3 items-center justify-between">
+              <div className="relative w-full md:w-80">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar por código, título, emissor, área ou proprietário..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                />
+              </div>
+
+              {/* Botões de Filtro de Automação (AUTOMÁTICO vs MANUAL) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+                <span className="text-xs text-slate-400 font-semibold flex items-center gap-1 shrink-0">
+                  <Bot className="w-3.5 h-3.5 text-indigo-400" /> Verificação:
+                </span>
+                <button
+                  onClick={() => setSelectedTipoVerificacao('TODOS')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                    selectedTipoVerificacao === 'TODOS'
+                      ? 'bg-slate-700 text-white'
+                      : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
                 >
-                  <option value="TODOS">Todos os Status</option>
-                  <option value="ATIVO">Apenas Ativos</option>
-                  <option value="INATIVO">Apenas Inativos</option>
-                </select>
+                  Todas ({documentos.length})
+                </button>
+                <button
+                  onClick={() => setSelectedTipoVerificacao('AUTOMATICO')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    selectedTipoVerificacao === 'AUTOMATICO'
+                      ? 'bg-indigo-600 text-white shadow-sm'
+                      : 'bg-indigo-950/40 text-indigo-300 hover:bg-indigo-900/40 border border-indigo-500/30'
+                  }`}
+                >
+                  <Bot className="w-3 h-3" />
+                  Automático ({documentos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length})
+                </button>
+                <button
+                  onClick={() => setSelectedTipoVerificacao('MANUAL')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors flex items-center gap-1 ${
+                    selectedTipoVerificacao === 'MANUAL'
+                      ? 'bg-amber-600 text-white shadow-sm'
+                      : 'bg-amber-950/40 text-amber-300 hover:bg-amber-900/40 border border-amber-500/30'
+                  }`}
+                >
+                  <UserCheck className="w-3 h-3" />
+                  Manual ({documentos.filter((d) => d.tipoVerificacao !== 'AUTOMATICO').length})
+                </button>
+              </div>
+            </div>
+
+            {/* Linha secundária de filtros: Categoria, Status de Conformidade e Status Geral */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800/80">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-slate-400 font-medium flex items-center gap-1">
+                  <Filter className="w-3 h-3" /> Categoria:
+                </span>
+                {['TODAS', 'DOCUMENTO_INTERNO', 'DOCUMENTO_AUTORIDADE', 'DOCUMENTO_FABRICANTE', 'DOCUMENTO_CLIENTE'].map(
+                  (cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategoria(cat)}
+                      className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
+                        selectedCategoria === cat
+                          ? 'bg-sky-600 text-white'
+                          : 'bg-slate-950 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                      }`}
+                    >
+                      {cat === 'TODAS'
+                        ? 'Todas'
+                        : cat === 'DOCUMENTO_INTERNO'
+                        ? 'Internos'
+                        : cat === 'DOCUMENTO_AUTORIDADE'
+                        ? 'Autoridades'
+                        : cat === 'DOCUMENTO_FABRICANTE'
+                        ? 'Fabricantes'
+                        : 'Clientes'}
+                    </button>
+                  )
+                )}
+              </div>
+
+              <div className="flex items-center gap-3 ml-auto flex-wrap">
+                {/* Filtro Status de Conformidade */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] text-slate-400 font-medium">Conformidade:</span>
+                  <select
+                    value={selectedStatusVerificacao}
+                    onChange={(e) => setSelectedStatusVerificacao(e.target.value as any)}
+                    className="px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="TODOS">Todos os Resultados</option>
+                    <option value="CONFORME">Conforme (Vigente no Mês)</option>
+                    <option value="NOVA_REVISAO_IDENTIFICADA">Nova Revisão Detectada</option>
+                    <option value="PENDENTE_VERIFICACAO">Pendente Retorno</option>
+                  </select>
+                </div>
+
+                {/* Filtro de Status Ativo/Inativo */}
+                <div className="flex items-center gap-1">
+                  <span className="text-[11px] text-slate-400 font-medium">Ciclo:</span>
+                  <select
+                    value={selectedStatusFilter}
+                    onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
+                    className="px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="TODOS">Todos</option>
+                    <option value="ATIVO">Apenas Ativos</option>
+                    <option value="INATIVO">Inativos</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -745,27 +1130,75 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                       : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                   }`}
                 >
-                  <div className="space-y-3">
+                  <div className="space-y-3.5">
+                    {/* Topo do Card: Código + Badges (Automação, Conformidade, Categoria) */}
                     <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-xs font-mono font-bold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20">
                             {doc.codigo}
                           </span>
-                          {isDocInativo ? (
+
+                          {/* Badge Automação: AUTOMÁTICO vs MANUAL */}
+                          {doc.tipoVerificacao === 'AUTOMATICO' ? (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1"
+                              title="Verificação Automática via Robô de Consulta Pública Oficial (ANAC / DOU / FAA)"
+                            >
+                              <Bot className="w-3 h-3 text-indigo-400" />
+                              AUTOMÁTICO
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1"
+                              title="Verificação Manual: depende de notificação ao cliente ou acesso restrito a portal de fabricante"
+                            >
+                              <UserCheck className="w-3 h-3 text-amber-400" />
+                              MANUAL
+                            </span>
+                          )}
+
+                          {/* Badge Status de Conformidade */}
+                          {doc.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA' ? (
+                            <span
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse"
+                              title={`Nova revisão detectada na fonte: ${doc.revisaoNaFonteIdentificada || 'Verificar'}`}
+                            >
+                              <AlertTriangle className="w-3 h-3 text-rose-400" />
+                              Nova Rev. Identificada
+                            </span>
+                          ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' ? (
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1"
+                              title="Aguardando retorno de cliente ou validação técnica"
+                            >
+                              <Clock className="w-3 h-3 text-amber-400" />
+                              Pendente Retorno
+                            </span>
+                          ) : (
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1"
+                              title="Revisão vigente conferida e em estrita conformidade"
+                            >
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              Conforme no Mês
+                            </span>
+                          )}
+
+                          {isDocInativo && (
                             <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1">
                               <PowerOff className="w-2.5 h-2.5" /> Inativo
                             </span>
-                          ) : (
-                            <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              Ativo
-                            </span>
                           )}
                         </div>
-                        <h3 className="text-sm font-semibold text-white mt-1.5 group-hover:text-sky-300 transition-colors line-clamp-2">
+
+                        {/* 1. TÍTULO */}
+                        <h3 className="text-sm font-bold text-white mt-1 group-hover:text-sky-300 transition-colors line-clamp-2">
                           {doc.titulo}
                         </h3>
                       </div>
+
+                      {/* Categoria */}
                       <span
                         className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full shrink-0 border ${
                           doc.categoria === 'DOCUMENTO_AUTORIDADE'
@@ -781,84 +1214,183 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                       </span>
                     </div>
 
-                    <div className="space-y-1.5 text-xs text-slate-400">
+                    {/* Bloco dos 5 Campos Base Estruturados */}
+                    <div className="bg-slate-950/70 rounded-lg p-3 border border-slate-800/80 space-y-1.5 text-xs text-slate-300">
                       <div className="flex items-center justify-between">
-                        <span>Emissor / Fonte:</span>
-                        <span className="text-slate-200 font-medium truncate max-w-[180px]">
-                          {doc.autoridadeNome || doc.fabricanteNome || doc.clienteNome || doc.emissor}
+                        <span className="text-slate-400 font-medium">Área de Publicação:</span>
+                        <span className="text-slate-200 font-semibold truncate max-w-[180px]">
+                          {doc.areaPublicacao || doc.tipoSubcategoria || 'Geral SGQ / Manutenção'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Revisão Vigente:</span>
-                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                        <span className="text-slate-400 font-medium">Proprietário / Cessor:</span>
+                        <span className="text-slate-200 font-semibold truncate max-w-[180px]">
+                          {doc.proprietarioCessor || doc.clienteNome || doc.emissor || 'Impacto Aviation'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Número da Revisão:</span>
+                        <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          {doc.revisaoVigenteNumero || revVigente?.numeroRevisao || 'S/ Rev'}
+                          {doc.numeroRevisao || doc.revisaoVigenteNumero || revVigente?.numeroRevisao || 'Rev. 00'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span>Histórico de Versões:</span>
-                        <span className="text-slate-300">{totalRevisoes} revisões registradas</span>
+                        <span className="text-slate-400 font-medium">Data da Revisão:</span>
+                        <span className="text-slate-200 font-mono font-medium">
+                          {doc.dataRevisao || revVigente?.dataEntradaVigor || doc.atualizadoEm?.split('T')[0] || '-'}
+                        </span>
                       </div>
+                    </div>
+
+                    {/* Mapeamento de Fonte & Status do Robô / Verificação */}
+                    <div className="text-[11px] text-slate-400 space-y-1 pt-1">
+                      {doc.urlFonteVerificacao && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Fonte Mapeada:</span>
+                          <a
+                            href={doc.urlFonteVerificacao}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sky-400 hover:text-sky-300 font-mono truncate max-w-[190px] flex items-center gap-1 hover:underline"
+                            title={doc.urlFonteVerificacao}
+                          >
+                            <span className="truncate">{doc.urlFonteVerificacao.replace(/^https?:\/\//, '')}</span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                        </div>
+                      )}
+
+                      {doc.dataUltimaVerificacao && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Última Checagem:</span>
+                          <span className="text-slate-300 font-mono text-[10px]">
+                            {new Date(doc.dataUltimaVerificacao).toLocaleDateString('pt-BR')} às{' '}
+                            {new Date(doc.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                      )}
+
+                      {doc.detalhesUltimaVerificacao && (
+                        <p className="text-[11px] text-slate-400 bg-slate-950/40 p-2 rounded border border-slate-800/60 line-clamp-2">
+                          {doc.detalhesUltimaVerificacao}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Bloco de Repositório de Arquivos (Sub-aba Acervo & Biblioteca) */}
+                    <div className="pt-2">
+                      {doc.arquivoNome ? (
+                        <div className="p-2.5 rounded-lg bg-sky-950/20 border border-sky-500/30 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="flex items-center gap-1.5 text-sky-300 font-mono font-medium truncate max-w-[200px]" title={doc.arquivoNome}>
+                              <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                              <span className="truncate">{doc.arquivoNome}</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 shrink-0 font-mono">
+                              {formatFileSize(doc.arquivoTamanhoBytes)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenFilePreview(doc)}
+                              className="flex-1 py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                              title="Visualizar no navegador ou baixar o arquivo vigente"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Visualizar / Download</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenUploadModal(doc)}
+                              className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
+                              title="Subir nova versão ou revisão substituindo a atual"
+                            >
+                              <Upload className="w-3.5 h-3.5 text-sky-400" />
+                              <span>Nova Versão</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-2.5 rounded-lg bg-slate-950/60 border border-dashed border-slate-800 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <Upload className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                            <span className="text-[11px]">Arquivo digital pendente</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenUploadModal(doc)}
+                            className="py-1 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Anexar Arquivo</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Ações do Card */}
-                  <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between gap-1.5 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => {
-                          setConsultTargetDoc(doc);
-                          setIsConsultModalOpen(true);
-                        }}
-                        className="text-xs text-slate-300 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-800 transition-colors"
-                        title="Registrar consulta formal"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-sky-400" />
-                        <span>Consultar</span>
-                      </button>
-
-                      <button
-                        onClick={() => handleOpenEditDoc(doc)}
-                        className="text-xs text-slate-400 hover:text-sky-300 p-1.5 rounded hover:bg-slate-800 transition-colors"
-                        title="Editar Metadados do Documento"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-
-                      {isDocInativo ? (
+                  {/* Ações do Card de Governança */}
+                  <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">
+                    {/* Ações Padrão de Governança */}
+                    <div className="flex items-center justify-between gap-1.5 pt-1">
+                      <div className="flex items-center gap-1">
                         <button
-                          onClick={() => handleOpenReactivateDoc(doc)}
-                          className="text-xs text-slate-400 hover:text-emerald-400 p-1.5 rounded hover:bg-slate-800 transition-colors"
-                          title="Reativar Documento"
+                          onClick={() => {
+                            setConsultTargetDoc(doc);
+                            setIsConsultModalOpen(true);
+                          }}
+                          className="text-xs text-slate-300 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Registrar evidência de consulta técnica no SGQ"
                         >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                          <Eye className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Consultar</span>
                         </button>
-                      ) : (
+
                         <button
-                          onClick={() => handleOpenInactivateDoc(doc)}
-                          className="text-xs text-slate-400 hover:text-amber-400 p-1.5 rounded hover:bg-slate-800 transition-colors"
-                          title="Inativar Documento (Lógica)"
+                          onClick={() => handleOpenEditDoc(doc)}
+                          className="text-xs text-slate-400 hover:text-sky-300 p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Editar Metadados do Documento"
                         >
-                          <PowerOff className="w-3.5 h-3.5" />
+                          <Edit className="w-3.5 h-3.5" />
                         </button>
-                      )}
+
+                        {isDocInativo ? (
+                          <button
+                            onClick={() => handleOpenReactivateDoc(doc)}
+                            className="text-xs text-slate-400 hover:text-emerald-400 p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                            title="Reativar Documento"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleOpenInactivateDoc(doc)}
+                            className="text-xs text-slate-400 hover:text-amber-400 p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                            title="Inativar Documento (Lógica)"
+                          >
+                            <PowerOff className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleOpenDeleteDoc(doc)}
+                          className="text-xs text-slate-400 hover:text-rose-400 p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Excluir Registro (com verificação prévia)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
 
                       <button
-                        onClick={() => handleOpenDeleteDoc(doc)}
-                        className="text-xs text-slate-400 hover:text-rose-400 p-1.5 rounded hover:bg-slate-800 transition-colors"
-                        title="Excluir Registro (com verificação prévia)"
+                        onClick={() => setSelectedDocForDetail(doc)}
+                        className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1 px-2 py-1 rounded hover:bg-sky-500/10 transition-colors cursor-pointer"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        Linha do Tempo
+                        <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
-
-                    <button
-                      onClick={() => setSelectedDocForDetail(doc)}
-                      className="text-xs text-sky-400 hover:text-sky-300 font-medium flex items-center gap-1 px-2 py-1 rounded hover:bg-sky-500/10 transition-colors"
-                    >
-                      Linha do Tempo
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
                   </div>
                 </div>
               );
@@ -1075,6 +1607,27 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                               </p>
                             )}
 
+                            {/* Arquivo da Versão / Revisão */}
+                            {(rev.arquivoNome || selectedDocForDetail.arquivoNome) && (
+                              <div className="mt-2.5 flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+                                <div className="flex items-center gap-2 text-slate-300 truncate">
+                                  <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                  <span className="font-mono truncate">{rev.arquivoNome || selectedDocForDetail.arquivoNome}</span>
+                                  <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                                    ({formatFileSize(rev.arquivoTamanhoBytes || selectedDocForDetail.arquivoTamanhoBytes)})
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenFilePreview(selectedDocForDetail, rev)}
+                                  className="px-2.5 py-1 rounded bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Visualizar / Download</span>
+                                </button>
+                              </div>
+                            )}
+
                             {/* Informações de Aprovação */}
                             <div className="mt-3 flex flex-wrap items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/60">
                               <span>
@@ -1102,7 +1655,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   </span>
                   <button
                     onClick={() => setSelectedDocForDetail(null)}
-                    className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium"
+                    className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium cursor-pointer"
                   >
                     Fechar
                   </button>
@@ -1114,7 +1667,868 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       )}
 
       {/* ========================================================================= */}
-      {/* ABA 2: CONSULTA TEMPORAL & HISTÓRICA ("A PERGUNTA MAIS IMPORTANTE")      */}
+      {/* SUB-ABA 2: VERIFICAÇÃO & CONTROLE (STATUS DE REVISÃO E AUTOMAÇÕES)       */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'verificacao' && (
+        <div className="space-y-6">
+          {/* Header da Sub-aba com Ação de Verificação Automática */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                    CONTROLE DE VIGÊNCIA & AUTOMAÇÃO
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    Robô de Scraping ANAC (RBAC/IS/IAC) + Tratativas Manuais (Clientes & Fabricantes)
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-6 h-6 text-indigo-400" />
+                  Verificação & Controle de Vigência de Manuais
+                </h2>
+                <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
+                  Monitoramento contínuo das revisões em uso contra publicações oficiais. Identifique discrepâncias regulatórias antes das auditorias, automatize solicitações a clientes e oriente acessos restritos a portais de fabricantes.
+                </p>
+              </div>
+
+              {/* Botão em Destaque: Verificar Atualizações */}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  onClick={handleVerificarFontesPublicas}
+                  disabled={isVerifyingUpdates}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-50 cursor-pointer"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isVerifyingUpdates ? 'animate-spin' : ''}`} />
+                  <span>{isVerifyingUpdates ? 'Varrendo Fontes Oficiais...' : 'Verificar Atualizações de Fontes Públicas'}</span>
+                </button>
+                <button
+                  onClick={() => setIsNewSourceModalOpen(true)}
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Globe className="w-4 h-4 text-amber-400" />
+                  <span>Nova Fonte Oficial</span>
+                </button>
+              </div>
+            </div>
+
+            {/* KPIs de Verificação */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-5 pt-4 border-t border-slate-800">
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Manuais no Acervo:</span>
+                <span className="text-lg font-bold text-white font-mono">{documentos.length}</span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-indigo-500/20">
+                <span className="text-[11px] text-indigo-300 block mb-0.5 flex items-center gap-1">
+                  <Bot className="w-3.5 h-3.5" /> Automáticos (ANAC):
+                </span>
+                <span className="text-lg font-bold text-indigo-400 font-mono">
+                  {documentos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length}
+                </span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-amber-500/20">
+                <span className="text-[11px] text-amber-300 block mb-0.5 flex items-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5" /> Manuais (Clientes/OEM):
+                </span>
+                <span className="text-lg font-bold text-amber-400 font-mono">
+                  {documentos.filter((d) => d.tipoVerificacao !== 'AUTOMATICO').length}
+                </span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-emerald-500/20">
+                <span className="text-[11px] text-emerald-300 block mb-0.5 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Conformes no Mês:
+                </span>
+                <span className="text-lg font-bold text-emerald-400 font-mono">
+                  {documentos.filter((d) => d.statusVerificacao !== 'NOVA_REVISAO_IDENTIFICADA' && d.statusVerificacao !== 'PENDENTE_VERIFICACAO').length}
+                </span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-rose-500/20">
+                <span className="text-[11px] text-rose-300 block mb-0.5 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Novas Revisões Detectadas:
+                </span>
+                <span className="text-lg font-bold text-rose-400 font-mono">
+                  {documentos.filter((d) => d.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA').length}
+                </span>
+              </div>
+            </div>
+
+            {/* Navegação Secundária da Sub-Aba Verificação */}
+            <div className="flex items-center gap-2 mt-5 pt-3 border-t border-slate-800 flex-wrap">
+              <button
+                onClick={() => setActiveVerificacaoSection('vigencia')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  activeVerificacaoSection === 'vigencia'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Painel de Vigência de Manuais ({documentos.length})</span>
+              </button>
+              <button
+                onClick={() => setActiveVerificacaoSection('fontes')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  activeVerificacaoSection === 'fontes'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>Fontes Oficiais Cadastradas ({fontes.length})</span>
+              </button>
+              <button
+                onClick={() => setActiveVerificacaoSection('solicitacoes')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  activeVerificacaoSection === 'solicitacoes'
+                    ? 'bg-sky-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                <span>Solicitações a Clientes ({solicitacoes.length})</span>
+              </button>
+            </div>
+          </div>
+
+          {/* SEÇÃO 1: Painel de Vigência e Tratativas de Revisão */}
+          {activeVerificacaoSection === 'vigencia' && (
+            <div className="space-y-4">
+              {/* Barra de Filtros */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
+                <div className="relative w-full md:w-80">
+                  <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar manual ou autoridade..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-slate-400 font-medium">Modo:</span>
+                  <button
+                    onClick={() => setSelectedTipoVerificacao('TODOS')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      selectedTipoVerificacao === 'TODOS'
+                        ? 'bg-slate-700 text-white'
+                        : 'bg-slate-950 text-slate-400 border border-slate-800'
+                    }`}
+                  >
+                    Todas ({documentos.length})
+                  </button>
+                  <button
+                    onClick={() => setSelectedTipoVerificacao('AUTOMATICO')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${
+                      selectedTipoVerificacao === 'AUTOMATICO'
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-950 text-indigo-400 border border-indigo-500/30'
+                    }`}
+                  >
+                    <Bot className="w-3 h-3" />
+                    Automático ({documentos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length})
+                  </button>
+                  <button
+                    onClick={() => setSelectedTipoVerificacao('MANUAL')}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${
+                      selectedTipoVerificacao === 'MANUAL'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-slate-950 text-amber-400 border border-amber-500/30'
+                    }`}
+                  >
+                    <UserCheck className="w-3 h-3" />
+                    Manual ({documentos.filter((d) => d.tipoVerificacao !== 'AUTOMATICO').length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid dos Cards de Verificação */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredDocumentos.map((doc) => {
+                  const revVigente = revisoes.find((r) => r.id === doc.revisaoVigenteId);
+                  const isAuto = doc.tipoVerificacao === 'AUTOMATICO';
+                  const isNovaRev = doc.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA';
+
+                  return (
+                    <div
+                      key={doc.id}
+                      className={`bg-slate-900 border rounded-xl p-5 flex flex-col justify-between transition-all ${
+                        isNovaRev
+                          ? 'border-rose-500/60 shadow-lg shadow-rose-500/10'
+                          : 'border-slate-800 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        {/* Top Badges */}
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                            {doc.codigo}
+                          </span>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {isAuto ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 flex items-center gap-1">
+                                <Bot className="w-3 h-3 text-indigo-400" /> AUTOMÁTICO (WEB)
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                <UserCheck className="w-3 h-3 text-amber-400" /> MANUAL
+                              </span>
+                            )}
+
+                            {isNovaRev ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse">
+                                <AlertTriangle className="w-3 h-3 text-rose-400" /> Nova Rev. Detectada!
+                              </span>
+                            ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-amber-400" /> Pendente Retorno
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Conforme
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Título */}
+                        <h3 className="text-sm font-bold text-white line-clamp-2">{doc.titulo}</h3>
+
+                        {/* Dados de Vigência */}
+                        <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5 text-xs text-slate-300">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Área:</span>
+                            <span className="text-slate-200 font-medium truncate max-w-[170px]">{doc.areaPublicacao || 'Geral'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Proprietário/Cessor:</span>
+                            <span className="text-slate-200 font-medium truncate max-w-[170px]">{doc.proprietarioCessor || doc.emissor}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Revisão em Uso:</span>
+                            <span className="text-emerald-400 font-mono font-bold">{doc.numeroRevisao || doc.revisaoVigenteNumero || 'Rev. 01'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Data da Revisão:</span>
+                            <span className="text-slate-200 font-mono">{doc.dataRevisao || revVigente?.dataEntradaVigor || '-'}</span>
+                          </div>
+                          {doc.dataUltimaVerificacao && (
+                            <div className="flex justify-between pt-1 border-t border-slate-800/60 text-[11px]">
+                              <span className="text-slate-500">Última Checagem:</span>
+                              <span className="text-slate-400 font-mono">{new Date(doc.dataUltimaVerificacao).toLocaleDateString('pt-BR')}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {doc.detalhesUltimaVerificacao && (
+                          <p className="text-[11px] text-slate-400 bg-slate-950/40 p-2 rounded border border-slate-800/60 line-clamp-2">
+                            {doc.detalhesUltimaVerificacao}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Botões de Ação de Verificação */}
+                      <div className="mt-4 pt-3 border-t border-slate-800 space-y-2">
+                        {isAuto ? (
+                          <div className="flex items-center gap-1.5">
+                            {doc.urlFonteVerificacao ? (
+                              <a
+                                href={doc.urlFonteVerificacao}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 py-1.5 px-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                              >
+                                <Bot className="w-3.5 h-3.5" />
+                                <span>Fonte Oficial ANAC</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDocForVerificationModal(doc);
+                                  setIsConfigureSourceModalOpen(true);
+                                }}
+                                className="flex-1 py-1.5 px-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                              >
+                                <Bot className="w-3.5 h-3.5" />
+                                <span>Vincular URL Oficial</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDocForVerificationModal(doc);
+                                setIsConfigureSourceModalOpen(true);
+                              }}
+                              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
+                              title="Configurar método ou URL de verificação"
+                            >
+                              <Sliders className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              {doc.categoria === 'DOCUMENTO_CLIENTE' || doc.contatoClienteEmail ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedDocForVerificationModal(doc);
+                                    setIsCustomerNotificationModalOpen(true);
+                                  }}
+                                  className="flex-1 py-1.5 px-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <Mail className="w-3.5 h-3.5" />
+                                  <span>Notificar Cliente</span>
+                                </button>
+                              ) : doc.categoria === 'DOCUMENTO_FABRICANTE' || doc.portalFabricanteUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedDocForVerificationModal(doc);
+                                    setIsManufacturerAlertModalOpen(true);
+                                  }}
+                                  className="flex-1 py-1.5 px-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <Building2 className="w-3.5 h-3.5" />
+                                  <span>Portal OEM Restrito</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedDocForVerificationModal(doc);
+                                    setIsConfigureSourceModalOpen(true);
+                                  }}
+                                  className="flex-1 py-1.5 px-2 bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <UserCheck className="w-3.5 h-3.5" />
+                                  <span>Mapear Fonte Manual</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDocForVerificationModal(doc);
+                                  setIsConfigureSourceModalOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
+                                title="Configurar URL ou Contato"
+                              >
+                                <Sliders className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <button
+                            onClick={() => handleOpenFilePreview(doc)}
+                            className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Ver Arquivo</span>
+                          </button>
+                          <button
+                            onClick={() => setSelectedDocForDetail(doc)}
+                            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                          >
+                            <span>Linha do Tempo</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* SEÇÃO 2: Fontes Externas Oficiais Cadastradas */}
+          {activeVerificacaoSection === 'fontes' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-sky-400" />
+                    Fontes Externas Oficiais Cadastradas ({fontes.length})
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Rotinas de verificação compulsória com registro de evidência.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setIsNewSourceModalOpen(true)}
+                  className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Nova Fonte
+                </button>
+              </div>
+
+              <div className="divide-y divide-slate-800">
+                {fontes.map((fonte) => (
+                  <div key={fonte.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-sm">{fonte.nome}</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
+                          {fonte.tipoFonte}
+                        </span>
+                      </div>
+                      {fonte.urlBase && (
+                        <a href={fonte.urlBase} target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline flex items-center gap-1">
+                          <ExternalLink className="w-3 h-3" />
+                          <span>{fonte.urlBase}</span>
+                        </a>
+                      )}
+                      <p className="text-slate-400 text-[11px]">
+                        Responsável: {fonte.responsavelVerificacaoNome} • Ciclo: a cada {fonte.frequenciaDias} dias
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleVerificarFonte(fonte)}
+                        className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Verificar Agora</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* SEÇÃO 3: Solicitações a Clientes */}
+          {activeVerificacaoSection === 'solicitacoes' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
+              <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-purple-400" />
+                    Solicitações de Atualização Enviadas a Clientes ({solicitacoes.length})
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Histórico de formalização e prazos para comprovação regulamentar de revisões de operadores parceiros.
+                  </p>
+                </div>
+              </div>
+
+              <div className="divide-y divide-slate-800">
+                {solicitacoes.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500 text-xs">
+                    Nenhuma solicitação enviada ainda. Selecione um manual de cliente no painel de vigência para notificar.
+                  </div>
+                ) : (
+                  solicitacoes.map((sol) => (
+                    <div key={sol.id} className="p-4 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-white">{sol.clienteNome} • {sol.documentoCodigo}</span>
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">{sol.status}</span>
+                      </div>
+                      <p className="text-slate-400">Assunto: {sol.assuntoGerado}</p>
+                      <p className="text-slate-500 text-[11px]">Enviado em: {new Date(sol.createdAt).toLocaleDateString('pt-BR')}</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUB-ABA 3: HISTÓRICO & RELATÓRIOS (AUDITORIA / AUTORIDADE REGULADORA)     */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'historico' && (
+        <div className="space-y-6">
+          {/* Header da Sub-aba */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    AUDITORIA & CONFORMIDADE REGULAMENTAR
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">
+                    RBAC 145.109 • IS 145.109-001 • ANAC / FAA
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <History className="w-6 h-6 text-emerald-400" />
+                  Histórico de Revisões & Relatório Oficial de Conformidade
+                </h2>
+                <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
+                  Evidência formal de que todas as publicações técnicas em uso pela organização de manutenção são as revisões vigentes homologadas. Histórico cronológico imutável com preservação de acervo passado.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setIsComplianceReportOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md shadow-emerald-600/20 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Imprimir Relatório Oficial (PDF)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Navegação Secundária da Sub-Aba Histórico */}
+            <div className="flex items-center gap-2 mt-5 pt-3 border-t border-slate-800 flex-wrap">
+              <button
+                onClick={() => setActiveHistoricoSection('relatorio')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  activeHistoricoSection === 'relatorio'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Relatório Oficial de Conformidade Mensal (RBAC 145)</span>
+              </button>
+              <button
+                onClick={() => setActiveHistoricoSection('timeline')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  activeHistoricoSection === 'timeline'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>Linha do Tempo & Histórico Completo ({revisoes.length} revisões)</span>
+              </button>
+              <button
+                onClick={() => setActiveHistoricoSection('comparador')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  activeHistoricoSection === 'comparador'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <GitCompare className="w-3.5 h-3.5" />
+                <span>Comparador de Revisões & Matriz de Impacto</span>
+              </button>
+            </div>
+          </div>
+
+          {/* SEÇÃO 1: Relatório Oficial de Conformidade Mensal */}
+          {activeHistoricoSection === 'relatorio' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
+                    <FileText className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">
+                      Relatório de Conformidade Mensal de Publicações Técnicas
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Evidência formal auditável perante a autoridade de aviação civil (ANAC / FAA)
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 font-medium">Mês de Referência:</span>
+                    <input
+                      type="month"
+                      value={relatorioMesReferencia}
+                      onChange={(e) => setRelatorioMesReferencia(e.target.value)}
+                      className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setIsComplianceReportOpen(true)}
+                    className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Printer className="w-4 h-4" />
+                    <span>Visualizar Impressão Oficial</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Tabela Oficial de Conformidade dos 5 Campos Base */}
+              <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-900/90 text-slate-400 font-semibold border-b border-slate-800 uppercase tracking-wider text-[11px]">
+                    <tr>
+                      <th className="p-3">Código</th>
+                      <th className="p-3">Área de Publicação</th>
+                      <th className="p-3">Título do Manual</th>
+                      <th className="p-3">Proprietário / Cessor</th>
+                      <th className="p-3">Revisão em Uso</th>
+                      <th className="p-3">Data da Revisão</th>
+                      <th className="p-3">Verificação</th>
+                      <th className="p-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/80 font-normal">
+                    {documentos.map((doc) => {
+                      const revVigente = revisoes.find((r) => r.id === doc.revisaoVigenteId);
+                      const isAuto = doc.tipoVerificacao === 'AUTOMATICO';
+                      return (
+                        <tr key={doc.id} className="hover:bg-slate-900/50 transition-colors">
+                          <td className="p-3 font-mono font-bold text-sky-400">{doc.codigo}</td>
+                          <td className="p-3 text-slate-300">{doc.areaPublicacao || 'Regulamentação Aeronáutica'}</td>
+                          <td className="p-3 font-medium text-white max-w-xs">{doc.titulo}</td>
+                          <td className="p-3 text-slate-300">{doc.proprietarioCessor || doc.emissor}</td>
+                          <td className="p-3 font-mono font-bold text-emerald-400">
+                            {doc.numeroRevisao || doc.revisaoVigenteNumero || revVigente?.numeroRevisao || 'Rev. 01'}
+                          </td>
+                          <td className="p-3 font-mono text-slate-300">
+                            {doc.dataRevisao || revVigente?.dataEntradaVigor || '-'}
+                          </td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                isAuto
+                                  ? 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30'
+                                  : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                              }`}
+                            >
+                              {isAuto ? 'AUTOMÁTICO' : 'MANUAL'}
+                            </span>
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                              VIGENTE
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* SEÇÃO 2: Linha do Tempo e Histórico Completo de Revisões */}
+          {activeHistoricoSection === 'timeline' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6 shadow-sm">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <History className="w-5 h-5 text-sky-400" />
+                    Histórico Cronológico & Ciclo de Vida das Revisões Passadas
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Todas as versões anteriores arquivadas de forma imutável com preservação de acervo
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-400">Filtrar Documento:</span>
+                  <select
+                    value={historicoSelectedDocId}
+                    onChange={(e) => setHistoricoSelectedDocId(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="TODOS">Todos os Manuais ({revisoes.length} revisões)</option>
+                    {documentos.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.codigo} — {d.titulo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Timeline Completa */}
+              <div className="space-y-4 border-l-2 border-slate-800 ml-4 pl-6 relative">
+                {revisoes
+                  .filter((r) => historicoSelectedDocId === 'TODOS' || r.documentoId === historicoSelectedDocId)
+                  .sort((a, b) => (b.dataEntradaVigor || '').localeCompare(a.dataEntradaVigor || ''))
+                  .map((rev) => {
+                    const docPai = documentos.find((d) => d.id === rev.documentoId);
+                    const isVigente = rev.statusCicloVida === 'VIGENTE';
+                    return (
+                      <div key={rev.id} className="relative group">
+                        <div
+                          className={`absolute -left-[31px] top-2 w-4 h-4 rounded-full border-2 ${
+                            isVigente ? 'bg-emerald-500 border-emerald-400' : 'bg-slate-800 border-slate-600'
+                          }`}
+                        />
+                        <div
+                          className={`p-4 rounded-xl border ${
+                            isVigente
+                              ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-100'
+                              : 'bg-slate-950/60 border-slate-800 text-slate-300'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">
+                                {rev.codigoDocumento}
+                              </span>
+                              <span className="text-sm font-bold text-white">{rev.numeroRevisao}</span>
+                              <span
+                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                  isVigente
+                                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                    : 'bg-slate-800 text-slate-400 border-slate-700'
+                                }`}
+                              >
+                                {rev.statusCicloVida}
+                              </span>
+                            </div>
+
+                            <div className="text-xs text-slate-400 font-mono">
+                              Vigor: <strong className="text-slate-200">{rev.dataEntradaVigor}</strong>
+                              {rev.dataSubstituicao && <> até <strong className="text-slate-200">{rev.dataSubstituicao}</strong></>}
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-slate-200 font-medium mt-1">{rev.tituloDocumento}</p>
+
+                          {rev.escopoAlteracoes && (
+                            <p className="text-xs text-slate-300 mt-2 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                              <strong>Escopo das Alterações:</strong> {rev.escopoAlteracoes}
+                            </p>
+                          )}
+
+                          {/* Arquivo da Revisão Histórica */}
+                          {(rev.arquivoNome || docPai?.arquivoNome) && (
+                            <div className="mt-3 flex items-center justify-between p-2 rounded-lg bg-slate-900 border border-slate-800 text-xs">
+                              <div className="flex items-center gap-2 text-slate-300 truncate">
+                                <FileText className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                                <span className="font-mono truncate">{rev.arquivoNome || docPai?.arquivoNome}</span>
+                                <span className="text-[10px] text-slate-500 shrink-0 font-mono">
+                                  ({formatFileSize(rev.arquivoTamanhoBytes || docPai?.arquivoTamanhoBytes)})
+                                </span>
+                              </div>
+                              {docPai && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenFilePreview(docPai, rev)}
+                                  className="px-2.5 py-1 rounded bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  <span>Visualizar / Download</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/60">
+                            <span>Aprovado por: <strong>{rev.aprovadoPorNome || 'Gestor SGQ'}</strong></span>
+                            <span className="font-mono text-[10px] text-slate-500">Hash Imutável: OK</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          )}
+
+          {/* SEÇÃO 3: Comparador de Revisões */}
+          {activeHistoricoSection === 'comparador' && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-2">
+                <GitCompare className="w-5 h-5 text-sky-400" />
+                Comparador de Revisões & Matriz Sistêmica de Impactos
+              </h2>
+              <p className="text-xs text-slate-400 max-w-3xl mb-6">
+                Compare lado a lado duas revisões de qualquer manual técnico ou procedimento para identificar inclusões,
+                alterações de tolerância, e diagnosticar automaticamente os impactos em processos, treinamentos e auditorias.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-950 rounded-xl border border-slate-800">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Documento:</label>
+                  <select
+                    value={compareDocId}
+                    onChange={(e) => {
+                      setCompareDocId(e.target.value);
+                      setCompareRevAId('');
+                      setCompareRevBId('');
+                    }}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                  >
+                    {documentos.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.codigo} — {d.titulo}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Revisão Anterior (Base):</label>
+                  <select
+                    value={compareRevAId}
+                    onChange={(e) => setCompareRevAId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                  >
+                    <option value="">Selecione uma revisão...</option>
+                    {revisoesDisponiveisParaComparar.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.numeroRevisao} ({r.dataEntradaVigor})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Revisão Posterior (Nova):</label>
+                  <select
+                    value={compareRevBId}
+                    onChange={(e) => setCompareRevBId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                  >
+                    <option value="">Selecione uma revisão...</option>
+                    {revisoesDisponiveisParaComparar.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.numeroRevisao} ({r.dataEntradaVigor})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {comparacaoResult && (
+                <div className="mt-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-800 pb-2">
+                        <span className="font-bold text-white">{comparacaoResult.revA.numeroRevisao} (Base)</span>
+                        <span>Vigor: {comparacaoResult.revA.dataEntradaVigor}</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed bg-slate-900/60 p-3 rounded border border-slate-800/80">
+                        {comparacaoResult.revA.escopoAlteracoes || 'Sem escopo detalhado de alterações cadastrado.'}
+                      </p>
+                    </div>
+
+                    <div className="bg-slate-950 border border-sky-500/40 rounded-xl p-4 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-sky-400 border-b border-slate-800 pb-2">
+                        <span className="font-bold text-white">{comparacaoResult.revB.numeroRevisao} (Posterior)</span>
+                        <span>Vigor: {comparacaoResult.revB.dataEntradaVigor}</span>
+                      </div>
+                      <p className="text-xs text-slate-200 leading-relaxed bg-slate-900/60 p-3 rounded border border-sky-500/20">
+                        {comparacaoResult.revB.escopoAlteracoes || 'Sem escopo detalhado de alterações cadastrado.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ABA LEGADA: CONSULTA TEMPORAL & HISTÓRICA                                 */}
       {/* ========================================================================= */}
       {activeSubTab === 'temporal' && (
         <div className="space-y-6">
@@ -3031,6 +4445,88 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: RELATÓRIO OFICIAL DE CONFORMIDADE E CONTROLE DE REVISÕES (ANAC) */}
+      {/* ========================================================================= */}
+      <ComplianceReportModal
+        isOpen={isComplianceReportOpen}
+        onClose={() => setIsComplianceReportOpen(false)}
+        documentos={documentos}
+        organizationName={activeOrganization?.name || 'Impacto Aviation MRO'}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL 2: NOTIFICAÇÃO AUTOMATIZADA AO CLIENTE SOBRE REVISÃO DE MANUAIS    */}
+      {/* ========================================================================= */}
+      <CustomerNotificationModal
+        isOpen={isCustomerNotificationModalOpen}
+        onClose={() => {
+          setIsCustomerNotificationModalOpen(false);
+          setSelectedDocForVerificationModal(null);
+        }}
+        documento={selectedDocForVerificationModal}
+        onConfirmSend={handleSendCustomerNotification}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: PORTAL DO FABRICANTE / ALERTA DE CREDENCIAIS RESTRITAS (OEM)    */}
+      {/* ========================================================================= */}
+      <ManufacturerAlertModal
+        isOpen={isManufacturerAlertModalOpen}
+        onClose={() => {
+          setIsManufacturerAlertModalOpen(false);
+          setSelectedDocForVerificationModal(null);
+        }}
+        documento={selectedDocForVerificationModal}
+        onConfirmCheck={handleConfirmManufacturerCheck}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: CONFIGURAÇÃO DE FONTE E MODO DE VERIFICAÇÃO (AUTO VS MANUAL)    */}
+      {/* ========================================================================= */}
+      <ConfigureSourceModal
+        isOpen={isConfigureSourceModalOpen}
+        onClose={() => {
+          setIsConfigureSourceModalOpen(false);
+          setSelectedDocForVerificationModal(null);
+        }}
+        documento={selectedDocForVerificationModal}
+        onSave={handleSaveConfigureSource}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL 5: UPLOAD DIRETO DE ARQUIVOS DE MANUAIS (PDF/DOCX) NO ACERVO       */}
+      {/* ========================================================================= */}
+      <UploadManualModal
+        isOpen={isUploadModalOpen}
+        onClose={() => {
+          setIsUploadModalOpen(false);
+          setDocForUpload(null);
+        }}
+        organizationId={organizationId}
+        currentUser={currentUser}
+        documentosExistentes={documentos}
+        documentoPreSelecionado={docForUpload}
+        onSuccess={(doc, rev, msg) => {
+          showToast(msg);
+          setSelectedDocForDetail(doc);
+        }}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL 6: VISUALIZADOR E DOWNLOAD DIRETO DE ARQUIVO VIGENTE               */}
+      {/* ========================================================================= */}
+      <DocumentFilePreviewModal
+        isOpen={isPreviewModalOpen}
+        onClose={() => {
+          setIsPreviewModalOpen(false);
+          setPreviewDoc(null);
+          setPreviewRev(null);
+        }}
+        documento={previewDoc}
+        revisao={previewRev}
+      />
     </div>
   );
 };

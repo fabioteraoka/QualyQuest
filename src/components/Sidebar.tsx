@@ -232,38 +232,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         {
           id: 'controle-documental',
-          label: 'Acervo Documental',
+          label: 'Acervo & Biblioteca',
           icon: <BookOpen className="w-4 h-4 text-sky-400" />,
         },
         {
-          id: 'documentos-revisoes',
-          label: 'Revisões e Histórico',
-          icon: <History className="w-4 h-4 text-blue-400" />,
+          id: 'verificacao-controle',
+          label: 'Verificação & Controle',
+          icon: <ShieldCheck className="w-4 h-4 text-indigo-400" />,
         },
         {
-          id: 'consulta-temporal',
-          label: 'Conhecimento Temporal',
+          id: 'historico-relatorios',
+          label: 'Histórico & Relatórios',
           icon: <History className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'fontes-externas',
-          label: 'Fontes Oficiais',
-          icon: <Globe className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'documentos-solicitacoes',
-          label: 'Solicitações de Revisão de Clientes',
-          icon: <ClipboardCheck className="w-4 h-4 text-purple-400" />,
-        },
-        {
-          id: 'documentos-comparador',
-          label: 'Comparação de Revisões',
-          icon: <Scale className="w-4 h-4 text-cyan-400" />,
-        },
-        {
-          id: 'documentos-dashboard',
-          label: 'Indicadores Documentais',
-          icon: <BarChart3 className="w-4 h-4 text-indigo-400" />,
         },
       ],
     },
