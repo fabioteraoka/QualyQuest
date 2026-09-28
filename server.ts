@@ -2801,17 +2801,15 @@ app.post("/api/smart-import/analyze", async (req, res) => {
 
     const isF001021Form = (() => {
       const lower = ((nomeArquivo || "") + " " + cols.join(" ")).toLowerCase();
-      return (
-        (lower.includes("publica") && (lower.includes("proprietario") || lower.includes("cessor"))) ||
-        lower.includes("f 001-02-1") ||
-        lower.includes("f001-02-1") ||
-        (lower.includes("documentações normativas") && lower.includes("revisão")) ||
-        (cols.includes("Publicação") && cols.includes("Título")) ||
-        cols.some((c) => {
-          const l = c.toLowerCase();
-          return l.includes("numero e data") || l.includes("número e data") || l.includes("revisao e data");
-        })
-      );
+      const hasF001Name = lower.includes("f 001-02-1") || lower.includes("f001-02-1") || lower.includes("f 001");
+      const hasStrict4Cols =
+        cols.length === 4 &&
+        cols.some((c) => c.toLowerCase().includes("publica")) &&
+        cols.some((c) => c.toLowerCase().includes("titulo")) &&
+        cols.some((c) => c.toLowerCase().includes("proprietario") || c.toLowerCase().includes("cessor")) &&
+        cols.some((c) => c.toLowerCase().includes("numero e data") || c.toLowerCase().includes("número e data"));
+
+      return hasF001Name || hasStrict4Cols;
     })();
 
     if (!ai) {
@@ -2820,11 +2818,15 @@ app.post("/api/smart-import/analyze", async (req, res) => {
         tipoControle: fallbackTipo,
         confianca: isF001021Form ? 99 : 92,
         finalidadeProvavel: isF001021Form
-          ? "Relatório de Controle de Documentações Normativas / Manuais Técnicos (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão adaptadas para o SGQ)"
+          ? "Relatório de Controle de Documentações Normativas / Manuais Técnicos (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão)"
+          : fallbackTipo === "CONTROLE_DOCUMENTAL"
+          ? "Lista Mestra e Controle de Documentos / Manuais Técnicos (RBAC 145 / ISO 9001)"
           : `Migração estruturada de ${fallbackTipo.toLowerCase()} para o QualiGest SGQ`,
         origem: "HEURISTICA_LOCAL",
         explicacao: isF001021Form
-          ? "A IA identificou com sucesso o formulário de 4 colunas (Publicação, Título, Proprietário / Cessor, Número e data da revisão) e adaptou a 4ª coluna dividindo em 'Número da Revisão' (em que revisão está) e 'Data da Revisão' (data da revisão)."
+          ? "A IA identificou o formulário F 001-02-1 de 4 colunas (Publicação, Título, Proprietário / Cessor, Número e data da revisão)."
+          : fallbackTipo === "CONTROLE_DOCUMENTAL"
+          ? `Identificadas ${cols.length} colunas estruturadas para controle documental, vigência e histórico de revisões.`
           : "Análise realizada pelo motor de regras aeronáuticas SGQ.",
       });
     }
@@ -2837,7 +2839,9 @@ Formato: "${formato || 'XLSX'}"
 Colunas Identificadas: ${JSON.stringify(cols)}
 Amostra das Linhas de Dados: ${JSON.stringify(rows.slice(0, 5))}
 
-Atenção especial: se as colunas forem ou contiverem 'Publicação', 'Título', 'Proprietário / Cessor', 'Número e data da revisão', trata-se obrigatoriamente do formulário aeronáutico de Controle de Documentações Normativas / Manuais Técnicos (F 001-02-1). A IA deve categorizar como "tipoControle": "CONTROLE_DOCUMENTAL" com 99% de confiança e explicar que o formulário possui 4 colunas e foi adaptado desdobrando a 4ª coluna em "Número da Revisão" (em que revisão está) e "Data da Revisão" (data da revisão).
+Diretrizes:
+- Se for estritamente o formulário específico F 001-02-1 com as 4 colunas originais ('Publicação', 'Título', 'Proprietário / Cessor', 'Número e data da revisão'), identifique como CONTROLE_DOCUMENTAL do F 001-02-1.
+- Caso seja qualquer outra planilha de controle documental, manuais ou procedimentos com suas próprias colunas (ex: Código, Título, Área, Revisão, Data, Responsável, etc.), categorize normalmente como "CONTROLE_DOCUMENTAL" explicando a estrutura real das colunas fornecidas, sem forçar referências a formulários anteriores ou adaptações que o usuário não solicitou.
 
 Responda ESTRITAMENTE em formato JSON com o seguinte formato:
 {
@@ -2864,8 +2868,8 @@ Responda ESTRITAMENTE em formato JSON com o seguinte formato:
         success: true,
         tipoControle: parsed.tipoControle || fallbackTipo,
         confianca: parsed.confianca || (isF001021Form ? 99 : 94),
-        finalidadeProvavel: parsed.finalidadeProvavel || (isF001021Form ? "Controle de Documentações Normativas (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão)" : "Controle aeronáutico identificado"),
-        explicacao: parsed.explicacao || (isF001021Form ? "A IA compreendeu que este formulário possui 4 colunas essenciais (Publicação, Título, Proprietário / Cessor e Número e data da revisão) e adaptou a 4ª coluna separando em Número da Revisão e Data da Revisão." : "Análise inteligente pelo modelo Gemini."),
+        finalidadeProvavel: parsed.finalidadeProvavel || (isF001021Form ? "Controle de Documentações Normativas (Formulário com 4 colunas originais)" : "Controle de Documentos e Manuais Técnicos"),
+        explicacao: parsed.explicacao || (isF001021Form ? "Formulário F 001-02-1 reconhecido." : "Análise inteligente pelo modelo Gemini."),
         sugestoesMelhoria: parsed.sugestoesMelhoria || [],
         origem: "IA_GEMINI",
       });

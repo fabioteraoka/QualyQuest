@@ -222,8 +222,19 @@ export function subscribeToImportTemplates(
     colRef,
     (snapshot) => {
       const list: TemplateMapeamentoAprovado[] = [];
+      let deletedIds = new Set<string>();
+      try {
+        const raw = typeof window !== 'undefined' ? window.localStorage.getItem('qualigest_deleted_template_ids') : null;
+        if (raw) {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr)) deletedIds = new Set(arr);
+        }
+      } catch (e) {}
+
       snapshot.forEach((snapDoc) => {
-        list.push({ id: snapDoc.id, ...snapDoc.data() } as TemplateMapeamentoAprovado);
+        if (!deletedIds.has(snapDoc.id)) {
+          list.push({ id: snapDoc.id, ...snapDoc.data() } as TemplateMapeamentoAprovado);
+        }
       });
       callback(list);
     },
@@ -241,6 +252,20 @@ export async function saveImportTemplate(
 ): Promise<void> {
   const templateId = template.id || `template-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
   const docRef = doc(db, 'organizations', organizationId, 'import_templates', templateId);
+
+  // Remove da lista negra de deletados caso tenha sido recriado
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('qualigest_deleted_template_ids');
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          const filtrado = arr.filter((id: string) => id !== templateId);
+          window.localStorage.setItem('qualigest_deleted_template_ids', JSON.stringify(filtrado));
+        }
+      }
+    }
+  } catch (e) {}
 
   const dados = sanitizeForFirestore({
     ...template,
@@ -276,6 +301,19 @@ export async function deleteImportTemplate(
   templateNome?: string
 ): Promise<void> {
   if (!organizationId || !templateId) return;
+
+  // Persiste imediatamente na lista de templates deletados em localStorage
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('qualigest_deleted_template_ids');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr) && !arr.includes(templateId)) {
+        arr.push(templateId);
+        window.localStorage.setItem('qualigest_deleted_template_ids', JSON.stringify(arr));
+      }
+    }
+  } catch (e) {}
+
   const docRef = doc(db, 'organizations', organizationId, 'import_templates', templateId);
 
   try {

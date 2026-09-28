@@ -834,17 +834,20 @@ export function identificarTipoControleAutomatico(
     pontuacoes.CONTROLE_DOCUMENTAL += 25;
   }
 
-  // Detecção de Alta Prioridade: Formulário F 001-02-1 / Publicações Técnicas com 4 colunas
+  // Detecção de Alta Prioridade: Estritamente Formulário F 001-02-1 com 4 colunas originais
   const isFormulario4ColunasNormativas =
-    (colunasNorm.some((c) => c.includes('publica')) &&
-      colunasNorm.some((c) => c.includes('proprietario') || c.includes('cessor'))) ||
-    colunasNorm.some((c) => c.includes('numero e data') || c.includes('revisao e data') || c.includes('rev e data')) ||
     nomeNorm.includes('f 001-02-1') ||
     nomeNorm.includes('f001-02-1') ||
-    (colunasNorm.some((c) => c === 'publicacao') && colunasNorm.some((c) => c === 'titulo'));
+    (colunasNorm.length === 4 &&
+      colunasNorm.some((c) => c.includes('publica')) &&
+      colunasNorm.some((c) => c.includes('titulo')) &&
+      colunasNorm.some((c) => c.includes('proprietario') || c.includes('cessor')) &&
+      colunasNorm.some((c) => c.includes('numero e data') || c.includes('revisao e data') || c.includes('rev e data')));
 
   if (isFormulario4ColunasNormativas) {
-    pontuacoes.CONTROLE_DOCUMENTAL += 200;
+    pontuacoes.CONTROLE_DOCUMENTAL += 150;
+  } else if (colunasNorm.some((c) => c.includes('publica')) && colunasNorm.some((c) => c.includes('titulo'))) {
+    pontuacoes.CONTROLE_DOCUMENTAL += 35;
   }
 
   // 4. Scoring para NÃO CONFORMIDADES
@@ -888,10 +891,10 @@ export function identificarTipoControleAutomatico(
       finalidadeProvavel =
         'Relatório de Controle de Documentações Normativas / Manuais Técnicos Controlados (Formulário com 4 colunas originais: Publicação, Título, Proprietário / Cessor e Número/Data da Revisão)';
       explicacao =
-        'A IA identificou com 99% de confiança o formulário de 4 colunas: Publicação, Título da publicação, Proprietário ou Cessor do manual e Número e data da revisão. O sistema adaptou a estrutura desdobrando a 4ª coluna em "Número da Revisão" (em que revisão está) e "Data da Revisão" (data da revisão).';
+        'A IA identificou o formulário F 001-02-1 com 4 colunas: Publicação, Título da publicação, Proprietário ou Cessor do manual e Número e data da revisão combinados.';
     } else {
       finalidadeProvavel = 'Lista Mestra (Master List) de documentos controlados, manuais técnicos e histórico de revisões';
-      explicacao = `Identificados campos de codificação de manuais/procedimentos, números de revisão e controle de vigência com ${confianca}% de aderência.`;
+      explicacao = `Identificados campos de codificação de manuais/procedimentos, títulos, revisões e controle de vigência com ${confianca}% de aderência.`;
     }
   } else if (melhorTipo === 'NAO_CONFORMIDADES') {
     finalidadeProvavel = 'Registro histórico e tratativa de Não Conformidades (RNC F 001-29)';
@@ -911,7 +914,7 @@ export function identificarTipoControleAutomatico(
 }
 
 // ============================================================================
-// MAPEAMENTO AUTOMÁTICO DE COLUNAS
+// MAPEAMENTO AUTOMÁTICO DE COLUNAS (ALGORITMO 1-PARA-1 EXCLUSIVO)
 // ============================================================================
 
 export function gerarMapeamentoAutomaticoCampos(
@@ -920,59 +923,114 @@ export function gerarMapeamentoAutomaticoCampos(
   amostraLinhas: Record<string, any>[] = []
 ): MapeamentoCampoItem[] {
   const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
-  const mapeamentos: MapeamentoCampoItem[] = [];
+
+  // 1. Calcula a matriz de afinidade/score entre cada coluna e cada definição de campo
+  interface ScoreCandidato {
+    colunaOriginal: string;
+    def: DefinicaoCampoQualigest;
+    score: number;
+    ehExato: boolean;
+  }
+
+  const candidatosPorColuna: Map<string, ScoreCandidato[]> = new Map();
+  const todosCandidatos: ScoreCandidato[] = [];
 
   colunas.forEach((colunaOriginal) => {
     const colNorm = normalizarTexto(colunaOriginal);
-    let melhorMatch: DefinicaoCampoQualigest | null = null;
-    let maiorScore = 0;
+    const listaCandidatos: ScoreCandidato[] = [];
 
     definicoes.forEach((def) => {
-      // Comparação direta com o campo ou label
-      if (colNorm === normalizarTexto(def.campo) || colNorm === normalizarTexto(def.label)) {
-        melhorMatch = def;
-        maiorScore = 100;
-        return;
-      }
+      let score = 0;
+      let ehExato = false;
+      const campoNorm = normalizarTexto(def.campo);
+      const labelNorm = normalizarTexto(def.label);
 
-      // Comparação com lista de sinônimos
-      def.sinonimos.forEach((sinonimo) => {
-        const sinNorm = normalizarTexto(sinonimo);
-        if (colNorm === sinNorm) {
-          if (95 > maiorScore) {
-            maiorScore = 95;
-            melhorMatch = def;
-          }
-        } else if (colNorm.includes(sinNorm) || sinNorm.includes(colNorm)) {
-          const score = 80;
-          if (score > maiorScore) {
-            maiorScore = score;
-            melhorMatch = def;
+      // Match exato com nome do campo técnico ou label
+      if (colNorm === campoNorm || colNorm === labelNorm) {
+        score = 100;
+        ehExato = true;
+      } else {
+        // Verifica sinônimos
+        for (const sinonimo of def.sinonimos) {
+          const sinNorm = normalizarTexto(sinonimo);
+          if (colNorm === sinNorm) {
+            score = Math.max(score, 95);
+            ehExato = true;
+            break;
+          } else if (
+            colNorm.startsWith(sinNorm + ' ') ||
+            colNorm.endsWith(' ' + sinNorm) ||
+            colNorm.includes(' ' + sinNorm + ' ')
+          ) {
+            score = Math.max(score, 88);
+          } else if (sinNorm.length >= 4 && (colNorm.includes(sinNorm) || sinNorm.includes(colNorm))) {
+            score = Math.max(score, 78);
           }
         }
-      });
+      }
+
+      if (score >= 70) {
+        const item: ScoreCandidato = { colunaOriginal, def, score, ehExato };
+        listaCandidatos.push(item);
+        todosCandidatos.push(item);
+      }
     });
 
-    const exemploValor = amostraLinhas.length > 0 && amostraLinhas[0][colunaOriginal] !== undefined
-      ? String(amostraLinhas[0][colunaOriginal])
-      : undefined;
+    // Ordena candidatos da coluna por score decrescente
+    listaCandidatos.sort((a, b) => b.score - a.score);
+    candidatosPorColuna.set(colunaOriginal, listaCandidatos);
+  });
 
-    if (melhorMatch && maiorScore >= 70) {
-      const matchDef = melhorMatch as DefinicaoCampoQualigest;
+  // 2. Algoritmo Guloso 1-para-1: Garante que NENHUM campo do QualiGest seja atribuído a mais de uma coluna
+  todosCandidatos.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.ehExato !== a.ehExato) return b.ehExato ? 1 : -1;
+    return (b.def.obrigatorio ? 1 : 0) - (a.def.obrigatorio ? 1 : 0);
+  });
+
+  const colunasAlocadas = new Set<string>();
+  const camposAlocados = new Set<string>();
+  const mapaFinal: Map<string, { def: DefinicaoCampoQualigest; score: number }> = new Map();
+
+  for (const cand of todosCandidatos) {
+    if (!colunasAlocadas.has(cand.colunaOriginal) && !camposAlocados.has(cand.def.campo)) {
+      colunasAlocadas.add(cand.colunaOriginal);
+      camposAlocados.add(cand.def.campo);
+      mapaFinal.set(cand.colunaOriginal, { def: cand.def, score: cand.score });
+    }
+  }
+
+  // 3. Monta mapeamentos preservando a ordem original das colunas
+  const mapeamentos: MapeamentoCampoItem[] = [];
+
+  colunas.forEach((colunaOriginal) => {
+    const alocado = mapaFinal.get(colunaOriginal);
+    const exemploValor =
+      amostraLinhas.length > 0 && amostraLinhas[0][colunaOriginal] !== undefined
+        ? String(amostraLinhas[0][colunaOriginal])
+        : undefined;
+
+    if (alocado) {
       mapeamentos.push({
         colunaOrigem: colunaOriginal,
-        campoQualigest: matchDef.campo,
-        campoLabel: matchDef.label,
-        obrigatorio: matchDef.obrigatorio,
-        tipoDado: matchDef.tipo,
-        confiancaIA: maiorScore,
+        campoQualigest: alocado.def.campo,
+        campoLabel: alocado.def.label,
+        obrigatorio: alocado.def.obrigatorio,
+        tipoDado: alocado.def.tipo,
+        confiancaIA: alocado.score,
         exemploValor,
-        descricao: matchDef.descricao,
-        classificacaoUso: matchDef.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL',
-        sugestaoIA: matchDef.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL',
+        descricao: alocado.def.descricao,
+        classificacaoUso: alocado.def.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL',
+        sugestaoIA: alocado.def.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL',
       });
     } else {
-      // Campo não mapeado por padrão
+      // Verifica se houve tentativa de match que foi preterida para evitar duplicidade
+      const candidatosPerdidos = candidatosPorColuna.get(colunaOriginal) || [];
+      const conflitoCom = candidatosPerdidos.find((c) => camposAlocados.has(c.def.campo));
+      const descDuplicidade = conflitoCom
+        ? `Coluna mantida como ignorada para evitar conflito de apontamento duplo para o campo "${conflitoCom.def.label}". Altere manualmente caso deseje redirecionar.`
+        : 'Não mapeado automaticamente. Selecione um campo ou mantenha ignorado.';
+
       mapeamentos.push({
         colunaOrigem: colunaOriginal,
         campoQualigest: 'ignorar',
@@ -981,7 +1039,7 @@ export function gerarMapeamentoAutomaticoCampos(
         tipoDado: 'string',
         confiancaIA: 40,
         exemploValor,
-        descricao: 'Não mapeado automaticamente. Selecione um campo ou mantenha ignorado.',
+        descricao: descDuplicidade,
         classificacaoUso: 'IGNORADO',
         sugestaoIA: 'IGNORADO',
       });
@@ -1003,19 +1061,51 @@ export function tentarAplicarTemplateAprovado(
     return { templateEncontrado: null, mapeamentoSugerido: {} };
   }
 
+  // Carrega IDs de templates deletados do localStorage
+  let deletedIds = new Set<string>();
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem('qualigest_deleted_template_ids') : null;
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) deletedIds = new Set(arr);
+    }
+  } catch (e) {}
+
   const colunasNorm = colunas.map((c) => normalizarTexto(c));
 
   for (const template of templates) {
-    const templateColunasNorm = template.colunasDetectadas.map((c) => normalizarTexto(c));
+    if (!template || deletedIds.has(template.id)) continue;
+
+    const templateColunasNorm = (template.colunasDetectadas || []).map((c) => normalizarTexto(c));
+    if (templateColunasNorm.length === 0) continue;
+
     // Verifica interseção de colunas
     const correspondencias = colunasNorm.filter((c) => templateColunasNorm.includes(c));
     const percentualAcerto = correspondencias.length / Math.max(colunasNorm.length, templateColunasNorm.length);
 
-    if (percentualAcerto >= 0.75) {
-      // Template reconhecido!
+    // Exige aderência alta (>= 85%) e pelo menos 3 colunas para evitar falsos positivos
+    if (percentualAcerto >= 0.85 && correspondencias.length >= Math.min(3, colunas.length)) {
+      // Higieniza o mapeamento sugerido para garantir 1-para-1 (evita duplicidades herdadas de modelos legados)
+      const mapeamentoHigienizado: Record<string, string> = {};
+      const camposUsados = new Set<string>();
+
+      Object.entries(template.mapeamentos || {}).forEach(([colOrigem, campoAlvo]) => {
+        if (colunas.includes(colOrigem)) {
+          if (campoAlvo !== 'ignorar' && camposUsados.has(campoAlvo)) {
+            // Duplicidade evitada: se já havia sido usado, ignora a coluna duplicada
+            mapeamentoHigienizado[colOrigem] = 'ignorar';
+          } else {
+            mapeamentoHigienizado[colOrigem] = campoAlvo;
+            if (campoAlvo !== 'ignorar') {
+              camposUsados.add(campoAlvo);
+            }
+          }
+        }
+      });
+
       return {
         templateEncontrado: template,
-        mapeamentoSugerido: template.mapeamentos,
+        mapeamentoSugerido: mapeamentoHigienizado,
       };
     }
   }
@@ -1952,7 +2042,20 @@ export function adaptarTabelaFormularioF001021(
 
   const colunasNorm = colunas.map((c) => normalizarTexto(c));
 
-  // Encontra se existe uma coluna com revisão e data juntas
+  // Checa se a planilha já possui colunas separadas de revisão e data
+  const jaTemColRevisao = colunasNorm.some((c) =>
+    c === 'numero da revisao' || c === 'revisao' || c === 'rev' || c === 'revisao vigente' || c === 'em que revisao esta' || c === 'em que revisao'
+  );
+  const jaTemColData = colunasNorm.some((c) =>
+    c === 'data da revisao' || c === 'data de aprovacao' || c === 'data revisao' || c === 'data' || c === 'data aprovacao' || c === 'data de revisao'
+  );
+
+  // Se já possui colunas separadas de revisão e data, NÃO altera as colunas da planilha do usuário
+  if (jaTemColRevisao && jaTemColData) {
+    return { colunas, linhasDados, foiAdaptado: false };
+  }
+
+  // Encontra se existe estritamente uma coluna combinada de "Número e data da revisão"
   const idxRevData = colunas.findIndex((c) => {
     const norm = normalizarTexto(c);
     return (
@@ -1960,17 +2063,17 @@ export function adaptarTabelaFormularioF001021(
       norm.includes('revisao e data') ||
       norm.includes('rev e data') ||
       norm.includes('revisao/data') ||
-      norm.includes('revisao / data') ||
-      (norm.includes('revisao') && norm.includes('data'))
+      norm.includes('revisao / data')
     );
   });
 
   const temPublicacao = colunasNorm.some((c) => c.includes('publica'));
   const temTitulo = colunasNorm.some((c) => c.includes('titulo'));
   const temProprietario = colunasNorm.some((c) => c.includes('proprietario') || c.includes('cessor'));
+  const ehFormulario4Colunas = colunas.length === 4 && temPublicacao && temTitulo && temProprietario && idxRevData !== -1;
 
-  // Se tem a coluna combinada de revisão+data OU se tem o formulário de 4 colunas clássico
-  if (idxRevData !== -1 || (temPublicacao && (temProprietario || temTitulo))) {
+  // Se tem a coluna combinada de revisão+data especificamente identificada
+  if (idxRevData !== -1 && (ehFormulario4Colunas || (!jaTemColRevisao && !jaTemColData))) {
     const colRevData = idxRevData !== -1 ? colunas[idxRevData] : '';
     const novasColunas = [...colunas];
 

@@ -223,9 +223,32 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
 
   // Estados de confirmação segura in-app para exclusão (evita bloqueio de window.confirm em iframes)
-  const [deletedTemplateIds, setDeletedTemplateIds] = useState<Set<string>>(new Set());
+  const [deletedTemplateIds, setDeletedTemplateIds] = useState<Set<string>>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = window.localStorage.getItem('qualigest_deleted_template_ids');
+        if (raw) {
+          const arr = JSON.parse(raw);
+          if (Array.isArray(arr)) return new Set(arr);
+        }
+      }
+    } catch (e) {}
+    return new Set();
+  });
   const [templateParaExcluir, setTemplateParaExcluir] = useState<TemplateMapeamentoAprovado | null>(null);
   const [isExcluindoTemplate, setIsExcluindoTemplate] = useState(false);
+
+  // Sincroniza exclusões no localStorage
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(
+          'qualigest_deleted_template_ids',
+          JSON.stringify(Array.from(deletedTemplateIds))
+        );
+      }
+    } catch (e) {}
+  }, [deletedTemplateIds]);
 
   const [historicoParaExcluir, setHistoricoParaExcluir] = useState<string | null>(null);
   const [isExcluindoHistorico, setIsExcluindoHistorico] = useState(false);
@@ -245,7 +268,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   const [isSalvandoModeloEtapa2, setIsSalvandoModeloEtapa2] = useState(false);
   const [avisoRechecagemEtapa2, setAvisoRechecagemEtapa2] = useState<string | null>(null);
 
-  // Reconhecimento especializado do Formulário com 4 Colunas (Publicação, Título, Proprietário/Cessor, Número e data da revisão)
+  // Reconhecimento especializado estritamente do Formulário F 001-02-1 com 4 Colunas
   const isFormulario4ColunasDetectado = useMemo(() => {
     const colNorm = (colunasDetectadas || []).map((c) =>
       c.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -256,11 +279,9 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     const hasRevData = colNorm.some((c) => c.includes('numero e data') || c.includes('revisao e data') || c.includes('rev e data'));
     const nomeNorm = (arquivoNome || '').toLowerCase();
     return (
-      (hasPublicacao && (hasProprietario || hasTitulo)) ||
-      hasRevData ||
       nomeNorm.includes('f 001-02-1') ||
       nomeNorm.includes('f001-02-1') ||
-      nomeNorm.includes('normativas')
+      (colNorm.length === 4 && hasPublicacao && hasTitulo && hasProprietario && hasRevData)
     );
   }, [colunasDetectadas, arquivoNome]);
 
@@ -322,12 +343,16 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
   const aplicarTemplateManual = (tpl: TemplateMapeamentoAprovado) => {
     if (!tpl.mapeamentos) return;
+    const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
     const novos = mapeamentos.map((item) => {
       const match = tpl.mapeamentos[item.colunaOrigem];
       if (match) {
+        const def = definicoes.find((d) => d.campo === match);
         return {
           ...item,
           campoQualigest: match,
+          campoLabel: def ? def.label : item.campoLabel,
+          obrigatorio: def ? def.obrigatorio : item.obrigatorio,
           statusMapeamento: 'MANUAL' as any,
           confiancaScore: 100,
         };
@@ -336,6 +361,86 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     });
     setMapeamentos(novos);
     setTemplateReconhecido(tpl);
+  };
+
+  // Desvincular modelo homologado e reexecutar mapeamento exclusivo do zero
+  const handleDesvincularTemplate = () => {
+    setTemplateReconhecido(null);
+    const mapeamentoGerado = gerarMapeamentoAutomaticoCampos(colunasDetectadas, tipoControle, linhasOriginais);
+    setMapeamentos(mapeamentoGerado);
+    const classifInicial: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'> = {};
+    mapeamentoGerado.forEach((m) => {
+      if (m.campoQualigest === 'ignorar') {
+        classifInicial[m.colunaOrigem] = 'IGNORADO';
+      } else if (m.obrigatorio) {
+        classifInicial[m.colunaOrigem] = 'OBRIGATORIO';
+      } else {
+        classifInicial[m.colunaOrigem] = 'OPCIONAL';
+      }
+    });
+    setClassificacaoCampos(classifInicial);
+    setMensagemSucesso('Modelo desvinculado! Mapeamento redefinido com regras de exclusividade 1-para-1.');
+    setTimeout(() => setMensagemSucesso(null), 4000);
+  };
+
+  // Identificação e resolução automática de duplicidades de mapeamento
+  const camposDuplicados = useMemo(() => {
+    const mapa: Record<string, string[]> = {};
+    mapeamentos.forEach((m) => {
+      if (m.campoQualigest && m.campoQualigest !== 'ignorar') {
+        if (!mapa[m.campoQualigest]) mapa[m.campoQualigest] = [];
+        mapa[m.campoQualigest].push(m.colunaOrigem);
+      }
+    });
+    return Object.entries(mapa).filter(([_, cols]) => cols.length > 1);
+  }, [mapeamentos]);
+
+  const handleResolverDuplicidades = () => {
+    const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+    const camposOcupados = new Set<string>();
+
+    // Ordena cópia por confiança decrescente para priorizar o melhor match
+    const copia = [...mapeamentos];
+    copia.sort((a, b) => b.confiancaIA - a.confiancaIA);
+
+    const novoMapaPorColuna: Record<string, string> = {};
+
+    copia.forEach((item) => {
+      if (item.campoQualigest === 'ignorar') {
+        novoMapaPorColuna[item.colunaOrigem] = 'ignorar';
+      } else if (!camposOcupados.has(item.campoQualigest)) {
+        camposOcupados.add(item.campoQualigest);
+        novoMapaPorColuna[item.colunaOrigem] = item.campoQualigest;
+      } else {
+        // Encontrou duplicidade: define como ignorar para resolver conflito
+        novoMapaPorColuna[item.colunaOrigem] = 'ignorar';
+      }
+    });
+
+    const mapeamentosResolvidos = mapeamentos.map((m) => {
+      const campoEscolhido = novoMapaPorColuna[m.colunaOrigem] || 'ignorar';
+      const def = definicoes.find((d) => d.campo === campoEscolhido);
+      return {
+        ...m,
+        campoQualigest: campoEscolhido,
+        campoLabel: def ? def.label : '(Ignorar Coluna)',
+        obrigatorio: def ? def.obrigatorio : false,
+        tipoDado: def ? def.tipo : 'string',
+        statusMapeamento: 'MANUAL' as any,
+      };
+    });
+
+    setMapeamentos(mapeamentosResolvidos);
+
+    const novasClassif = { ...classificacaoCampos };
+    mapeamentosResolvidos.forEach((m) => {
+      if (m.campoQualigest === 'ignorar') {
+        novasClassif[m.colunaOrigem] = 'IGNORADO';
+      }
+    });
+    setClassificacaoCampos(novasClassif);
+    setMensagemSucesso('Duplicidades resolvidas com sucesso! Cada campo do sistema agora aponta para apenas 1 coluna.');
+    setTimeout(() => setMensagemSucesso(null), 4000);
   };
 
   // Funções de Edição de Colunas e Homologação na Etapa 2
@@ -696,6 +801,22 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   // FUNÇÃO 5: EXECUTAR VALIDAÇÃO DE QUALIDADE & PRÉVIA OBRIGATÓRIA (FASE 14.1)
   // ============================================================================
   const executarValidacaoQualidade = () => {
+    // Impede o avanço com campos duplicados apontando para o mesmo campo do sistema
+    if (camposDuplicados.length > 0) {
+      const listaErros = camposDuplicados
+        .map(([campo, cols]) => {
+          const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+          const def = definicoes.find((d) => d.campo === campo);
+          return `Campo "${def?.label || campo}" associado a: ${cols.map((c) => `"${c}"`).join(' e ')}`;
+        })
+        .join('\n• ');
+
+      alert(
+        `Atenção: Não é possível validar a planilha enquanto houver colunas duplicadas apontando para o mesmo campo do sistema:\n\n• ${listaErros}\n\nPor favor, clique em "Resolver Duplicidades Automaticamente" ou altere os campos para garantir mapeamento exclusivo de 1 coluna por campo.`
+      );
+      return;
+    }
+
     setIsProcessando(true);
     setStatusMensagem('Validando campos obrigatórios, datas, integridade e reconciliando com cadastros oficiais...');
 
@@ -1657,16 +1778,74 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
               {/* Alerta de Modelo Homologado Reconhecido */}
               {templateReconhecido && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>
-                      <strong>Modelo Homologado Reconhecido Automaticamente:</strong> "{templateReconhecido.nome || templateReconhecido.nomeTemplate}" (Utilizado {templateReconhecido.vezesUtilizado || templateReconhecido.totalVezesUsado || 0} vezes pela empresa).
-                    </span>
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-emerald-950 shadow-2xs">
+                  <div className="flex items-center gap-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    <div>
+                      <div className="font-bold text-emerald-900">
+                        Modelo Homologado Reconhecido: "{templateReconhecido.nome || templateReconhecido.nomeTemplate}"
+                      </div>
+                      <div className="text-[11px] text-emerald-700">
+                        Mapeamento pré-homologado da empresa aplicado ({templateReconhecido.vezesUtilizado || templateReconhecido.totalVezesUsado || 1} uso(s)).
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-200/80 rounded text-emerald-950">
-                    Mapeamento Aprovado
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleDesvincularTemplate}
+                      className="px-2.5 py-1 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 rounded-lg border border-amber-300 transition cursor-pointer"
+                      title="Desvincular este modelo e recalcular o mapeamento das colunas automaticamente do zero"
+                    >
+                      Desvincular Modelo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateParaExcluir(templateReconhecido)}
+                      className="px-2.5 py-1 text-xs font-semibold text-red-700 bg-red-100 hover:bg-red-200 rounded-lg border border-red-300 transition cursor-pointer"
+                      title="Excluir este modelo homologado do banco de dados definitivamente"
+                    >
+                      Excluir Modelo
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Alerta e Resolução de Conflitos: Colunas Duplicadas para o mesmo Campo */}
+              {camposDuplicados.length > 0 && (
+                <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs text-amber-950 shadow-sm animate-in fade-in">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-bold text-amber-900 text-sm">
+                        Conflito de Mapeamento: Colunas Apontando para o Mesmo Campo do Sistema
+                      </h4>
+                      <p className="text-amber-800 text-[11px] mt-0.5">
+                        Detectamos que mais de uma coluna da sua planilha está associada ao mesmo campo interno. Cada campo do QualiGest deve receber apenas uma coluna exclusiva:
+                      </p>
+                      <ul className="mt-1.5 space-y-1 list-disc list-inside text-[11px] font-mono font-bold text-amber-900">
+                        {camposDuplicados.map(([campo, cols]) => {
+                          const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+                          const def = definicoes.find((d) => d.campo === campo);
+                          return (
+                            <li key={campo}>
+                              Campo <strong>"{def?.label || campo}"</strong>: associado às colunas {cols.map((c) => `"${c}"`).join(' e ')}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleResolverDuplicidades}
+                    className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs shadow-sm transition-colors shrink-0 cursor-pointer flex items-center gap-1.5 self-start md:self-center"
+                    title="Mantém a coluna com maior aderência e marca as duplicadas como ignoradas"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Resolver Duplicidades Automaticamente
+                  </button>
                 </div>
               )}
 
@@ -1717,10 +1896,11 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                     {mapeamentos.map((item, idx) => {
                       const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
                       const isIgnorado = item.campoQualigest === 'ignorar';
+                      const isDuplicado = !isIgnorado && camposDuplicados.some(([campo]) => campo === item.campoQualigest);
                       const classifAtual = classificacaoCampos[item.colunaOrigem] || (isIgnorado ? 'IGNORADO' : item.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
 
                       return (
-                        <tr key={idx} className={isIgnorado ? 'bg-slate-50/60 opacity-80' : 'hover:bg-blue-50/20'}>
+                        <tr key={idx} className={isDuplicado ? 'bg-amber-50/50' : isIgnorado ? 'bg-slate-50/60 opacity-80' : 'hover:bg-blue-50/20'}>
                           <td className="p-3 font-bold text-slate-900">
                             {item.colunaOrigem}
                           </td>
@@ -1734,7 +1914,9 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                               value={item.campoQualigest}
                               onChange={(e) => alterarCampoMapeado(item.colunaOrigem, e.target.value)}
                               className={`w-full max-w-xs border rounded px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${
-                                isIgnorado
+                                isDuplicado
+                                  ? 'border-amber-500 bg-amber-50 text-amber-950 font-bold ring-2 ring-amber-300'
+                                  : isIgnorado
                                   ? 'border-slate-300 text-slate-400 bg-slate-50'
                                   : 'border-blue-300 text-slate-900 bg-white shadow-2xs'
                               }`}
@@ -1748,6 +1930,12 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                                 ))}
                               </optgroup>
                             </select>
+                            {isDuplicado && (
+                              <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-700 font-bold bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-200">
+                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>Conflito: Campo duplicado com outra coluna</span>
+                              </div>
+                            )}
                           </td>
 
                           <td className="p-3">
