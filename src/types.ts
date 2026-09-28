@@ -1623,6 +1623,7 @@ export interface ColaboradorPessoa {
   reativadoEm?: string;
   reativadoPor?: string;
   motivoReativacao?: string;
+  camposCustomizados?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
   criadoPor: string;
@@ -2052,6 +2053,8 @@ export interface DocumentoControlado {
   dataAprovacao?: string;
   aprovadorNome?: string;
   tags?: string[];
+  camposCustomizados?: Record<string, any>;
+  metadadosImportacao?: Record<string, any>;
 
   // NOVOS CAMPOS: MÓDULO DE VERIFICAÇÃO AUTOMÁTICA VS. MANUAL & RELATÓRIO DE CONFORMIDADE
   areaPublicacao?: string; // Área temática da publicação (ex: 'Regulamentação Aeronáutica', 'Manuais de Voo & Linha', 'SGQ & Procedimentos')
@@ -2636,6 +2639,8 @@ export interface TemplateMapeamentoAprovado {
   colunasDetectadas: string[];
   mapeamentos: Record<string, string>; // colunaOrigem -> campoQualigest
   classificacaoCampos?: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>;
+  camposPersonalizados?: { campo: string; label: string; tipo?: string; descricao?: string; isCustom?: boolean }[];
+  camposCustomizados?: { campo: string; label: string; tipo?: string; descricao?: string; isCustom?: boolean }[];
   criadoPor: string;
   criadoPorNome?: string;
   criadoPorUid?: string;
@@ -2831,6 +2836,7 @@ export interface FerramentaCalibracao {
   }[];
   origemImportacaoId?: string;
   origemArquivoNome?: string;
+  camposCustomizados?: Record<string, any>;
   criadoEm: string;
   atualizadoEm: string;
 }

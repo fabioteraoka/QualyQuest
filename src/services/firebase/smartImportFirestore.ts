@@ -735,6 +735,22 @@ export async function efetivarImportacaoNoQualigest(
         atualizadoEm: new Date().toISOString(),
       };
 
+      // Coleta campos customizados originados da planilha para ferramentas
+      const standardToolKeys = new Set([
+        'codigoPatrimonio', 'descricao', 'fabricante', 'modelo', 'numeroSerie', 'setor',
+        'dataUltimaCalibracao', 'dataProximaCalibracao', 'frequenciaMeses', 'laboratorioCalibrador',
+        'numeroCertificado', 'situacao', 'observacoes', 'tolerancia',
+      ]);
+      const camposCustomizadosTool: Record<string, any> = { ...(dadosExistentes?.camposCustomizados || {}) };
+      Object.entries(dados).forEach(([k, v]) => {
+        if (v !== undefined && v !== '' && !standardToolKeys.has(k)) {
+          camposCustomizadosTool[k] = v;
+        }
+      });
+      if (Object.keys(camposCustomizadosTool).length > 0) {
+        novaFerramenta.camposCustomizados = camposCustomizadosTool;
+      }
+
       // Se for atualização com nova data ou certificado, adicionar ao histórico de calibrações
       if (isAtualizacao && dados.dataUltimaCalibracao && dados.dataUltimaCalibracao !== dadosExistentes?.dataUltimaCalibracao) {
         const novoEventoCalibracao = {
@@ -848,6 +864,22 @@ export async function efetivarImportacaoNoQualigest(
         createdAt: dadosExistentes?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+
+      // Coleta e salva campos customizados originados da planilha
+      const standardDocKeys = new Set([
+        'codigo', 'titulo', 'tipoDocumento', 'categoria', 'emissor', 'responsavel', 'proprietarioCessor',
+        'numeroRevisao', 'revisaoNumero', 'revisao', 'dataAprovacao', 'dataRevisao', 'dataProximaRevisao',
+        'status', 'observacoes', 'numeroEDataRevisao', 'publicacao',
+      ]);
+      const camposCustomizadosDoc: Record<string, any> = { ...(dadosExistentes?.camposCustomizados || {}) };
+      Object.entries(dados).forEach(([k, v]) => {
+        if (v !== undefined && v !== '' && !standardDocKeys.has(k)) {
+          camposCustomizadosDoc[k] = v;
+        }
+      });
+      if (Object.keys(camposCustomizadosDoc).length > 0) {
+        novoDoc.camposCustomizados = camposCustomizadosDoc;
+      }
 
       await saveDocumentoControlado(organizationId, novoDoc, user, dadosExistentes);
 

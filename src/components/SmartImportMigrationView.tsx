@@ -65,7 +65,10 @@ import {
   validarECompararLinhasImportacao,
   adaptarTabelaFormularioF001021,
   ESQUEMA_CAMPOS_CONTROLE,
-  DefinicaoCampoQualigest
+  DefinicaoCampoQualigest,
+  criarCampoPersonalizado,
+  obterCamposCompletos,
+  espelharColunasComoCampos
 } from '../utils/smartImportEngine';
 import {
   efetivarImportacaoNoQualigest,
@@ -183,6 +186,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
   // Estado do Mapeamento de Campos (Etapa 3)
   const [mapeamentos, setMapeamentos] = useState<MapeamentoCampoItem[]>([]);
+  const [camposPersonalizados, setCamposPersonalizados] = useState<DefinicaoCampoQualigest[]>([]);
   const [templateReconhecido, setTemplateReconhecido] = useState<TemplateMapeamentoAprovado | null>(null);
   const [salvarComoTemplate, setSalvarComoTemplate] = useState<boolean>(false);
   const [nomeTemplateCustom, setNomeTemplateCustom] = useState<string>('');
@@ -343,7 +347,20 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
   const aplicarTemplateManual = (tpl: TemplateMapeamentoAprovado) => {
     if (!tpl.mapeamentos) return;
-    const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+    const rawList = tpl.camposPersonalizados || tpl.camposCustomizados || [];
+    const customList: DefinicaoCampoQualigest[] = rawList.map((c: any) => ({
+      campo: String(c.campo),
+      label: String(c.label || c.campo),
+      tipo: (c.tipo || 'string') as any,
+      obrigatorio: Boolean(c.obrigatorio),
+      sinonimos: c.sinonimos || [String(c.label || c.campo).toLowerCase()],
+      descricao: c.descricao || `Campo personalizado ${c.label || c.campo}`,
+      isCustom: true,
+    }));
+    if (customList.length > 0) {
+      setCamposPersonalizados(customList);
+    }
+    const definicoes = obterCamposCompletos(tipoControle, customList);
     const novos = mapeamentos.map((item) => {
       const match = tpl.mapeamentos[item.colunaOrigem];
       if (match) {
@@ -351,8 +368,9 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
         return {
           ...item,
           campoQualigest: match,
-          campoLabel: def ? def.label : item.campoLabel,
-          obrigatorio: def ? def.obrigatorio : item.obrigatorio,
+          campoLabel: def ? def.label : item.colunaOrigem,
+          obrigatorio: def ? def.obrigatorio : false,
+          tipoDado: def ? def.tipo : ('string' as const),
           statusMapeamento: 'MANUAL' as any,
           confiancaScore: 100,
         };
@@ -361,6 +379,88 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     });
     setMapeamentos(novos);
     setTemplateReconhecido(tpl);
+  };
+
+  // Cria campo exclusivo no QualiGest para uma coluna específica com o mesmo nome
+  const handleCriarCampoMesmoNome = (colunaOrigem: string) => {
+    const novoDef = criarCampoPersonalizado(colunaOrigem);
+    const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
+    let slug = novoDef.campo;
+    let counter = 1;
+    while (definicoes.some((d) => d.campo === slug)) {
+      slug = `${novoDef.campo}_${counter++}`;
+    }
+    novoDef.campo = slug;
+
+    const novosCustom = [...camposPersonalizados.filter((c) => c.campo !== slug), novoDef];
+    setCamposPersonalizados(novosCustom);
+
+    setMapeamentos((prev) =>
+      prev.map((m) => {
+        if (m.colunaOrigem === colunaOrigem) {
+          return {
+            ...m,
+            campoQualigest: slug,
+            campoLabel: novoDef.label,
+            obrigatorio: false,
+            tipoDado: 'string' as const,
+            confiancaIA: 100,
+            statusMapeamento: 'MANUAL' as any,
+          };
+        }
+        return m;
+      })
+    );
+
+    setClassificacaoCampos((prev) => ({
+      ...prev,
+      [colunaOrigem]: 'OPCIONAL',
+    }));
+
+    setMensagemSucesso(`Novo campo "${novoDef.label}" criado no QualiGest para a coluna "${colunaOrigem}"!`);
+    setTimeout(() => setMensagemSucesso(null), 4000);
+  };
+
+  // Espelhar todas as colunas da planilha como novos campos no QualiGest
+  const handleEspelharTodasColunasComoCampos = (forcarTodas: boolean = true) => {
+    const resultado = espelharColunasComoCampos(
+      colunasDetectadas,
+      mapeamentos,
+      tipoControle,
+      camposPersonalizados,
+      forcarTodas
+    );
+    setMapeamentos(resultado.novosMapeamentos);
+    setCamposPersonalizados(resultado.novosCamposPersonalizados);
+
+    const novasClassif = { ...classificacaoCampos };
+    resultado.novosMapeamentos.forEach((m) => {
+      if (m.campoQualigest && m.campoQualigest !== 'ignorar') {
+        novasClassif[m.colunaOrigem] = 'OPCIONAL';
+      }
+    });
+    setClassificacaoCampos(novasClassif);
+    setMensagemSucesso('Todas as colunas da planilha foram transformadas em campos exclusivos no QualiGest!');
+    setTimeout(() => setMensagemSucesso(null), 4000);
+  };
+
+  // Adicionar campo personalizado manual avulso
+  const handleAdicionarCampoPersonalizadoManual = () => {
+    const nomeDigitado = window.prompt('Digite o nome do novo campo que deseja adicionar ao QualiGest:');
+    if (!nomeDigitado || !nomeDigitado.trim()) return;
+
+    const novoDef = criarCampoPersonalizado(nomeDigitado.trim());
+    const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
+    let slug = novoDef.campo;
+    let counter = 1;
+    while (definicoes.some((d) => d.campo === slug)) {
+      slug = `${novoDef.campo}_${counter++}`;
+    }
+    novoDef.campo = slug;
+
+    setCamposPersonalizados((prev) => [...prev, novoDef]);
+    setMensagemSucesso(`Novo campo "${novoDef.label}" adicionado ao QualiGest! Você pode selecioná-lo nas colunas da planilha.`);
+    setTimeout(() => setMensagemSucesso(null), 4000);
   };
 
   // Desvincular modelo homologado e reexecutar mapeamento exclusivo do zero
@@ -396,37 +496,50 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
   }, [mapeamentos]);
 
   const handleResolverDuplicidades = () => {
-    const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+    const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
     const camposOcupados = new Set<string>();
+    const novosCustom = [...camposPersonalizados];
 
     // Ordena cópia por confiança decrescente para priorizar o melhor match
     const copia = [...mapeamentos];
     copia.sort((a, b) => b.confiancaIA - a.confiancaIA);
 
-    const novoMapaPorColuna: Record<string, string> = {};
+    const novoMapaPorColuna: Record<string, { campo: string; label: string }> = {};
 
     copia.forEach((item) => {
       if (item.campoQualigest === 'ignorar') {
-        novoMapaPorColuna[item.colunaOrigem] = 'ignorar';
+        novoMapaPorColuna[item.colunaOrigem] = { campo: 'ignorar', label: '(Ignorar Coluna)' };
       } else if (!camposOcupados.has(item.campoQualigest)) {
         camposOcupados.add(item.campoQualigest);
-        novoMapaPorColuna[item.colunaOrigem] = item.campoQualigest;
+        const def = definicoes.find((d) => d.campo === item.campoQualigest);
+        novoMapaPorColuna[item.colunaOrigem] = { campo: item.campoQualigest, label: def ? def.label : item.colunaOrigem };
       } else {
-        // Encontrou duplicidade: define como ignorar para resolver conflito
-        novoMapaPorColuna[item.colunaOrigem] = 'ignorar';
+        // Encontrou duplicidade: em vez de descartar a coluna, cria um campo exclusivo com o próprio nome da coluna!
+        const novoDef = criarCampoPersonalizado(item.colunaOrigem);
+        let slug = novoDef.campo;
+        let counter = 1;
+        while (camposOcupados.has(slug) || definicoes.some((d) => d.campo === slug)) {
+          slug = `${novoDef.campo}_${counter++}`;
+        }
+        novoDef.campo = slug;
+        camposOcupados.add(slug);
+        novosCustom.push(novoDef);
+        novoMapaPorColuna[item.colunaOrigem] = { campo: slug, label: novoDef.label };
       }
     });
 
+    setCamposPersonalizados(novosCustom);
+
     const mapeamentosResolvidos = mapeamentos.map((m) => {
-      const campoEscolhido = novoMapaPorColuna[m.colunaOrigem] || 'ignorar';
-      const def = definicoes.find((d) => d.campo === campoEscolhido);
+      const info = novoMapaPorColuna[m.colunaOrigem] || { campo: 'ignorar', label: '(Ignorar Coluna)' };
       return {
         ...m,
-        campoQualigest: campoEscolhido,
-        campoLabel: def ? def.label : '(Ignorar Coluna)',
-        obrigatorio: def ? def.obrigatorio : false,
-        tipoDado: def ? def.tipo : 'string',
+        campoQualigest: info.campo,
+        campoLabel: info.label,
+        obrigatorio: false,
+        tipoDado: 'string' as const,
         statusMapeamento: 'MANUAL' as any,
+        confiancaIA: 100,
       };
     });
 
@@ -436,11 +549,13 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     mapeamentosResolvidos.forEach((m) => {
       if (m.campoQualigest === 'ignorar') {
         novasClassif[m.colunaOrigem] = 'IGNORADO';
+      } else {
+        novasClassif[m.colunaOrigem] = 'OPCIONAL';
       }
     });
     setClassificacaoCampos(novasClassif);
-    setMensagemSucesso('Duplicidades resolvidas com sucesso! Cada campo do sistema agora aponta para apenas 1 coluna.');
-    setTimeout(() => setMensagemSucesso(null), 4000);
+    setMensagemSucesso('Conflitos resolvidos com sucesso! Cada coluna duplicada agora possui seu próprio campo exclusivo com o mesmo nome da coluna.');
+    setTimeout(() => setMensagemSucesso(null), 5000);
   };
 
   // Funções de Edição de Colunas e Homologação na Etapa 2
@@ -504,6 +619,8 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
         tipoControle,
         colunasDetectadas,
         mapeamentos: mapaCampos,
+        camposPersonalizados,
+        camposCustomizados: camposPersonalizados,
         criadoPor: user?.displayName || user?.email || 'Gestor SGQ',
         criadoPorUid: user?.uid || 'system',
         criadoPorNome: user?.displayName || 'Gestor SGQ',
@@ -722,8 +839,22 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
     // Se houver template, sobrepor campos conforme o template aprovado
     if (checkTemplate.templateEncontrado) {
+      const tpl = checkTemplate.templateEncontrado;
+      const rawList = tpl.camposPersonalizados || tpl.camposCustomizados || [];
+      const customList: DefinicaoCampoQualigest[] = rawList.map((c: any) => ({
+        campo: String(c.campo),
+        label: String(c.label || c.campo),
+        tipo: (c.tipo || 'string') as any,
+        obrigatorio: Boolean(c.obrigatorio),
+        sinonimos: c.sinonimos || [String(c.label || c.campo).toLowerCase()],
+        descricao: c.descricao || `Campo personalizado ${c.label || c.campo}`,
+        isCustom: true,
+      }));
+      if (customList.length > 0) {
+        setCamposPersonalizados(customList);
+      }
       const mapaTemplate = checkTemplate.mapeamentoSugerido;
-      const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipo] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+      const definicoes = obterCamposCompletos(tipo, customList);
 
       mapeamentoGerado.forEach((m) => {
         if (mapaTemplate[m.colunaOrigem]) {
@@ -770,7 +901,50 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
 
   // Alteração manual do campo mapeado pelo usuário
   const alterarCampoMapeado = (colunaOrigem: string, novoCampoQualigest: string) => {
-    const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+    if (novoCampoQualigest === `__CRIAR_${colunaOrigem}`) {
+      handleCriarCampoMesmoNome(colunaOrigem);
+      return;
+    }
+
+    if (novoCampoQualigest === '__NOVO_CUSTOM__') {
+      const nomeDigitado = window.prompt(`Digite o nome do novo campo para a coluna "${colunaOrigem}":`, colunaOrigem);
+      if (nomeDigitado && nomeDigitado.trim()) {
+        const novoDef = criarCampoPersonalizado(nomeDigitado.trim());
+        const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
+        let slug = novoDef.campo;
+        let counter = 1;
+        while (definicoes.some((d) => d.campo === slug)) {
+          slug = `${novoDef.campo}_${counter++}`;
+        }
+        novoDef.campo = slug;
+
+        const novosCustom = [...camposPersonalizados, novoDef];
+        setCamposPersonalizados(novosCustom);
+
+        setMapeamentos((prev) =>
+          prev.map((m) => {
+            if (m.colunaOrigem === colunaOrigem) {
+              return {
+                ...m,
+                campoQualigest: slug,
+                campoLabel: novoDef.label,
+                obrigatorio: false,
+                tipoDado: 'string' as const,
+                confiancaIA: 100,
+                statusMapeamento: 'MANUAL' as any,
+              };
+            }
+            return m;
+          })
+        );
+        setClassificacaoCampos((prev) => ({ ...prev, [colunaOrigem]: 'OPCIONAL' }));
+        setMensagemSucesso(`Campo personalizado "${novoDef.label}" criado no QualiGest!`);
+        setTimeout(() => setMensagemSucesso(null), 4000);
+      }
+      return;
+    }
+
+    const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
     const def = definicoes.find((d) => d.campo === novoCampoQualigest);
 
     setMapeamentos((prev) =>
@@ -805,7 +979,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     if (camposDuplicados.length > 0) {
       const listaErros = camposDuplicados
         .map(([campo, cols]) => {
-          const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+          const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
           const def = definicoes.find((d) => d.campo === campo);
           return `Campo "${def?.label || campo}" associado a: ${cols.map((c) => `"${c}"`).join(' e ')}`;
         })
@@ -1624,6 +1798,19 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                         </button>
                         <button
                           type="button"
+                          onClick={() => {
+                            handleEspelharTodasColunasComoCampos(true);
+                            setMensagemSucesso('Todas as colunas da planilha foram transformadas em campos no QualiGest!');
+                            setTimeout(() => setMensagemSucesso(null), 4000);
+                          }}
+                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                          title="Cria automaticamente um campo novo no sistema para cada coluna da planilha com o mesmo nome"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Espelhar Colunas como Campos</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={handleAbrirHomologarModeloEtapa2}
                           className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
                         >
@@ -1825,7 +2012,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                       </p>
                       <ul className="mt-1.5 space-y-1 list-disc list-inside text-[11px] font-mono font-bold text-amber-900">
                         {camposDuplicados.map(([campo, cols]) => {
-                          const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+                          const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
                           const def = definicoes.find((d) => d.campo === campo);
                           return (
                             <li key={campo}>
@@ -1841,10 +2028,10 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                     type="button"
                     onClick={handleResolverDuplicidades}
                     className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs shadow-sm transition-colors shrink-0 cursor-pointer flex items-center gap-1.5 self-start md:self-center"
-                    title="Mantém a coluna com maior aderência e marca as duplicadas como ignoradas"
+                    title="Cria novos campos exclusivos com os mesmos nomes das colunas duplicadas para desempatar"
                   >
                     <Sparkles className="w-4 h-4" />
-                    Resolver Duplicidades Automaticamente
+                    Resolver Conflito: Criar Campos com os Nomes das Colunas
                   </button>
                 </div>
               )}
@@ -1880,6 +2067,44 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                 </div>
               )}
 
+              {/* Barra de Criação Automática de Campos Iguais às Colunas */}
+              <div className="p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-2xs">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-blue-600 shrink-0" />
+                    <h4 className="font-bold text-slate-900 text-sm">
+                      Campos do QualiGest Iguais às Colunas da Planilha
+                    </h4>
+                    <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full border border-blue-300">
+                      Criação Dinâmica
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Não fique limitado apenas aos campos pré-determinados. Você pode criar campos no QualiGest com os mesmos nomes de todas as colunas da sua planilha com apenas 1 clique.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleEspelharTodasColunasComoCampos(true)}
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-xs transition-colors cursor-pointer flex items-center gap-1.5"
+                    title="Cria automaticamente um novo campo no sistema para cada coluna da lista"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    <span>Criar Campos com os Mesmos Nomes das Colunas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAdicionarCampoPersonalizadoManual}
+                    className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-semibold rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-blue-600" />
+                    <span>+ Campo Avulso</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Tabela De/Para de Mapeamento com Classificação Fase 14.1 */}
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
                 <table className="w-full text-xs text-left">
@@ -1894,7 +2119,9 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                   </thead>
                   <tbody className="divide-y divide-slate-200 bg-white">
                     {mapeamentos.map((item, idx) => {
-                      const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+                      const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
+                      const camposOficiais = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+                      const isCustom = camposPersonalizados.some((c) => c.campo === item.campoQualigest);
                       const isIgnorado = item.campoQualigest === 'ignorar';
                       const isDuplicado = !isIgnorado && camposDuplicados.some(([campo]) => campo === item.campoQualigest);
                       const classifAtual = classificacaoCampos[item.colunaOrigem] || (isIgnorado ? 'IGNORADO' : item.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
@@ -1910,26 +2137,57 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                           </td>
 
                           <td className="p-3">
-                            <select
-                              value={item.campoQualigest}
-                              onChange={(e) => alterarCampoMapeado(item.colunaOrigem, e.target.value)}
-                              className={`w-full max-w-xs border rounded px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${
-                                isDuplicado
-                                  ? 'border-amber-500 bg-amber-50 text-amber-950 font-bold ring-2 ring-amber-300'
-                                  : isIgnorado
-                                  ? 'border-slate-300 text-slate-400 bg-slate-50'
-                                  : 'border-blue-300 text-slate-900 bg-white shadow-2xs'
-                              }`}
-                            >
-                              <option value="ignorar">(Ignorar esta coluna)</option>
-                              <optgroup label={`Campos Oficiais de ${tipoControle}:`}>
-                                {definicoes.map((d) => (
-                                  <option key={d.campo} value={d.campo}>
-                                    {d.label} {d.obrigatorio ? '(* obrigatório)' : ''}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            </select>
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={item.campoQualigest}
+                                onChange={(e) => alterarCampoMapeado(item.colunaOrigem, e.target.value)}
+                                className={`w-full max-w-xs border rounded px-2.5 py-1.5 text-xs font-semibold cursor-pointer ${
+                                  isDuplicado
+                                    ? 'border-amber-500 bg-amber-50 text-amber-950 font-bold ring-2 ring-amber-300'
+                                    : isIgnorado
+                                    ? 'border-slate-300 text-slate-400 bg-slate-50'
+                                    : isCustom
+                                    ? 'border-purple-300 bg-purple-50 text-purple-950 font-bold'
+                                    : 'border-blue-300 text-slate-900 bg-white shadow-2xs'
+                                }`}
+                              >
+                                <option value={`__CRIAR_${item.colunaOrigem}`}>
+                                  ✨ Criar Campo com Este Nome: "{item.colunaOrigem}"
+                                </option>
+                                <option value="__NOVO_CUSTOM__">➕ Digitar Outro Campo Personalizado...</option>
+                                <option value="ignorar">(Ignorar esta coluna)</option>
+
+                                {camposPersonalizados.length > 0 && (
+                                  <optgroup label={`Campos Personalizados Criados (${camposPersonalizados.length}):`}>
+                                    {camposPersonalizados.map((c) => (
+                                      <option key={c.campo} value={c.campo}>
+                                        ★ {c.label} (Personalizado)
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+
+                                <optgroup label={`Campos Oficiais de ${tipoControle}:`}>
+                                  {camposOficiais.map((d) => (
+                                    <option key={d.campo} value={d.campo}>
+                                      {d.label} {d.obrigatorio ? '(* obrigatório)' : ''}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              </select>
+
+                              {!isCustom && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCriarCampoMesmoNome(item.colunaOrigem)}
+                                  className="px-2 py-1 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded flex items-center gap-1 shrink-0 cursor-pointer"
+                                  title={`Criar novo campo no QualiGest para a coluna "${item.colunaOrigem}"`}
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                                  <span className="hidden xl:inline">Criar campo</span>
+                                </button>
+                              )}
+                            </div>
                             {isDuplicado && (
                               <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-700 font-bold bg-amber-100/90 px-1.5 py-0.5 rounded border border-amber-200">
                                 <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />

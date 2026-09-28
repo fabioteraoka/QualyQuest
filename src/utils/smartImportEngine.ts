@@ -114,6 +114,46 @@ export interface DefinicaoCampoQualigest {
   obrigatorio: boolean;
   sinonimos: string[];
   descricao: string;
+  isCustom?: boolean;
+}
+
+/**
+ * Cria dinamicamente um novo campo customizado a partir do nome da coluna da planilha
+ */
+export function criarCampoPersonalizado(nomeColuna: string): DefinicaoCampoQualigest {
+  const limpo = (nomeColuna || '').trim();
+  const slug =
+    'custom_' +
+    limpo
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '') || 'campo_' + Date.now().toString(36);
+
+  return {
+    campo: slug,
+    label: limpo || 'Novo Campo',
+    tipo: 'string',
+    obrigatorio: false,
+    sinonimos: [limpo.toLowerCase()],
+    descricao: `Campo personalizado criado para espelhar a coluna "${limpo}"`,
+    isCustom: true,
+  };
+}
+
+/**
+ * Combina campos padrão com campos personalizados cadastrados
+ */
+export function obterCamposCompletos(
+  tipoControle: TipoControleImportacao,
+  camposCustomizados: DefinicaoCampoQualigest[] = []
+): DefinicaoCampoQualigest[] {
+  const padroes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+  const existentes = new Set(padroes.map((p) => p.campo));
+  const novos = (camposCustomizados || []).filter((c) => !existentes.has(c.campo));
+  return [...padroes, ...novos];
 }
 
 export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCampoQualigest[]> = {
@@ -920,9 +960,15 @@ export function identificarTipoControleAutomatico(
 export function gerarMapeamentoAutomaticoCampos(
   colunas: string[],
   tipoControle: TipoControleImportacao,
-  amostraLinhas: Record<string, any>[] = []
+  amostraLinhas: Record<string, any>[] = [],
+  camposCustomizadosAdicionais: DefinicaoCampoQualigest[] = []
 ): MapeamentoCampoItem[] {
-  const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+  const padroes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+  const existentes = new Set(padroes.map((p) => p.campo));
+  const definicoes = [
+    ...padroes,
+    ...camposCustomizadosAdicionais.filter((c) => !existentes.has(c.campo)),
+  ];
 
   // 1. Calcula a matriz de afinidade/score entre cada coluna e cada definição de campo
   interface ScoreCandidato {
@@ -1047,6 +1093,79 @@ export function gerarMapeamentoAutomaticoCampos(
   });
 
   return mapeamentos;
+}
+
+/**
+ * Transforma colunas em campos do QualiGest espelhando exatamente os cabeçalhos da planilha
+ * Se forcarTodas for true, cria um campo exclusivo para cada coluna da planilha com o mesmo nome
+ */
+export function espelharColunasComoCampos(
+  colunas: string[],
+  mapeamentosAtuais: MapeamentoCampoItem[],
+  tipoControle: TipoControleImportacao,
+  camposCustomizadosExistentes: DefinicaoCampoQualigest[] = [],
+  forcarTodas: boolean = false
+): {
+  novosMapeamentos: MapeamentoCampoItem[];
+  novosCamposPersonalizados: DefinicaoCampoQualigest[];
+} {
+  const padroes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+  const mapaCampos = new Map<string, DefinicaoCampoQualigest>();
+  padroes.forEach((p) => mapaCampos.set(p.campo, p));
+  camposCustomizadosExistentes.forEach((c) => mapaCampos.set(c.campo, c));
+
+  const novosCampos: DefinicaoCampoQualigest[] = [...camposCustomizadosExistentes];
+  const camposOcupados = new Set<string>();
+
+  // Se não forçar todas, rastreia campos já ocupados para evitar conflitos
+  if (!forcarTodas) {
+    mapeamentosAtuais.forEach((m) => {
+      if (m.campoQualigest && m.campoQualigest !== 'ignorar') {
+        camposOcupados.add(m.campoQualigest);
+      }
+    });
+  }
+
+  const novosMapeamentos = mapeamentosAtuais.map((item) => {
+    // Se a coluna já estiver mapeada para um campo ativo que não é 'ignorar', e não estivermos forçando todas, preserva
+    if (!forcarTodas && item.campoQualigest && item.campoQualigest !== 'ignorar') {
+      return item;
+    }
+
+    // Cria novo campo personalizado baseado na coluna
+    const novoDef = criarCampoPersonalizado(item.colunaOrigem);
+    
+    // Evita colisão de slug
+    let slugFinal = novoDef.campo;
+    let contador = 1;
+    while (camposOcupados.has(slugFinal)) {
+      slugFinal = `${novoDef.campo}_${contador++}`;
+    }
+    novoDef.campo = slugFinal;
+
+    camposOcupados.add(slugFinal);
+    if (!novosCampos.some((c) => c.campo === slugFinal)) {
+      novosCampos.push(novoDef);
+    }
+    mapaCampos.set(slugFinal, novoDef);
+
+    return {
+      ...item,
+      campoQualigest: slugFinal,
+      campoLabel: novoDef.label,
+      obrigatorio: false,
+      tipoDado: 'string' as const,
+      confiancaIA: 100,
+      classificacaoUso: 'OPCIONAL' as const,
+      sugestaoIA: 'OPCIONAL' as const,
+      descricao: `Campo espelhado da coluna "${item.colunaOrigem}"`,
+    };
+  });
+
+  return {
+    novosMapeamentos,
+    novosCamposPersonalizados: novosCampos,
+  };
 }
 
 // ============================================================================
