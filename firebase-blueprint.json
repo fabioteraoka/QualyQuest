@@ -690,6 +690,7 @@
         "id": { "type": "string" },
         "organizationId": { "type": "string" },
         "codigoPatrimonio": { "type": "string" },
+        "modelo": { "type": "string" },
         "descricao": { "type": "string" },
         "fabricante": { "type": "string" },
         "numeroSerie": { "type": "string" },
@@ -700,7 +701,7 @@
         "criadoEm": { "type": "string", "format": "date-time" },
         "atualizadoEm": { "type": "string", "format": "date-time" }
       },
-      "required": ["id", "organizationId", "codigoPatrimonio", "descricao", "numeroSerie", "status", "dataUltimaCalibracao", "dataProximaCalibracao", "criadoEm", "atualizadoEm"]
+      "required": ["id", "organizationId", "codigoPatrimonio", "modelo", "criadoEm", "atualizadoEm"]
     }
   },
   "firestore": {

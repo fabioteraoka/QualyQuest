@@ -835,7 +835,7 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     const checkTemplate = tentarAplicarTemplateAprovado(colunas, templatesAprovadosFiltrados);
     setTemplateReconhecido(checkTemplate.templateEncontrado);
 
-    const mapeamentoGerado = gerarMapeamentoAutomaticoCampos(colunas, tipo, linhas);
+    const mapeamentoGerado = gerarMapeamentoAutomaticoCampos(colunas, tipo, linhas, camposPersonalizados);
 
     // Se houver template, sobrepor campos conforme o template aprovado
     if (checkTemplate.templateEncontrado) {
@@ -1006,7 +1006,8 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
           ferramentasExistentes: ferramentasCalibradas,
           documentosExistentes: documentos,
         },
-        classificacaoCampos
+        classificacaoCampos,
+        camposPersonalizados
       );
 
       setRegistrosValidados(resultado.registrosLinhas);

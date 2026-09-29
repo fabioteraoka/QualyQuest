@@ -288,10 +288,13 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       obrigatorio: true,
       sinonimos: [
         'patrimonio',
+        'patrimônio',
         'codigo',
+        'código',
         'tag',
         'id',
         'identificacao',
+        'identificação',
         'num patrimonio',
         'cod ferramenta',
         'ferramenta',
@@ -306,16 +309,49 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
         'cod',
         'item id',
         'tag id',
+        'pat',
+        'cod_patrimonio',
+        'codigo_patrimonio',
+        'patrimonio / tag',
+        'patrimonio/tag',
       ],
       descricao: 'Identificador único da ferramenta na oficina (ex: TQ-023, MULT-004)',
+    },
+    {
+      campo: 'modelo',
+      label: 'PN / Modelo (Part Number)',
+      tipo: 'string',
+      obrigatorio: true,
+      sinonimos: [
+        'modelo',
+        'part number',
+        'pn',
+        'p/n',
+        'pn/modelo',
+        'pn / modelo',
+        'pn / mod',
+        'part_number',
+        'p/n / modelo',
+        'partnumber',
+        'tipo modelo',
+        'mod',
+        'model',
+        'p_n',
+        'pn_modelo',
+        'part_no',
+        'part no',
+        'pn / part number',
+      ],
+      descricao: 'Part Number (P/N) ou Modelo do instrumento / ferramenta',
     },
     {
       campo: 'descricao',
       label: 'Descrição do Instrumento',
       tipo: 'string',
-      obrigatorio: true,
+      obrigatorio: false,
       sinonimos: [
         'descricao',
+        'descrição',
         'instrumento',
         'ferramenta',
         'equipamento',
@@ -329,7 +365,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
         'nome da ferramenta',
         'descricao da ferramenta',
       ],
-      descricao: 'Nome técnico e faixa de medição do instrumento (ex: Torquímetro de Estalo 20-100 Nm)',
+      descricao: 'Nome técnico ou descrição do instrumento (opcional)',
     },
     {
       campo: 'fabricante',
@@ -338,14 +374,6 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       obrigatorio: false,
       sinonimos: ['fabricante', 'marca', 'fornecedor', 'manufaturador', 'mfr', 'brand'],
       descricao: 'Fabricante original do instrumento (ex: Stahlwille, Snap-on, Fluke, Mitutoyo)',
-    },
-    {
-      campo: 'modelo',
-      label: 'Modelo',
-      tipo: 'string',
-      obrigatorio: false,
-      sinonimos: ['modelo', 'part number', 'pn', 'tipo modelo', 'p/n', 'mod'],
-      descricao: 'Modelo comercial ou part number do instrumento',
     },
     {
       campo: 'numeroSerie',
@@ -398,7 +426,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       campo: 'dataProximaCalibracao',
       label: 'Data da Próxima Calibração (Validade)',
       tipo: 'date',
-      obrigatorio: true,
+      obrigatorio: false,
       sinonimos: [
         'proxima calibracao',
         'validade',
@@ -415,7 +443,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
         'vencimento da calibracao',
         'proximo vencimento',
       ],
-      descricao: 'Data limite após a qual o uso do instrumento é terminantemente proibido sem nova calibração',
+      descricao: 'Data limite de validade da calibração (opcional)',
     },
     {
       campo: 'frequenciaMeses',
@@ -818,7 +846,7 @@ export function identificarTipoControleAutomatico(
   }
 
   // 2. Scoring para CALIBRAÇÃO / FERRAMENTAL
-  const palavrasCalibracaoColunas = ['patrimonio', 'ferramenta', 'instrumento', 'calibracao', 'afericao', 'torquimetro', 'multimetro', 'manometro', 'serie', 'tolerancia', 'rbc', 'laboratorio', 'paquimetro', 'micrometro'];
+  const palavrasCalibracaoColunas = ['patrimonio', 'patrimônio', 'ferramenta', 'instrumento', 'calibracao', 'calibração', 'afericao', 'torquimetro', 'multimetro', 'manometro', 'serie', 'série', 'tolerancia', 'rbc', 'laboratorio', 'paquimetro', 'micrometro', 'pn', 'part number', 'modelo'];
   const palavrasCalibracaoValores = ['stahlwille', 'snap on', 'fluke', 'mitutoyo', 'gedore', 'wika', 'cert rbc', 'labmetrologia', 'inmetro', 'nist', 'nm', 'psi', 'bar', 'aferido', 'quarentena'];
 
   palavrasCalibracaoColunas.forEach((p) => {
@@ -1381,7 +1409,8 @@ export function validarECompararLinhasImportacao(
   mapeamentos: MapeamentoCampoItem[],
   tipoControle: TipoControleImportacao,
   contexto: ContextoValidacaoExistente,
-  classificacaoCampos?: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>
+  classificacaoCampos?: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'>,
+  camposPersonalizados?: DefinicaoCampoQualigest[]
 ): {
   registrosLinhas: RegistroLinhaImportacao[];
   resumo: ResumoPreviaImportacao;
@@ -1398,7 +1427,7 @@ export function validarECompararLinhasImportacao(
     }
   });
 
-  const definicoes = ESQUEMA_CAMPOS_CONTROLE[tipoControle] || ESQUEMA_CAMPOS_CONTROLE.OUTROS;
+  const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
   
   // Campos que devem ser tratados como obrigatórios
   const camposObrigatorios = definicoes
@@ -1437,6 +1466,14 @@ export function validarECompararLinhasImportacao(
   const cursosLoteMap = new Map<string, { id: string; titulo: string; codigo: string; isNew: boolean }>();
 
   linhasOriginais.forEach((linhaOriginal, index) => {
+    // Ignorar linhas completamente vazias provenientes de rodapés ou células em branco da planilha
+    const valoresNaoVazios = Object.values(linhaOriginal).filter(
+      (v) => v !== null && v !== undefined && String(v).trim() !== ''
+    );
+    if (valoresNaoVazios.length === 0) {
+      return;
+    }
+
     const dadosMapeados: Record<string, any> = {};
     const mensagensValidacao: string[] = [];
     let statusQualidade: 'OK' | 'ATENCAO' | 'ERRO' = 'OK';
@@ -1449,6 +1486,95 @@ export function validarECompararLinhasImportacao(
         dadosMapeados[campoAlvo] = valor !== undefined && valor !== null ? String(valor).trim() : '';
       }
     });
+
+    // Auto-recuperação inteligente e desdobramento para CALIBRACAO_FERRAMENTAL
+    if (tipoControle === 'CALIBRACAO_FERRAMENTAL') {
+      // 1. Auto-recuperar Código de Patrimônio / Tag se não estiver preenchido pelo mapeamento direto
+      if (!dadosMapeados.codigoPatrimonio) {
+        dadosMapeados.codigoPatrimonio = String(
+          dadosMapeados.patrimonio ||
+          dadosMapeados.tag ||
+          dadosMapeados.codigo ||
+          dadosMapeados.id ||
+          linhaOriginal['Patrimônio'] ||
+          linhaOriginal['Patrimonio'] ||
+          linhaOriginal['PATRIMÔNIO'] ||
+          linhaOriginal['PATRIMONIO'] ||
+          linhaOriginal['Tag'] ||
+          linhaOriginal['TAG'] ||
+          linhaOriginal['Código'] ||
+          linhaOriginal['Codigo'] ||
+          linhaOriginal['CÓDIGO'] ||
+          linhaOriginal['CODIGO'] ||
+          linhaOriginal['Nº Patrimônio'] ||
+          linhaOriginal['N° Patrimonio'] ||
+          linhaOriginal['No Patrimonio'] ||
+          linhaOriginal['Nr Patrimonio'] ||
+          linhaOriginal['Ativo'] ||
+          linhaOriginal['Item ID'] ||
+          linhaOriginal['Tag ID'] ||
+          ''
+        ).trim();
+      }
+
+      // 2. Auto-recuperar PN / Modelo se ausente
+      if (!dadosMapeados.modelo) {
+        dadosMapeados.modelo = String(
+          dadosMapeados.pn ||
+          dadosMapeados.partNumber ||
+          dadosMapeados.pnModelo ||
+          dadosMapeados.part_number ||
+          linhaOriginal['PN / Modelo'] ||
+          linhaOriginal['PN/Modelo'] ||
+          linhaOriginal['PN / MODELO'] ||
+          linhaOriginal['PN'] ||
+          linhaOriginal['P/N'] ||
+          linhaOriginal['Part Number'] ||
+          linhaOriginal['PART NUMBER'] ||
+          linhaOriginal['Modelo'] ||
+          linhaOriginal['MODELO'] ||
+          linhaOriginal['PartNumber'] ||
+          linhaOriginal['P/N / Modelo'] ||
+          linhaOriginal['Part No'] ||
+          linhaOriginal['Part No.'] ||
+          ''
+        ).trim();
+      }
+
+      // 3. Auto-recuperar Número de Série se ausente
+      if (!dadosMapeados.numeroSerie) {
+        dadosMapeados.numeroSerie = String(
+          dadosMapeados.serie ||
+          linhaOriginal['Número de Série'] ||
+          linhaOriginal['Numero de Serie'] ||
+          linhaOriginal['Nº de Série'] ||
+          linhaOriginal['Série'] ||
+          linhaOriginal['Serie'] ||
+          linhaOriginal['SN'] ||
+          linhaOriginal['S/N'] ||
+          linhaOriginal['Serial'] ||
+          linhaOriginal['Serial Number'] ||
+          ''
+        ).trim();
+      }
+
+      // 4. Auto-recuperar ou preencher Descrição inteligente se estiver vazia (opcional)
+      if (!dadosMapeados.descricao) {
+        if (dadosMapeados.instrumento) {
+          dadosMapeados.descricao = String(dadosMapeados.instrumento).trim();
+        } else if (dadosMapeados.ferramenta) {
+          dadosMapeados.descricao = String(dadosMapeados.ferramenta).trim();
+        } else if (dadosMapeados.equipamento) {
+          dadosMapeados.descricao = String(dadosMapeados.equipamento).trim();
+        } else if (dadosMapeados.nome) {
+          dadosMapeados.descricao = String(dadosMapeados.nome).trim();
+        } else if (dadosMapeados.modelo) {
+          dadosMapeados.descricao = `Instrumento Mod. ${dadosMapeados.modelo}`;
+        } else if (dadosMapeados.codigoPatrimonio) {
+          dadosMapeados.descricao = `Instrumento Pat. ${dadosMapeados.codigoPatrimonio}`;
+        }
+      }
+    }
 
     // Auto-recuperação e desdobramento para CONTROLE_DOCUMENTAL (Formulário F 001-02-1 com 4 colunas)
     if (tipoControle === 'CONTROLE_DOCUMENTAL') {
@@ -1584,20 +1710,21 @@ export function validarECompararLinhasImportacao(
       const pat = normalizarTexto(dadosMapeados.codigoPatrimonio || '');
       const serie = normalizarTexto(dadosMapeados.numeroSerie || '');
       const desc = normalizarTexto(dadosMapeados.descricao || '');
+      const mod = normalizarTexto(dadosMapeados.modelo || '');
 
-      // Registro inválido se não tiver nem patrimônio, nem série, nem descrição
-      if (!pat && !serie && !desc) {
+      // Registro inválido se não tiver nenhum identificador chave (Código/Patrimônio, PN/Modelo, Série ou Descrição)
+      if (!pat && !mod && !serie && !desc) {
         classificacaoReconciliacao = 'INVALIDO';
         decisaoUsuario = 'IGNORAR';
         statusQualidade = 'ERRO';
-        mensagensValidacao.push('Registro inválido: Ausência total de identificadores (Código, Série ou Descrição).');
+        mensagensValidacao.push('Registro inválido: Ausência total de identificadores (Código/Patrimônio, PN/Modelo, Série ou Descrição).');
         totalInvalidos++;
       } else {
         // Busca correspondente no banco oficial de ferramentas
         const ferramentaExistente = (contexto.ferramentasExistentes || []).find((f) => {
           const fPat = normalizarTexto(f.codigoPatrimonio);
           const fSerie = normalizarTexto(f.numeroSerie);
-          return (pat && fPat === pat) || (serie && fSerie === serie);
+          return (pat && fPat === pat) || (serie && fSerie && fSerie === serie);
         });
 
         if (ferramentaExistente) {

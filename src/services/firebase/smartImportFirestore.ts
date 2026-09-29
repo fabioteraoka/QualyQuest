@@ -712,7 +712,7 @@ export async function efetivarImportacaoNoQualigest(
         id: toolId,
         organizationId,
         codigoPatrimonio: dados.codigoPatrimonio || dadosExistentes?.codigoPatrimonio || 'SEM-PAT',
-        descricao: dados.descricao || dadosExistentes?.descricao || 'Instrumento de Medição',
+        descricao: dados.descricao || dadosExistentes?.descricao || (dados.modelo ? `Instrumento PN ${dados.modelo}` : (dados.codigoPatrimonio ? `Ferramenta ${dados.codigoPatrimonio}` : 'Instrumento de Medição')),
         fabricante: dados.fabricante || dadosExistentes?.fabricante || 'Fabricante Homologado',
         modelo: dados.modelo || dadosExistentes?.modelo || '',
         numeroSerie: dados.numeroSerie || dadosExistentes?.numeroSerie || 'S/N',
