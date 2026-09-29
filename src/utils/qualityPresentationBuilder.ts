@@ -53,91 +53,112 @@ export function validarApresentacaoPPTX(apresentacao: RelatorioApresentacaoQuali
 }
 
 /**
- * Helper para calcular larguras dinâmicas inteligentes de colunas de tabela (FASE 12.3)
- * Evita colunas estreitas demais que causam quebras excessivas de linha e empurram o rodapé.
+ * Helper para calcular larguras dinâmicas inteligentes de colunas de tabela (FASE 12.3 & 14.2)
+ * Equilibra precisamente as colunas em relação ao tamanho dos textos (cabeçalho + células),
+ * eliminando distorções de colunas esmagadas ou com espaço em branco desproporcional.
  */
-export function calcularLargurasColunasTabela(colunas: string[], larguraTotal: number): number[] {
+export function calcularLargurasColunasTabela(
+  colunas: string[],
+  larguraTotal: number,
+  linhas?: (string | number)[][]
+): number[] {
   const n = colunas.length;
   if (n <= 1) return [larguraTotal];
 
-  const pesos = colunas.map(col => {
-    const nome = col.toLowerCase();
-    // Ações corretivas, descrições detalhadas e planos precisam de largura prioritária máxima
-    if (
-      nome.includes('ação') ||
-      nome.includes('acao') ||
-      nome.includes('o quê') ||
-      nome.includes('o que') ||
-      nome.includes('corretiva') ||
-      nome.includes('plano') ||
-      nome.includes('resolução') ||
-      nome.includes('resolucao') ||
-      nome.includes('procedimento') ||
-      nome.includes('contenção') ||
-      nome.includes('contencao') ||
-      nome.includes('causa')
-    ) {
-      return 4.2; // Ações corretivas e planos 5W2H ocupam a maior fatia da tabela
+  // 1. Calcula as métricas reais de texto por coluna (cabeçalho, células, e comprimento da maior palavra)
+  const metricasPorColuna = colunas.map((col, cIdx) => {
+    const headerStr = String(col || '').trim();
+    const headerLen = Math.max(headerStr.length, 3);
+
+    // Maior palavra individual no cabeçalho (para evitar quebra feia de palavra única)
+    const headerWords = headerStr.split(/[\s/\\-]+/).filter(Boolean);
+    let maxWordLen = headerWords.reduce((max, w) => Math.max(max, w.length), 0);
+
+    let maxCellLen = 0;
+    let somaCellLen = 0;
+    let countCells = 0;
+
+    if (linhas && linhas.length > 0) {
+      linhas.forEach((linha) => {
+        const val = linha[cIdx];
+        const str = val !== undefined && val !== null ? String(val).trim() : '';
+        const len = str.length;
+        if (len > 0) {
+          if (len > maxCellLen) maxCellLen = len;
+          somaCellLen += len;
+          countCells++;
+
+          const cellWords = str.split(/[\s/\\-]+/).filter(Boolean);
+          cellWords.forEach((w) => {
+            if (w.length > maxWordLen) maxWordLen = w.length;
+          });
+        }
+      });
     }
-    if (
-      nome.includes('título') ||
-      nome.includes('titulo') ||
-      nome.includes('descri') ||
-      nome.includes('denomina') ||
-      nome.includes('curso') ||
-      nome.includes('indicador') ||
-      nome.includes('especialidade') ||
-      nome.includes('função') ||
-      nome.includes('funcao') ||
-      nome.includes('observa')
-    ) {
-      return 2.8; // Títulos, Indicadores e Especialidades precisam de boa largura
-    }
-    if (
-      nome.includes('avaliação') ||
-      nome.includes('avaliacao') ||
-      nome.includes('diretriz') ||
-      nome.includes('condição') ||
-      nome.includes('condicao') ||
-      nome.includes('impacto')
-    ) {
-      return 1.8;
-    }
-    if (
-      nome.includes('código') ||
-      nome.includes('codigo') ||
-      nome.includes('rnc') ||
-      nome.includes('id') ||
-      nome.includes('rev') ||
-      nome.includes('meta') ||
-      nome.includes('valor') ||
-      nome.includes('total') ||
-      nome.includes('vigente') ||
-      nome.includes('vencid') ||
-      nome.includes('%') ||
-      nome.includes('taxa') ||
-      nome.includes('status') ||
-      nome.includes('grau') ||
-      nome.includes('score') ||
-      nome.includes('severidade') ||
-      nome.includes('probabilidade')
-    ) {
-      return 0.85; // Valores numéricos, status e códigos curtos
-    }
-    if (nome.includes('setor') || nome.includes('área') || nome.includes('area') || nome.includes('colaborador') || nome.includes('responsável') || nome.includes('responsavel') || nome.includes('quem')) {
-      return 1.35; // Nomes médios e responsáveis
-    }
-    if (nome.includes('prazo') || nome.includes('quando') || nome.includes('data')) {
-      return 1.05; // Prazos e datas
-    }
-    return 1.2;
+
+    const avgCellLen = countCells > 0 ? somaCellLen / countCells : headerLen;
+    return { headerLen, maxCellLen, avgCellLen, maxWordLen };
   });
 
-  const somaPesos = pesos.reduce((acc, p) => acc + p, 0);
-  let larguras = pesos.map(p => Number(((p / somaPesos) * larguraTotal).toFixed(2)));
-  const somaAtual = larguras.reduce((acc, w) => acc + w, 0);
-  const diff = Number((larguraTotal - somaAtual).toFixed(2));
-  larguras[larguras.length - 1] = Number((larguras[larguras.length - 1] + diff).toFixed(2));
+  // 2. Calcula a largura ideal pretendida (targetWidth) em polegadas para cada coluna
+  const largurasAlvo = metricasPorColuna.map((m) => {
+    // Estimativa de largura mínima para a maior palavra não quebrar ao meio (aprox. 0.06 polegadas por caractere + margem)
+    const minPorPalavra = Math.max(0.65, m.maxWordLen * 0.062 + 0.18);
+
+    // Estimativa de largura para o cabeçalho (permite quebra em no máximo 2 linhas suaves)
+    const larguraCabecalho = m.headerLen <= 10
+      ? m.headerLen * 0.075 + 0.20
+      : (m.headerLen / 1.7) * 0.07 + 0.22;
+
+    // Estimativa de largura para o conteúdo médio e máximo
+    const larguraConteudo = m.maxCellLen === 0
+      ? larguraCabecalho
+      : Math.max(
+          minPorPalavra,
+          // Média ponderada entre comprimento médio (70%) e máximo (30%)
+          (m.avgCellLen * 0.65 + m.maxCellLen * 0.35) * 0.065 + 0.20
+        );
+
+    // O alvo da coluna é o maior entre a demanda do cabeçalho e do conteúdo, com teto razoável
+    let alvo = Math.max(minPorPalavra, larguraCabecalho, larguraConteudo);
+
+    // Aplica compressão suave de potência para evitar que colunas com parágrafos gigantes engulam toda a tabela
+    alvo = Math.pow(alvo, 0.88);
+
+    return alvo;
+  });
+
+  // 3. Projeta as larguras na larguraTotal disponível
+  const somaAlvos = largurasAlvo.reduce((acc, a) => acc + a, 0);
+
+  // Limites de segurança absolutos por coluna (evita estouro e evita colunas invisíveis)
+  const minPorColuna = Math.max(0.65, Number((larguraTotal / (n * 2.5)).toFixed(2)));
+  const maxPorColuna = Number((larguraTotal * 0.42).toFixed(2));
+
+  let larguras = largurasAlvo.map((alvo) => {
+    const w = (alvo / somaAlvos) * larguraTotal;
+    return Math.max(minPorColuna, Math.min(maxPorColuna, w));
+  });
+
+  // 4. Normalização proporcional precisa
+  let somaAjustada = larguras.reduce((acc, w) => acc + w, 0);
+  larguras = larguras.map((w) => Number(((w / somaAjustada) * larguraTotal).toFixed(2)));
+
+  // Ajuste fino do resíduo de arredondamento (na coluna de maior peso que não atinja o teto)
+  let somaFinal = larguras.reduce((acc, w) => acc + w, 0);
+  let residuo = Number((larguraTotal - somaFinal).toFixed(2));
+
+  if (residuo !== 0) {
+    let bestIdx = 0;
+    let maxVal = -1;
+    larguras.forEach((w, idx) => {
+      if (w > maxVal && w + residuo <= maxPorColuna && w + residuo >= minPorColuna) {
+        maxVal = w;
+        bestIdx = idx;
+      }
+    });
+    larguras[bestIdx] = Number((larguras[bestIdx] + residuo).toFixed(2));
+  }
 
   return larguras;
 }
@@ -891,8 +912,8 @@ export async function exportarApresentacaoPPTX(
         const precisaResumo = linhasOriginais.length > maxLinhasVisiveis;
         const linhasExibidas = precisaResumo ? linhasOriginais.slice(0, 7) : linhasOriginais;
 
-        // Distribuição inteligente de larguras para 5.80 polegadas
-        const largurasColunas = calcularLargurasColunasTabela(colunas, 5.80);
+        // Distribuição inteligente de larguras para 5.80 polegadas com balanceamento real de texto
+        const largurasColunas = calcularLargurasColunasTabela(colunas, 5.80, linhasExibidas);
 
         const headerRow = colunas.map(c => ({
           text: c,
@@ -1032,7 +1053,7 @@ export async function exportarApresentacaoPPTX(
       const precisaResumo = linhasOriginais.length > maxLinhasVisiveis;
       const linhasExibidas = precisaResumo ? linhasOriginais.slice(0, 9) : linhasOriginais;
 
-      const largurasColunas = calcularLargurasColunasTabela(colunas, 11.70);
+      const largurasColunas = calcularLargurasColunasTabela(colunas, 11.70, linhasExibidas);
 
       const headerRow = colunas.map(c => ({
         text: c,

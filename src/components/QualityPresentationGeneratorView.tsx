@@ -19,7 +19,8 @@ import {
   CursoTreinamento,
   DocumentoEvidenciaPessoa,
   DocumentoControlado,
-  AlertaItem
+  AlertaItem,
+  FerramentaCalibracao
 } from '../types';
 import { 
   construirApresentacaoQualidade, 
@@ -70,6 +71,7 @@ interface QualityPresentationGeneratorViewProps {
   trainingCourses?: CursoTreinamento[];
   personDocuments?: DocumentoEvidenciaPessoa[];
   documentosControlados?: DocumentoControlado[];
+  ferramentasCalibradas?: FerramentaCalibracao[];
   alertas?: AlertaItem[];
   initialSlideId?: number;
   onNavigateToArchitecture?: () => void;
@@ -102,6 +104,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
   trainingCourses = [],
   personDocuments = [],
   documentosControlados = [],
+  ferramentasCalibradas = [],
   alertas = [],
   initialSlideId,
   onNavigateToArchitecture,
@@ -139,7 +142,9 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
     trainingCourses,
     personDocuments,
     documentosControlados,
+    ferramentasCalibradas,
     alertas,
+    organization,
   }), [
     externalAudits,
     auditFindings,
@@ -152,7 +157,9 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
     trainingCourses,
     personDocuments,
     documentosControlados,
+    ferramentasCalibradas,
     alertas,
+    organization,
   ]);
 
   // Lista única de setores para o filtro

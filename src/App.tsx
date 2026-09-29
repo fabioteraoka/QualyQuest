@@ -1205,6 +1205,7 @@ export default function App() {
                   trainingCourses={trainingCourses}
                   personDocuments={personDocuments}
                   documentosControlados={documentosControlados}
+                  ferramentasCalibradas={ferramentasCalibradas}
                   alertas={alertas}
                   initialSlideId={15}
                   onNavigateToArchitecture={() => setActiveTab('arquitetura')}
@@ -1263,6 +1264,7 @@ export default function App() {
                   trainingCourses={trainingCourses}
                   personDocuments={personDocuments}
                   documentosControlados={documentosControlados}
+                  ferramentasCalibradas={ferramentasCalibradas}
                   alertas={alertas}
                   onNavigateToArchitecture={() => setActiveTab('arquitetura')}
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}

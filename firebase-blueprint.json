@@ -698,6 +698,7 @@
         "dataUltimaCalibracao": { "type": "string" },
         "dataProximaCalibracao": { "type": "string" },
         "numeroCertificado": { "type": "string" },
+        "certificadoAnexo": { "type": "object" },
         "criadoEm": { "type": "string", "format": "date-time" },
         "atualizadoEm": { "type": "string", "format": "date-time" }
       },

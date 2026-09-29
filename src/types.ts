@@ -2823,6 +2823,13 @@ export interface FerramentaCalibracao {
   laboratorioCalibrador: string;
   numeroCertificado: string;
   evidenciaCertificadoUrl?: string;
+  certificadoAnexo?: {
+    nomeArquivo: string;
+    tamanhoBytes?: number;
+    tipoArquivo?: string;
+    urlOuBase64?: string;
+    dataUpload?: string;
+  };
   tolerancia?: string;
   observacoes?: string;
   historicoCalibracoes?: {
@@ -2833,6 +2840,11 @@ export interface FerramentaCalibracao {
     validadeAte: string;
     observacao?: string;
     registradoPor?: string;
+    certificadoAnexo?: {
+      nomeArquivo: string;
+      urlOuBase64?: string;
+      dataUpload?: string;
+    };
   }[];
   origemImportacaoId?: string;
   origemArquivoNome?: string;
