@@ -128,6 +128,8 @@ import {
   subscribeToRequisitosClientes,
   subscribeToAvaliacoesRequisitos,
   saveAvaliacaoRequisito,
+  saveRequisitoCliente,
+  saveProgramaCliente,
 } from './services/firebase/clientRequirementsFirestore';
 import {
   ClienteExterno,
@@ -1710,10 +1712,39 @@ export default function App() {
                   treinamentos={trainingRecords}
                   documentos={documentosControlados}
                   pessoas={persons}
+                  audits={externalAudits}
+                  findings={auditFindings}
+                  lessons={auditLessons}
+                  rncs={records}
                   activeOrganization={activeOrganization}
                   userProfile={userProfile}
                   onSaveAvaliacao={handleSaveAvaliacaoCliente}
                   onCriarRNCDeRequisito={handleCriarRNCDeRequisito}
+                  onSaveAudit={handleSaveAudit}
+                  onSaveFinding={handleSaveFinding}
+                  onSaveLesson={handleSaveLesson}
+                  onSaveRequirement={async (req) => {
+                    try {
+                      if (user) {
+                        await saveRequisitoCliente(activeOrgId, req, userProfile);
+                      }
+                      setRequisitosClientes((prev) => [req, ...prev.filter((r) => r.id !== req.id)]);
+                    } catch (err) {
+                      console.warn('Erro ao salvar requisito no Firestore:', err);
+                      setRequisitosClientes((prev) => [req, ...prev.filter((r) => r.id !== req.id)]);
+                    }
+                  }}
+                  onSaveProgram={async (prog) => {
+                    try {
+                      if (user) {
+                        await saveProgramaCliente(activeOrgId, prog, userProfile);
+                      }
+                      setProgramasClientes((prev) => [prog, ...prev.filter((p) => p.id !== prog.id)]);
+                    } catch (err) {
+                      console.warn('Erro ao salvar programa no Firestore:', err);
+                      setProgramasClientes((prev) => [prog, ...prev.filter((p) => p.id !== prog.id)]);
+                    }
+                  }}
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 />
               )}

@@ -101,7 +101,7 @@ export function calcularContaCreditoFerramenta(ferramenta: FerramentaCalibracao)
   let classeCorTexto = 'text-emerald-700';
   let classeBarraProgresso = 'bg-emerald-500';
 
-  if (ferramenta.status === 'QUARENTENA') {
+  if (ferramenta.status === 'QUARANTENA') {
     statusCredito = 'ESGOTADO';
     rotuloStatus = 'Quarentena (Uso Bloqueado)';
     classeCorBadge = 'bg-purple-50 text-purple-700 border-purple-200';
@@ -199,7 +199,7 @@ export function calcularResumoCreditosMetrologia(ferramentas: FerramentaCalibrac
     const conta = calcularContaCreditoFerramenta(f);
     contagemAtivas++;
 
-    if (f.status === 'QUARENTENA') {
+    if (f.status === 'QUARANTENA') {
       emQuarentena++;
     } else if (conta.statusCredito === 'ESGOTADO') {
       creditoEsgotado++;

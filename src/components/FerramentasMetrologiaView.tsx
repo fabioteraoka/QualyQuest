@@ -25,6 +25,13 @@ import {
   ChevronRight,
   RotateCcw,
   Info,
+  Paperclip,
+  Eye,
+  FileCheck,
+  BarChart3,
+  Printer,
+  Upload,
+  ExternalLink,
 } from 'lucide-react';
 import { FerramentaCalibracao, OrganizationRecord, UserProfile } from '../types';
 import {
@@ -33,6 +40,12 @@ import {
   deleteFerramentaCalibrada,
   registrarAfericaoCalibracao,
 } from '../services/firebase/smartImportFirestore';
+import {
+  calcularContaCreditoFerramenta,
+  calcularResumoCreditosMetrologia,
+  ContaCreditoFerramenta,
+  ResumoContaCreditosMetrologia,
+} from '../utils/metrologyCreditsCalculator';
 import {
   analisarLoteFerramentas,
   executarLoteFerramentas,
@@ -71,7 +84,20 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
 
   const [modalNovaCalibracaoAberta, setModalNovaCalibracaoAberta] = useState(false);
   const [ferramentaParaCalibrar, setFerramentaParaCalibrar] = useState<FerramentaCalibracao | null>(null);
-  const [dadosNovaCalib, setDadosNovaCalib] = useState({
+  const [dadosNovaCalib, setDadosNovaCalib] = useState<{
+    data: string;
+    certificado: string;
+    laboratorio: string;
+    validadeAte: string;
+    observacao: string;
+    certificadoAnexo?: {
+      nomeArquivo: string;
+      urlOuBase64?: string;
+      tamanhoBytes?: number;
+      tipoArquivo?: string;
+      dataUpload?: string;
+    };
+  }>({
     data: new Date().toISOString().split('T')[0],
     certificado: '',
     laboratorio: '',
@@ -85,6 +111,28 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
   // Modal de Detalhes de Origem / Rastreabilidade
   const [ferramentaOrigem, setFerramentaOrigem] = useState<FerramentaCalibracao | null>(null);
 
+  // Modal de Relatório Consolidado & Conta de Créditos (Novo)
+  const [modalRelatorioAberta, setModalRelatorioAberta] = useState(false);
+
+  // Modal de Visualização de Certificado Anexo (Novo)
+  const [certificadoVisualizar, setCertificadoVisualizar] = useState<{
+    nomeArquivo: string;
+    urlOuBase64?: string;
+    tipoArquivo?: string;
+    patrimonio?: string;
+    descricao?: string;
+  } | null>(null);
+
+  // Modal de Anexo Rápido de Certificado (Novo)
+  const [ferramentaAnexoRapido, setFerramentaAnexoRapido] = useState<FerramentaCalibracao | null>(null);
+  const [anexoRapidoFile, setAnexoRapidoFile] = useState<{
+    nomeArquivo: string;
+    urlOuBase64: string;
+    tamanhoBytes: number;
+    tipoArquivo: string;
+    dataUpload: string;
+  } | null>(null);
+
   // Estados de Gestão em Lote (Fase Corretiva Integrada)
   const [selectedToolIds, setSelectedToolIds] = useState<Set<string>>(new Set());
   const [modalLoteAberto, setModalLoteAberto] = useState(false);
@@ -94,6 +142,12 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
 
   const [salvando, setSalvando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
+
+  // Resumo estatístico da Conta de Créditos Metrológicos (RBAC 145.109)
+  const resumoCreditos = useMemo(
+    () => calcularResumoCreditosMetrologia(ferramentasCalibradas),
+    [ferramentasCalibradas]
+  );
 
   // Setores únicos para filtro
   const setoresUnicos = useMemo(() => {
@@ -238,6 +292,8 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
         frequenciaMeses: ferramentaEmEdicao.frequenciaMeses || 12,
         laboratorioCalibrador: ferramentaEmEdicao.laboratorioCalibrador || 'Laboratório Homologado RBC',
         numeroCertificado: ferramentaEmEdicao.numeroCertificado || '',
+        certificadoAnexo: ferramentaEmEdicao.certificadoAnexo,
+        evidenciaCertificadoUrl: ferramentaEmEdicao.evidenciaCertificadoUrl || ferramentaEmEdicao.certificadoAnexo?.urlOuBase64,
         tolerancia: ferramentaEmEdicao.tolerancia || '',
         observacoes: ferramentaEmEdicao.observacoes || '',
         historicoCalibracoes: ferramentaEmEdicao.historicoCalibracoes || [],
@@ -255,6 +311,58 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
     } catch (err) {
       console.error('Erro ao salvar ferramenta:', err);
       alert('Erro ao salvar instrumento. Tente novamente.');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  // Helper para upload e conversão de arquivos de laudo/certificado
+  const handleUploadCertificadoArquivo = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    onConcluido: (anexo: { nomeArquivo: string; urlOuBase64: string; tamanhoBytes: number; tipoArquivo: string; dataUpload: string }) => void
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 10 * 1024 * 1024) {
+      alert('O arquivo selecionado excede o limite máximo permitido de 10 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      onConcluido({
+        nomeArquivo: file.name,
+        urlOuBase64: base64,
+        tamanhoBytes: file.size,
+        tipoArquivo: file.type || 'application/pdf',
+        dataUpload: new Date().toISOString(),
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Handler para vincular laudo rápido à ferramenta
+  const handleConfirmarAnexoRapido = async () => {
+    if (!ferramentaAnexoRapido || !anexoRapidoFile) return;
+    setSalvando(true);
+    try {
+      const atualizada: FerramentaCalibracao = {
+        ...ferramentaAnexoRapido,
+        certificadoAnexo: anexoRapidoFile,
+        evidenciaCertificadoUrl: anexoRapidoFile.urlOuBase64,
+        atualizadoEm: new Date().toISOString(),
+      };
+      await saveCalibratedTool(orgId, atualizada, user);
+      if (onAdicionarFerramenta) onAdicionarFerramenta(atualizada);
+      setMensagemSucesso(`Laudo técnico vinculado com sucesso a ${ferramentaAnexoRapido.codigoPatrimonio}!`);
+      setTimeout(() => setMensagemSucesso(null), 4000);
+      setFerramentaAnexoRapido(null);
+      setAnexoRapidoFile(null);
+    } catch (err) {
+      console.error('Erro ao vincular laudo:', err);
+      alert('Erro ao vincular laudo à ferramenta.');
     } finally {
       setSalvando(false);
     }
@@ -279,6 +387,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
           laboratorio: dadosNovaCalib.laboratorio || 'Laboratório RBC',
           validadeAte: dadosNovaCalib.validadeAte,
           observacao: dadosNovaCalib.observacao,
+          certificadoAnexo: dadosNovaCalib.certificadoAnexo,
         },
         user
       );
@@ -291,6 +400,8 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
         numeroCertificado: dadosNovaCalib.certificado,
         laboratorioCalibrador: dadosNovaCalib.laboratorio || ferramentaParaCalibrar.laboratorioCalibrador,
         status: dadosNovaCalib.validadeAte < new Date().toISOString().split('T')[0] ? 'VENCIDA' : 'CALIBRADA',
+        certificadoAnexo: dadosNovaCalib.certificadoAnexo || ferramentaParaCalibrar.certificadoAnexo,
+        evidenciaCertificadoUrl: dadosNovaCalib.certificadoAnexo?.urlOuBase64 || ferramentaParaCalibrar.evidenciaCertificadoUrl,
         historicoCalibracoes: [
           {
             id: `calib-${Date.now()}`,
@@ -300,6 +411,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
             validadeAte: dadosNovaCalib.validadeAte,
             observacao: dadosNovaCalib.observacao,
             registradoPor: user?.displayName || user?.email || 'Inspetor',
+            certificadoAnexo: dadosNovaCalib.certificadoAnexo,
           },
           ...(ferramentaParaCalibrar.historicoCalibracoes || []),
         ],
@@ -314,6 +426,32 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
     } catch (err) {
       console.error('Erro ao registrar calibração:', err);
       alert('Erro ao registrar calibração.');
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  // Handler para Anexo Rápido de Certificado
+  const handleSalvarAnexoRapido = async (
+    tool: FerramentaCalibracao,
+    anexo: { nomeArquivo: string; urlOuBase64: string; tamanhoBytes: number; tipoArquivo: string; dataUpload: string }
+  ) => {
+    setSalvando(true);
+    try {
+      const atualizada: FerramentaCalibracao = {
+        ...tool,
+        certificadoAnexo: anexo,
+        evidenciaCertificadoUrl: anexo.urlOuBase64,
+        atualizadoEm: new Date().toISOString(),
+      };
+      await saveCalibratedTool(orgId, atualizada, user);
+      if (onAdicionarFerramenta) onAdicionarFerramenta(atualizada);
+      setMensagemSucesso(`Laudo técnico ${anexo.nomeArquivo} anexado ao instrumento ${tool.codigoPatrimonio}!`);
+      setTimeout(() => setMensagemSucesso(null), 4000);
+      setFerramentaAnexoRapido(null);
+    } catch (err) {
+      console.error('Erro ao anexar certificado:', err);
+      alert('Erro ao anexar arquivo de certificado.');
     } finally {
       setSalvando(false);
     }
@@ -388,6 +526,64 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
     URL.revokeObjectURL(url);
   };
 
+  // Exportar Relatório Consolidado Completo de Metrologia & Conta de Créditos (RBAC 145.109)
+  const handleExportarRelatorioCompletoCSV = () => {
+    const headers = [
+      'Tag / Patrimonio',
+      'PN / Modelo',
+      'Descricao do Instrumento',
+      'Fabricante',
+      'Numero de Serie',
+      'Setor Operacional',
+      'Status SGQ',
+      'Ultima Calibracao',
+      'Proxima Calibracao',
+      'Frequencia (Meses)',
+      'Saldo de Dias de Credito',
+      'Percentual Validade Disponivel (%)',
+      'Classificacao da Conta de Creditos',
+      'Certificado RBC',
+      'Laboratorio Homologado',
+      'Possui Laudo Anexo',
+      'Nome Arquivo Laudo',
+      'Tolerancia / Faixa',
+    ];
+
+    const rows = ferramentasCalibradas.map((t) => {
+      const conta = calcularContaCreditoFerramenta(t);
+      const temAnexo = !!(t.certificadoAnexo?.urlOuBase64 || t.evidenciaCertificadoUrl);
+      return [
+        `"${t.codigoPatrimonio || ''}"`,
+        `"${t.modelo || ''}"`,
+        `"${(t.descricao || '').replace(/"/g, '""')}"`,
+        `"${t.fabricante || ''}"`,
+        `"${t.numeroSerie || ''}"`,
+        `"${t.setor || ''}"`,
+        `"${t.status || ''}"`,
+        `"${t.dataUltimaCalibracao || ''}"`,
+        `"${t.dataProximaCalibracao || ''}"`,
+        `"${t.frequenciaMeses || 12}"`,
+        `"${conta.saldoDiasCredito}"`,
+        `"${conta.percentualRestante}%"`,
+        `"${conta.rotuloStatus}"`,
+        `"${t.numeroCertificado || ''}"`,
+        `"${(t.laboratorioCalibrador || '').replace(/"/g, '""')}"`,
+        `"${temAnexo ? 'SIM' : 'NAO'}"`,
+        `"${t.certificadoAnexo?.nomeArquivo || ''}"`,
+        `"${(t.tolerancia || '').replace(/"/g, '""')}"`,
+      ];
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Relatorio_Metrologia_Contas_Creditos_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div id="modulo-ferramentas-metrologia" className="space-y-6">
       {/* Banner de Mensagem de Sucesso */}
@@ -429,6 +625,14 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
           </div>
 
           <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={() => setModalRelatorioAberta(true)}
+              className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <BarChart3 className="w-4 h-4 text-purple-200" />
+              Relatório & Conta de Créditos
+            </button>
+
             <button
               onClick={() => {
                 setFerramentaEmEdicao({
@@ -545,6 +749,67 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
             </div>
             <p className="text-2xl font-black text-slate-900 mt-1">{contadores.total}</p>
             <span className="text-[11px] text-slate-500">Coleção calibrated_tools</span>
+          </div>
+        </div>
+
+        {/* Painel Consolidado da Conta de Créditos Metrológicos (RBAC 145.109) */}
+        <div className="mt-4 p-4 bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-purple-50/70 border border-blue-200 rounded-xl space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-200/60 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white uppercase tracking-wider">
+                Balanço Metrológico
+              </span>
+              <h3 className="text-sm font-black text-blue-950">
+                Conta de Créditos de Calibração & Laudos RBC
+              </h3>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-blue-900">
+              <span>Conformidade: <strong className="font-bold text-emerald-700">{resumoCreditos.taxaConformidadeMetrologica}%</strong></span>
+              <span>•</span>
+              <span>Cobertura de Laudos Anexos: <strong className="font-bold text-indigo-700">{resumoCreditos.taxaCoberturaCertificados}% ({resumoCreditos.totalComCertificadoAnexo}/{resumoCreditos.totalFerramentas})</strong></span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+            <div className="p-2.5 bg-white/90 rounded-lg border border-blue-100 shadow-2xs">
+              <span className="text-[11px] text-slate-500 block">Saldo Médio de Crédito:</span>
+              <strong className="text-base font-black text-blue-900">
+                {resumoCreditos.saldoMedioDiasCredito} dias
+              </strong>
+              <span className="text-[10px] text-slate-400 block mt-0.5">Validade média disponível</span>
+            </div>
+
+            <div className="p-2.5 bg-white/90 rounded-lg border border-emerald-100 shadow-2xs">
+              <span className="text-[11px] text-emerald-700 block font-medium">Crédito Regular (&gt;60d):</span>
+              <strong className="text-base font-black text-emerald-800">
+                {resumoCreditos.creditoRegular}
+              </strong>
+              <span className="text-[10px] text-emerald-600 block mt-0.5">Operação plena</span>
+            </div>
+
+            <div className="p-2.5 bg-white/90 rounded-lg border border-amber-100 shadow-2xs">
+              <span className="text-[11px] text-amber-700 block font-medium">Atenção (31 a 60d):</span>
+              <strong className="text-base font-black text-amber-800">
+                {resumoCreditos.creditoAtencao}
+              </strong>
+              <span className="text-[10px] text-amber-600 block mt-0.5">Planejar aferição RBC</span>
+            </div>
+
+            <div className="p-2.5 bg-white/90 rounded-lg border border-orange-100 shadow-2xs">
+              <span className="text-[11px] text-orange-700 block font-medium">Crédito Crítico (≤30d):</span>
+              <strong className="text-base font-black text-orange-800">
+                {resumoCreditos.creditoCritico}
+              </strong>
+              <span className="text-[10px] text-orange-600 block mt-0.5">Agendamento urgente</span>
+            </div>
+
+            <div className="p-2.5 bg-white/90 rounded-lg border border-red-100 shadow-2xs">
+              <span className="text-[11px] text-red-700 block font-medium">Crédito Esgotado / Débito:</span>
+              <strong className="text-base font-black text-red-800">
+                {resumoCreditos.creditoEsgotado}
+              </strong>
+              <span className="text-[10px] text-red-600 block mt-0.5">Uso proibido / Segregado</span>
+            </div>
           </div>
         </div>
       </div>
@@ -721,9 +986,9 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                 <th className="p-3.5">Descrição do Instrumento</th>
                 <th className="p-3.5">Fabricante & Modelo</th>
                 <th className="p-3.5">Nº de Série</th>
-                <th className="p-3.5">Última Calibração</th>
                 <th className="p-3.5">Próxima Calibração</th>
-                <th className="p-3.5">Certificado RBC</th>
+                <th className="p-3.5">Conta de Crédito</th>
+                <th className="p-3.5">Certificado RBC & Laudo</th>
                 <th className="p-3.5 text-center">Status</th>
                 <th className="p-3.5 text-center w-52">Ações Metrológicas</th>
               </tr>
@@ -747,10 +1012,8 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                   const isProx = tool.status === 'PROXIMA_VENCIMENTO';
                   const isChecked = selectedToolIds.has(tool.id);
 
-                  // Dias restantes
-                  const hoje = new Date().toISOString().split('T')[0];
-                  const diffMs = new Date(tool.dataProximaCalibracao).getTime() - new Date(hoje).getTime();
-                  const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+                  // Conta de Créditos Metrológicos
+                  const conta = calcularContaCreditoFerramenta(tool);
 
                   return (
                     <tr
@@ -814,29 +1077,72 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
 
                       <td className="p-3.5 font-mono text-[11px] text-slate-700">{tool.numeroSerie}</td>
 
-                      <td className="p-3.5 text-slate-600 whitespace-nowrap">{tool.dataUltimaCalibracao}</td>
-
                       <td className="p-3.5 whitespace-nowrap font-bold">
                         <div className={isQuarentena ? 'text-purple-700' : isVencida ? 'text-red-700' : isProx ? 'text-amber-800' : 'text-slate-900'}>
                           {tool.dataProximaCalibracao}
                         </div>
-                        <div className="text-[10px] font-normal">
-                          {isQuarentena ? (
-                            <span className="text-purple-700 font-bold">Bloqueio Quarentena</span>
-                          ) : diffDias < 0 ? (
-                            <span className="text-red-600 font-bold">Vencida há {Math.abs(diffDias)}d</span>
-                          ) : diffDias <= 30 ? (
-                            <span className="text-amber-700 font-bold">Vence em {diffDias}d</span>
-                          ) : (
-                            <span className="text-slate-500">Válida por {diffDias}d</span>
-                          )}
+                        <div className="text-[10px] text-slate-500 font-normal">
+                          Última: {tool.dataUltimaCalibracao || '—'}
                         </div>
                       </td>
 
-                      <td className="p-3.5 font-mono text-[11px] text-slate-700">
-                        <div className="font-bold">{tool.numeroCertificado || '—'}</div>
-                        <div className="text-[10px] text-slate-500 font-sans truncate max-w-[140px]">
+                      {/* Coluna: Conta de Créditos (Dias restantes, consumo e barra visual) */}
+                      <td className="p-3.5 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 font-bold text-xs">
+                          <span className={conta.saldoDiasCredito <= 0 ? 'text-red-700' : conta.saldoDiasCredito <= 30 ? 'text-amber-800' : 'text-emerald-700'}>
+                            {conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito} dias` : `${conta.saldoDiasCredito} dias`}
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold border ${conta.classeCorBadge}`}>
+                            {conta.statusCredito === 'REGULAR' ? 'Regular' : conta.statusCredito === 'ATENCAO' ? 'Atenção' : conta.statusCredito === 'CRITICO' ? 'Crítico' : 'Esgotado'}
+                          </span>
+                        </div>
+                        {/* Mini barra de progresso do consumo de crédito */}
+                        <div className="w-full bg-slate-200 rounded-full h-1.5 mt-1.5 overflow-hidden max-w-[130px]">
+                          <div
+                            className={`h-full rounded-full transition-all duration-300 ${conta.classeBarraProgresso}`}
+                            style={{ width: `${conta.percentualRestante}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-sans block mt-0.5">
+                          {conta.percentualRestante}% de validade disponível
+                        </span>
+                      </td>
+
+                      {/* Coluna: Certificado RBC & Laudo Anexo */}
+                      <td className="p-3.5 text-xs">
+                        <div className="font-mono font-bold text-slate-900">{tool.numeroCertificado || '—'}</div>
+                        <div className="text-[10px] text-slate-500 font-sans truncate max-w-[130px]">
                           {tool.laboratorioCalibrador}
+                        </div>
+                        {/* Botão de Laudo Anexo */}
+                        <div className="mt-1">
+                          {tool.certificadoAnexo?.urlOuBase64 || tool.evidenciaCertificadoUrl ? (
+                            <button
+                              onClick={() => setCertificadoVisualizar({
+                                nomeArquivo: tool.certificadoAnexo?.nomeArquivo || `Certificado-${tool.codigoPatrimonio}.pdf`,
+                                urlOuBase64: tool.certificadoAnexo?.urlOuBase64 || tool.evidenciaCertificadoUrl,
+                                tipoArquivo: tool.certificadoAnexo?.tipoArquivo,
+                                patrimonio: tool.codigoPatrimonio,
+                                descricao: tool.descricao,
+                              })}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded cursor-pointer transition shadow-2xs"
+                              title="Visualizar laudo do certificado de calibração"
+                            >
+                              <Paperclip className="w-3 h-3 text-blue-600" />
+                              <span>Ver Laudo Anexo</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setFerramentaAnexoRapido(tool);
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 hover:text-blue-700 bg-slate-100 hover:bg-blue-50 border border-dashed border-slate-300 hover:border-blue-300 px-2 py-0.5 rounded cursor-pointer transition"
+                              title="Anexar certificado em PDF ou imagem"
+                            >
+                              <Upload className="w-3 h-3 text-slate-500" />
+                              <span>Anexar Laudo</span>
+                            </button>
+                          )}
                         </div>
                       </td>
 
@@ -1121,6 +1427,84 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                 />
               </div>
 
+              {/* Campo para Anexar Certificado de Calibração */}
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl space-y-2">
+                <label className="font-bold text-blue-950 flex items-center gap-1.5 text-xs">
+                  <Paperclip className="w-4 h-4 text-blue-600" />
+                  Certificado de Calibração Anexo (Laudo Técnico PDF ou Imagem)
+                </label>
+
+                {ferramentaEmEdicao.certificadoAnexo?.nomeArquivo || ferramentaEmEdicao.evidenciaCertificadoUrl ? (
+                  <div className="flex items-center justify-between p-2.5 bg-white border border-blue-200 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div className="truncate">
+                        <span className="font-bold text-slate-900 block truncate">
+                          {ferramentaEmEdicao.certificadoAnexo?.nomeArquivo || 'Laudo_Calibracao_RBC.pdf'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {ferramentaEmEdicao.certificadoAnexo?.tamanhoBytes
+                            ? `${(ferramentaEmEdicao.certificadoAnexo.tamanhoBytes / 1024).toFixed(1)} KB`
+                            : 'Arquivo vinculado'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setCertificadoVisualizar({
+                          nomeArquivo: ferramentaEmEdicao.certificadoAnexo?.nomeArquivo || 'Certificado.pdf',
+                          urlOuBase64: ferramentaEmEdicao.certificadoAnexo?.urlOuBase64 || ferramentaEmEdicao.evidenciaCertificadoUrl,
+                          tipoArquivo: ferramentaEmEdicao.certificadoAnexo?.tipoArquivo,
+                          patrimonio: ferramentaEmEdicao.codigoPatrimonio,
+                          descricao: ferramentaEmEdicao.descricao,
+                        })}
+                        className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded font-bold text-[11px] transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Eye className="w-3 h-3" />
+                        Ver
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFerramentaEmEdicao({
+                            ...ferramentaEmEdicao,
+                            certificadoAnexo: undefined,
+                            evidenciaCertificadoUrl: undefined,
+                          });
+                        }}
+                        className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded font-bold text-[11px] transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Remover
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-blue-300 hover:border-blue-500 rounded-lg cursor-pointer bg-white transition hover:bg-blue-50/30">
+                      <Upload className="w-5 h-5 text-blue-500 mb-1" />
+                      <span className="text-xs font-bold text-blue-900">Clique para selecionar o certificado / laudo</span>
+                      <span className="text-[10px] text-slate-500">Suporta laudos em PDF, PNG, JPG (máx. 10 MB)</span>
+                      <input
+                        type="file"
+                        accept=".pdf,image/png,image/jpeg,image/jpg"
+                        onChange={(e) =>
+                          handleUploadCertificadoArquivo(e, (anexo) => {
+                            setFerramentaEmEdicao({
+                              ...ferramentaEmEdicao,
+                              certificadoAnexo: anexo,
+                              evidenciaCertificadoUrl: anexo.urlOuBase64,
+                            });
+                          })
+                        }
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
                 <button
                   type="button"
@@ -1234,6 +1618,60 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                   onChange={(e) => setDadosNovaCalib({ ...dadosNovaCalib, observacao: e.target.value })}
                   className="w-full border border-slate-300 rounded-lg p-2"
                 />
+              </div>
+
+              {/* Anexar Certificado da Nova Calibração */}
+              <div className="p-3 bg-emerald-50/60 border border-emerald-200 rounded-xl space-y-2">
+                <label className="font-bold text-emerald-950 flex items-center gap-1.5 text-xs">
+                  <Paperclip className="w-4 h-4 text-emerald-600" />
+                  Anexar Laudo RBC da Nova Calibração (PDF ou Imagem)
+                </label>
+
+                {dadosNovaCalib.certificadoAnexo ? (
+                  <div className="flex items-center justify-between p-2.5 bg-white border border-emerald-200 rounded-lg text-xs">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div className="truncate">
+                        <span className="font-bold text-slate-900 block truncate">
+                          {dadosNovaCalib.certificadoAnexo.nomeArquivo}
+                        </span>
+                        <span className="text-[10px] text-slate-500">
+                          {dadosNovaCalib.certificadoAnexo.tamanhoBytes
+                            ? `${(dadosNovaCalib.certificadoAnexo.tamanhoBytes / 1024).toFixed(1)} KB`
+                            : 'Arquivo pronto para gravação'}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setDadosNovaCalib({ ...dadosNovaCalib, certificadoAnexo: undefined })}
+                      className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded font-bold text-[11px] transition cursor-pointer"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="flex flex-col items-center justify-center p-3 border-2 border-dashed border-emerald-300 hover:border-emerald-500 rounded-lg cursor-pointer bg-white transition hover:bg-emerald-50/30">
+                      <Upload className="w-5 h-5 text-emerald-600 mb-1" />
+                      <span className="text-xs font-bold text-emerald-900">Clique para selecionar o laudo técnico da calibração</span>
+                      <span className="text-[10px] text-slate-500">PDF, PNG, JPG (máx. 10 MB)</span>
+                      <input
+                        type="file"
+                        accept=".pdf,image/png,image/jpeg,image/jpg"
+                        onChange={(e) =>
+                          handleUploadCertificadoArquivo(e, (anexo) => {
+                            setDadosNovaCalib({
+                              ...dadosNovaCalib,
+                              certificadoAnexo: anexo,
+                            });
+                          })
+                        }
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
@@ -1480,6 +1918,336 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
           analise={analiseLote}
           onConfirmar={handleConfirmarAcaoLote}
         />
+      )}
+
+      {/* MODAL: ANEXO RÁPIDO DE CERTIFICADO DE CALIBRAÇÃO */}
+      {ferramentaAnexoRapido && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-[16px] max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Paperclip className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-bold text-slate-900">Anexar Laudo RBC</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setFerramentaAnexoRapido(null);
+                  setAnexoRapidoFile(null);
+                }}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-slate-900">{ferramentaAnexoRapido.descricao}</span>
+                <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {ferramentaAnexoRapido.codigoPatrimonio}
+                </span>
+              </div>
+              <p className="text-slate-500 text-[11px]">
+                {ferramentaAnexoRapido.fabricante} {ferramentaAnexoRapido.modelo && `• ${ferramentaAnexoRapido.modelo}`} • Série: {ferramentaAnexoRapido.numeroSerie}
+              </p>
+              <p className="text-slate-600 text-[11px]">
+                Certificado: <strong>{ferramentaAnexoRapido.numeroCertificado || 'Não informado'}</strong> • Validade: {ferramentaAnexoRapido.dataProximaCalibracao}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-blue-300 hover:border-blue-500 rounded-xl cursor-pointer bg-white transition hover:bg-blue-50/40">
+                <Upload className="w-6 h-6 text-blue-600 mb-1" />
+                <span className="text-xs font-bold text-blue-900">
+                  {anexoRapidoFile ? anexoRapidoFile.nomeArquivo : 'Clique para selecionar o certificado / laudo RBC'}
+                </span>
+                <span className="text-[10px] text-slate-500 mt-0.5">
+                  {anexoRapidoFile
+                    ? `${(anexoRapidoFile.tamanhoBytes / 1024).toFixed(1)} KB pronto para vinculação`
+                    : 'Formatos aceitos: PDF, PNG, JPG (máximo 10 MB)'}
+                </span>
+                <input
+                  type="file"
+                  accept=".pdf,image/png,image/jpeg,image/jpg"
+                  onChange={(e) =>
+                    handleUploadCertificadoArquivo(e, (anexo) => {
+                      setAnexoRapidoFile(anexo);
+                    })
+                  }
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setFerramentaAnexoRapido(null);
+                  setAnexoRapidoFile(null);
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!anexoRapidoFile || salvando}
+                onClick={handleConfirmarAnexoRapido}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-xs"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {salvando ? 'Salvando...' : 'Vincular Laudo ao Instrumento'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: VISUALIZADOR DE CERTIFICADO DE CALIBRAÇÃO */}
+      {certificadoVisualizar && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-[16px] max-w-3xl w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileCheck className="w-5 h-5 text-emerald-600" />
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Certificado de Calibração Oficial RBC
+                  </h3>
+                  <span className="text-xs text-slate-500 font-mono">
+                    {certificadoVisualizar.patrimonio && `Tag: ${certificadoVisualizar.patrimonio} • `}
+                    {certificadoVisualizar.nomeArquivo}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {certificadoVisualizar.urlOuBase64 && (
+                  <a
+                    href={certificadoVisualizar.urlOuBase64}
+                    download={certificadoVisualizar.nomeArquivo}
+                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-blue-200"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Baixar Laudo
+                  </a>
+                )}
+                <button
+                  onClick={() => setCertificadoVisualizar(null)}
+                  className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto bg-slate-50 border border-slate-200 rounded-xl p-3 min-h-[350px] flex items-center justify-center">
+              {certificadoVisualizar.urlOuBase64 ? (
+                certificadoVisualizar.urlOuBase64.startsWith('data:image/') ||
+                certificadoVisualizar.nomeArquivo.match(/\.(png|jpg|jpeg)$/i) ? (
+                  <img
+                    src={certificadoVisualizar.urlOuBase64}
+                    alt={certificadoVisualizar.nomeArquivo}
+                    className="max-h-[60vh] max-w-full rounded object-contain shadow-xs"
+                  />
+                ) : (
+                  <iframe
+                    src={certificadoVisualizar.urlOuBase64}
+                    title={certificadoVisualizar.nomeArquivo}
+                    className="w-full h-[60vh] rounded border border-slate-300 bg-white"
+                  />
+                )
+              ) : (
+                <div className="text-center p-8 text-slate-500">
+                  <FileText className="w-12 h-12 text-slate-300 mx-auto mb-2" />
+                  <p className="font-bold text-slate-700">Prévia do laudo não disponível em Base64</p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Arquivo registrado como referência documental no tenant.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+              <span>Evidência auditável conforme RBAC 145.109 e ISO 9001:2015</span>
+              <button
+                type="button"
+                onClick={() => setCertificadoVisualizar(null)}
+                className="px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: RELATÓRIO COMPLETO DE METROLOGIA & CONTA DE CRÉDITOS */}
+      {modalRelatorioAberta && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-[16px] max-w-5xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] flex flex-col">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-200">
+                    RBAC 145.109 / EASA PART 145
+                  </span>
+                  <span className="text-[10px] font-bold bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded border border-emerald-200">
+                    DOCUMENTO OFICIAL AUDITÁVEL
+                  </span>
+                </div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-purple-600" />
+                  Relatório Executivo de Metrologia & Conta de Créditos
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {organization?.name || 'Organização SGQ'} • Emissão: {new Date().toLocaleDateString('pt-BR')} • Responsável Técnico: {user?.displayName || user?.email || 'Gestão da Qualidade'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExportarRelatorioCompletoCSV}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-blue-600" />
+                  Exportar CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5 text-slate-600" />
+                  Imprimir / PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalRelatorioAberta(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg ml-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Painel Executivo Consolidado de Créditos */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl">
+                <span className="text-[11px] text-blue-700 font-bold block">Total de Instrumentos</span>
+                <strong className="text-2xl font-black text-blue-950 mt-0.5 block">
+                  {resumoCreditos.totalFerramentas}
+                </strong>
+                <span className="text-[10px] text-blue-600">No inventário oficial</span>
+              </div>
+
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl">
+                <span className="text-[11px] text-emerald-700 font-bold block">Conformidade Metrológica</span>
+                <strong className="text-2xl font-black text-emerald-950 mt-0.5 block">
+                  {resumoCreditos.taxaConformidadeMetrologica}%
+                </strong>
+                <span className="text-[10px] text-emerald-600">Aptas para liberação CRS</span>
+              </div>
+
+              <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl">
+                <span className="text-[11px] text-indigo-700 font-bold block">Saldo Médio da Conta</span>
+                <strong className="text-2xl font-black text-indigo-950 mt-0.5 block">
+                  {resumoCreditos.saldoMedioDiasCredito} dias
+                </strong>
+                <span className="text-[10px] text-indigo-600">Validade média de laudos</span>
+              </div>
+
+              <div className="p-3 bg-purple-50/70 border border-purple-200 rounded-xl">
+                <span className="text-[11px] text-purple-700 font-bold block">Laudos Técnicos Anexos</span>
+                <strong className="text-2xl font-black text-purple-950 mt-0.5 block">
+                  {resumoCreditos.taxaCoberturaCertificados}%
+                </strong>
+                <span className="text-[10px] text-purple-600">{resumoCreditos.totalComCertificadoAnexo} de {resumoCreditos.totalFerramentas} com laudo vinculado</span>
+              </div>
+            </div>
+
+            {/* Tabela do Relatório com Rolagem e Conta de Créditos */}
+            <div className="flex-1 overflow-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 border-b border-slate-200 z-10">
+                  <tr>
+                    <th className="p-2.5">Tag/Patrimônio</th>
+                    <th className="p-2.5">PN / Modelo</th>
+                    <th className="p-2.5">Descrição do Instrumento</th>
+                    <th className="p-2.5">Setor</th>
+                    <th className="p-2.5">Próxima Calibração</th>
+                    <th className="p-2.5">Conta de Crédito</th>
+                    <th className="p-2.5">Situação</th>
+                    <th className="p-2.5">Certificado RBC</th>
+                    <th className="p-2.5 text-center">Laudo Anexo</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 bg-white">
+                  {ferramentasCalibradas.map((f) => {
+                    const conta = calcularContaCreditoFerramenta(f);
+                    const temAnexo = !!(f.certificadoAnexo?.urlOuBase64 || f.evidenciaCertificadoUrl);
+
+                    return (
+                      <tr key={f.id} className="hover:bg-slate-50 transition">
+                        <td className="p-2.5 font-mono font-bold text-slate-900">{f.codigoPatrimonio}</td>
+                        <td className="p-2.5 font-mono text-[11px] text-slate-700">{f.modelo || '—'}</td>
+                        <td className="p-2.5 font-medium text-slate-900">{f.descricao}</td>
+                        <td className="p-2.5 text-slate-600">{f.setor || 'Geral'}</td>
+                        <td className="p-2.5 font-bold whitespace-nowrap">{f.dataProximaCalibracao}</td>
+                        <td className="p-2.5 whitespace-nowrap">
+                          <span className={`font-bold ${conta.saldoDiasCredito <= 0 ? 'text-red-700' : conta.saldoDiasCredito <= 30 ? 'text-amber-800' : 'text-emerald-700'}`}>
+                            {conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d` : `${conta.saldoDiasCredito}d`}
+                          </span>
+                          <span className="text-[10px] text-slate-500 ml-1">({conta.percentualRestante}%)</span>
+                        </td>
+                        <td className="p-2.5 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${conta.classeCorBadge}`}>
+                            {conta.statusCredito === 'REGULAR' ? 'Regular' : conta.statusCredito === 'ATENCAO' ? 'Atenção' : conta.statusCredito === 'CRITICO' ? 'Crítico' : 'Esgotado'}
+                          </span>
+                        </td>
+                        <td className="p-2.5 font-mono text-[11px] text-slate-800">{f.numeroCertificado || 'Pendente'}</td>
+                        <td className="p-2.5 text-center whitespace-nowrap">
+                          {temAnexo ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCertificadoVisualizar({
+                                  nomeArquivo: f.certificadoAnexo?.nomeArquivo || `Certificado-${f.codigoPatrimonio}.pdf`,
+                                  urlOuBase64: f.certificadoAnexo?.urlOuBase64 || f.evidenciaCertificadoUrl,
+                                  tipoArquivo: f.certificadoAnexo?.tipoArquivo,
+                                  patrimonio: f.codigoPatrimonio,
+                                  descricao: f.descricao,
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded cursor-pointer transition"
+                            >
+                              <Paperclip className="w-3 h-3 text-emerald-600" />
+                              <span>Laudo Anexo</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">Sem anexo</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between text-xs text-slate-500 pt-3 border-t border-slate-100">
+              <span>Auditoria Digital QualiGest SGQ • Rastreabilidade ininterrupta ao Arquivo Original</span>
+              <button
+                type="button"
+                onClick={() => setModalRelatorioAberta(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold cursor-pointer"
+              >
+                Concluir Visualização
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

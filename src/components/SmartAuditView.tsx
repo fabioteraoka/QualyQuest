@@ -29,7 +29,8 @@ import {
   Zap,
   Tag,
   Info,
-  ChevronDown
+  ChevronDown,
+  History
 } from 'lucide-react';
 import {
   ClienteExterno,
@@ -46,13 +47,20 @@ import {
   RegistroTreinamentoColaborador,
   DocumentoControlado,
   Person,
-  EvidenciaRequisitoItem
+  EvidenciaRequisitoItem,
+  AuditoriaExternaRecord,
+  ConstatacaoExternaRecord,
+  LicaoAprendidaAuditoria
 } from '../types';
 import {
   executarAuditoriaInteligenteRequisito,
   calcularResumoAuditoriaPorExcecao,
   ResultadoAvaliacaoInteligenteItem
 } from '../services/smartAuditEngine';
+import { SmartAuditPreparationView } from './smart-audit/SmartAuditPreparationView';
+import { SmartAuditHistoryView } from './smart-audit/SmartAuditHistoryView';
+import { SmartAuditInternalLessonsView } from './smart-audit/SmartAuditInternalLessonsView';
+import { SmartAuditImportView } from './smart-audit/SmartAuditImportView';
 
 interface SmartAuditViewProps {
   clientes: ClienteExterno[];
@@ -70,6 +78,17 @@ interface SmartAuditViewProps {
   onSaveAvaliacao: (avaliacao: Partial<AvaliacaoRequisitoCliente>) => Promise<void>;
   onCriarRNCDeRequisito?: (rncPayload: Partial<NCRecord>) => void;
   onNavigateToTab?: (tab: string) => void;
+
+  // Integração com módulos oficiais para Fluxos A e B
+  audits?: AuditoriaExternaRecord[];
+  findings?: ConstatacaoExternaRecord[];
+  lessons?: LicaoAprendidaAuditoria[];
+  rncs?: NCRecord[];
+  onSaveAudit?: (audit: AuditoriaExternaRecord) => Promise<void>;
+  onSaveFinding?: (finding: ConstatacaoExternaRecord) => Promise<void>;
+  onSaveLesson?: (lesson: LicaoAprendidaAuditoria) => Promise<void>;
+  onSaveRequirement?: (req: RequisitoClienteItem) => Promise<void>;
+  onSaveProgram?: (prog: ProgramaChecklistCliente) => Promise<void>;
 }
 
 export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
@@ -88,9 +107,20 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
   onSaveAvaliacao,
   onCriarRNCDeRequisito,
   onNavigateToTab,
+  audits = [],
+  findings = [],
+  lessons = [],
+  rncs = [],
+  onSaveAudit,
+  onSaveFinding,
+  onSaveLesson,
+  onSaveRequirement,
+  onSaveProgram,
 }) => {
   // Navigation & Filtering State
-  const [activeMode, setActiveMode] = useState<'EXCECOES' | 'TODOS' | 'MATURIDADE' | 'IMPORTAR'>('EXCECOES');
+  const [activeMode, setActiveMode] = useState<
+    'EXCECOES' | 'PREPARACAO' | 'HISTORICO' | 'APRENDIZADO' | 'TODOS' | 'MATURIDADE' | 'IMPORTAR'
+  >('EXCECOES');
   const [selectedCliente, setSelectedCliente] = useState<string>('TODOS');
   const [selectedBase, setSelectedBase] = useState<string>('BASE-SOD');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -107,13 +137,6 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
   const [editingSuggestionItem, setEditingSuggestionItem] = useState<ResultadoAvaliacaoInteligenteItem | null>(null);
   const [editedResponseText, setEditedResponseText] = useState<string>('');
 
-  // Import Checklist Modal State
-  const [isImporting, setIsImporting] = useState<boolean>(false);
-  const [importClientName, setImportClientName] = useState<string>('SWISS International Air Lines');
-  const [importChecklistText, setImportChecklistText] = useState<string>('');
-  const [importingLoading, setImportingLoading] = useState<boolean>(false);
-  const [importResult, setImportResult] = useState<any | null>(null);
-
   // Feedback Notification
   const [feedback, setFeedback] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
 
@@ -127,7 +150,7 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
     return bases.find((b) => b.id === selectedBase) || bases[0] || { id: 'BASE-SOD', codigo: 'SOD', nome: 'Sorocaba' };
   }, [bases, selectedBase]);
 
-  // Executa avaliação automática em todos os requisitos para a base selecionada
+  // Executa avaliação automática em todos os requisitos para a base selecionada com dados oficiais
   const avaliacoesCalculadas = useMemo(() => {
     return requisitos.map((req) => {
       const ctrl = controles.find((c) => c.id === req.controleCentralId || c.codigo === req.controleCentralCodigo);
@@ -136,6 +159,10 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
         treinamentos,
         documentos,
         pessoas,
+        rncs,
+        audits,
+        findings,
+        lessons,
         baseCodigo: currentBaseObj.codigo,
       });
 
@@ -154,7 +181,7 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
       }
       return res;
     });
-  }, [requisitos, controles, ferramentas, treinamentos, documentos, pessoas, currentBaseObj, selectedBase, avaliacoes]);
+  }, [requisitos, controles, ferramentas, treinamentos, documentos, pessoas, rncs, audits, findings, lessons, currentBaseObj, selectedBase, avaliacoes]);
 
   // Resumo estatístico
   const resumo = useMemo(() => {
@@ -403,60 +430,6 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
     setEditingSuggestionItem(null);
   };
 
-  // Importação de Checklist via Servidor / IA
-  const handleProcessChecklistImport = async () => {
-    if (!importChecklistText.trim()) {
-      showNotification('error', 'Cole ou digite o conteúdo do checklist para prosseguir.');
-      return;
-    }
-    setImportingLoading(true);
-
-    try {
-      const response = await fetch('/api/smart-audit/parse-checklist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          textoChecklist: importChecklistText,
-          clienteSugerido: importClientName,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setImportResult(data);
-        showNotification('success', `Checklist processado! ${data.itens?.length || 0} requisitos estruturados via IA.`);
-      } else {
-        throw new Error(data.error || 'Erro no processamento do checklist');
-      }
-    } catch (err: any) {
-      showNotification('error', `Falha ao interpretar checklist: ${err.message}`);
-    } finally {
-      setImportingLoading(false);
-    }
-  };
-
-  // Preset de demonstração para Novo Cliente (SWISS)
-  const handleLoadSwissPreset = () => {
-    setImportClientName('SWISS International Air Lines');
-    setImportChecklistText(`SWISS INTERNATIONAL AIR LINES - LINE MAINTENANCE STATION AUDIT (LX-AUDIT-2026)
-Rev: 04 | Date: March 2026 | Aircraft Fleet: A330-300 / B777-300ER
-
-Section 1: Station Personnel & Training
-Item 1.1: All certifying engineers must hold valid EASA Part-66 or ANAC CHT with A330/B777 type rating.
-Item 1.2: Evidence of mandatory recurrent training within 24 months for EWIS, Fuel Tank Safety (FTS Phase 2) and Human Factors.
-
-Section 2: Tooling & Test Equipment
-Item 2.1: Calibrated precision tooling must have valid calibration certificates traceable to National/International Standards (Inmetro/RBC or NIST).
-Item 2.2: Torque wrenches must be kept in clean, dedicated storage with readable calibration stickers.
-
-Section 3: Ramp Safety, Housekeeping & Foreign Object Debris (FOD)
-Item 3.1: Ramp area inspection must show no foreign objects, adequate FOD containers, and clean parking apron.
-Item 3.2: High-pressure nitrogen cylinders on ramp must be properly chained, capped and in dedicated carts.
-
-Section 4: Technical Documentation
-Item 4.1: Line maintenance personnel must have real-time access to the latest revision of Airbus World / MyBoeingFleet AMM.`);
-  };
-
   return (
     <div className="space-y-6 pb-12">
       {/* Feedback Toast */}
@@ -507,7 +480,6 @@ Item 4.1: Line maintenance personnel must have real-time access to the latest re
             <button
               onClick={() => {
                 setActiveMode('IMPORTAR');
-                setIsImporting(true);
               }}
               className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-semibold flex items-center gap-2 shadow-lg shadow-sky-600/20 transition-all"
             >
@@ -575,8 +547,8 @@ Item 4.1: Line maintenance personnel must have real-time access to the latest re
             </div>
           </div>
 
-          {/* Seletor de Modo de Exibição */}
-          <div className="bg-slate-950/80 p-1 rounded-xl border border-slate-800 flex items-center gap-1 text-xs">
+          {/* Seletor de Modo de Exibição 2.0 */}
+          <div className="bg-slate-950/80 p-1 rounded-xl border border-slate-800 flex items-center gap-1 text-xs flex-wrap">
             <button
               onClick={() => setActiveMode('EXCECOES')}
               className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
@@ -586,18 +558,51 @@ Item 4.1: Line maintenance personnel must have real-time access to the latest re
               }`}
             >
               <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-              Apenas Exceções ({resumo.totalExcecoes})
+              Cockpit de Exceções ({resumo.totalExcecoes})
+            </button>
+            <button
+              onClick={() => setActiveMode('PREPARACAO')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+                activeMode === 'PREPARACAO'
+                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+              Preparação Inteligente (Fluxo B)
+            </button>
+            <button
+              onClick={() => setActiveMode('HISTORICO')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+                activeMode === 'HISTORICO'
+                  ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <History className="w-3.5 h-3.5 text-purple-400" />
+              Memória Histórica (Fluxo A)
+            </button>
+            <button
+              onClick={() => setActiveMode('APRENDIZADO')}
+              className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all ${
+                activeMode === 'APRENDIZADO'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+              Aprendizado Interno
             </button>
             <button
               onClick={() => setActiveMode('TODOS')}
               className={`px-3 py-1.5 rounded-lg font-medium flex items-center gap-1.5 transition-all ${
                 activeMode === 'TODOS'
-                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                  ? 'bg-slate-800 text-white'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              Todos os Requisitos ({resumo.totalRequisitos})
+              <Layers className="w-3.5 h-3.5 text-slate-400" />
+              Todos ({resumo.totalRequisitos})
             </button>
             <button
               onClick={() => setActiveMode('MATURIDADE')}
@@ -608,7 +613,18 @@ Item 4.1: Line maintenance personnel must have real-time access to the latest re
               }`}
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              Maturidade SGQ
+              Maturidade
+            </button>
+            <button
+              onClick={() => setActiveMode('IMPORTAR')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+                activeMode === 'IMPORTAR'
+                  ? 'bg-sky-600 text-white shadow-xs'
+                  : 'bg-slate-900 text-sky-400 hover:text-white'
+              }`}
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+              Smart Import Real
             </button>
           </div>
         </div>
@@ -1102,129 +1118,80 @@ Item 4.1: Line maintenance personnel must have real-time access to the latest re
         </div>
       )}
 
-      {/* MODAL / VISÃO: IMPORTAÇÃO DE NOVO CHECKLIST (IA) */}
+      {/* VISÃO: PREPARAÇÃO INTELIGENTE DE AUDITORIA (FLUXO B) */}
+      {activeMode === 'PREPARACAO' && (
+        <SmartAuditPreparationView
+          itens={itensExibidos}
+          documentos={documentos}
+          currentBaseCodigo={currentBaseObj.codigo}
+          onAnswerQuestion={handleAnswerQuestion}
+          onAcceptSuggestion={handleAcceptSuggestion}
+          onOpenEvidenceModal={(item, tipo) => {
+            setEvidenceModalItem(item);
+            setEvidenceTitle(`Evidência ${tipo} - ${item.requisito.numeroItem}`);
+            setEvidenceType(tipo === 'FOTO' ? 'FOTO' : 'DOCUMENTO');
+          }}
+          onOpenRNCModal={(item) => {
+            if (onCriarRNCDeRequisito) {
+              onCriarRNCDeRequisito({
+                origemDetectada: 'AUDITORIA_INTERNA',
+                numeroFormulario: 'F 001-29',
+                revisaoFormulario: '00',
+                dataEmissaoFormulario: new Date().toISOString().split('T')[0],
+                processoSetor: 'Manutenção de Linha / Pátio',
+                aeronaveAplicavel: 'B747-400F / B777F',
+                responsavelEmissao: userProfile?.displayName || 'Auditor SGQ',
+                descricaoDetalhadaNaoConformidade: `Não conformidade gerada a partir da auditoria de cliente ${item.requisito.clienteNome} (${item.requisito.numeroItem} - ${item.requisito.tituloCurto}): ${item.justificativaConclusao}`,
+                requisitoDescumprido: `${item.requisito.numeroItem} - ${item.requisito.textoOriginal}`,
+                evidenciasObjetivas: (item.evidenciasIdentificadas || []).map((e) => `${e.titulo} (${e.numeroReferencia || ''})`).join('; ') || 'Registro de auditoria',
+                acaoImediataContencao: item.sugestaoResolucao?.sugestaoAcao || 'Segregação física imediata e abertura de RNC.',
+                statusGeral: 'REGISTRADA',
+              });
+              showNotification('info', 'RNC F 001-29 aberta e vinculada ao requisito!');
+            }
+          }}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
+
+      {/* VISÃO: MEMÓRIA HISTÓRICA DE AUDITORIAS E CONSTATAÇÕES (FLUXO A) */}
+      {activeMode === 'HISTORICO' && (
+        <SmartAuditHistoryView
+          audits={audits}
+          findings={findings}
+          rncs={rncs}
+          userProfile={userProfile}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
+
+      {/* VISÃO: APRENDIZADO PARA AUDITORIAS INTERNAS */}
+      {activeMode === 'APRENDIZADO' && (
+        <SmartAuditInternalLessonsView
+          itens={avaliacoesCalculadas}
+          lessons={lessons}
+          userProfile={userProfile}
+          onSaveLesson={onSaveLesson}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
+
+      {/* VISÃO: SMART IMPORT REAL DE ARQUIVOS E AUDITORIAS */}
       {activeMode === 'IMPORTAR' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6">
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-            <div>
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <UploadCloud className="w-5 h-5 text-sky-400" />
-                Importador Inteligente de Checklists de Clientes (IA Gemini)
-              </h3>
-              <p className="text-sm text-slate-400 mt-1">
-                Receba checklists de qualquer novo cliente aéreo em texto, PDF ou DOCX. A IA interpreta os requisitos e os relaciona automaticamente aos controles centrais existentes.
-              </p>
-            </div>
-            <button
-              onClick={() => setActiveMode('EXCECOES')}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
-            >
-              Voltar para Exceções
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="space-y-4 md:col-span-1">
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Nome do Cliente Aéreo
-                </label>
-                <input
-                  type="text"
-                  value={importClientName}
-                  onChange={(e) => setImportClientName(e.target.value)}
-                  placeholder="Ex: SWISS, Lufthansa Cargo, Cargolux"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-sky-500"
-                />
-              </div>
-
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs space-y-2">
-                <div className="font-semibold text-slate-200 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-sky-400" />
-                  Demonstração Rápida:
-                </div>
-                <p className="text-slate-400">
-                  Carregue um checklist real da SWISS para comprovar que o sistema não está limitado a Atlas e Kalitta:
-                </p>
-                <button
-                  onClick={handleLoadSwissPreset}
-                  className="w-full py-2 rounded-lg bg-sky-950 hover:bg-sky-900 border border-sky-800 text-sky-300 font-semibold text-xs transition-all"
-                >
-                  Carregar Exemplo: SWISS LX-AUDIT
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-4 md:col-span-2">
-              <div>
-                <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Conteúdo do Checklist (Texto do PDF, Word ou Copiado)
-                </label>
-                <textarea
-                  value={importChecklistText}
-                  onChange={(e) => setImportChecklistText(e.target.value)}
-                  rows={10}
-                  placeholder="Cole aqui o texto do checklist do cliente com os itens e seções..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={handleProcessChecklistImport}
-                  disabled={importingLoading}
-                  className="px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-sm font-semibold flex items-center gap-2 transition-all shadow-lg shadow-sky-600/20"
-                >
-                  {importingLoading ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Interpretando com IA...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4" />
-                      Processar Checklist com IA
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Resultado da Interpretação */}
-          {importResult && (
-            <div className="mt-6 pt-6 border-t border-slate-800 space-y-4">
-              <div className="flex items-center justify-between">
-                <h4 className="text-base font-bold text-white flex items-center gap-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  {importResult.itens?.length} Requisitos Estruturados para {importResult.clienteNome}
-                </h4>
-                <span className="text-xs text-slate-400 font-mono">
-                  {importResult.origem} • {importResult.programaCodigo}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-96 overflow-y-auto p-1">
-                {importResult.itens?.map((it: any, itIdx: number) => (
-                  <div key={itIdx} className="bg-slate-950 p-4 rounded-xl border border-slate-800 text-xs space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-sky-400">{it.numeroItem}</span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 text-slate-300">
-                        {it.categoria}
-                      </span>
-                    </div>
-                    <div className="font-semibold text-white mt-1">{it.tituloCurto}</div>
-                    <p className="text-slate-400 italic text-[11px]">"{it.textoOriginal}"</p>
-                    <div className="pt-2 text-[10px] text-emerald-400 flex items-center gap-1">
-                      <Layers className="w-3 h-3" />
-                      Controle Sugerido: {it.controleSugeridoCodigo}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <SmartAuditImportView
+          existingAudits={audits}
+          existingRequirements={requisitos}
+          userProfile={userProfile}
+          activeOrganization={activeOrganization}
+          onSaveAudit={onSaveAudit}
+          onSaveFinding={onSaveFinding}
+          onSaveRequirement={onSaveRequirement}
+          onSaveProgram={onSaveProgram}
+          onSaveLesson={onSaveLesson}
+          onImportComplete={() => {
+            setActiveMode('HISTORICO');
+          }}
+        />
       )}
 
       {/* MODAL DE ANEXAR FOTO OU DOCUMENTO COM RASTREABILIDADE */}

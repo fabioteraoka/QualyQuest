@@ -440,9 +440,15 @@ export function gerarSlidesApresentacao(
   const resumoMetrologia = calcularResumoCreditosMetrologia(ferramentasList);
   const totalFerramentasMetrologia = ferramentasList.length;
 
-  // Linhas formatadas para a tabela de metrologia (principais instrumentos monitorados)
+  // Linhas formatadas para a tabela de metrologia (principais instrumentos monitorados, ordenados por urgência de crédito)
+  const ferramentasOrdenadas = [...ferramentasList].sort((a: any, b: any) => {
+    const ca = calcularContaCreditoFerramenta(a);
+    const cb = calcularContaCreditoFerramenta(b);
+    return ca.saldoDiasCredito - cb.saldoDiasCredito;
+  });
+
   const linhasTabelaMetrologia: (string | number)[][] = (
-    ferramentasList.length > 0 ? ferramentasList.slice(0, 8) : [
+    ferramentasOrdenadas.length > 0 ? ferramentasOrdenadas.slice(0, 8) : [
       { codigoPatrimonio: 'TQ-023', modelo: 'STAHLWILLE 730N/20', descricao: 'Torquímetro de Estalo 20-100 Nm', laboratorioCalibrador: 'LabMetrologia RBC nº 0124', dataProximaCalibracao: '2026-11-15', frequenciaMeses: 12, dataUltimaCalibracao: '2025-11-15', numeroCertificado: 'CERT-RBC-2025/1102' },
       { codigoPatrimonio: 'MULT-004', modelo: 'FLUKE 87V', descricao: 'Multímetro Digital True-RMS', laboratorioCalibrador: 'Calibrar RBC nº 0233', dataProximaCalibracao: '2026-12-10', frequenciaMeses: 12, dataUltimaCalibracao: '2025-12-10', numeroCertificado: 'CERT-RBC-2025/1245' },
       { codigoPatrimonio: 'MAN-012', modelo: 'WIKA 232.50', descricao: 'Manômetro de Pressão Hidráulica', laboratorioCalibrador: 'LabMetrologia RBC nº 0124', dataProximaCalibracao: '2026-10-28', frequenciaMeses: 6, dataUltimaCalibracao: '2026-04-28', numeroCertificado: 'CERT-RBC-2026/0488' },
@@ -454,7 +460,7 @@ export function gerarSlidesApresentacao(
     return [
       f.codigoPatrimonio || 'SEM-PAT',
       f.modelo || '—',
-      truncarTexto(f.descricao || 'Instrumento de Medição', 32),
+      (f.descricao && f.descricao.length > 32 ? f.descricao.substring(0, 30) + '...' : f.descricao) || 'Instrumento de Medição',
       f.dataProximaCalibracao || '—',
       conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d (${conta.percentualRestante}%)` : `${conta.saldoDiasCredito}d (Esgotado)`,
       conta.temCertificadoAnexo ? '📎 Anexo RBC' : (f.numeroCertificado || 'Laudo Pendente'),

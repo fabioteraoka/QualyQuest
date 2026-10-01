@@ -321,7 +321,7 @@ export const ESQUEMA_CAMPOS_CONTROLE: Record<TipoControleImportacao, DefinicaoCa
       campo: 'modelo',
       label: 'PN / Modelo (Part Number)',
       tipo: 'string',
-      obrigatorio: true,
+      obrigatorio: false,
       sinonimos: [
         'modelo',
         'part number',
@@ -1420,14 +1420,19 @@ export function validarECompararLinhasImportacao(
   const statusUsoCampo: Record<string, 'OBRIGATORIO' | 'OPCIONAL' | 'IGNORADO'> = {};
 
   mapeamentos.forEach((m) => {
-    const classif = (classificacaoCampos && classificacaoCampos[m.colunaOrigem]) || m.classificacaoUso;
-    if (m.campoQualigest && m.campoQualigest !== 'ignorar' && classif !== 'IGNORADO') {
-      mapaDePara[m.colunaOrigem] = m.campoQualigest;
-      statusUsoCampo[m.campoQualigest] = classif || (m.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
+    const classif = (classificacaoCampos && (classificacaoCampos[m.colunaOrigem] || classificacaoCampos[m.campoQualigest])) || m.classificacaoUso;
+    if (m.campoQualigest && m.campoQualigest !== 'ignorar') {
+      if (classif === 'IGNORADO') {
+        statusUsoCampo[m.campoQualigest] = 'IGNORADO';
+      } else {
+        mapaDePara[m.colunaOrigem] = m.campoQualigest;
+        statusUsoCampo[m.campoQualigest] = classif || (m.obrigatorio ? 'OBRIGATORIO' : 'OPCIONAL');
+      }
     }
   });
 
   const definicoes = obterCamposCompletos(tipoControle, camposPersonalizados);
+  const camposMapeados = new Set(Object.values(mapaDePara));
   
   // Campos que devem ser tratados como obrigatórios
   const camposObrigatorios = definicoes
@@ -1436,6 +1441,8 @@ export function validarECompararLinhasImportacao(
       if (customUso === 'IGNORADO') return false;
       if (customUso === 'OBRIGATORIO') return true;
       if (customUso === 'OPCIONAL') return false;
+      // Se não foi mapeado em nenhuma coluna da planilha, não gera erro por linha se não existir
+      if (!camposMapeados.has(d.campo)) return false;
       return d.obrigatorio;
     })
     .map((d) => d.campo);

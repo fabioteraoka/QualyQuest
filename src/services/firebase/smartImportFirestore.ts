@@ -724,7 +724,9 @@ export async function efetivarImportacaoNoQualigest(
         dataProximaCalibracao: dados.dataProximaCalibracao || dadosExistentes?.dataProximaCalibracao || hoje,
         frequenciaMeses: Number(dados.frequenciaMeses) || dadosExistentes?.frequenciaMeses || 12,
         laboratorioCalibrador: dados.laboratorioCalibrador || dadosExistentes?.laboratorioCalibrador || 'Laboratório Metrológico Acreditado RBC',
-        numeroCertificado: dados.numeroCertificado || dadosExistentes?.numeroCertificado || '',
+        numeroCertificado: dados.numeroCertificado || dados.certificado || dadosExistentes?.numeroCertificado || '',
+        evidenciaCertificadoUrl: dados.evidenciaCertificadoUrl || dados.linkCertificado || dados.urlCertificado || dadosExistentes?.evidenciaCertificadoUrl || '',
+        certificadoAnexo: dados.certificadoAnexo || dadosExistentes?.certificadoAnexo || undefined,
         tolerancia: dados.tolerancia || dadosExistentes?.tolerancia || '± Conforme Manual de Manutenção',
         observacoes: dados.observacoes || dadosExistentes?.observacoes || `Importado da planilha ${nomeArquivo}`,
         origemImportacaoId: importId,
@@ -1221,6 +1223,13 @@ export async function registrarAfericaoCalibracao(
     laboratorio: string;
     validadeAte: string;
     observacao?: string;
+    certificadoAnexo?: {
+      nomeArquivo: string;
+      urlOuBase64?: string;
+      dataUpload?: string;
+      tamanhoBytes?: number;
+      tipoArquivo?: string;
+    };
   },
   user: UserProfile | null
 ): Promise<void> {
@@ -1238,6 +1247,7 @@ export async function registrarAfericaoCalibracao(
       validadeAte: registro.validadeAte,
       observacao: registro.observacao,
       registradoPor: user?.displayName || user?.email || 'Inspetor Metrologia',
+      certificadoAnexo: registro.certificadoAnexo,
     };
 
     const hoje = new Date().toISOString().split('T')[0];
@@ -1253,19 +1263,24 @@ export async function registrarAfericaoCalibracao(
       }
     }
 
-    await setDoc(
-      toolRef,
-      {
-        dataUltimaCalibracao: registro.data,
-        dataProximaCalibracao: registro.validadeAte,
-        numeroCertificado: registro.certificado,
-        laboratorioCalibrador: registro.laboratorio,
-        status: novoStatus,
-        historicoCalibracoes: [novoHist, ...historico],
-        atualizadoEm: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+    const updatePayload: Record<string, any> = {
+      dataUltimaCalibracao: registro.data,
+      dataProximaCalibracao: registro.validadeAte,
+      numeroCertificado: registro.certificado,
+      laboratorioCalibrador: registro.laboratorio,
+      status: novoStatus,
+      historicoCalibracoes: [novoHist, ...historico],
+      atualizadoEm: new Date().toISOString(),
+    };
+
+    if (registro.certificadoAnexo) {
+      updatePayload.certificadoAnexo = registro.certificadoAnexo;
+      if (registro.certificadoAnexo.urlOuBase64) {
+        updatePayload.evidenciaCertificadoUrl = registro.certificadoAnexo.urlOuBase64;
+      }
+    }
+
+    await setDoc(toolRef, updatePayload, { merge: true });
 
     await recordOrganizationAudit(organizationId, {
       entity: 'CALIBRATED_TOOL',

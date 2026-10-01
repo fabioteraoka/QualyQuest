@@ -23,6 +23,21 @@ interface DocumentExtractorViewProps {
   onCancel: () => void;
 }
 
+// Helper seguro para criar arquivo de teste sem disparar "Illegal constructor" em WebViews/browsers
+const createSafeTestFile = (content: string, name: string, type: string): File => {
+  try {
+    return new File([content], name, { type });
+  } catch {
+    const blob = new Blob([content], { type });
+    return Object.assign(blob, {
+      name,
+      size: content.length,
+      lastModified: Date.now(),
+      webkitRelativePath: '',
+    }) as unknown as File;
+  }
+};
+
 export const DocumentExtractorView: React.FC<DocumentExtractorViewProps> = ({
   onSaveExtracted,
   onEditExtracted,
@@ -126,7 +141,7 @@ Responsável: Rair Rodrigues Data: Assinatura:
 Avaliação de Risco após tratamento da NC (Severidade x Probabilidade):
 Encerrado: SIM NÃO Motivo:
 Data: Auditor:`);
-    setSelectedFile(new File(['Sample FAA PDF text'], 'REGISTRO_NC_FAA_05.pdf', { type: 'application/pdf' }));
+    setSelectedFile(createSafeTestFile('Sample FAA PDF text', 'REGISTRO_NC_FAA_05.pdf', 'application/pdf'));
   };
 
   // One-click demo with Word Document .docx layout
@@ -164,7 +179,7 @@ Implantar carimbo digital com validação por QR Code e recolher todas as fichas
 Responsável: Marcos Vinicius
 Data Prazo: 30/09/2026
 Status: Não Iniciada`);
-    setSelectedFile(new File(['Sample Word Docx text'], 'RNC_Auditoria_Hangar_018.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
+    setSelectedFile(createSafeTestFile('Sample Word Docx text', 'RNC_Auditoria_Hangar_018.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'));
     setSuccessNotice('Modelo de Não Conformidade em formato Word carregado com sucesso!');
   };
 

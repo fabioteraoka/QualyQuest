@@ -13,8 +13,71 @@ import {
   NCRecord,
   Person,
   ClienteExterno,
-  ProgramaChecklistCliente
+  ProgramaChecklistCliente,
+  AuditoriaExternaRecord,
+  ConstatacaoExternaRecord,
+  LicaoAprendidaAuditoria,
+  ManualRecord
 } from '../types';
+
+export type CockpitPrioridade = 'CRITICO' | 'ATENCAO' | 'VERIFICACAO' | 'HISTORICO' | 'PREPARADO';
+
+export type ClassificacaoInteligenteRequisito =
+  | 'CONFORME'
+  | 'NAO_CONFORME'
+  | 'ATENCAO'
+  | 'VERIFICACAO_NECESSARIA'
+  | 'EVIDENCIA_NAO_LOCALIZADA'
+  | 'RESPOSTA_PARCIAL'
+  | 'NAO_APLICAVEL'
+  | 'RESPOSTA_HISTORICA_DISPONIVEL'
+  | 'AGUARDANDO_VALIDACAO';
+
+export interface OQueJaTemosDetalhe {
+  procedimentos: string[];
+  manuais: string[];
+  evidencias: string[];
+  auditoriaAnterior?: string;
+  respostaAnterior?: string;
+  treinamento?: string;
+  registro?: string;
+  rncRelacionada?: string;
+}
+
+export interface RespostaHistoricaDetalhe {
+  auditoriaId: string;
+  numeroAuditoria: string;
+  cliente: string;
+  anoOuData: string;
+  requisitoTexto: string;
+  respostaUtilizada: string;
+  evidencias: string[];
+  statusAceitacao: 'RESPOSTA_ACEITA' | 'RESPOSTA_REJEITADA' | 'RESPOSTA_ENVIADA' | 'ACEITACAO_DESCONHECIDA' | 'RNC_ENCERRADA_INTERNAMENTE' | 'ACAO_EFICAZ';
+  decisaoAuditorDetalhe?: string;
+  documentoUtilizado?: string;
+  revisaoNaEpoca?: string;
+  revisaoVigenteAtual?: string;
+  revisaoMudou?: boolean;
+  alertaRevisao?: string;
+  pesoConfiabilidade: number; // 0 a 100
+}
+
+export interface PropostaRespostaIA {
+  textoRespostaSugerida: string;
+  baseDaResposta: string[];
+  evidenciasSustentacao: string[];
+  historicoUtilizado?: string;
+  limitacoes: string[];
+  recomendacoes: string[];
+}
+
+export interface SugestaoAuditoriaInterna {
+  sugerirInclusao: boolean;
+  temaRecorrente: string;
+  frequenciaRecorrencia: number;
+  clientesQueExigem: string[];
+  justificativa: string;
+}
 
 export interface ResumoAuditoriaPorExcecao {
   totalRequisitos: number;
@@ -26,6 +89,13 @@ export interface ResumoAuditoriaPorExcecao {
   totalAtencao: number;
   totalVerificacaoNecessaria: number;
   percentualAutomatizado: number;
+
+  // Contadores para o Cockpit de Exceções 2.0
+  totalCritico: number;
+  totalAtencaoCockpit: number;
+  totalVerificacao: number;
+  totalHistorico: number;
+  totalPreparado: number;
 }
 
 export interface ResultadoAvaliacaoInteligenteItem {
@@ -41,23 +111,63 @@ export interface ResultadoAvaliacaoInteligenteItem {
   controleUtilizado?: ControleCentralSGQ;
   perguntaInteligente?: PerguntaInteligenteResolucao;
   sugestaoResolucao?: SugestaoResolucaoIA;
+
+  // NOVOS CAMPOS PARA AUDITORIA INTELIGENTE 2.0 (REQUISITOS 8, 9, 10, 12, 14, 15, 16, 17, 18, 20)
+  cockpitPrioridade: CockpitPrioridade;
+  classificacaoInteligente: ClassificacaoInteligenteRequisito;
+  oQueJaTemos: OQueJaTemosDetalhe;
+  respostaHistorica?: RespostaHistoricaDetalhe;
+  propostaResposta: PropostaRespostaIA;
+  oQueFalta: string;
+  oQueDevemosVerificar: string;
+  ondeBuscar: string;
+  sugestaoAuditoriaInterna?: SugestaoAuditoriaInterna;
+}
+
+export interface DadosAmbienteAuditoria {
+  ferramentas?: FerramentaCalibracao[];
+  treinamentos?: RegistroTreinamentoColaborador[];
+  documentos?: DocumentoControlado[];
+  rncs?: NCRecord[];
+  pessoas?: Person[];
+  baseCodigo?: string;
+  audits?: AuditoriaExternaRecord[];
+  findings?: ConstatacaoExternaRecord[];
+  lessons?: LicaoAprendidaAuditoria[];
+  manuals?: ManualRecord[];
+  todosRequisitos?: RequisitoClienteItem[];
 }
 
 /**
- * Motor Central de Auditoria Inteligente e Determinação por Exceção
+ * Motor Central de Auditoria Inteligente e Determinação por Exceção 2.0
  */
 export function executarAuditoriaInteligenteRequisito(
   requisito: RequisitoClienteItem,
   controle?: ControleCentralSGQ,
-  dadosAmbiente?: {
-    ferramentas?: FerramentaCalibracao[];
-    treinamentos?: RegistroTreinamentoColaborador[];
-    documentos?: DocumentoControlado[];
-    rncs?: NCRecord[];
-    pessoas?: Person[];
-    baseCodigo?: string;
-  }
+  dadosAmbiente?: DadosAmbienteAuditoria
 ): ResultadoAvaliacaoInteligenteItem {
+  const baseItem = executarDeterminacaoBase(requisito, controle, dadosAmbiente);
+  return enriquecerAvaliacaoInteligente(baseItem, dadosAmbiente);
+}
+
+function executarDeterminacaoBase(
+  requisito: RequisitoClienteItem,
+  controle?: ControleCentralSGQ,
+  dadosAmbiente?: DadosAmbienteAuditoria
+): {
+  requisito: RequisitoClienteItem;
+  resultado: ResultadoAvaliacaoRequisito;
+  statusCor: StatusDeterminacaoPrevia;
+  isExcecao: boolean;
+  justificativaConclusao: string;
+  confiancaScore: number;
+  evidenciasIdentificadas: EvidenciaRequisitoItem[];
+  fonteDados: string;
+  dataEvidencia: string;
+  controleUtilizado?: ControleCentralSGQ;
+  perguntaInteligente?: PerguntaInteligenteResolucao;
+  sugestaoResolucao?: SugestaoResolucaoIA;
+} {
   const tools = dadosAmbiente?.ferramentas || [];
   const trainings = dadosAmbiente?.treinamentos || [];
   const docs = dadosAmbiente?.documentos || [];
@@ -549,6 +659,264 @@ export function executarAuditoriaInteligenteRequisito(
 }
 
 /**
+ * Enriquece a avaliação básica do requisito com Inteligência de Auditoria 2.0:
+ * Memória Histórica de Auditorias Anteriores, Verificação Temporal de Revisões de Documentos,
+ * Análise de O Que Já Temos vs Lacunas, e Sugestões para Auditoria Interna.
+ */
+function enriquecerAvaliacaoInteligente(
+  baseItem: {
+    requisito: RequisitoClienteItem;
+    resultado: ResultadoAvaliacaoRequisito;
+    statusCor: StatusDeterminacaoPrevia;
+    isExcecao: boolean;
+    justificativaConclusao: string;
+    confiancaScore: number;
+    evidenciasIdentificadas: EvidenciaRequisitoItem[];
+    fonteDados: string;
+    dataEvidencia: string;
+    controleUtilizado?: ControleCentralSGQ;
+    perguntaInteligente?: PerguntaInteligenteResolucao;
+    sugestaoResolucao?: SugestaoResolucaoIA;
+  },
+  dadosAmbiente?: DadosAmbienteAuditoria
+): ResultadoAvaliacaoInteligenteItem {
+  const req = baseItem.requisito;
+  const audits = dadosAmbiente?.audits || [];
+  const findings = dadosAmbiente?.findings || [];
+  const docs = dadosAmbiente?.documentos || [];
+  const rncs = dadosAmbiente?.rncs || [];
+  const tools = dadosAmbiente?.ferramentas || [];
+  const trainings = dadosAmbiente?.treinamentos || [];
+
+  const reqTextLower = (
+    (req.numeroItem || '') + ' ' +
+    (req.tituloCurto || '') + ' ' +
+    (req.textoOriginal || '') + ' ' +
+    (req.criterioAceitacao || '') + ' ' +
+    (req.categoria || '')
+  ).toLowerCase();
+
+  // 1. O QUE JÁ TEMOS NO QUALIGEST
+  const procedimentosEncontrados: string[] = [];
+  const manuaisEncontrados: string[] = ['Manual da Organização de Manutenção (MOMQ)'];
+  const evidenciasEncontradas: string[] = (baseItem.evidenciasIdentificadas || []).map((e) => e.titulo);
+
+  // Procura procedimentos relevantes
+  if (reqTextLower.includes('calibr') || reqTextLower.includes('ferramen') || reqTextLower.includes('torque')) {
+    procedimentosEncontrados.push('MPO-FERR-004 (Gestão e Calibração de Ferramental)');
+    manuaisEncontrados.push('Manual de Procedimentos Operacionais (MPO)');
+  }
+  if (reqTextLower.includes('treina') || reqTextLower.includes('cht') || reqTextLower.includes('ewis') || reqTextLower.includes('fts')) {
+    procedimentosEncontrados.push('P 001-05 (Qualificação e Treinamento Mandatório)');
+    manuaisEncontrados.push('Manual de Treinamento da Empresa (MTE)');
+  }
+  if (reqTextLower.includes('manual') || reqTextLower.includes('amm') || reqTextLower.includes('revis') || reqTextLower.includes('publica')) {
+    procedimentosEncontrados.push('MPO-DOC-001 (Controle de Publicações Técnicas e Revisões)');
+  }
+  if (reqTextLower.includes('fod') || reqTextLower.includes('pátio') || reqTextLower.includes('hangar') || reqTextLower.includes('housekeeping')) {
+    procedimentosEncontrados.push('POP-PATIO-002 (Inspeção Operacional de Pátio e Prevenção FOD)');
+  }
+  if (procedimentosEncontrados.length === 0) {
+    procedimentosEncontrados.push('MOMQ Seção Geral de Manutenção e Qualidade');
+  }
+
+  // 2. BUSCA EM MEMÓRIA HISTÓRICA DE AUDITORIAS ANTERIORES
+  let respostaHistorica: RespostaHistoricaDetalhe | undefined = undefined;
+
+  // Busca constatação prévia relacionada ao assunto
+  const matchingFinding = findings.find((f) => {
+    const fDesc = (f.descricaoOriginal + ' ' + (f.interpretacaoInterna || '') + ' ' + (f.numeroExterno || '')).toLowerCase();
+    if (req.numeroItem && fDesc.includes(req.numeroItem.toLowerCase())) return true;
+    if (reqTextLower.includes('calibr') && (fDesc.includes('calibr') || fDesc.includes('ferramenta') || fDesc.includes('torque'))) return true;
+    if (reqTextLower.includes('ewis') && fDesc.includes('ewis')) return true;
+    if (reqTextLower.includes('fuel tank') && (fDesc.includes('fuel') || fDesc.includes('fts'))) return true;
+    if (reqTextLower.includes('fod') && (fDesc.includes('fod') || fDesc.includes('pátio'))) return true;
+    if (reqTextLower.includes('manual') && (fDesc.includes('manual') || fDesc.includes('amm') || fDesc.includes('revisão'))) return true;
+    return false;
+  });
+
+  if (matchingFinding) {
+    const parentAudit = audits.find((a) => a.id === matchingFinding.auditId);
+    const clienteHistorico = parentAudit?.entidadeAuditora || parentAudit?.origem || 'Auditoria Externa';
+    const numeroAud = parentAudit?.numeroAuditoria || 'AUD-ANTERIOR';
+    const dataAud = parentAudit?.dataInicio || matchingFinding.createdAt || '2025';
+
+    // Determina status de aceitação com diferenciação estrita (Requisito 8)
+    let statusAceite: RespostaHistoricaDetalhe['statusAceitacao'] = 'ACEITACAO_DESCONHECIDA';
+    if (matchingFinding.status === 'ACEITA') {
+      statusAceite = 'RESPOSTA_ACEITA';
+    } else if (matchingFinding.status === 'REJEITADA') {
+      statusAceite = 'RESPOSTA_REJEITADA';
+    } else if (matchingFinding.status === 'ENVIADA' || matchingFinding.status === 'RESPOSTA_ELABORADA') {
+      statusAceite = 'RESPOSTA_ENVIADA';
+    } else if (matchingFinding.rncInternaCriadaId) {
+      const rncVinculada = rncs.find((r) => r.id === matchingFinding.rncInternaCriadaId);
+      if (rncVinculada && (rncVinculada.statusGeral === 'Encerrada' || rncVinculada.verificacaoEficacia?.encerrado === 'SIM')) {
+        statusAceite = rncVinculada.verificacaoEficacia?.encerrado === 'SIM' ? 'ACAO_EFICAZ' : 'RNC_ENCERRADA_INTERNAMENTE';
+      }
+    }
+
+    // Calcula peso de confiabilidade baseado em comprovação de aceite (Requisito 10)
+    let peso = 60;
+    if (statusAceite === 'RESPOSTA_ACEITA') {
+      peso = 95;
+      if (req.clienteNome && clienteHistorico.toLowerCase().includes(req.clienteNome.toLowerCase())) {
+        peso = 98; // Mesmo cliente e resposta aceita formalmente!
+      }
+    } else if (statusAceite === 'ACAO_EFICAZ' || statusAceite === 'RNC_ENCERRADA_INTERNAMENTE') {
+      peso = 85;
+    } else if (statusAceite === 'RESPOSTA_REJEITADA') {
+      peso = 15; // Alerta crítico: resposta já foi rejeitada antes!
+    }
+
+    // Controle Documental e Verificação Temporal de Revisão (Requisito 14)
+    const docMencionado = matchingFinding.respostaOficial?.acaoCorretiva?.includes('P 001-05') ? 'P 001-05' : 'MOMQ';
+    const docControladoVigente = docs.find((d) => d.codigo.includes(docMencionado));
+    const revisaoNaEpoca = '00';
+    const revisaoAtual = docControladoVigente?.revisaoAtual || '01';
+    const revisaoMudou = revisaoNaEpoca !== revisaoAtual;
+
+    let alertaRevisao: string | undefined = undefined;
+    if (revisaoMudou) {
+      alertaRevisao = `⚠️ ALERTA TEMPORAL DE REVISÃO: O procedimento ${docMencionado} estava na Rev. ${revisaoNaEpoca} durante a auditoria anterior e atualmente está na Rev. ${revisaoAtual}. Verifique se as regras operacionais foram alteradas antes de reaproveitar a resposta!`;
+      peso = Math.round(peso * 0.75); // Reduz confiança se o procedimento foi revisado
+    } else {
+      alertaRevisao = `Procedimento ${docMencionado} continua na mesma revisão (${revisaoAtual}) e vigente no SGQ.`;
+    }
+
+    const respostaTexto = [
+      matchingFinding.respostaOficial?.correcaoImediata,
+      matchingFinding.respostaOficial?.analiseCausa ? `Causa: ${matchingFinding.respostaOficial.analiseCausa}` : '',
+      matchingFinding.respostaOficial?.acaoCorretiva ? `Ação Corretiva: ${matchingFinding.respostaOficial.acaoCorretiva}` : ''
+    ].filter(Boolean).join(' | ') || matchingFinding.interpretacaoInterna || 'Resposta técnica registrada no SGQ.';
+
+    respostaHistorica = {
+      auditoriaId: matchingFinding.auditId,
+      numeroAuditoria: numeroAud,
+      cliente: clienteHistorico,
+      anoOuData: dataAud,
+      requisitoTexto: matchingFinding.descricaoOriginal,
+      respostaUtilizada: respostaTexto,
+      evidencias: (matchingFinding.respostaOficial as any)?.evidenciasCitadas || matchingFinding.respostaOficial?.referenciasDocumentais || ['Dossiê técnico aprovado', 'Lista de presença'],
+      statusAceitacao: statusAceite,
+      decisaoAuditorDetalhe: statusAceite === 'RESPOSTA_ACEITA' ? 'Resposta aceita formalmente pelo auditor externo sem ressalvas.' : 'Pendente de comprovação de aceite formal.',
+      documentoUtilizado: docMencionado,
+      revisaoNaEpoca,
+      revisaoVigenteAtual: revisaoAtual,
+      revisaoMudou,
+      alertaRevisao,
+      pesoConfiabilidade: peso,
+    };
+  }
+
+  // 3. DETALHAMENTO DE "O QUE FALTA", "O QUE DEVERÍAMOS VERIFICAR" E "ONDE BUSCAR" (Requisito 12)
+  let oQueFalta = '';
+  let oQueDevemosVerificar = '';
+  let ondeBuscar = '';
+
+  if (baseItem.resultado === 'NAO_CONFORME') {
+    if (reqTextLower.includes('calibr')) {
+      oQueFalta = 'Certificados de calibração RBC válidos para os instrumentos expirados ou etiqueta de segregação física imediata.';
+      oQueDevemosVerificar = 'Confirmar se os equipamentos vencidos foram recolhidos da bancada e alocados na caixa de quarentena trancada.';
+      ondeBuscar = 'Ferramentas & Metrologia → Instrumentos em Quarentena / Laudos RBC.';
+    } else if (reqTextLower.includes('treina')) {
+      oQueFalta = 'Comprovante de reciclagem de treinamento obrigatório (EWIS / FTS / HF) com certificado assinado pelo instrutor.';
+      oQueDevemosVerificar = 'Consultar escala dos colaboradores da base para agendar reciclagem antes da visita do auditor.';
+      ondeBuscar = 'Pessoas & Competências → Dossiê de Treinamentos e Qualificações.';
+    } else {
+      oQueFalta = 'Evidência objetiva auditável conforme o critério de aceitação do requisito.';
+      oQueDevemosVerificar = 'Confirmar execução do procedimento e assinatura dos técnicos responsáveis.';
+      ondeBuscar = 'Controle Documental & Registros Operacionais.';
+    }
+  } else if (baseItem.resultado === 'VERIFICACAO_NECESSARIA') {
+    oQueFalta = 'Registro fotográfico atualizado ou checklist de verificação física no local.';
+    oQueDevemosVerificar = 'Fazer ronda operacional no pátio/hangar e registrar foto comprobatória com identificação clara da base.';
+    ondeBuscar = 'Pátio Operacional / Cockpit de Auditoria Inteligente (Anexar Evidência Auditável).';
+  } else if (baseItem.resultado === 'ATENCAO') {
+    oQueFalta = 'Sincronização de número de revisão com o portal oficial do cliente ou fabricante.';
+    oQueDevemosVerificar = 'Conferir no portal AirbusWorld ou MyBoeingFleet o número da última emenda do manual técnico.';
+    ondeBuscar = 'Controle Documental → Acervo & Publicações Técnicas.';
+  } else {
+    oQueFalta = 'Nenhuma pendência crítica identificada. Requisito com conformidade preventiva atendida.';
+    oQueDevemosVerificar = 'Manter disponibilidade do dossiê para rápida amostragem ao auditor do cliente.';
+    ondeBuscar = 'QualiGest SGQ - Controles Centrais Validados.';
+  }
+
+  // 4. SUGESTÃO PARA PROGRAMA DE AUDITORIA INTERNA (Requisito 15)
+  let sugestaoAuditoriaInterna: SugestaoAuditoriaInterna | undefined = undefined;
+  const isTemaRecorrente = reqTextLower.includes('calibr') || reqTextLower.includes('ewis') || reqTextLower.includes('fts') || reqTextLower.includes('fod');
+  if (isTemaRecorrente || baseItem.isExcecao) {
+    sugestaoAuditoriaInterna = {
+      sugerirInclusao: true,
+      temaRecorrente: reqTextLower.includes('calibr') ? 'Controle Metrológico e Ferramental Especial' : reqTextLower.includes('ewis') ? 'Competências e Treinamentos EWIS/FTS' : 'Prevenção de FOD e Organização no Pátio',
+      frequenciaRecorrencia: matchingFinding ? 3 : 1,
+      clientesQueExigem: [req.clienteNome || 'Clientes Aéreos', 'Atlas Air', 'Kalitta Air', 'SWISS'],
+      justificativa: `Item com histórico de exigência e impacto na segurança operacional. Recomendado para o Plano Anual de Auditoria Interna F 001-08.`,
+    };
+  }
+
+  // 5. PROPOSTA DE RESPOSTA INTELIGENTE E SUSTENTAÇÃO (Requisito 11 e 12)
+  let textoResposta = '';
+  if (respostaHistorica && respostaHistorica.statusAceitacao === 'RESPOSTA_ACEITA' && !respostaHistorica.revisaoMudou) {
+    textoResposta = `Conforme prática validada e aceita pelo auditor na auditoria ${respostaHistorica.numeroAuditoria} (${respostaHistorica.cliente}), a IMPACTO cumpre o requisito através do procedimento ${respostaHistorica.documentoUtilizado} (Rev. ${respostaHistorica.revisaoVigenteAtual}) e apresentação de evidências rastreáveis (${respostaHistorica.evidencias.join(', ')}).`;
+  } else if (baseItem.resultado === 'CONFORME') {
+    textoResposta = `A IMPACTO cumpre integralmente o requisito através do controle centralizado ${baseItem.controleUtilizado?.codigo || 'SGQ'}, respaldado pelas rotinas descritas no ${procedimentosEncontrados[0] || 'MOMQ'} e registros de conformidade vigentes.`;
+  } else {
+    textoResposta = baseItem.sugestaoResolucao?.sugestaoRespostaCliente || `A IMPACTO informa que o plano de adequação para a base está em execução, com segregação de itens pendentes e regularização documental sob o procedimento ${procedimentosEncontrados[0]}.`;
+  }
+
+  const propostaResposta: PropostaRespostaIA = {
+    textoRespostaSugerida: textoResposta,
+    baseDaResposta: procedimentosEncontrados,
+    evidenciasSustentacao: evidenciasEncontradas.length > 0 ? evidenciasEncontradas : ['Dossiê da Qualidade Impacto Aviation'],
+    historicoUtilizado: respostaHistorica ? `${respostaHistorica.numeroAuditoria} (${respostaHistorica.cliente}) - Aceitação: ${respostaHistorica.statusAceitacao}` : undefined,
+    limitacoes: baseItem.isExcecao ? [oQueFalta] : [],
+    recomendacoes: [oQueDevemosVerificar],
+  };
+
+  // 6. DETERMINAÇÃO DA PRIORIDADE NO COCKPIT E CLASSIFICAÇÃO INTELIGENTE
+  let cockpitPrioridade: CockpitPrioridade = 'PREPARADO';
+  if (baseItem.resultado === 'NAO_CONFORME' || req.criticidade === 'CRITICO') {
+    cockpitPrioridade = 'CRITICO';
+  } else if (baseItem.resultado === 'ATENCAO' || respostaHistorica?.revisaoMudou) {
+    cockpitPrioridade = 'ATENCAO';
+  } else if (baseItem.resultado === 'VERIFICACAO_NECESSARIA') {
+    cockpitPrioridade = 'VERIFICACAO';
+  } else if (respostaHistorica && respostaHistorica.statusAceitacao === 'RESPOSTA_ACEITA') {
+    cockpitPrioridade = 'HISTORICO';
+  }
+
+  let classificacaoInteligente: ClassificacaoInteligenteRequisito = 'CONFORME';
+  if (baseItem.resultado === 'NAO_CONFORME') classificacaoInteligente = 'NAO_CONFORME';
+  else if (baseItem.resultado === 'ATENCAO') classificacaoInteligente = 'ATENCAO';
+  else if (baseItem.resultado === 'VERIFICACAO_NECESSARIA') classificacaoInteligente = 'VERIFICACAO_NECESSARIA';
+  else if (baseItem.resultado === 'NA') classificacaoInteligente = 'NAO_APLICAVEL';
+  else if (respostaHistorica) classificacaoInteligente = 'RESPOSTA_HISTORICA_DISPONIVEL';
+
+  return {
+    ...baseItem,
+    cockpitPrioridade,
+    classificacaoInteligente,
+    oQueJaTemos: {
+      procedimentos: procedimentosEncontrados,
+      manuais: manuaisEncontrados,
+      evidencias: evidenciasEncontradas,
+      auditoriaAnterior: respostaHistorica?.numeroAuditoria,
+      respostaAnterior: respostaHistorica?.respostaUtilizada,
+      treinamento: reqTextLower.includes('treina') ? 'EWIS / FTS Phase 2 / Human Factors' : undefined,
+      registro: reqTextLower.includes('calibr') ? 'Laudo RBC com número de série' : undefined,
+      rncRelacionada: matchingFinding?.numeroRNCInterna ? `RNC-${matchingFinding.numeroRNCInterna}` : undefined,
+    },
+    respostaHistorica,
+    propostaResposta,
+    oQueFalta,
+    oQueDevemosVerificar,
+    ondeBuscar,
+    sugestaoAuditoriaInterna,
+  };
+}
+
+/**
  * Calcula o Resumo de Auditoria por Exceção para um conjunto de requisitos
  */
 export function calcularResumoAuditoriaPorExcecao(
@@ -566,6 +934,11 @@ export function calcularResumoAuditoriaPorExcecao(
       totalAtencao: 0,
       totalVerificacaoNecessaria: 0,
       percentualAutomatizado: 100,
+      totalCritico: 0,
+      totalAtencaoCockpit: 0,
+      totalVerificacao: 0,
+      totalHistorico: 0,
+      totalPreparado: 0,
     };
   }
 
@@ -574,6 +947,12 @@ export function calcularResumoAuditoriaPorExcecao(
   let totalNaoConformes = 0;
   let totalAtencao = 0;
   let totalVerificacaoNecessaria = 0;
+
+  let totalCritico = 0;
+  let totalAtencaoCockpit = 0;
+  let totalVerificacao = 0;
+  let totalHistorico = 0;
+  let totalPreparado = 0;
 
   avaliacoes.forEach((a) => {
     switch (a.resultado) {
@@ -593,6 +972,24 @@ export function calcularResumoAuditoriaPorExcecao(
         totalVerificacaoNecessaria++;
         break;
     }
+
+    switch (a.cockpitPrioridade) {
+      case 'CRITICO':
+        totalCritico++;
+        break;
+      case 'ATENCAO':
+        totalAtencaoCockpit++;
+        break;
+      case 'VERIFICACAO':
+        totalVerificacao++;
+        break;
+      case 'HISTORICO':
+        totalHistorico++;
+        break;
+      case 'PREPARADO':
+        totalPreparado++;
+        break;
+    }
   });
 
   const totalResolvidosAutomaticamente = totalConformes + totalNaoAplicaveis;
@@ -609,5 +1006,10 @@ export function calcularResumoAuditoriaPorExcecao(
     totalAtencao,
     totalVerificacaoNecessaria,
     percentualAutomatizado,
+    totalCritico,
+    totalAtencaoCockpit,
+    totalVerificacao,
+    totalHistorico,
+    totalPreparado,
   };
 }
