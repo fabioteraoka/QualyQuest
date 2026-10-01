@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { parseDataSegura } from '../services/calibrationEngine';
 import { separarNumeroEDataRevisao } from '../data/f001021ControlledPublications';
 import {
   TipoControleImportacao,
@@ -1272,133 +1273,17 @@ export interface ContextoValidacaoExistente {
   documentosExistentes?: DocumentoControlado[];
 }
 
-export function validarDataISO(valor: any): { valida: boolean; isoString?: string } {
+export function validarDataISO(valor: any): { valida: boolean; isoString?: string; ambigua?: boolean; interpretacao?: string } {
   if (valor === undefined || valor === null || valor === '') return { valida: false };
 
-  // Caso seja número ou string de número (serial date do Excel, ex: 45520)
-  if (typeof valor === 'number' || (/^\d{5}$/.test(String(valor).trim()) && Number(valor) > 30000 && Number(valor) < 65000)) {
-    const num = Number(valor);
-    // Excel epoch 1899-12-30
-    const excelEpoch = new Date(1899, 11, 30);
-    const msPerDay = 24 * 60 * 60 * 1000;
-    const date = new Date(excelEpoch.getTime() + num * msPerDay);
-    if (!isNaN(date.getTime()) && date.getFullYear() > 1990 && date.getFullYear() < 2100) {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return { valida: true, isoString: `${y}-${m}-${d}` };
-    }
-  }
-
-  const str = String(valor).trim();
-  if (!str) return { valida: false };
-
-  // Testar padrão YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    const [y, m, d] = str.split('-').map(Number);
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      const dt = new Date(y, m - 1, d);
-      if (dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d) {
-        return { valida: true, isoString: str };
-      }
-    }
-    return { valida: false };
-  }
-
-  // Testar padrão DD/MM/YYYY, DD.MM.YYYY ou DD-MM-YYYY
-  const ddmmyyyyMatch = str.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{2,4})$/);
-  if (ddmmyyyyMatch) {
-    const d = Number(ddmmyyyyMatch[1]);
-    const m = Number(ddmmyyyyMatch[2]);
-    let y = Number(ddmmyyyyMatch[3]);
-    if (y < 100) {
-      y += y >= 70 ? 1900 : 2000;
-    }
-    if (m >= 1 && m <= 12 && d >= 1 && d <= 31) {
-      const dt = new Date(y, m - 1, d);
-      if (dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d) {
-        const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-        return { valida: true, isoString: iso };
-      }
-    }
-  }
-
-  // Testar padrão aeronáutico DD/Mês/YYYY, ex: "06/Ago/2026", "12/Set/2025", "19/Nov/2021", "21/Jan/2026", "11/Mai/2026"
-  const ddMesAnoMatch = str.match(/^(\d{1,2})[\/\.\s-]+([a-zA-ZçÇãÃéÉ]+)[\/\.\s-]+(\d{2,4})$/);
-  if (ddMesAnoMatch) {
-    const dia = Number(ddMesAnoMatch[1]);
-    const nomeMes = ddMesAnoMatch[2].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    let ano = Number(ddMesAnoMatch[3]);
-    if (ano < 100) {
-      ano += ano >= 70 ? 1900 : 2000;
-    }
-    const mesesAeroMap: Record<string, number> = {
-      jan: 1, janeiro: 1, january: 1,
-      fev: 2, fevereiro: 2, feb: 2, february: 2,
-      mar: 3, marco: 3, march: 3,
-      abr: 4, abril: 4, apr: 4, april: 4,
-      mai: 5, maio: 5, may: 5,
-      jun: 6, junho: 6, june: 6,
-      jul: 7, julho: 7, july: 7,
-      ago: 8, agosto: 8, aug: 8, august: 8,
-      set: 9, setembro: 9, sep: 9, september: 9,
-      out: 10, outubro: 10, oct: 10, october: 10,
-      nov: 11, novembro: 11, november: 11,
-      dez: 12, dezembro: 12, dec: 12, december: 12,
+  const parsed = parseDataSegura(valor);
+  if (parsed.valida && parsed.isoString) {
+    return {
+      valida: true,
+      isoString: parsed.isoString,
+      ambigua: parsed.ambigua,
+      interpretacao: parsed.interpretacao,
     };
-    const mesNum = mesesAeroMap[nomeMes] || mesesAeroMap[nomeMes.slice(0, 3)];
-    if (mesNum && dia >= 1 && dia <= 31 && ano >= 1970 && ano <= 2099) {
-      const iso = `${ano}-${String(mesNum).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
-      return { valida: true, isoString: iso };
-    }
-  }
-
-  // Testar formato Mês/Ano em português, ex: "Ago.26", "Ago/26", "Ago-26", "Ago.2026", "Agosto/2026"
-  const mesesPt: Record<string, number> = {
-    jan: 1, janeiro: 1,
-    fev: 2, fevereiro: 2,
-    mar: 3, marco: 3, março: 3,
-    abr: 4, abril: 4,
-    mai: 5, maio: 5,
-    jun: 6, junho: 6,
-    jul: 7, julho: 7,
-    ago: 8, agosto: 8,
-    set: 9, setembro: 9,
-    out: 10, outubro: 10,
-    nov: 11, novembro: 11,
-    dez: 12, dezembro: 12,
-  };
-
-  const mesAnoMatch = str.toLowerCase().match(/^([a-zçãé]+)[\/\.\s-]+(\d{2,4})$/);
-  if (mesAnoMatch) {
-    const nomeMes = mesAnoMatch[1];
-    let ano = Number(mesAnoMatch[2]);
-    if (ano < 100) {
-      ano += ano >= 70 ? 1900 : 2000;
-    }
-    const mesNum = mesesPt[nomeMes];
-    if (mesNum && ano >= 1990 && ano <= 2099) {
-      const iso = `${ano}-${String(mesNum).padStart(2, '0')}-01`;
-      return { valida: true, isoString: iso };
-    }
-  }
-
-  // Testar padrão MM/YYYY ou MM.YYYY
-  const mmyyyyMatch = str.match(/^(\d{1,2})[\/\.-](\d{4})$/);
-  if (mmyyyyMatch) {
-    const m = Number(mmyyyyMatch[1]);
-    const y = Number(mmyyyyMatch[2]);
-    if (m >= 1 && m <= 12 && y >= 1990 && y <= 2099) {
-      const iso = `${y}-${String(m).padStart(2, '0')}-01`;
-      return { valida: true, isoString: iso };
-    }
-  }
-
-  // Tentar Date parse padrão
-  const parsed = new Date(str);
-  if (!isNaN(parsed.getTime()) && parsed.getFullYear() > 1980 && parsed.getFullYear() < 2100) {
-    const iso = parsed.toISOString().split('T')[0];
-    return { valida: true, isoString: iso };
   }
 
   return { valida: false };

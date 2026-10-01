@@ -53,6 +53,20 @@ import {
   ResultadoAnaliseLote,
 } from '../services/bulkManagementService';
 import { BulkActionModal } from './common/BulkActionModal';
+import {
+  formatarDataBR,
+  parseDataSegura,
+  calcularProximoVencimento,
+  calcularSaldoDias,
+  determinarStatusMetrologico,
+  calcularPreviaRecalculo,
+  executarEdicaoCadastro,
+  executarNovaCalibracao,
+  executarCorrecaoCalibracao,
+  calcularIndicadoresOperacionaisMetrologia,
+  PreviaRecalculoMetrologico,
+  IndicadoresOperacionaisMetrologia,
+} from '../services/calibrationEngine';
 
 interface FerramentasMetrologiaViewProps {
   organization: OrganizationRecord | null;
@@ -75,13 +89,19 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
 
   // Estados de filtros
   const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState<'TODAS' | 'CALIBRADA' | 'PROXIMA_VENCIMENTO' | 'VENCIDA' | 'QUARENTENA' | 'INATIVAS'>('TODAS');
+  const [filtroStatus, setFiltroStatus] = useState<
+    'TODAS' | 'DISPONIVEIS' | 'CALIBRADA' | 'PROXIMA_VENCIMENTO' | 'VENCIDA' | 'QUARENTENA' | 'INATIVAS' | 'SEM_DATA_OU_PENDENTE'
+  >('TODAS');
   const [filtroSetor, setFiltroSetor] = useState<string>('TODOS');
+  const [ordenacao, setOrdenacao] = useState<
+    'VENCIMENTO_ASC' | 'VENCIMENTO_DESC' | 'PATRIMONIO_ASC' | 'DESCRICAO_ASC' | 'SETOR_ASC' | 'STATUS'
+  >('VENCIMENTO_ASC');
 
-  // Estados de modais
+  // Estados de modais: Operação A (Editar cadastro)
   const [modalEdicaoAberta, setModalEdicaoAberta] = useState(false);
   const [ferramentaEmEdicao, setFerramentaEmEdicao] = useState<Partial<FerramentaCalibracao> | null>(null);
 
+  // Estados de modais: Operação B (Registrar nova calibração)
   const [modalNovaCalibracaoAberta, setModalNovaCalibracaoAberta] = useState(false);
   const [ferramentaParaCalibrar, setFerramentaParaCalibrar] = useState<FerramentaCalibracao | null>(null);
   const [dadosNovaCalib, setDadosNovaCalib] = useState<{
@@ -104,6 +124,34 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
     validadeAte: '',
     observacao: '',
   });
+
+  // Estados de modais: Operação C (Corrigir calibração ou data já registrada)
+  const [modalCorrecaoAberta, setModalCorrecaoAberta] = useState(false);
+  const [ferramentaParaCorrigir, setFerramentaParaCorrigir] = useState<FerramentaCalibracao | null>(null);
+  const [eventoHistoricoParaCorrigir, setEventoHistoricoParaCorrigir] = useState<any | null>(null);
+  const [dadosCorrecao, setDadosCorrecao] = useState<{
+    novaDataCalibracao: string;
+    novoCertificado: string;
+    novoLaboratorio: string;
+    novoVencimento: string;
+    motivoJustificativa: string;
+    novoCertificadoAnexo?: any;
+  }>({
+    novaDataCalibracao: '',
+    novoCertificado: '',
+    novoLaboratorio: '',
+    novoVencimento: '',
+    motivoJustificativa: '',
+  });
+
+  // Modal de Quarentena / Bloqueio Operacional Rápido
+  const [modalQuarentenaAberta, setModalQuarentenaAberta] = useState(false);
+  const [ferramentaParaQuarentena, setFerramentaParaQuarentena] = useState<FerramentaCalibracao | null>(null);
+  const [motivoQuarentena, setMotivoQuarentena] = useState('');
+
+  // Modal de Ficha Técnica Completa do Instrumento
+  const [modalFichaCompletaAberta, setModalFichaCompletaAberta] = useState(false);
+  const [ferramentaFichaCompleta, setFerramentaFichaCompleta] = useState<FerramentaCalibracao | null>(null);
 
   const [modalHistoricoAberta, setModalHistoricoAberta] = useState(false);
   const [ferramentaHistorico, setFerramentaHistorico] = useState<FerramentaCalibracao | null>(null);
@@ -143,6 +191,20 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
   const [salvando, setSalvando] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
 
+  // Indicadores Operacionais Centralizados (calibrationEngine)
+  const indicadores = useMemo(
+    () => calcularIndicadoresOperacionaisMetrologia(ferramentasCalibradas),
+    [ferramentasCalibradas]
+  );
+
+  const contadores = useMemo(() => ({
+    calibradas: indicadores.calibradas,
+    proximaVencimento: indicadores.proximasVencimento,
+    vencidas: indicadores.vencidas,
+    quarentena: indicadores.emQuarentena,
+    total: indicadores.totalCadastradas,
+  }), [indicadores]);
+
   // Resumo estatístico da Conta de Créditos Metrológicos (RBAC 145.109)
   const resumoCreditos = useMemo(
     () => calcularResumoCreditosMetrologia(ferramentasCalibradas),
@@ -158,70 +220,121 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
     return Array.from(sets).sort();
   }, [ferramentasCalibradas]);
 
-  // Contadores de status
-  const contadores = useMemo(() => {
-    let calibradas = 0;
-    let proximaVencimento = 0;
-    let vencidas = 0;
-    let quarentena = 0;
-    let inativas = 0;
-
-    ferramentasCalibradas.forEach((f) => {
-      if (f.ativo === false) {
-        inativas++;
-        return;
-      }
-      if (f.status === 'QUARENTENA') quarentena++;
-      else if (f.status === 'VENCIDA') vencidas++;
-      else if (f.status === 'PROXIMA_VENCIMENTO') proximaVencimento++;
-      else calibradas++;
-    });
-
-    return {
-      total: ferramentasCalibradas.length,
-      calibradas,
-      proximaVencimento,
-      vencidas,
-      quarentena,
-      inativas,
+  // Prévia dinâmica de recálculo em tempo real para Operação A (Editar cadastro)
+  const previaEdicao = useMemo(() => {
+    if (!modalEdicaoAberta || !ferramentaEmEdicao) return null;
+    const original = ferramentasCalibradas.find((f) => f.id === ferramentaEmEdicao.id) || {
+      id: '',
+      organizationId: orgId,
+      codigoPatrimonio: ferramentaEmEdicao.codigoPatrimonio || '',
+      descricao: ferramentaEmEdicao.descricao || '',
+      fabricante: '',
+      numeroSerie: '',
+      setor: '',
+      status: 'CALIBRADA' as const,
+      ativo: true,
+      dataUltimaCalibracao: new Date().toISOString().split('T')[0],
+      dataProximaCalibracao: new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
+      frequenciaMeses: 12,
+      laboratorioCalibrador: '',
+      numeroCertificado: '',
+      criadoEm: new Date().toISOString(),
+      atualizadoEm: new Date().toISOString(),
     };
-  }, [ferramentasCalibradas]);
+    return calcularPreviaRecalculo(
+      original,
+      ferramentaEmEdicao.dataUltimaCalibracao || original.dataUltimaCalibracao,
+      ferramentaEmEdicao.frequenciaMeses || original.frequenciaMeses || 12,
+      ferramentaEmEdicao.dataProximaCalibracao
+    );
+  }, [modalEdicaoAberta, ferramentaEmEdicao, ferramentasCalibradas, orgId]);
 
-  // Ferramentas filtradas
+  // Prévia dinâmica de recálculo em tempo real para Operação C (Corrigir calibração)
+  const previaCorrecao = useMemo(() => {
+    if (!modalCorrecaoAberta || !ferramentaParaCorrigir || !dadosCorrecao.novaDataCalibracao) return null;
+    return calcularPreviaRecalculo(
+      ferramentaParaCorrigir,
+      dadosCorrecao.novaDataCalibracao,
+      ferramentaParaCorrigir.frequenciaMeses || 12,
+      dadosCorrecao.novoVencimento
+    );
+  }, [modalCorrecaoAberta, ferramentaParaCorrigir, dadosCorrecao]);
+
+  // Ferramentas filtradas e ordenadas
   const ferramentasFiltradas = useMemo(() => {
-    return ferramentasCalibradas.filter((f) => {
+    const list = ferramentasCalibradas.filter((f) => {
       const isAtivo = f.ativo !== false;
+      const statusReal = determinarStatusMetrologico({
+        dataProximaCalibracao: f.dataProximaCalibracao,
+        dataUltimaCalibracao: f.dataUltimaCalibracao,
+        ativo: f.ativo,
+        statusManual: f.status,
+      });
 
       // Filtro de status
       if (filtroStatus === 'INATIVAS') {
         if (isAtivo) return false;
+      } else if (filtroStatus === 'DISPONIVEIS') {
+        if (!statusReal.isOperacionalLiberada) return false;
       } else if (filtroStatus === 'CALIBRADA') {
-        if (!isAtivo || f.status !== 'CALIBRADA') return false;
+        if (!isAtivo || statusReal.status !== 'CALIBRADA') return false;
       } else if (filtroStatus === 'PROXIMA_VENCIMENTO') {
-        if (!isAtivo || f.status !== 'PROXIMA_VENCIMENTO') return false;
+        if (!isAtivo || statusReal.status !== 'PROXIMA_VENCIMENTO') return false;
       } else if (filtroStatus === 'VENCIDA') {
-        if (!isAtivo || f.status !== 'VENCIDA') return false;
+        if (!isAtivo || statusReal.status !== 'VENCIDA') return false;
       } else if (filtroStatus === 'QUARENTENA') {
-        if (!isAtivo || f.status !== 'QUARENTENA') return false;
+        if (!isAtivo || statusReal.status !== 'QUARENTENA') return false;
+      } else if (filtroStatus === 'SEM_DATA_OU_PENDENTE') {
+        if (statusReal.status !== 'SEM_DATA_INFORMADA' && statusReal.status !== 'PENDENTE_VERIFICACAO') return false;
       }
 
       // Filtro de setor
       if (filtroSetor !== 'TODOS' && f.setor !== filtroSetor) return false;
 
-      // Busca textual
+      // Busca textual em múltiplos atributos
       if (busca.trim()) {
         const termo = busca.toLowerCase();
         const matchPatrimonio = f.codigoPatrimonio?.toLowerCase().includes(termo);
         const matchDesc = f.descricao?.toLowerCase().includes(termo);
         const matchSerie = f.numeroSerie?.toLowerCase().includes(termo);
         const matchFab = f.fabricante?.toLowerCase().includes(termo);
+        const matchMod = f.modelo?.toLowerCase().includes(termo);
         const matchCert = f.numeroCertificado?.toLowerCase().includes(termo);
-        if (!matchPatrimonio && !matchDesc && !matchSerie && !matchFab && !matchCert) return false;
+        const matchLab = f.laboratorioCalibrador?.toLowerCase().includes(termo);
+        const matchSetor = f.setor?.toLowerCase().includes(termo);
+        if (!matchPatrimonio && !matchDesc && !matchSerie && !matchFab && !matchMod && !matchCert && !matchLab && !matchSetor) return false;
       }
 
       return true;
     });
-  }, [ferramentasCalibradas, filtroStatus, filtroSetor, busca]);
+
+    // Ordenação
+    return list.sort((a, b) => {
+      if (ordenacao === 'VENCIMENTO_ASC') {
+        const d1 = a.dataProximaCalibracao || '9999-99-99';
+        const d2 = b.dataProximaCalibracao || '9999-99-99';
+        return d1.localeCompare(d2);
+      }
+      if (ordenacao === 'VENCIMENTO_DESC') {
+        const d1 = a.dataProximaCalibracao || '0000-00-00';
+        const d2 = b.dataProximaCalibracao || '0000-00-00';
+        return d2.localeCompare(d1);
+      }
+      if (ordenacao === 'PATRIMONIO_ASC') {
+        return (a.codigoPatrimonio || '').localeCompare(b.codigoPatrimonio || '');
+      }
+      if (ordenacao === 'DESCRICAO_ASC') {
+        return (a.descricao || '').localeCompare(b.descricao || '');
+      }
+      if (ordenacao === 'SETOR_ASC') {
+        return (a.setor || '').localeCompare(b.setor || '');
+      }
+      if (ordenacao === 'STATUS') {
+        return (a.status || '').localeCompare(b.status || '');
+      }
+      return 0;
+    });
+  }, [ferramentasCalibradas, filtroStatus, filtroSetor, busca, ordenacao]);
 
   // Handlers para Gestão em Lote
   const handleAbrirAcaoLote = (acao: TipoAcaoLoteFerramenta) => {
@@ -255,7 +368,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
     setTimeout(() => setSucessoLoteMsg(null), 5000);
   };
 
-  // Handler para Salvar Instrumento (Novo ou Editado)
+  // OPERAÇÃO A: Salvar Edição do Cadastro com Recálculo Automático
   const handleSalvarInstrumento = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ferramentaEmEdicao?.codigoPatrimonio || !ferramentaEmEdicao?.descricao) {
@@ -265,18 +378,7 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
 
     setSalvando(true);
     try {
-      const hoje = new Date().toISOString().split('T')[0];
-      const prox = ferramentaEmEdicao.dataProximaCalibracao || hoje;
-      let statusCalib: FerramentaCalibracao['status'] = 'CALIBRADA';
-      if (prox < hoje) {
-        statusCalib = 'VENCIDA';
-      } else {
-        const diffMs = new Date(prox).getTime() - new Date(hoje).getTime();
-        const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-        if (diffDias <= 30) statusCalib = 'PROXIMA_VENCIMENTO';
-      }
-
-      const ferramentaFinal: FerramentaCalibracao = {
+      const original = ferramentasCalibradas.find((f) => f.id === ferramentaEmEdicao.id) || {
         id: ferramentaEmEdicao.id || `tool-${Date.now()}`,
         organizationId: orgId,
         codigoPatrimonio: ferramentaEmEdicao.codigoPatrimonio.trim().toUpperCase(),
@@ -285,10 +387,10 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
         modelo: ferramentaEmEdicao.modelo || '',
         numeroSerie: ferramentaEmEdicao.numeroSerie || 'S/N',
         setor: ferramentaEmEdicao.setor || 'Hangar de Manutenção',
-        status: ferramentaEmEdicao.status || statusCalib,
-        ativo: ferramentaEmEdicao.ativo !== false,
-        dataUltimaCalibracao: ferramentaEmEdicao.dataUltimaCalibracao || hoje,
-        dataProximaCalibracao: prox,
+        status: 'CALIBRADA' as const,
+        ativo: true,
+        dataUltimaCalibracao: ferramentaEmEdicao.dataUltimaCalibracao || new Date().toISOString().split('T')[0],
+        dataProximaCalibracao: ferramentaEmEdicao.dataProximaCalibracao || new Date(Date.now() + 365 * 86400000).toISOString().split('T')[0],
         frequenciaMeses: ferramentaEmEdicao.frequenciaMeses || 12,
         laboratorioCalibrador: ferramentaEmEdicao.laboratorioCalibrador || 'Laboratório Homologado RBC',
         numeroCertificado: ferramentaEmEdicao.numeroCertificado || '',
@@ -296,21 +398,23 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
         evidenciaCertificadoUrl: ferramentaEmEdicao.evidenciaCertificadoUrl || ferramentaEmEdicao.certificadoAnexo?.urlOuBase64,
         tolerancia: ferramentaEmEdicao.tolerancia || '',
         observacoes: ferramentaEmEdicao.observacoes || '',
-        historicoCalibracoes: ferramentaEmEdicao.historicoCalibracoes || [],
-        criadoEm: ferramentaEmEdicao.criadoEm || new Date().toISOString(),
+        historicoCalibracoes: [],
+        criadoEm: new Date().toISOString(),
         atualizadoEm: new Date().toISOString(),
       };
 
-      await saveCalibratedTool(orgId, ferramentaFinal, user);
-      if (onAdicionarFerramenta) onAdicionarFerramenta(ferramentaFinal);
+      const { ferramentaAtualizada } = executarEdicaoCadastro(original, ferramentaEmEdicao, user);
 
-      setMensagemSucesso(`Instrumento ${ferramentaFinal.codigoPatrimonio} salvo com sucesso!`);
-      setTimeout(() => setMensagemSucesso(null), 4000);
+      await saveCalibratedTool(orgId, ferramentaAtualizada, user);
+      if (onAdicionarFerramenta) onAdicionarFerramenta(ferramentaAtualizada);
+
+      setMensagemSucesso(`Instrumento ${ferramentaAtualizada.codigoPatrimonio} salvo com sucesso! Novo vencimento: ${formatarDataBR(ferramentaAtualizada.dataProximaCalibracao)} (${ferramentaAtualizada.status})`);
+      setTimeout(() => setMensagemSucesso(null), 5000);
       setModalEdicaoAberta(false);
       setFerramentaEmEdicao(null);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao salvar ferramenta:', err);
-      alert('Erro ao salvar instrumento. Tente novamente.');
+      alert(`Erro ao salvar instrumento: ${err.message || 'Tente novamente.'}`);
     } finally {
       setSalvando(false);
     }

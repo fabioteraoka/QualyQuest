@@ -2815,8 +2815,13 @@ export interface FerramentaCalibracao {
   setor: string; // Ex: 'REC - Manutenção / Hangar'
   baseOperacionalId?: string;
   baseOperacionalNome?: string;
-  status: 'CALIBRADA' | 'VENCIDA' | 'PROXIMA_VENCIMENTO' | 'EM_CALIBRACAO' | 'QUARANTENA' | 'DESCARTE';
+  status: 'CALIBRADA' | 'VENCIDA' | 'PROXIMA_VENCIMENTO' | 'EM_CALIBRACAO' | 'QUARANTENA' | 'QUARENTENA' | 'DESCARTE' | 'INATIVA' | 'SEM_DATA_INFORMADA' | 'PENDENTE_VERIFICACAO';
   ativo?: boolean;
+  localizacao?: string;
+  responsavelNome?: string;
+  origemVencimento?: 'CALCULADO_AUTOMATICO' | 'INFORMADO_MANUAL' | 'CORRECAO_HISTORICA';
+  divergenciaMetrologicaDetectada?: boolean;
+  mensagemDivergencia?: string;
   dataUltimaCalibracao: string; // YYYY-MM-DD
   dataProximaCalibracao: string; // YYYY-MM-DD
   frequenciaMeses: number;
@@ -2840,11 +2845,34 @@ export interface FerramentaCalibracao {
     validadeAte: string;
     observacao?: string;
     registradoPor?: string;
+    registradoEm?: string;
     certificadoAnexo?: {
       nomeArquivo: string;
       urlOuBase64?: string;
       dataUpload?: string;
+      tamanhoBytes?: number;
+      tipoArquivo?: string;
     };
+    foiCorrigido?: boolean;
+    corrigidoEm?: string;
+    corrigidoPor?: string;
+    motivoCorrecao?: string;
+    valoresAnteriores?: {
+      data?: string;
+      validadeAte?: string;
+      certificado?: string;
+      laboratorio?: string;
+    };
+  }[];
+  historicoAlteracoesCadastrais?: {
+    id: string;
+    dataHora: string;
+    usuarioNome: string;
+    usuarioUid?: string;
+    tipoOperacao: 'EDICAO_CADASTRO' | 'CORRECAO_DATA' | 'NOVA_CALIBRACAO' | 'INATIVACAO' | 'REATIVACAO' | 'QUARENTENA';
+    resumo: string;
+    detalhes?: Record<string, { anterior: any; novo: any }>;
+    motivo?: string;
   }[];
   origemImportacaoId?: string;
   origemArquivoNome?: string;
