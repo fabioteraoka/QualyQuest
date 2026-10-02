@@ -231,9 +231,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'DOCUMENTOS',
       items: [
         {
+          id: 'manuais',
+          label: 'Banco de Manuais (IA)',
+          icon: <BookOpen className="w-4 h-4 text-purple-400" />,
+        },
+        {
           id: 'controle-documental',
-          label: 'Acervo & Biblioteca',
-          icon: <BookOpen className="w-4 h-4 text-sky-400" />,
+          label: 'Acervo & Revisões (SGQ)',
+          icon: <FolderTree className="w-4 h-4 text-sky-400" />,
         },
         {
           id: 'verificacao-controle',
