@@ -261,9 +261,12 @@ export function calcularProximoVencimento(dataUltimaISO: string, frequenciaMeses
  */
 export function calcularSaldoDias(dataProximaISO?: string): number {
   if (!dataProximaISO) return -9999;
+  const parsed = parseDataSegura(dataProximaISO);
+  if (!parsed.valida || !parsed.isoString) return -9999;
+
   const hojeStr = new Date().toISOString().split('T')[0];
   const [y1, m1, d1] = hojeStr.split('-').map(Number);
-  const [y2, m2, d2] = dataProximaISO.split('-').map(Number);
+  const [y2, m2, d2] = parsed.isoString.split('-').map(Number);
 
   const t1 = Date.UTC(y1, m1 - 1, d1);
   const t2 = Date.UTC(y2, m2 - 1, d2);
@@ -316,7 +319,7 @@ export function determinarStatusMetrologico(params: {
   }
 
   // 2. Quarentena (prioridade máxima sobre datas válidas)
-  if (statusManual === 'QUARENTENA') {
+  if (statusManual === 'QUARENTENA' || statusManual === 'QUARANTENA') {
     return {
       status: 'QUARENTENA',
       saldoDias: calcularSaldoDias(dataProximaCalibracao),
@@ -357,32 +360,32 @@ export function determinarStatusMetrologico(params: {
     };
   }
 
-  // 5. Divergência detectada
+  const saldoDias = calcularSaldoDias(dataProximaCalibracao);
+
+  // 5. Vencida (Prioridade máxima de segurança sobre divergências)
+  if (saldoDias <= 0) {
+    return {
+      status: 'VENCIDA',
+      saldoDias,
+      rotuloStatus: saldoDias < 0 ? `Vencida (${Math.abs(saldoDias)}d atrás)` : 'Vence Hoje',
+      corBadge: 'bg-rose-100 text-rose-800 border-rose-300',
+      corTexto: 'text-rose-700',
+      corBorda: 'border-rose-400',
+      corFundo: 'bg-rose-50',
+      isOperacionalLiberada: false,
+    };
+  }
+
+  // 6. Divergência detectada (instrumento ainda com saldo > 0, mas requer conferência de periodicidade)
   if (divergenciaDetectada) {
     return {
       status: 'PENDENTE_VERIFICACAO',
-      saldoDias: calcularSaldoDias(dataProximaCalibracao),
+      saldoDias,
       rotuloStatus: 'Pendente Verificação (Divergência)',
       corBadge: 'bg-yellow-100 text-yellow-800 border-yellow-300',
       corTexto: 'text-yellow-700',
       corBorda: 'border-yellow-300',
       corFundo: 'bg-yellow-50',
-      isOperacionalLiberada: false,
-    };
-  }
-
-  const saldoDias = calcularSaldoDias(dataProximaCalibracao);
-
-  // 6. Vencida
-  if (saldoDias < 0) {
-    return {
-      status: 'VENCIDA',
-      saldoDias,
-      rotuloStatus: `Vencida (${Math.abs(saldoDias)}d atrás)`,
-      corBadge: 'bg-rose-100 text-rose-800 border-rose-300',
-      corTexto: 'text-rose-700',
-      corBorda: 'border-rose-400',
-      corFundo: 'bg-rose-50',
       isOperacionalLiberada: false,
     };
   }
@@ -495,11 +498,20 @@ export function executarEdicaoCadastro(
     camposAlterados.dataProximaCalibracao
   );
 
+  const statusManualPreservado =
+    (camposAlterados.status === 'QUARENTENA' || camposAlterados.status === 'QUARANTENA' || ferramentaOriginal.status === 'QUARENTENA' || ferramentaOriginal.status === 'QUARANTENA')
+      ? 'QUARENTENA'
+      : (camposAlterados.status === 'INATIVA' || ferramentaOriginal.status === 'INATIVA')
+      ? 'INATIVA'
+      : (camposAlterados.status === 'DESCARTE' || ferramentaOriginal.status === 'DESCARTE')
+      ? 'DESCARTE'
+      : undefined;
+
   const statusFinal = determinarStatusMetrologico({
     dataProximaCalibracao: previa.vencimentoCalculado,
     dataUltimaCalibracao: previa.dataCalibracaoNova,
     ativo: camposAlterados.ativo !== undefined ? camposAlterados.ativo : ferramentaOriginal.ativo,
-    statusManual: camposAlterados.status || ferramentaOriginal.status,
+    statusManual: statusManualPreservado,
     divergenciaDetectada: previa.divergenciaDetectada,
   }).status;
 

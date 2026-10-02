@@ -1,4 +1,5 @@
 import { FerramentaCalibracao } from '../types';
+import { parseDataSegura, calcularSaldoDias } from '../services/calibrationEngine';
 
 /**
  * Interface para os dados detalhados da Conta de Créditos de uma Ferramenta
@@ -63,29 +64,41 @@ export function calcularContaCreditoFerramenta(ferramenta: FerramentaCalibracao)
   hoje.setHours(0, 0, 0, 0);
 
   const freq = Number(ferramenta.frequenciaMeses) || 12;
-  const dataUltimaStr = ferramenta.dataUltimaCalibracao;
-  const dataProxStr = ferramenta.dataProximaCalibracao;
+  const parsedProx = parseDataSegura(ferramenta.dataProximaCalibracao);
+  const parsedUltima = parseDataSegura(ferramenta.dataUltimaCalibracao);
 
-  let dtUltima = new Date(dataUltimaStr);
-  let dtProx = new Date(dataProxStr);
+  let dtProx: Date;
+  let dtUltima: Date;
 
-  // Fallbacks defensivos para datas inválidas
-  if (isNaN(dtProx.getTime())) {
+  if (parsedProx.valida && parsedProx.isoString) {
+    const [y, m, d] = parsedProx.isoString.split('-').map(Number);
+    dtProx = new Date(Date.UTC(y, m - 1, d));
+  } else {
     dtProx = new Date(hoje.getTime() + freq * 30 * 24 * 60 * 60 * 1000);
   }
-  if (isNaN(dtUltima.getTime())) {
+
+  if (parsedUltima.valida && parsedUltima.isoString) {
+    const [y, m, d] = parsedUltima.isoString.split('-').map(Number);
+    dtUltima = new Date(Date.UTC(y, m - 1, d));
+  } else {
     dtUltima = new Date(dtProx.getTime() - freq * 30 * 24 * 60 * 60 * 1000);
   }
 
   dtProx.setHours(0, 0, 0, 0);
   dtUltima.setHours(0, 0, 0, 0);
 
+  // Strings ISO das datas seguras
+  const dataUltimaStr = parsedUltima.valida && parsedUltima.isoString ? parsedUltima.isoString : (ferramenta.dataUltimaCalibracao || '');
+  const dataProxStr = parsedProx.valida && parsedProx.isoString ? parsedProx.isoString : (ferramenta.dataProximaCalibracao || '');
+
   // Dias totais de crédito concedidos na calibração
   let diasTotal = Math.round((dtProx.getTime() - dtUltima.getTime()) / (1000 * 60 * 60 * 24));
   if (diasTotal <= 0) diasTotal = freq * 30 || 365;
 
-  // Saldo de dias restantes de crédito
-  const saldoDias = Math.round((dtProx.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+  // Saldo de dias restantes de crédito consistente com calibrationEngine
+  const saldoDias = parsedProx.valida && parsedProx.isoString
+    ? calcularSaldoDias(parsedProx.isoString)
+    : Math.round((dtProx.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
 
   // Dias consumidos
   const diasConsumidos = Math.max(0, diasTotal - Math.max(0, saldoDias));
@@ -101,7 +114,7 @@ export function calcularContaCreditoFerramenta(ferramenta: FerramentaCalibracao)
   let classeCorTexto = 'text-emerald-700';
   let classeBarraProgresso = 'bg-emerald-500';
 
-  if (ferramenta.status === 'QUARANTENA') {
+  if (ferramenta.status === 'QUARENTENA' || ferramenta.status === 'QUARANTENA') {
     statusCredito = 'ESGOTADO';
     rotuloStatus = 'Quarentena (Uso Bloqueado)';
     classeCorBadge = 'bg-purple-50 text-purple-700 border-purple-200';
@@ -163,6 +176,22 @@ export function calcularContaCreditoFerramenta(ferramenta: FerramentaCalibracao)
     nomeArquivoCertificado: ferramenta.certificadoAnexo?.nomeArquivo,
     urlCertificado: ferramenta.certificadoAnexo?.urlOuBase64 || ferramenta.evidenciaCertificadoUrl,
   };
+}
+
+/**
+ * Converte o resultado da Conta de Créditos no Status Canônico da Ferramenta
+ */
+export function obterStatusFerramentaDaConta(
+  conta: ContaCreditoFerramenta,
+  statusManual?: string,
+  ativo: boolean = true
+): FerramentaCalibracao['status'] {
+  if (ativo === false || statusManual === 'INATIVA') return 'INATIVA';
+  if (statusManual === 'QUARENTENA' || statusManual === 'QUARANTENA') return 'QUARENTENA';
+  if (statusManual === 'DESCARTE') return 'DESCARTE';
+  if (conta.statusCredito === 'ESGOTADO' || conta.saldoDiasCredito <= 0) return 'VENCIDA';
+  if (conta.statusCredito === 'CRITICO' || conta.saldoDiasCredito <= 30) return 'PROXIMA_VENCIMENTO';
+  return 'CALIBRADA';
 }
 
 /**

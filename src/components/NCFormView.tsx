@@ -944,12 +944,21 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
 
     // Auto-evaluate status if not explicitly locked
     let calculatedStatus: StatusGeralNC = formData.statusGeral;
+    let dataEncerramentoFinal = formData.dataEncerramento;
+    let prazoEficaciaFinal = formData.prazoEficacia || formData.verificacaoEficacia.prazoEficacia || formData.verificacaoEficacia.dataPrevista;
+    let dataConclusaoTratFinal = formData.dataConclusaoTratamento || formData.acaoCorretiva.dataConclusao;
+
     if (formData.verificacaoEficacia.encerrado === 'SIM') {
       calculatedStatus = 'Encerrada';
+      dataEncerramentoFinal = dataEncerramentoFinal || formData.verificacaoEficacia.dataVerificacao || new Date().toISOString().split('T')[0];
     } else if (formData.verificacaoEficacia.encerrado === 'NÃO') {
       calculatedStatus = 'Reaberta';
     } else if (formData.acaoCorretiva.status === 'Concluída') {
       calculatedStatus = 'Aguardando Eficácia';
+      dataConclusaoTratFinal = dataConclusaoTratFinal || new Date().toISOString().split('T')[0];
+      if (!prazoEficaciaFinal) {
+        prazoEficaciaFinal = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      }
     } else if (formData.acaoCorretiva.status === 'Em Andamento') {
       calculatedStatus = 'Ação em Andamento';
     } else if (formData.preAnaliseContencao.status === 'Concluída') {
@@ -983,6 +992,14 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
       versaoDocumentoId: resolvedVersaoId,
       documentoNormativoAplicavel: docNormativo,
       statusGeral: calculatedStatus,
+      dataEncerramento: dataEncerramentoFinal,
+      prazoEficacia: prazoEficaciaFinal,
+      dataConclusaoTratamento: dataConclusaoTratFinal,
+      verificacaoEficacia: {
+        ...formData.verificacaoEficacia,
+        prazoEficacia: prazoEficaciaFinal,
+        dataPrevista: prazoEficaciaFinal,
+      },
       atualizadoEm: new Date().toISOString(),
     });
   };
@@ -2327,14 +2344,29 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
                     Decisão de Encerramento
                   </label>
                   <select
                     value={formData.verificacaoEficacia.encerrado}
-                    onChange={(e) => handleEficaciaChange('encerrado', e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      handleEficaciaChange('encerrado', val);
+                      if (val === 'SIM' && !formData.dataEncerramento) {
+                        const hoje = new Date().toISOString().split('T')[0];
+                        setFormData(prev => ({
+                          ...prev,
+                          dataEncerramento: hoje,
+                          verificacaoEficacia: {
+                            ...prev.verificacaoEficacia,
+                            encerrado: 'SIM',
+                            dataVerificacao: prev.verificacaoEficacia.dataVerificacao || hoje,
+                          }
+                        }));
+                      }
+                    }}
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-300 bg-white font-bold"
                   >
                     <option value="Pendente">Pendente de Auditoria</option>
@@ -2345,14 +2377,107 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Data da Auditoria de Eficácia
+                    Data Limite / Prevista da Eficácia
                   </label>
                   <input
                     type="date"
-                    value={formData.verificacaoEficacia.dataVerificacao || ''}
-                    onChange={(e) => handleEficaciaChange('dataVerificacao', e.target.value)}
+                    value={formData.prazoEficacia || formData.verificacaoEficacia.prazoEficacia || formData.verificacaoEficacia.dataPrevista || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        prazoEficacia: val,
+                        verificacaoEficacia: {
+                          ...prev.verificacaoEficacia,
+                          prazoEficacia: val,
+                          dataPrevista: val,
+                        }
+                      }));
+                    }}
+                    className="w-full text-xs p-2.5 rounded-lg border border-blue-300 bg-blue-50/30 font-semibold"
+                  />
+                  <div className="flex items-center gap-1.5 mt-1 text-[10px] text-blue-700">
+                    <span>Sugerir:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                        setFormData(prev => ({
+                          ...prev,
+                          prazoEficacia: dt,
+                          verificacaoEficacia: { ...prev.verificacaoEficacia, prazoEficacia: dt, dataPrevista: dt }
+                        }));
+                      }}
+                      className="hover:underline font-bold text-blue-600"
+                    >
+                      +30d
+                    </button>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                        setFormData(prev => ({
+                          ...prev,
+                          prazoEficacia: dt,
+                          verificacaoEficacia: { ...prev.verificacaoEficacia, prazoEficacia: dt, dataPrevista: dt }
+                        }));
+                      }}
+                      className="hover:underline font-bold text-blue-600"
+                    >
+                      +60d
+                    </button>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dt = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                        setFormData(prev => ({
+                          ...prev,
+                          prazoEficacia: dt,
+                          verificacaoEficacia: { ...prev.verificacaoEficacia, prazoEficacia: dt, dataPrevista: dt }
+                        }));
+                      }}
+                      className="hover:underline font-bold text-blue-600"
+                    >
+                      +90d
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    {formData.verificacaoEficacia.encerrado === 'SIM' ? 'Data Formal de Encerramento' : 'Data da Execução da Auditoria'}
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dataEncerramento || formData.verificacaoEficacia.dataVerificacao || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData(prev => ({
+                        ...prev,
+                        dataEncerramento: val,
+                        verificacaoEficacia: {
+                          ...prev.verificacaoEficacia,
+                          dataVerificacao: val,
+                        }
+                      }));
+                    }}
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-300 bg-white"
                   />
+                  {formData.verificacaoEficacia.encerrado === 'SIM' && (
+                    <div className="mt-1 text-[10px]">
+                      {formData.dataEncerramento && formData.prazoResposta && formData.dataEncerramento <= formData.prazoResposta ? (
+                        <span className="text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                          ✓ Tratamento Concluído no Prazo
+                        </span>
+                      ) : (
+                        <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                          ⚠ Tratamento Concluído com Atraso
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>

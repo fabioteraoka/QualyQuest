@@ -43,6 +43,7 @@ import {
 import {
   calcularContaCreditoFerramenta,
   calcularResumoCreditosMetrologia,
+  obterStatusFerramentaDaConta,
   ContaCreditoFerramenta,
   ResumoContaCreditosMetrologia,
 } from '../utils/metrologyCreditsCalculator';
@@ -264,28 +265,24 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
   const ferramentasFiltradas = useMemo(() => {
     const list = ferramentasCalibradas.filter((f) => {
       const isAtivo = f.ativo !== false;
-      const statusReal = determinarStatusMetrologico({
-        dataProximaCalibracao: f.dataProximaCalibracao,
-        dataUltimaCalibracao: f.dataUltimaCalibracao,
-        ativo: f.ativo,
-        statusManual: f.status,
-      });
+      const conta = calcularContaCreditoFerramenta(f);
+      const statusReal = obterStatusFerramentaDaConta(conta, f.status, isAtivo);
 
       // Filtro de status
       if (filtroStatus === 'INATIVAS') {
         if (isAtivo) return false;
       } else if (filtroStatus === 'DISPONIVEIS') {
-        if (!statusReal.isOperacionalLiberada) return false;
+        if (!isAtivo || statusReal === 'QUARENTENA' || statusReal === 'VENCIDA' || statusReal === 'DESCARTE') return false;
       } else if (filtroStatus === 'CALIBRADA') {
-        if (!isAtivo || statusReal.status !== 'CALIBRADA') return false;
+        if (!isAtivo || statusReal !== 'CALIBRADA') return false;
       } else if (filtroStatus === 'PROXIMA_VENCIMENTO') {
-        if (!isAtivo || statusReal.status !== 'PROXIMA_VENCIMENTO') return false;
+        if (!isAtivo || statusReal !== 'PROXIMA_VENCIMENTO') return false;
       } else if (filtroStatus === 'VENCIDA') {
-        if (!isAtivo || statusReal.status !== 'VENCIDA') return false;
+        if (!isAtivo || statusReal !== 'VENCIDA') return false;
       } else if (filtroStatus === 'QUARENTENA') {
-        if (!isAtivo || statusReal.status !== 'QUARENTENA') return false;
+        if (!isAtivo || statusReal !== 'QUARENTENA') return false;
       } else if (filtroStatus === 'SEM_DATA_OU_PENDENTE') {
-        if (statusReal.status !== 'SEM_DATA_INFORMADA' && statusReal.status !== 'PENDENTE_VERIFICACAO') return false;
+        if (statusReal !== 'SEM_DATA_INFORMADA' && statusReal !== 'PENDENTE_VERIFICACAO') return false;
       }
 
       // Filtro de setor
@@ -404,6 +401,10 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
       };
 
       const { ferramentaAtualizada } = executarEdicaoCadastro(original, ferramentaEmEdicao, user);
+
+      // Status rigorosamente derivado da Conta de Créditos Metrológicos
+      const contaSalva = calcularContaCreditoFerramenta(ferramentaAtualizada);
+      ferramentaAtualizada.status = obterStatusFerramentaDaConta(contaSalva, ferramentaAtualizada.status, ferramentaAtualizada.ativo);
 
       await saveCalibratedTool(orgId, ferramentaAtualizada, user);
       if (onAdicionarFerramenta) onAdicionarFerramenta(ferramentaAtualizada);
@@ -1111,13 +1112,13 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
               ) : (
                 ferramentasFiltradas.map((tool) => {
                   const isAtivo = tool.ativo !== false;
-                  const isQuarentena = tool.status === 'QUARENTENA';
-                  const isVencida = tool.status === 'VENCIDA' || isQuarentena;
-                  const isProx = tool.status === 'PROXIMA_VENCIMENTO';
-                  const isChecked = selectedToolIds.has(tool.id);
-
-                  // Conta de Créditos Metrológicos
+                  // Conta de Créditos Metrológicos oficial
                   const conta = calcularContaCreditoFerramenta(tool);
+                  const statusOficial = obterStatusFerramentaDaConta(conta, tool.status, isAtivo);
+                  const isQuarentena = statusOficial === 'QUARENTENA';
+                  const isVencida = statusOficial === 'VENCIDA';
+                  const isProx = statusOficial === 'PROXIMA_VENCIMENTO';
+                  const isChecked = selectedToolIds.has(tool.id);
 
                   return (
                     <tr
@@ -1251,7 +1252,11 @@ export const FerramentasMetrologiaView: React.FC<FerramentasMetrologiaViewProps>
                       </td>
 
                       <td className="p-3.5 text-center whitespace-nowrap">
-                        {isQuarentena ? (
+                        {!isAtivo ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-300 px-2 py-0.5 rounded-full">
+                            INATIVA
+                          </span>
+                        ) : isQuarentena ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-purple-800 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full">
                             <Ban className="w-3 h-3" />
                             QUARENTENA

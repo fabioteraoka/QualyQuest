@@ -20,11 +20,21 @@ export function avaliarSaudeSGQ(
   let totalNCsAbertas = 0;
 
   records.forEach((nc) => {
-    const isEncerrada = nc.statusGeral === 'Encerrada' || nc.verificacaoEficacia?.encerrado === 'SIM';
+    const isEncerrada =
+      Boolean(nc.dataEncerramento) ||
+      nc.statusGeral === 'Encerrada' ||
+      nc.verificacaoEficacia?.encerrado === 'SIM';
+
     if (!isEncerrada) totalNCsAbertas++;
 
-    // A. RNC Vencida
-    if (nc.prazoResposta && !isEncerrada) {
+    const isTratamentoConcluido =
+      isEncerrada ||
+      nc.statusGeral === 'Aguardando Eficácia' ||
+      nc.acaoCorretiva?.status === 'Concluída' ||
+      Boolean(nc.dataConclusaoTratamento);
+
+    // A1. RNC Vencida na Tratativa
+    if (nc.prazoResposta && !isTratamentoConcluido) {
       const prazo = new Date(nc.prazoResposta);
       const diffDias = Math.floor((hoje.getTime() - prazo.getTime()) / (1000 * 60 * 60 * 24));
       if (diffDias > 0) {
@@ -33,8 +43,8 @@ export function avaliarSaudeSGQ(
           id: `rnc-vencida-${nc.id}`,
           categoria: 'RNC',
           severidade: diffDias > 15 ? 'CRITICO' : 'ALTO',
-          titulo: `RNC ${nc.numeroNC} Vencida há ${diffDias} dias`,
-          descricao: `O prazo de resposta expirou em ${new Date(nc.prazoResposta).toLocaleDateString('pt-BR')} e a tratativa ainda está ${nc.statusGeral}.`,
+          titulo: `RNC ${nc.numeroNC} Vencida no Tratamento há ${diffDias} dias`,
+          descricao: `O prazo limite de tratamento expirou em ${new Date(nc.prazoResposta).toLocaleDateString('pt-BR')} e a tratativa ainda está ${nc.statusGeral}.`,
           targetId: nc.id,
           targetNumeroNC: nc.numeroNC,
           targetType: 'RNC',
@@ -45,13 +55,41 @@ export function avaliarSaudeSGQ(
           id: `rnc-vence-breve-${nc.id}`,
           categoria: 'RNC',
           severidade: 'MEDIO',
-          titulo: `RNC ${nc.numeroNC} Vence em ${Math.abs(diffDias)} dias`,
-          descricao: `Prazo final de resposta previsto para ${new Date(nc.prazoResposta).toLocaleDateString('pt-BR')}.`,
+          titulo: `RNC ${nc.numeroNC} Vence Tratamento em ${Math.abs(diffDias)} dias`,
+          descricao: `Prazo limite de tratamento previsto para ${new Date(nc.prazoResposta).toLocaleDateString('pt-BR')}.`,
           targetId: nc.id,
           targetNumeroNC: nc.numeroNC,
           targetType: 'RNC',
           acaoSugerida: 'Acompanhar conclusão da Seção 2 e 3 com o setor executor.',
         });
+      }
+    }
+
+    // A2. Auditoria de Eficácia Vencida (quando a tratativa já foi concluída e está aguardando auditoria)
+    const isEmFaseEficacia =
+      !isEncerrada &&
+      (nc.statusGeral === 'Aguardando Eficácia' ||
+        (nc.acaoCorretiva?.status === 'Concluída' && !nc.verificacaoEficacia?.dataVerificacao));
+
+    if (isEmFaseEficacia && !nc.verificacaoEficacia?.dataVerificacao && nc.verificacaoEficacia?.resultado !== 'EFICAZ') {
+      const dataPrazoEficacia = nc.prazoEficacia || nc.verificacaoEficacia?.prazoEficacia || nc.verificacaoEficacia?.dataPrevista;
+      if (dataPrazoEficacia) {
+        const prazoEf = new Date(dataPrazoEficacia);
+        const diffDiasEf = Math.floor((hoje.getTime() - prazoEf.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDiasEf > 0) {
+          rncDeducoes += Math.min(10, 3 + diffDiasEf);
+          itens.push({
+            id: `rnc-eficacia-vencida-${nc.id}`,
+            categoria: 'RNC',
+            severidade: diffDiasEf > 30 ? 'CRITICO' : 'ALTO',
+            titulo: `RNC ${nc.numeroNC} com Auditoria de Eficácia Vencida (${diffDiasEf}d)`,
+            descricao: `O plano de ação foi concluído, mas o prazo para auditoria de eficácia expirou em ${new Date(dataPrazoEficacia).toLocaleDateString('pt-BR')}.`,
+            targetId: nc.id,
+            targetNumeroNC: nc.numeroNC,
+            targetType: 'RNC',
+            acaoSugerida: 'Designar auditor de qualidade para verificar a eficácia e formalizar o encerramento da NC.',
+          });
+        }
       }
     }
 

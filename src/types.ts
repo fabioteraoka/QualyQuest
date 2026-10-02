@@ -241,6 +241,9 @@ export interface VerificacaoEficacia {
   encerrado: 'SIM' | 'NÃO' | 'Pendente';
   motivo?: string;
   dataVerificacao?: string;
+  dataPrevista?: string; // Data prevista para comprovação da eficácia
+  prazoEficacia?: string; // Data limite para auditoria de eficácia
+  resultado?: 'EFICAZ' | 'INEFICAZ' | 'PENDENTE';
   auditorVerificador?: string;
   evidencias?: string;
   criterioAprovacao?: string;
@@ -341,6 +344,10 @@ export interface NCRecord {
   aprovadoPor?: string;
   dataAprovacao?: string;
   justificativaFechamento?: string;
+  dataEncerramento?: string; // Data formal de encerramento da NC (YYYY-MM-DD)
+  dataConclusaoTratamento?: string; // Data da conclusão das ações corretivas (YYYY-MM-DD)
+  prazoEficacia?: string; // Data limite / prevista para análise ou comprovação de eficácia (YYYY-MM-DD)
+  dataLimiteTratamento?: string; // Sinônimo do prazoResposta da tratativa (YYYY-MM-DD)
   prioridadeInteligente?: PrioridadeInteligente;
   explicacoesIA?: Record<string, ExplicacaoIAItem>;
   analiseSetor?: AnaliseSetorResponsavel;
@@ -476,13 +483,16 @@ export interface AlertaItem {
   ncId: string;
   numeroNC: string;
   titulo: string;
-  tipoAlerta: 'VENCIDA' | 'VENCE_HOJE' | 'VENCE_7_DIAS' | 'VENCE_15_DIAS' | 'AGUARDANDO_EFICACIA' | 'RISCO_CRITICO';
+  tipoAlerta: 'VENCIDA' | 'VENCE_HOJE' | 'VENCE_7_DIAS' | 'VENCE_15_DIAS' | 'AGUARDANDO_EFICACIA' | 'EFICACIA_VENCIDA' | 'EFICACIA_PROXIMA' | 'RISCO_CRITICO';
   diasRestantes: number;
   prazo: string;
   responsavel: string;
   auditor: string;
   nivelRisco: NivelRisco;
   mensagem: string;
+  subtipoPrazo?: 'TRATAMENTO' | 'EFICACIA' | 'ENCERRAMENTO';
+  prazoEficacia?: string;
+  dataEncerramento?: string;
 }
 
 export interface FiltrosNC {

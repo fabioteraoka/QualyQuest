@@ -64,13 +64,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const safeRecords = records || [];
   const safeAlertas = alertas || [];
   const total = safeRecords.length;
-  const abertas = safeRecords.filter((r) => r.statusGeral !== 'Encerrada').length;
-  const encerradas = safeRecords.filter((r) => r.statusGeral === 'Encerrada').length;
+  const isEncerradaRecord = (r: NCRecord) => Boolean(r.dataEncerramento) || r.statusGeral === 'Encerrada' || r.verificacaoEficacia?.encerrado === 'SIM';
+  const encerradas = safeRecords.filter(isEncerradaRecord).length;
+  const abertas = total - encerradas;
   const taxaEficacia = total > 0 ? Math.round((encerradas / total) * 100) : 0;
 
-  const vencidas = safeAlertas.filter((a) => a.tipoAlerta === 'VENCIDA');
+  const vencidas = safeAlertas.filter((a) => a.tipoAlerta === 'VENCIDA' || a.tipoAlerta === 'EFICACIA_VENCIDA');
   const vencendoHoje = safeAlertas.filter((a) => a.tipoAlerta === 'VENCE_HOJE');
-  const vencendo7d = safeAlertas.filter((a) => a.tipoAlerta === 'VENCE_7_DIAS');
+  const vencendo7d = safeAlertas.filter((a) => a.tipoAlerta === 'VENCE_7_DIAS' || a.tipoAlerta === 'EFICACIA_PROXIMA');
   const totalCriticos = vencidas.length + vencendoHoje.length;
 
   // Department / Sector Incidences
@@ -330,8 +331,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </thead>
             <tbody className="divide-y divide-slate-100">
               {safeRecords.slice(0, 6).map((nc) => {
-                const dias = calcularDiasRestantes(nc.prazoResposta);
-                const isOverdue = dias < 0 && nc.statusGeral !== 'Encerrada';
+                const isEncerrada =
+                  Boolean(nc.dataEncerramento) ||
+                  nc.statusGeral === 'Encerrada' ||
+                  nc.verificacaoEficacia?.encerrado === 'SIM';
+
+                const isAguardandoEficacia =
+                  !isEncerrada &&
+                  (nc.statusGeral === 'Aguardando Eficácia' ||
+                    nc.statusGeral === 'Em Monitoramento' ||
+                    nc.statusGeral === 'Eficácia Comprovada' ||
+                    (nc.acaoCorretiva?.status === 'Concluída' && nc.verificacaoEficacia?.encerrado !== 'SIM') ||
+                    Boolean(nc.dataConclusaoTratamento));
+
+                const dataPrazoEficacia = nc.prazoEficacia || nc.verificacaoEficacia?.prazoEficacia || nc.verificacaoEficacia?.dataPrevista;
+                const diasEficacia = dataPrazoEficacia ? calcularDiasRestantes(dataPrazoEficacia) : null;
+                const diasTratamento = calcularDiasRestantes(nc.prazoResposta);
+
+                const eficaciaJaComprovada = Boolean(nc.verificacaoEficacia?.dataVerificacao) || nc.verificacaoEficacia?.resultado === 'EFICAZ' || nc.statusGeral === 'Eficácia Comprovada';
+                const isTratamentoVencido = !isEncerrada && !isAguardandoEficacia && diasTratamento < 0;
+                const isEficaciaVencida = isAguardandoEficacia && !eficaciaJaComprovada && diasEficacia !== null && diasEficacia < 0;
+                const isOverdue = isTratamentoVencido || isEficaciaVencida;
 
                 return (
                   <tr key={nc.id} className="hover:bg-slate-50/70 transition-colors">
@@ -349,12 +369,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       </Badge>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span className={`font-medium ${isOverdue ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
-                        {formatarData(nc.prazoResposta)}
-                      </span>
-                      <span className="text-[10px] text-slate-400 block">
-                        {isOverdue ? '(VENCIDO)' : `${dias}d restantes`}
-                      </span>
+                      {isEncerrada ? (
+                        <div>
+                          <span className="font-semibold text-emerald-700 block text-xs">
+                            Encerrada
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            {nc.dataEncerramento ? `Em ${formatarData(nc.dataEncerramento)}` : 'Concluída'}
+                          </span>
+                        </div>
+                      ) : isAguardandoEficacia ? (
+                        <div>
+                          <span className={`font-semibold block text-xs ${isEficaciaVencida ? 'text-rose-600 font-bold' : 'text-blue-700'}`}>
+                            {dataPrazoEficacia ? `Eficácia: ${formatarData(dataPrazoEficacia)}` : 'Eficácia Agendada'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            {isEficaciaVencida
+                              ? '(AUDITORIA VENCIDA)'
+                              : diasEficacia !== null ? `${diasEficacia}d p/ auditoria` : 'Aguardando avaliação'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div>
+                          <span className={`font-medium block text-xs ${isTratamentoVencido ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
+                            {formatarData(nc.prazoResposta)}
+                          </span>
+                          <span className="text-[10px] text-slate-400 block">
+                            {isTratamentoVencido ? '(TRATAMENTO VENCIDO)' : `${diasTratamento}d restantes`}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       <Badge variant="status" value={nc.statusGeral} size="sm">

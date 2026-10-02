@@ -713,18 +713,34 @@ export default function App() {
     }
   };
 
-  // Handle Deadline Extension from Alerts Center
-  const handleUpdateDeadline = async (ncId: string, novaData: string, motivo: string) => {
+  // Handle Deadline Extension from Alerts Center (Tratamento vs Eficácia)
+  const handleUpdateDeadline = async (
+    ncId: string,
+    novaData: string,
+    motivo: string,
+    tipoPrazo?: 'TRATAMENTO' | 'EFICACIA'
+  ) => {
     const target = records.find((r) => r.id === ncId);
     if (!target) return;
+
+    const isEficacia =
+      tipoPrazo === 'EFICACIA' ||
+      target.statusGeral === 'Aguardando Eficácia' ||
+      target.statusGeral === 'Em Monitoramento';
+
+    const dataAnterior = isEficacia
+      ? target.prazoEficacia || target.verificacaoEficacia?.prazoEficacia || target.verificacaoEficacia?.dataPrevista || target.prazoResposta
+      : target.prazoResposta;
+
+    const prefixo = isEficacia ? '[Eficácia] ' : '[Tratamento] ';
 
     const novoHistorico = [
       ...(target.historicoPrazos || []),
       {
         id: `prazo_${Date.now()}`,
-        dataAnterior: target.prazoResposta,
+        dataAnterior,
         novaData,
-        motivo,
+        motivo: `${prefixo}${motivo}`,
         alteradoEm: new Date().toISOString(),
         usuario: userProfile?.displayName || user?.email || 'Gestão da Qualidade',
       },
@@ -732,7 +748,23 @@ export default function App() {
 
     const updatedNC: NCRecord = {
       ...target,
-      prazoResposta: novaData,
+      ...(isEficacia
+        ? {
+            prazoEficacia: novaData,
+            verificacaoEficacia: {
+              ...target.verificacaoEficacia,
+              prazoEficacia: novaData,
+              dataPrevista: novaData,
+            },
+          }
+        : {
+            prazoResposta: novaData,
+            dataLimiteTratamento: novaData,
+            acaoCorretiva: {
+              ...target.acaoCorretiva,
+              dataPrazo: novaData,
+            },
+          }),
       historicoPrazos: novoHistorico,
       atualizadoEm: new Date().toISOString(),
     };

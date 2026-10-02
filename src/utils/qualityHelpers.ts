@@ -577,12 +577,108 @@ export function gerarAlertas(ncs: NCRecord[], slas?: OrganizationSLAConfig): Ale
   const alertas: AlertaItem[] = [];
 
   ncs.forEach((nc) => {
-    if (nc.statusGeral === 'Encerrada' || nc.statusGeral === 'Cancelada' || nc.statusGeral === 'Rejeitada') {
+    // 1. Consideração rigorosa da Data de Encerramento e Status Formal
+    const isEncerrada =
+      Boolean(nc.dataEncerramento) ||
+      nc.statusGeral === 'Encerrada' ||
+      nc.verificacaoEficacia?.encerrado === 'SIM';
+
+    const isCanceladaOuRejeitada = nc.statusGeral === 'Cancelada' || nc.statusGeral === 'Rejeitada';
+    if (isEncerrada || isCanceladaOuRejeitada) {
       return;
     }
 
-    const dias = calcularDiasRestantes(nc.prazoResposta);
     const nivelRisco = nc.avaliacaoRiscoInicial?.nivel || 'Médio';
+    
+    // Identificação de tratativa concluída / fase de eficácia
+    const isAguardandoEficacia =
+      nc.statusGeral === 'Aguardando Eficácia' ||
+      nc.acaoCorretiva?.status === 'Concluída' ||
+      Boolean(nc.dataConclusaoTratamento);
+
+    // 1. FLUXO DE EFICÁCIA (Tratamento já concluído, controle exclusivo da análise/comprovação de eficácia)
+    if (isAguardandoEficacia) {
+      // Se a auditoria de eficácia já foi executada/comprovada, não gera alerta de atraso
+      const eficaciaJaComprovada =
+        Boolean(nc.verificacaoEficacia?.dataVerificacao) ||
+        nc.verificacaoEficacia?.resultado === 'EFICAZ';
+
+      if (eficaciaJaComprovada) {
+        return;
+      }
+
+      const dataPrazoEficacia = nc.prazoEficacia || nc.verificacaoEficacia?.prazoEficacia || nc.verificacaoEficacia?.dataPrevista;
+      
+      let diasEficacia: number;
+      let prazoFormatado: string;
+
+      if (dataPrazoEficacia) {
+        diasEficacia = calcularDiasRestantes(dataPrazoEficacia);
+        prazoFormatado = dataPrazoEficacia;
+      } else {
+        const baseData = nc.acaoCorretiva?.dataConclusao || nc.dataConclusaoTratamento || nc.dataIdentificacao || nc.criadoEm;
+        const baseDt = new Date(baseData);
+        const dtDefault = new Date(baseDt.getTime() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        diasEficacia = calcularDiasRestantes(dtDefault);
+        prazoFormatado = dtDefault;
+      }
+
+      if (diasEficacia < 0) {
+        alertas.push({
+          id: `alerta-${nc.id}-eficacia-vencida`,
+          ncId: nc.id,
+          numeroNC: nc.numeroNC,
+          titulo: nc.titulo,
+          tipoAlerta: 'EFICACIA_VENCIDA',
+          subtipoPrazo: 'EFICACIA',
+          prazoEficacia: prazoFormatado,
+          diasRestantes: diasEficacia,
+          prazo: prazoFormatado,
+          responsavel: nc.verificacaoEficacia?.auditorVerificador || nc.auditor || 'Auditor SGQ',
+          auditor: nc.auditor,
+          nivelRisco,
+          mensagem: `Comprovação da Eficácia da NC ${nc.numeroNC} está VENCIDA há ${Math.abs(diasEficacia)} dia(s) (${formatarData(prazoFormatado)}). Auditor deve avaliar as ações e formalizar o laudo.`,
+        });
+      } else if (diasEficacia <= 7) {
+        alertas.push({
+          id: `alerta-${nc.id}-eficacia-proxima`,
+          ncId: nc.id,
+          numeroNC: nc.numeroNC,
+          titulo: nc.titulo,
+          tipoAlerta: 'EFICACIA_PROXIMA',
+          subtipoPrazo: 'EFICACIA',
+          prazoEficacia: prazoFormatado,
+          diasRestantes: diasEficacia,
+          prazo: prazoFormatado,
+          responsavel: nc.verificacaoEficacia?.auditorVerificador || nc.auditor || 'Auditor SGQ',
+          auditor: nc.auditor,
+          nivelRisco,
+          mensagem: `Análise de Eficácia da NC ${nc.numeroNC} vence em ${diasEficacia} dia(s) (${formatarData(prazoFormatado)}).`,
+        });
+      } else {
+        alertas.push({
+          id: `alerta-${nc.id}-eficacia-agendada`,
+          ncId: nc.id,
+          numeroNC: nc.numeroNC,
+          titulo: nc.titulo,
+          tipoAlerta: 'AGUARDANDO_EFICACIA',
+          subtipoPrazo: 'EFICACIA',
+          prazoEficacia: prazoFormatado,
+          diasRestantes: diasEficacia,
+          prazo: prazoFormatado,
+          responsavel: nc.verificacaoEficacia?.auditorVerificador || nc.auditor || 'Auditor SGQ',
+          auditor: nc.auditor,
+          nivelRisco,
+          mensagem: `Tratativa concluída no prazo. Auditoria de eficácia programada para ${formatarData(prazoFormatado)} (${diasEficacia}d restantes).`,
+        });
+      }
+
+      // Finaliza este item para não disparar alerta falso de vencimento do tratamento
+      return;
+    }
+
+    // 2. FLUXO DE RESPOSTA / TRATAMENTO DA NC (Aberta, Em Análise, Ação em Andamento)
+    const dias = calcularDiasRestantes(nc.prazoResposta);
 
     // Verificação de SLA por prioridade de risco se configurado no tenant
     if (slas) {
@@ -600,6 +696,7 @@ export function gerarAlertas(ncs: NCRecord[], slas?: OrganizationSLAConfig): Ale
             numeroNC: nc.numeroNC,
             titulo: nc.titulo,
             tipoAlerta: 'VENCIDA',
+            subtipoPrazo: 'TRATAMENTO',
             diasRestantes: Math.round(-diffDias),
             prazo: nc.prazoResposta,
             responsavel: nc.acaoCorretiva?.responsavel || 'Não atribuído',
@@ -614,6 +711,7 @@ export function gerarAlertas(ncs: NCRecord[], slas?: OrganizationSLAConfig): Ale
             numeroNC: nc.numeroNC,
             titulo: nc.titulo,
             tipoAlerta: 'VENCIDA',
+            subtipoPrazo: 'TRATAMENTO',
             diasRestantes: Math.round(-diffDias),
             prazo: nc.prazoResposta,
             responsavel: nc.acaoCorretiva?.responsavel || 'Não atribuído',
@@ -632,12 +730,13 @@ export function gerarAlertas(ncs: NCRecord[], slas?: OrganizationSLAConfig): Ale
         numeroNC: nc.numeroNC,
         titulo: nc.titulo,
         tipoAlerta: 'VENCIDA',
+        subtipoPrazo: 'TRATAMENTO',
         diasRestantes: dias,
         prazo: nc.prazoResposta,
         responsavel: nc.acaoCorretiva?.responsavel || nc.preAnaliseContencao?.responsavel || 'Não atribuído',
         auditor: nc.auditor,
         nivelRisco,
-        mensagem: `Prazo da NC ${nc.numeroNC} expirou há ${Math.abs(dias)} dia(s) (${formatarData(nc.prazoResposta)}). Ação requerida urgente!`,
+        mensagem: `Prazo de Resposta / Tratamento da NC ${nc.numeroNC} expirou há ${Math.abs(dias)} dia(s) (${formatarData(nc.prazoResposta)}). Ação requerida urgente!`,
       });
     } else if (dias === 0) {
       alertas.push({
@@ -646,12 +745,13 @@ export function gerarAlertas(ncs: NCRecord[], slas?: OrganizationSLAConfig): Ale
         numeroNC: nc.numeroNC,
         titulo: nc.titulo,
         tipoAlerta: 'VENCE_HOJE',
+        subtipoPrazo: 'TRATAMENTO',
         diasRestantes: 0,
         prazo: nc.prazoResposta,
         responsavel: nc.acaoCorretiva?.responsavel || 'Não atribuído',
         auditor: nc.auditor,
         nivelRisco: nc.avaliacaoRiscoInicial?.nivel || 'Médio',
-        mensagem: `Atenção: O prazo de resposta da NC ${nc.numeroNC} vence HOJE!`,
+        mensagem: `Atenção: O prazo de resposta / tratamento da NC ${nc.numeroNC} vence HOJE!`,
       });
     } else if (dias <= 7) {
       alertas.push({
@@ -660,12 +760,13 @@ export function gerarAlertas(ncs: NCRecord[], slas?: OrganizationSLAConfig): Ale
         numeroNC: nc.numeroNC,
         titulo: nc.titulo,
         tipoAlerta: 'VENCE_7_DIAS',
+        subtipoPrazo: 'TRATAMENTO',
         diasRestantes: dias,
         prazo: nc.prazoResposta,
         responsavel: nc.acaoCorretiva?.responsavel || 'Não atribuído',
         auditor: nc.auditor,
         nivelRisco: nc.avaliacaoRiscoInicial?.nivel || 'Médio',
-        mensagem: `Prazo prestes a expirar em ${dias} dia(s) (${formatarData(nc.prazoResposta)}).`,
+        mensagem: `Prazo de tratamento prestes a expirar em ${dias} dia(s) (${formatarData(nc.prazoResposta)}).`,
       });
     } else if (dias <= 15) {
       alertas.push({
@@ -674,28 +775,13 @@ export function gerarAlertas(ncs: NCRecord[], slas?: OrganizationSLAConfig): Ale
         numeroNC: nc.numeroNC,
         titulo: nc.titulo,
         tipoAlerta: 'VENCE_15_DIAS',
+        subtipoPrazo: 'TRATAMENTO',
         diasRestantes: dias,
         prazo: nc.prazoResposta,
         responsavel: nc.acaoCorretiva?.responsavel || 'Não atribuído',
         auditor: nc.auditor,
         nivelRisco: nc.avaliacaoRiscoInicial?.nivel || 'Médio',
-        mensagem: `Vencimento em ${dias} dias. Verifique o andamento do plano de ação.`,
-      });
-    }
-
-    if (nc.statusGeral === 'Aguardando Eficácia') {
-      alertas.push({
-        id: `alerta-${nc.id}-eficacia`,
-        ncId: nc.id,
-        numeroNC: nc.numeroNC,
-        titulo: nc.titulo,
-        tipoAlerta: 'AGUARDANDO_EFICACIA',
-        diasRestantes: dias,
-        prazo: nc.prazoResposta,
-        responsavel: nc.auditor,
-        auditor: nc.auditor,
-        nivelRisco: nc.avaliacaoRiscoInicial?.nivel || 'Médio',
-        mensagem: `Plano de ação concluído. Auditor ${nc.auditor} deve realizar a verificação de eficácia.`,
+        mensagem: `Vencimento do tratamento em ${dias} dias. Verifique o andamento do plano de ação.`,
       });
     }
   });
@@ -849,13 +935,27 @@ export function calcularPrioridadeInteligente(nc: NCRecord, todasNCs: NCRecord[]
   // 2. Fator Atraso em dias (0 a 30 pontos)
   let atrasoDias = 0;
   let atrasoScore = 0;
-  if (nc.prazoResposta && !isEncerrada) {
-    const prazo = new Date(nc.prazoResposta);
-    atrasoDias = Math.floor((hoje.getTime() - prazo.getTime()) / (1000 * 60 * 60 * 24));
-    if (atrasoDias > 0) {
-      atrasoScore = Math.min(30, 10 + atrasoDias * 2);
-    } else if (atrasoDias >= -7) {
-      atrasoScore = 8; // Vence nos próximos 7 dias
+  const isTratamentoConcluido = isEncerrada || nc.statusGeral === 'Aguardando Eficácia' || nc.acaoCorretiva?.status === 'Concluída';
+
+  if (!isEncerrada) {
+    if (!isTratamentoConcluido && nc.prazoResposta) {
+      const prazo = new Date(nc.prazoResposta);
+      atrasoDias = Math.floor((hoje.getTime() - prazo.getTime()) / (1000 * 60 * 60 * 24));
+      if (atrasoDias > 0) {
+        atrasoScore = Math.min(30, 10 + atrasoDias * 2);
+      } else if (atrasoDias >= -7) {
+        atrasoScore = 8; // Vence nos próximos 7 dias
+      }
+    } else if (isTratamentoConcluido && nc.statusGeral === 'Aguardando Eficácia') {
+      const dataPrazoEficacia = nc.prazoEficacia || nc.verificacaoEficacia?.prazoEficacia || nc.verificacaoEficacia?.dataPrevista;
+      if (dataPrazoEficacia) {
+        const prazoEf = new Date(dataPrazoEficacia);
+        const atrasoEf = Math.floor((hoje.getTime() - prazoEf.getTime()) / (1000 * 60 * 60 * 24));
+        if (atrasoEf > 0) {
+          atrasoScore = Math.min(25, 10 + atrasoEf * 1.5);
+          atrasoDias = atrasoEf;
+        }
+      }
     }
   }
 

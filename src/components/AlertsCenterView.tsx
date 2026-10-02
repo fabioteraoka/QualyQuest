@@ -20,7 +20,7 @@ interface AlertsCenterViewProps {
   records: NCRecord[];
   alertas: AlertaItem[];
   onSelectNC: (nc: NCRecord) => void;
-  onUpdateDeadline: (ncId: string, novaData: string, motivo: string) => void;
+  onUpdateDeadline: (ncId: string, novaData: string, motivo: string, tipoPrazo?: 'TRATAMENTO' | 'EFICACIA') => void;
   onAuditNC?: (nc: NCRecord) => void;
 }
 
@@ -39,17 +39,29 @@ export const AlertsCenterView: React.FC<AlertsCenterViewProps> = ({
   const [notifiedMessage, setNotifiedMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'todos' | 'critico' | 'atencao' | 'acompanhamento'>('todos');
 
-  // Categorização rigorosa SGQ
+  // Categorização rigorosa SGQ - alertas informativos de eficácia agendada nunca são críticos
   const criticos = safeAlertas.filter(
-    (a) => a.tipoAlerta === 'VENCIDA' || a.tipoAlerta === 'VENCE_HOJE' || a.nivelRisco === 'Crítico' || a.nivelRisco === 'Alto'
+    (a) =>
+      a.tipoAlerta === 'VENCIDA' ||
+      a.tipoAlerta === 'EFICACIA_VENCIDA' ||
+      a.tipoAlerta === 'VENCE_HOJE' ||
+      ((a.nivelRisco === 'Crítico' || a.nivelRisco === 'Alto') &&
+        a.tipoAlerta !== 'AGUARDANDO_EFICACIA' &&
+        a.tipoAlerta !== 'VENCE_15_DIAS' &&
+        a.tipoAlerta !== 'EFICACIA_PROXIMA')
   );
   const atencao = safeAlertas.filter(
-    (a) => (a.tipoAlerta === 'VENCE_7_DIAS' || a.nivelRisco === 'Médio') && !criticos.some(c => c.id === a.id)
+    (a) =>
+      (a.tipoAlerta === 'VENCE_7_DIAS' ||
+        a.tipoAlerta === 'EFICACIA_PROXIMA' ||
+        (a.nivelRisco === 'Médio' && a.tipoAlerta !== 'AGUARDANDO_EFICACIA')) &&
+      !criticos.some((c) => c.id === a.id)
   );
   const acompanhamento = safeAlertas.filter(
-    (a) => (a.tipoAlerta === 'VENCE_15_DIAS' || a.tipoAlerta === 'AGUARDANDO_EFICACIA' || a.nivelRisco === 'Baixo') &&
-           !criticos.some(c => c.id === a.id) &&
-           !atencao.some(t => t.id === a.id)
+    (a) =>
+      (a.tipoAlerta === 'VENCE_15_DIAS' || a.tipoAlerta === 'AGUARDANDO_EFICACIA' || a.nivelRisco === 'Baixo') &&
+      !criticos.some((c) => c.id === a.id) &&
+      !atencao.some((t) => t.id === a.id)
   );
 
   const handleOpenExtensionModal = (alerta: AlertaItem) => {
@@ -62,9 +74,13 @@ export const AlertsCenterView: React.FC<AlertsCenterViewProps> = ({
     e.preventDefault();
     if (!selectedAlertForExtension || !novaData || !motivoProrrogacao.trim()) return;
 
-    onUpdateDeadline(selectedAlertForExtension.ncId, novaData, motivoProrrogacao);
+    const tipo = selectedAlertForExtension.subtipoPrazo === 'EFICACIA' || selectedAlertForExtension.tipoAlerta === 'EFICACIA_VENCIDA'
+      ? 'EFICACIA'
+      : 'TRATAMENTO';
+
+    onUpdateDeadline(selectedAlertForExtension.ncId, novaData, motivoProrrogacao, tipo);
     setSelectedAlertForExtension(null);
-    setNotifiedMessage(`Prazo da NC #${selectedAlertForExtension.numeroNC} prorrogado com sucesso para ${formatarData(novaData)}.`);
+    setNotifiedMessage(`Prazo da NC #${selectedAlertForExtension.numeroNC} (${tipo === 'EFICACIA' ? 'Auditoria de Eficácia' : 'Tratamento'}) prorrogado com sucesso para ${formatarData(novaData)}.`);
     setTimeout(() => setNotifiedMessage(null), 4000);
   };
 
@@ -164,9 +180,13 @@ export const AlertsCenterView: React.FC<AlertsCenterViewProps> = ({
                           <span className="text-xs font-bold text-slate-800">{alerta.titulo}</span>
                         </div>
                         <span className="text-[11px] font-bold text-rose-600 block mt-0.5">
-                          {alerta.tipoAlerta === 'VENCIDA' 
-                            ? `Atrasado há ${Math.abs(alerta.diasRestantes)} dia(s) (Venceu em ${formatarData(alerta.prazo)})`
-                            : `Vence HOJE (${formatarData(alerta.prazo)}) - Risco ${alerta.nivelRisco}`}
+                          {alerta.tipoAlerta === 'EFICACIA_VENCIDA'
+                            ? `Auditoria de Eficácia VENCIDA há ${Math.abs(alerta.diasRestantes)} dia(s) (Prazo: ${formatarData(alerta.prazo)})`
+                            : alerta.tipoAlerta === 'VENCIDA' 
+                            ? `Prazo de Tratamento Vencido há ${Math.abs(alerta.diasRestantes)} dia(s) (Venceu em ${formatarData(alerta.prazo)})`
+                            : alerta.tipoAlerta === 'VENCE_HOJE'
+                            ? `Prazo de Tratamento vence HOJE (${formatarData(alerta.prazo)}) - Risco ${alerta.nivelRisco}`
+                            : `Atenção: Prazo vence em ${alerta.diasRestantes} dia(s) (${formatarData(alerta.prazo)})`}
                         </span>
                       </div>
                       <span className={`text-[10px] px-2 py-0.5 rounded-[4px] font-bold ${obterCorRisco(alerta.nivelRisco).badgeBg}`}>
@@ -342,7 +362,7 @@ export const AlertsCenterView: React.FC<AlertsCenterViewProps> = ({
           <div className="bg-white rounded-[12px] max-w-md w-full p-5 shadow-2xl border border-slate-300 space-y-4">
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                Prorrogar Prazo da RNC #{selectedAlertForExtension.numeroNC}
+                Prorrogar Prazo da RNC #{selectedAlertForExtension.numeroNC} ({selectedAlertForExtension.subtipoPrazo === 'EFICACIA' ? 'Auditoria de Eficácia' : 'Tratamento / Resposta'})
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 {selectedAlertForExtension.titulo} (Prazo atual: {formatarData(selectedAlertForExtension.prazo)})
@@ -352,7 +372,7 @@ export const AlertsCenterView: React.FC<AlertsCenterViewProps> = ({
             <form onSubmit={handleConfirmExtension} className="space-y-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Nova Data de Vencimento *
+                  Nova Data de Vencimento ({selectedAlertForExtension.subtipoPrazo === 'EFICACIA' ? 'Auditoria de Eficácia' : 'Tratamento'}) *
                 </label>
                 <input
                   type="date"
