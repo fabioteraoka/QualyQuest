@@ -11,15 +11,6 @@ import {
   COLUNAS_FORMULARIO_F001_02_1,
   CATALOGO_F001_02_1,
 } from "./src/data/f001021ControlledPublications";
-import {
-  IMPACTO_BASES,
-  IMPACTO_TECNICOS,
-  IMPACTO_QUALIFICACOES,
-  IMPACTO_TREINAMENTOS,
-  IMPACTO_FERRAMENTAS,
-  IMPACTO_ORDENS_SERVICO,
-  buildContextoQualidadeOS,
-} from "./src/data/impactoMroDataset";
 
 const app = express();
 const PORT = 3000;
@@ -4038,200 +4029,309 @@ app.post("/api/documentos/relatorio-conformidade", async (req, res) => {
 
 // =========================================================================
 // INTEGRAÇÃO OFICIAL: IMPACTO AVIATION MRO (SOMENTE LEITURA)
+// Base URL da API: .../api/v1/integration
+// O consumidor recebe diretamente o envelope: success/version/timestamp/source/data/meta
 // =========================================================================
 const IMPACTO_API_URL = process.env.IMPACTO_MRO_API_URL?.trim();
 const IMPACTO_API_KEY = process.env.IMPACTO_MRO_API_KEY?.trim();
 
-async function proxyOrFallbackImpacto(
-  endpoint: string,
-  fallbackData: any,
+// Cache em memória de última consulta conhecida (exclusivo para histórico / auditoria offline)
+// NUNCA apresentado como dado oficial atual!
+const cacheUltimaConsulta = new Map<string, { data: any; cachedAt: string }>();
+
+async function proxyImpactoApi(
+  endpointPath: string,
+  req: express.Request,
   res: express.Response
 ) {
-  if (IMPACTO_API_URL) {
-    try {
-      const targetUrl = `${IMPACTO_API_URL.replace(/\/$/, '')}${endpoint}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const cacheKey = `${req.method}:${req.originalUrl}`;
+  const timestamp = new Date().toISOString();
 
-      const headers: Record<string, string> = {
-        Accept: 'application/json',
-        'User-Agent': 'QualyQuest-SGQ-Client/1.0',
-      };
-      if (IMPACTO_API_KEY) {
-        headers['Authorization'] = `Bearer ${IMPACTO_API_KEY}`;
-        headers['X-API-Key'] = IMPACTO_API_KEY;
-      }
-
-      const response = await fetch(targetUrl, {
-        method: 'GET',
-        headers,
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-
-      if (response.ok) {
-        const data = await response.json();
-        return res.json({
-          success: true,
-          data,
-          origem: 'Impacto Aviation MRO',
-          statusConexao: 'ONLINE',
-          fonteOficial: 'Impacto Aviation MRO',
-          consultadoEm: new Date().toISOString(),
-        });
-      }
-      console.warn(`[Impacto Proxy] Endpoint ${endpoint} retornou status ${response.status}. Usando fallback local.`);
-    } catch (err: any) {
-      console.warn(`[Impacto Proxy] Falha de conexão ao Impacto (${endpoint}): ${err?.message}. Usando dados locais resilientes.`);
-    }
+  if (!IMPACTO_API_URL) {
+    const cached = cacheUltimaConsulta.get(cacheKey);
+    return res.status(503).json({
+      success: false,
+      version: '1.0',
+      timestamp,
+      source: 'Impacto Aviation MRO',
+      data: cached ? cached.data : null,
+      meta: {
+        statusConexao: cached ? 'ULTIMA_CONSULTA_CONHECIDA' : 'OFFLINE_INDISPONIVEL',
+        cachedAt: cached?.cachedAt,
+        aviso: cached
+          ? 'Impacto Aviation MRO offline. Exibindo última consulta conhecida (não oficial atual).'
+          : 'Impacto Aviation MRO não configurado (variável IMPACTO_MRO_API_URL ausente).',
+      },
+      error: 'Serviço de integração do Impacto Aviation MRO não configurado no ambiente.',
+    });
   }
 
-  // Fallback resiliente usando a base oficial do Impacto Aviation MRO
-  return res.json({
-    success: true,
-    data: fallbackData,
-    origem: 'Impacto Aviation MRO',
-    statusConexao: IMPACTO_API_URL ? 'OFFLINE_FALLBACK' : 'OFFLINE_SIMULADO',
-    fonteOficial: 'Impacto Aviation MRO',
-    consultadoEm: new Date().toISOString(),
-  });
+  try {
+    // Normalizar base: IMPACTO_API_URL representa diretamente .../api/v1/integration
+    const cleanBase = IMPACTO_API_URL.replace(/\/$/, '');
+    const cleanPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
+
+    // Preservar query parameters da requisição
+    const queryIdx = req.url.indexOf('?');
+    const queryString = queryIdx !== -1 ? req.url.slice(queryIdx) : '';
+    const targetUrl = `${cleanBase}${cleanPath}${queryString}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'QualyQuest-SGQ-Client/1.0',
+    };
+    if (IMPACTO_API_KEY) {
+      headers['Authorization'] = `Bearer ${IMPACTO_API_KEY}`;
+      headers['X-API-Key'] = IMPACTO_API_KEY;
+    }
+
+    const response = await fetch(targetUrl, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    const rawJson = await response.json().catch(() => null);
+
+    if (response.ok && rawJson) {
+      // Registrar no histórico de última consulta conhecida
+      cacheUltimaConsulta.set(cacheKey, {
+        data: rawJson.data !== undefined ? rawJson.data : rawJson,
+        cachedAt: timestamp,
+      });
+
+      // Se a API Impacto já retornou no contrato padrão (success/version/timestamp/source/data/meta), repassar diretamente sem aninhamento
+      if (
+        rawJson &&
+        typeof rawJson === 'object' &&
+        'success' in rawJson &&
+        'source' in rawJson &&
+        'data' in rawJson
+      ) {
+        return res.status(response.status).json(rawJson);
+      }
+
+      // Caso venha formato simples, encapsular no contrato canônico oficial
+      return res.status(response.status).json({
+        success: rawJson.success !== undefined ? Boolean(rawJson.success) : true,
+        version: rawJson.version || '1.0',
+        timestamp: rawJson.timestamp || timestamp,
+        source: rawJson.source || 'Impacto Aviation MRO',
+        data: rawJson.data !== undefined ? rawJson.data : rawJson,
+        meta: {
+          statusConexao: 'ONLINE',
+          ...(rawJson.meta || {}),
+        },
+      });
+    }
+
+    // Resposta HTTP de erro do servidor Impacto (4xx / 5xx)
+    console.warn(`[Impacto Proxy] Falha ${response.status} ao consultar ${targetUrl}`);
+    const cached = cacheUltimaConsulta.get(cacheKey);
+
+    return res.status(response.status).json({
+      success: false,
+      version: '1.0',
+      timestamp,
+      source: 'Impacto Aviation MRO',
+      data: cached ? cached.data : null,
+      meta: {
+        statusConexao: cached ? 'ULTIMA_CONSULTA_CONHECIDA' : 'OFFLINE_INDISPONIVEL',
+        cachedAt: cached?.cachedAt,
+        httpStatus: response.status,
+        aviso: cached
+          ? 'Exibindo última consulta conhecida devido a indisponibilidade temporária do serviço oficial.'
+          : undefined,
+      },
+      error: rawJson?.error || `Falha HTTP ${response.status} na API oficial do Impacto Aviation MRO.`,
+    });
+  } catch (err: any) {
+    console.warn(`[Impacto Proxy] Erro de rede ou timeout ao acessar Impacto:`, err?.message);
+    const cached = cacheUltimaConsulta.get(cacheKey);
+
+    return res.status(503).json({
+      success: false,
+      version: '1.0',
+      timestamp,
+      source: 'Impacto Aviation MRO',
+      data: cached ? cached.data : null,
+      meta: {
+        statusConexao: cached ? 'ULTIMA_CONSULTA_CONHECIDA' : 'OFFLINE_INDISPONIVEL',
+        cachedAt: cached?.cachedAt,
+        aviso: cached
+          ? 'Serviço oficial do Impacto Aviation MRO offline. Exibindo última consulta conhecida (não oficial atual).'
+          : 'Serviço oficial do Impacto Aviation MRO offline ou indisponível. Nenhum dado local foi inventado.',
+      },
+      error: err?.message || 'Serviço Impacto Aviation MRO offline ou inacessível.',
+    });
+  }
 }
 
-// 1. Status e Conectividade
-app.get("/api/impacto/status", async (req, res) => {
+// 1. Health Check Oficial: consome /api/v1/integration/health
+app.get(["/api/impacto/health", "/api/impacto/status"], async (req, res) => {
   const agora = new Date().toISOString();
-  let online = false;
-  let tempoRespostaMs = 0;
 
-  if (IMPACTO_API_URL) {
-    const inicio = Date.now();
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const testResp = await fetch(`${IMPACTO_API_URL.replace(/\/$/, '')}/status`, {
-        method: 'GET',
-        headers: IMPACTO_API_KEY ? { Authorization: `Bearer ${IMPACTO_API_KEY}` } : {},
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      tempoRespostaMs = Date.now() - inicio;
-      online = testResp.ok;
-    } catch {
-      online = false;
-      tempoRespostaMs = Date.now() - inicio;
-    }
+  if (!IMPACTO_API_URL) {
+    return res.json({
+      success: false,
+      version: '1.0',
+      timestamp: agora,
+      source: 'Impacto Aviation MRO',
+      data: {
+        status: 'offline',
+        servico: 'Impacto Aviation MRO Integration API',
+        urlConfigurada: '(Não configurada)',
+        autenticado: false,
+        timestamp: agora,
+        versao: '1.0',
+      },
+      meta: {
+        statusConexao: 'OFFLINE_INDISPONIVEL',
+        aviso: 'Variável IMPACTO_MRO_API_URL não configurada no ambiente.',
+      },
+      error: 'Variável IMPACTO_MRO_API_URL não configurada.',
+    });
   }
 
-  return res.json({
-    status: online ? 'ok' : 'degraded',
-    servico: 'Impacto Aviation MRO Integration API',
-    fonteOficial: 'Impacto Aviation MRO',
-    urlConfigurada: IMPACTO_API_URL || '(Não configurada - Operando em modo de contingência local)',
-    autenticado: Boolean(IMPACTO_API_KEY),
-    timestamp: agora,
-    tempoRespostaMs,
-    versao: '1.4.0-official',
-    statusConexao: online ? 'ONLINE' : 'OFFLINE_SIMULADO',
-  });
+  const cleanBase = IMPACTO_API_URL.replace(/\/$/, '');
+  const targetUrl = `${cleanBase}/health`;
+  const inicio = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'QualyQuest-SGQ-Client/1.0',
+    };
+    if (IMPACTO_API_KEY) {
+      headers['Authorization'] = `Bearer ${IMPACTO_API_KEY}`;
+      headers['X-API-Key'] = IMPACTO_API_KEY;
+    }
+
+    const testResp = await fetch(targetUrl, {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    const tempoRespostaMs = Date.now() - inicio;
+
+    const rawJson = await testResp.json().catch(() => null);
+
+    if (testResp.ok && rawJson) {
+      if (rawJson && typeof rawJson === 'object' && 'version' in rawJson && 'source' in rawJson) {
+        return res.json(rawJson);
+      }
+      return res.json({
+        success: true,
+        version: '1.0',
+        timestamp: agora,
+        source: 'Impacto Aviation MRO',
+        data: rawJson.data !== undefined ? rawJson.data : rawJson,
+        meta: {
+          statusConexao: 'ONLINE',
+          tempoRespostaMs,
+        },
+      });
+    }
+
+    return res.json({
+      success: false,
+      version: '1.0',
+      timestamp: agora,
+      source: 'Impacto Aviation MRO',
+      data: {
+        status: 'degraded',
+        servico: 'Impacto Aviation MRO Integration API',
+        urlConfigurada: cleanBase,
+        autenticado: Boolean(IMPACTO_API_KEY),
+        timestamp: agora,
+        tempoRespostaMs,
+        versao: '1.0',
+      },
+      meta: {
+        statusConexao: 'OFFLINE_INDISPONIVEL',
+        tempoRespostaMs,
+        httpStatus: testResp.status,
+      },
+      error: `Health check do Impacto retornou status HTTP ${testResp.status}.`,
+    });
+  } catch (err: any) {
+    const tempoRespostaMs = Date.now() - inicio;
+    return res.json({
+      success: false,
+      version: '1.0',
+      timestamp: agora,
+      source: 'Impacto Aviation MRO',
+      data: {
+        status: 'offline',
+        servico: 'Impacto Aviation MRO Integration API',
+        urlConfigurada: cleanBase,
+        autenticado: Boolean(IMPACTO_API_KEY),
+        timestamp: agora,
+        tempoRespostaMs,
+        versao: '1.0',
+      },
+      meta: {
+        statusConexao: 'OFFLINE_INDISPONIVEL',
+        tempoRespostaMs,
+      },
+      error: err?.message || 'Falha de comunicação com o endpoint de health do Impacto Aviation MRO.',
+    });
+  }
 });
 
 // 2. Bases Operacionais
 app.get("/api/impacto/bases", (req, res) => {
-  return proxyOrFallbackImpacto('/bases', IMPACTO_BASES, res);
+  return proxyImpactoApi('/bases', req, res);
 });
 
 // 3. Técnicos e Inspetores
 app.get("/api/impacto/tecnicos", (req, res) => {
-  const { baseId, ativo, busca } = req.query;
-  let result = [...IMPACTO_TECNICOS];
-  if (baseId) result = result.filter(t => t.baseId === baseId);
-  if (ativo !== undefined) result = result.filter(t => String(t.ativo) === String(ativo));
-  if (busca && typeof busca === 'string') {
-    const q = busca.toLowerCase();
-    result = result.filter(t => t.nome.toLowerCase().includes(q) || t.cht.toLowerCase().includes(q));
-  }
-  return proxyOrFallbackImpacto(`/tecnicos?${new URLSearchParams(req.query as any).toString()}`, result, res);
+  return proxyImpactoApi('/tecnicos', req, res);
 });
 
 app.get("/api/impacto/tecnicos/:id", (req, res) => {
-  const tec = IMPACTO_TECNICOS.find(t => t.id === req.params.id);
-  if (!tec) {
-    return res.status(404).json({ success: false, error: 'Técnico não encontrado no Impacto Aviation MRO' });
-  }
-  return proxyOrFallbackImpacto(`/tecnicos/${req.params.id}`, tec, res);
+  return proxyImpactoApi(`/tecnicos/${encodeURIComponent(req.params.id)}`, req, res);
 });
 
 // 4. Qualificações de Tipo e Habilitações
 app.get("/api/impacto/qualificacoes", (req, res) => {
-  const { tecnicoId } = req.query;
-  let result = [...IMPACTO_QUALIFICACOES];
-  if (tecnicoId) result = result.filter(q => q.tecnicoId === tecnicoId);
-  return proxyOrFallbackImpacto(`/qualificacoes?${new URLSearchParams(req.query as any).toString()}`, result, res);
+  return proxyImpactoApi('/qualificacoes', req, res);
 });
 
 // 5. Treinamentos Mandatórios
 app.get("/api/impacto/treinamentos", (req, res) => {
-  const { tecnicoId } = req.query;
-  let result = [...IMPACTO_TREINAMENTOS];
-  if (tecnicoId) result = result.filter(t => t.tecnicoId === tecnicoId);
-  return proxyOrFallbackImpacto(`/treinamentos?${new URLSearchParams(req.query as any).toString()}`, result, res);
+  return proxyImpactoApi('/treinamentos', req, res);
 });
 
 // 6. Ferramentas Calibradas
 app.get("/api/impacto/ferramentas", (req, res) => {
-  const { baseId, statusCalibracao, busca } = req.query;
-  let result = [...IMPACTO_FERRAMENTAS];
-  if (baseId) result = result.filter(f => f.baseId === baseId);
-  if (statusCalibracao) result = result.filter(f => f.statusCalibracao === statusCalibracao);
-  if (busca && typeof busca === 'string') {
-    const q = busca.toLowerCase();
-    result = result.filter(f => f.codigo.toLowerCase().includes(q) || f.descricao.toLowerCase().includes(q));
-  }
-  return proxyOrFallbackImpacto(`/ferramentas?${new URLSearchParams(req.query as any).toString()}`, result, res);
+  return proxyImpactoApi('/ferramentas', req, res);
 });
 
 app.get("/api/impacto/ferramentas/:id", (req, res) => {
-  const ferr = IMPACTO_FERRAMENTAS.find(f => f.id === req.params.id || f.codigo === req.params.id);
-  if (!ferr) {
-    return res.status(404).json({ success: false, error: 'Ferramenta não encontrada no Impacto Aviation MRO' });
-  }
-  return proxyOrFallbackImpacto(`/ferramentas/${req.params.id}`, ferr, res);
+  return proxyImpactoApi(`/ferramentas/${encodeURIComponent(req.params.id)}`, req, res);
 });
 
 // 7. Ordens de Serviço (OS)
 app.get("/api/impacto/ordens-servico", (req, res) => {
-  const { status, baseId, prefixoAeronave, busca } = req.query;
-  let result = [...IMPACTO_ORDENS_SERVICO];
-  if (status) result = result.filter(o => o.status === status);
-  if (baseId) result = result.filter(o => o.baseId === baseId);
-  if (prefixoAeronave) result = result.filter(o => o.prefixoAeronave.toLowerCase() === String(prefixoAeronave).toLowerCase());
-  if (busca && typeof busca === 'string') {
-    const q = busca.toLowerCase();
-    result = result.filter(o =>
-      o.numero.toLowerCase().includes(q) ||
-      o.titulo.toLowerCase().includes(q) ||
-      o.prefixoAeronave.toLowerCase().includes(q) ||
-      o.clienteNome.toLowerCase().includes(q)
-    );
-  }
-  return proxyOrFallbackImpacto(`/ordens-servico?${new URLSearchParams(req.query as any).toString()}`, result, res);
+  return proxyImpactoApi('/ordens-servico', req, res);
 });
 
 app.get("/api/impacto/ordens-servico/:id", (req, res) => {
-  const os = IMPACTO_ORDENS_SERVICO.find(o => o.id === req.params.id || o.numero === req.params.id);
-  if (!os) {
-    return res.status(404).json({ success: false, error: 'Ordem de Serviço não encontrada no Impacto Aviation MRO' });
-  }
-  return proxyOrFallbackImpacto(`/ordens-servico/${req.params.id}`, os, res);
+  return proxyImpactoApi(`/ordens-servico/${encodeURIComponent(req.params.id)}`, req, res);
 });
 
 // 8. Contexto Completo de Qualidade da OS
 app.get("/api/impacto/ordens-servico/:id/contexto-qualidade", (req, res) => {
-  const ctx = buildContextoQualidadeOS(req.params.id);
-  if (!ctx) {
-    return res.status(404).json({ success: false, error: 'Contexto de qualidade não disponível para esta OS no Impacto Aviation MRO' });
-  }
-  return proxyOrFallbackImpacto(`/ordens-servico/${req.params.id}/contexto-qualidade`, ctx, res);
+  return proxyImpactoApi(`/ordens-servico/${encodeURIComponent(req.params.id)}/contexto-qualidade`, req, res);
 });
 
 

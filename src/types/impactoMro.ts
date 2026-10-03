@@ -166,15 +166,44 @@ export interface ImpactoContextoQualidadeOS {
   resumoAuditavel: string;
   metadadosConsulta: {
     consultadoEm: string;
-    fonteOficial: 'Impacto Aviation MRO';
-    statusConexao: 'ONLINE' | 'OFFLINE_SIMULADO' | 'CACHE_LOCAL';
+    fonteOficial: 'Impacto Aviation MRO' | string;
+    statusConexao: ImpactoConnectionStatus;
     versaoApi: string;
+    cachedAt?: string;
   };
+}
+
+export type ImpactoConnectionStatus =
+  | 'ONLINE'
+  | 'OFFLINE_INDISPONIVEL'
+  | 'ULTIMA_CONSULTA_CONHECIDA';
+
+export interface ImpactoMeta {
+  total?: number;
+  statusConexao: ImpactoConnectionStatus;
+  tempoRespostaMs?: number;
+  cachedAt?: string;
+  aviso?: string;
+  [key: string]: any;
+}
+
+/**
+ * Envelope Canônico da API Oficial Impacto Aviation MRO
+ * Formato padrão: success/version/timestamp/source/data/meta
+ */
+export interface ImpactoApiResponse<T> {
+  success: boolean;
+  version: string;
+  timestamp: string;
+  source: string; // Ex: 'Impacto Aviation MRO'
+  data: T | null;
+  meta: ImpactoMeta;
+  error?: string;
 }
 
 export interface ImpactoApiHealth {
   status: 'ok' | 'degraded' | 'offline';
-  servico: 'Impacto Aviation MRO Integration API';
+  servico: string;
   fonteOficial: 'Impacto Aviation MRO';
   urlConfigurada: string;
   autenticado: boolean;

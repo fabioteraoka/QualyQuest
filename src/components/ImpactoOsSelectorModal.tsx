@@ -32,6 +32,8 @@ export const ImpactoOsSelectorModal: React.FC<ImpactoOsSelectorModalProps> = ({
   const [ordensServico, setOrdensServico] = useState<ImpactoOrdemServico[]>([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [statusConexao, setStatusConexao] = useState<string>('ONLINE');
+  const [cachedAt, setCachedAt] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (isOpen) {
@@ -44,13 +46,19 @@ export const ImpactoOsSelectorModal: React.FC<ImpactoOsSelectorModalProps> = ({
     setError(null);
     try {
       const resp = await impactoMroApi.getOrdensServico();
-      if (resp.success && resp.data) {
+      setStatusConexao(resp.meta?.statusConexao || (resp.success ? 'ONLINE' : 'OFFLINE_INDISPONIVEL'));
+      setCachedAt(resp.meta?.cachedAt);
+
+      if (resp.data && Array.isArray(resp.data)) {
         setOrdensServico(resp.data);
       } else {
-        setError(resp.error || 'Não foi possível carregar as Ordens de Serviço do Impacto Aviation MRO.');
+        setOrdensServico([]);
+        setError(resp.error || 'A API oficial do Impacto Aviation MRO está indisponível (offline).');
       }
     } catch (err: any) {
+      setStatusConexao('OFFLINE_INDISPONIVEL');
       setError(err?.message || 'Erro de conexão com o Impacto Aviation MRO.');
+      setOrdensServico([]);
     } finally {
       setLoading(false);
     }
@@ -108,6 +116,15 @@ export const ImpactoOsSelectorModal: React.FC<ImpactoOsSelectorModalProps> = ({
                 <Wrench className="w-3.5 h-3.5 text-amber-400" />
                 Impacto Aviation MRO
               </span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                statusConexao === 'ONLINE'
+                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                  : statusConexao === 'ULTIMA_CONSULTA_CONHECIDA'
+                  ? 'bg-amber-950 text-amber-300 border border-amber-800'
+                  : 'bg-rose-950 text-rose-300 border border-rose-800'
+              }`}>
+                ● {statusConexao === 'ONLINE' ? 'Conexão Online' : statusConexao === 'ULTIMA_CONSULTA_CONHECIDA' ? 'Última Consulta Conhecida' : 'Offline / Indisponível'}
+              </span>
             </div>
             <h3 className="text-lg font-black tracking-tight">
               Vincular RNC a uma Ordem de Serviço de Manutenção
@@ -123,6 +140,16 @@ export const ImpactoOsSelectorModal: React.FC<ImpactoOsSelectorModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Aviso de Última Consulta Conhecida (quando offline mas com dados anteriores) */}
+        {statusConexao === 'ULTIMA_CONSULTA_CONHECIDA' && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Aviso de Contingência:</strong> API oficial do Impacto offline. Exibindo <strong>ÚLTIMA CONSULTA CONHECIDA</strong> ({cachedAt || 'registro anterior'}) — não constitui dado oficial em tempo real.
+            </span>
+          </div>
+        )}
 
         {/* Barra de Busca */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-3">
@@ -157,9 +184,24 @@ export const ImpactoOsSelectorModal: React.FC<ImpactoOsSelectorModalProps> = ({
           )}
 
           {error && !loading && (
-            <div className="p-6 text-center space-y-2 bg-rose-50 rounded-xl border border-rose-200">
-              <AlertCircle className="w-6 h-6 text-rose-600 mx-auto" />
-              <p className="text-xs text-rose-800 font-semibold">{error}</p>
+            <div className="p-8 text-center space-y-3 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="w-12 h-12 rounded-full bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center mx-auto">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1.5 max-w-md mx-auto">
+                <h4 className="text-sm font-bold text-slate-900">Impacto Aviation MRO Indisponível (Offline)</h4>
+                <p className="text-xs text-slate-600 leading-relaxed">{error}</p>
+                <p className="text-[11px] text-slate-500 pt-1">
+                  O QualyQuest não cria base paralela nem inventa dados de manutenção. Aguarde o restabelecimento da conexão com a API oficial do Impacto para consultar ou vincular Ordens de Serviço.
+                </p>
+              </div>
+              <button
+                onClick={carregarOrdensServico}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Tentar Novamente</span>
+              </button>
             </div>
           )}
 

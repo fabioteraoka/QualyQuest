@@ -107,11 +107,17 @@ export const ImpactoQualityContextModal: React.FC<ImpactoQualityContextModalProp
               </span>
               {contexto && (
                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                  contexto.metadadosConsulta.statusConexao === 'ONLINE'
+                  contexto.metadadosConsulta?.statusConexao === 'ONLINE'
                     ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50'
-                    : 'bg-blue-950 text-blue-300 border border-blue-700/50'
+                    : contexto.metadadosConsulta?.statusConexao === 'ULTIMA_CONSULTA_CONHECIDA'
+                    ? 'bg-amber-950 text-amber-300 border border-amber-700/50'
+                    : 'bg-rose-950 text-rose-300 border border-rose-700/50'
                 }`}>
-                  ● {contexto.metadadosConsulta.statusConexao === 'ONLINE' ? 'Conexão Online' : 'Contingência Resiliente'}
+                  ● {contexto.metadadosConsulta?.statusConexao === 'ONLINE'
+                    ? 'Conexão Online'
+                    : contexto.metadadosConsulta?.statusConexao === 'ULTIMA_CONSULTA_CONHECIDA'
+                    ? 'Última Consulta Conhecida'
+                    : 'Offline / Indisponível'}
                 </span>
               )}
             </div>
@@ -144,6 +150,16 @@ export const ImpactoQualityContextModal: React.FC<ImpactoQualityContextModalProp
             </button>
           </div>
         </div>
+
+        {/* Aviso de Última Consulta Conhecida (quando offline mas com dados anteriores) */}
+        {contexto?.metadadosConsulta?.statusConexao === 'ULTIMA_CONSULTA_CONHECIDA' && (
+          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-xs text-amber-900 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Aviso de Histórico (Offline):</strong> API oficial do Impacto Aviation MRO indisponível no momento. Exibindo <strong>ÚLTIMA CONSULTA CONHECIDA</strong> ({contexto.metadadosConsulta.cachedAt || 'registro em cache'}) — este registro não constitui dado oficial atual em tempo real.
+            </span>
+          </div>
+        )}
 
         {/* Notificação Toast */}
         {toastMsg && (

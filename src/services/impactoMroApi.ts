@@ -19,16 +19,10 @@ import {
   ImpactoOrdemServico,
   ImpactoContextoQualidadeOS,
   ImpactoApiHealth,
+  ImpactoApiResponse,
 } from '../types/impactoMro';
 
-export interface ImpactoApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  origem: 'Impacto Aviation MRO';
-  statusConexao: 'ONLINE' | 'OFFLINE_SIMULADO' | 'ERRO';
-  tempoRespostaMs?: number;
-}
+export type { ImpactoApiResponse };
 
 export interface FiltrosTecnicosImpacto {
   baseId?: string;
@@ -58,6 +52,7 @@ class ImpactoMroApiClient {
 
   /**
    * Helper genérico para chamadas seguras à API proxy
+   * Retorna o contrato oficial: success/version/timestamp/source/data/meta
    */
   private async fetchApi<T>(endpoint: string, params?: Record<string, string | undefined>): Promise<ImpactoApiResponse<T>> {
     const inicio = Date.now();
@@ -85,39 +80,84 @@ class ImpactoMroApiClient {
         const errorJson = await response.json().catch(() => null);
         return {
           success: false,
+          version: errorJson?.version || '1.0',
+          timestamp: errorJson?.timestamp || new Date().toISOString(),
+          source: errorJson?.source || 'Impacto Aviation MRO',
+          data: errorJson?.data || null,
+          meta: {
+            statusConexao: errorJson?.meta?.statusConexao || 'OFFLINE_INDISPONIVEL',
+            tempoRespostaMs,
+            cachedAt: errorJson?.meta?.cachedAt,
+            aviso: errorJson?.meta?.aviso,
+          },
           error: errorJson?.error || `Falha HTTP ${response.status}: ${response.statusText}`,
-          origem: 'Impacto Aviation MRO',
-          statusConexao: 'ERRO',
-          tempoRespostaMs,
         };
       }
 
       const json = await response.json();
+      if (
+        json &&
+        typeof json === 'object' &&
+        'success' in json &&
+        'source' in json &&
+        'data' in json
+      ) {
+        return {
+          success: Boolean(json.success),
+          version: json.version || '1.0',
+          timestamp: json.timestamp || new Date().toISOString(),
+          source: json.source || 'Impacto Aviation MRO',
+          data: json.data as T,
+          meta: {
+            tempoRespostaMs,
+            statusConexao: json.meta?.statusConexao || 'ONLINE',
+            ...(json.meta || {}),
+          },
+          error: json.error,
+        };
+      }
+
       return {
-        success: true,
-        data: json.data !== undefined ? json.data : json,
-        origem: 'Impacto Aviation MRO',
-        statusConexao: json.statusConexao || 'ONLINE',
-        tempoRespostaMs,
+        success: Boolean(json.success),
+        version: json.version || '1.0',
+        timestamp: json.timestamp || new Date().toISOString(),
+        source: json.source || 'Impacto Aviation MRO',
+        data: json.data !== undefined ? json.data : null,
+        meta: {
+          statusConexao: json.meta?.statusConexao || 'ONLINE',
+          tempoRespostaMs,
+          total: json.meta?.total,
+          cachedAt: json.meta?.cachedAt,
+          aviso: json.meta?.aviso,
+          ...(json.meta || {}),
+        },
+        error: json.error,
       };
     } catch (err: any) {
       const tempoRespostaMs = Date.now() - inicio;
       console.warn(`[Impacto MRO API Client] Erro ao consultar endpoint ${endpoint}:`, err);
       return {
         success: false,
-        error: err?.message || 'Serviço de integração do Impacto Aviation MRO indisponível no momento.',
-        origem: 'Impacto Aviation MRO',
-        statusConexao: 'ERRO',
-        tempoRespostaMs,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        source: 'Impacto Aviation MRO',
+        data: null,
+        meta: {
+          statusConexao: 'OFFLINE_INDISPONIVEL',
+          tempoRespostaMs,
+          aviso: 'Serviço oficial Impacto Aviation MRO indisponível no momento.',
+        },
+        error: err?.message || 'Serviço oficial do Impacto Aviation MRO offline ou inacessível.',
       };
     }
   }
 
   /**
    * Verifica o status de saúde e conectividade da API do Impacto Aviation MRO
+   * Consome /api/v1/integration/health
    */
   async checkHealth(): Promise<ImpactoApiResponse<ImpactoApiHealth>> {
-    return this.fetchApi<ImpactoApiHealth>('/status');
+    return this.fetchApi<ImpactoApiHealth>('/health');
   }
 
   /**
@@ -143,7 +183,20 @@ class ImpactoMroApiClient {
    * Obtém detalhes de um técnico específico pelo ID estável
    */
   async getTecnicoById(id: string): Promise<ImpactoApiResponse<ImpactoTecnico>> {
-    if (!id) return { success: false, error: 'ID do técnico obrigatório', origem: 'Impacto Aviation MRO', statusConexao: 'ERRO' };
+    if (!id) {
+      return {
+        success: false,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        source: 'Impacto Aviation MRO',
+        data: null,
+        meta: {
+          statusConexao: 'OFFLINE_INDISPONIVEL',
+          aviso: 'ID do técnico obrigatório.',
+        },
+        error: 'ID do técnico é obrigatório',
+      };
+    }
     return this.fetchApi<ImpactoTecnico>(`/tecnicos/${encodeURIComponent(id)}`);
   }
 
@@ -177,7 +230,20 @@ class ImpactoMroApiClient {
    * Obtém detalhes de uma ferramenta específica pelo ID estável
    */
   async getFerramentaById(id: string): Promise<ImpactoApiResponse<ImpactoFerramenta>> {
-    if (!id) return { success: false, error: 'ID da ferramenta obrigatório', origem: 'Impacto Aviation MRO', statusConexao: 'ERRO' };
+    if (!id) {
+      return {
+        success: false,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        source: 'Impacto Aviation MRO',
+        data: null,
+        meta: {
+          statusConexao: 'OFFLINE_INDISPONIVEL',
+          aviso: 'ID da ferramenta obrigatório.',
+        },
+        error: 'ID da ferramenta é obrigatório',
+      };
+    }
     return this.fetchApi<ImpactoFerramenta>(`/ferramentas/${encodeURIComponent(id)}`);
   }
 
@@ -198,7 +264,20 @@ class ImpactoMroApiClient {
    * Obtém detalhes de uma Ordem de Serviço específica pelo ID estável
    */
   async getOrdemServicoById(id: string): Promise<ImpactoApiResponse<ImpactoOrdemServico>> {
-    if (!id) return { success: false, error: 'ID da OS obrigatório', origem: 'Impacto Aviation MRO', statusConexao: 'ERRO' };
+    if (!id) {
+      return {
+        success: false,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        source: 'Impacto Aviation MRO',
+        data: null,
+        meta: {
+          statusConexao: 'OFFLINE_INDISPONIVEL',
+          aviso: 'ID da OS obrigatório.',
+        },
+        error: 'ID da OS é obrigatório',
+      };
+    }
     return this.fetchApi<ImpactoOrdemServico>(`/ordens-servico/${encodeURIComponent(id)}`);
   }
 
@@ -209,7 +288,18 @@ class ImpactoMroApiClient {
    */
   async getContextoQualidadeOS(ordemServicoId: string): Promise<ImpactoApiResponse<ImpactoContextoQualidadeOS>> {
     if (!ordemServicoId) {
-      return { success: false, error: 'ID da Ordem de Serviço obrigatório', origem: 'Impacto Aviation MRO', statusConexao: 'ERRO' };
+      return {
+        success: false,
+        version: '1.0',
+        timestamp: new Date().toISOString(),
+        source: 'Impacto Aviation MRO',
+        data: null,
+        meta: {
+          statusConexao: 'OFFLINE_INDISPONIVEL',
+          aviso: 'ID da Ordem de Serviço obrigatório.',
+        },
+        error: 'ID da Ordem de Serviço é obrigatório',
+      };
     }
     return this.fetchApi<ImpactoContextoQualidadeOS>(`/ordens-servico/${encodeURIComponent(ordemServicoId)}/contexto-qualidade`);
   }
