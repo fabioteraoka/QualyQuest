@@ -42,8 +42,13 @@ import {
   DocumentoNormativoAplicavel,
   CoerenciaCausaRaizResultado,
   OrganizationRecord,
-  AnaliseSetorResponsavel
+  AnaliseSetorResponsavel,
+  EvidenciaItem,
+  VinculoImpactoMro,
 } from '../types';
+import { ImpactoQualityContextModal } from './ImpactoQualityContextModal';
+import { ImpactoOsSelectorModal } from './ImpactoOsSelectorModal';
+import { Wrench, ExternalLink, Plane } from 'lucide-react';
 import { RiskMatrixWidget } from './RiskMatrixWidget';
 import { formatarData, calcularDiasRestantes, getApplicableDocumentVersion } from '../utils/qualityHelpers';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
@@ -98,6 +103,10 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
   const [analiseSetor, setAnaliseSetor] = useState<AnaliseSetorResponsavel | null>(initialData?.analiseSetor || null);
   const [justificativaDivergenciaInput, setJustificativaDivergenciaInput] = useState<string>('');
   const [showDivergenceJustifyBox, setShowDivergenceJustifyBox] = useState<boolean>(false);
+
+  // Integração Impacto Aviation MRO State
+  const [isImpactoSelectorOpen, setIsImpactoSelectorOpen] = useState(false);
+  const [isImpactoContextOpen, setIsImpactoContextOpen] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState<NCRecord>(() => {
@@ -213,6 +222,38 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
   // Field change helpers
   const handleChange = (field: keyof NCRecord, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSelectImpactoOS = (vinculo: VinculoImpactoMro) => {
+    setFormData(prev => ({
+      ...prev,
+      origemImpactoMro: vinculo,
+      setor: prev.setor || vinculo.baseNome || prev.setor,
+    }));
+  };
+
+  const handleRemoveImpactoVinculo = () => {
+    setFormData(prev => ({
+      ...prev,
+      origemImpactoMro: undefined,
+    }));
+  };
+
+  const handleImportImpactoEvidence = (novaEvidencia: { descricao: string; tipo: 'FACT'; referencia: string }) => {
+    const evItem: EvidenciaItem = {
+      id: `ev-imp-${Date.now()}`,
+      descricao: novaEvidencia.descricao,
+      tipo: 'Evidência Objetiva',
+      fonteOrigem: 'DOCUMENTO IMPORTADO',
+      documentoVinculadoNome: novaEvidencia.referencia,
+      dataRegistro: new Date().toISOString().split('T')[0],
+      registradoPor: formData.auditor || 'Auditor SGQ',
+      observacoes: 'Importado da fonte oficial Impacto Aviation MRO para enriquecimento da investigação.',
+    };
+    setFormData(prev => ({
+      ...prev,
+      evidenciasObjetivas: [...(prev.evidenciasObjetivas || []), evItem],
+    }));
   };
 
   const handleResponsavelGeralChange = (val: string) => {
@@ -1311,6 +1352,117 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Vínculo Oficial com Ordem de Serviço (Impacto Aviation MRO) */}
+            <div className="p-4 rounded-xl border border-indigo-200 bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-indigo-950 text-white tracking-wider">
+                    Integração MRO
+                  </span>
+                  <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                    <Wrench className="w-3.5 h-3.5 text-indigo-600" />
+                    Impacto Aviation MRO — Fonte Oficial de Manutenção
+                  </span>
+                </div>
+
+                {formData.origemImpactoMro ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setIsImpactoContextOpen(true)}
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                    >
+                      <Search className="w-3 h-3" />
+                      <span>Consultar Contexto da OS</span>
+                    </button>
+                    {formData.origemImpactoMro.urlNavegavel && (
+                      <a
+                        href={formData.origemImpactoMro.urlNavegavel}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2.5 py-1 bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <span>Consultar no Impacto</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleRemoveImpactoVinculo}
+                      className="px-2 py-1 text-slate-500 hover:text-rose-600 text-xs font-semibold hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                      title="Desvincular esta Ordem de Serviço"
+                    >
+                      Remover
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsImpactoSelectorOpen(true)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Vincular a OS do Impacto Aviation MRO</span>
+                  </button>
+                )}
+              </div>
+
+              {formData.origemImpactoMro ? (
+                <div className="bg-white p-3.5 rounded-lg border border-indigo-200/80 shadow-2xs space-y-2 text-xs">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                        {formData.origemImpactoMro.numeroOS}
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-500">
+                        ID Estável OS: <strong className="text-slate-800">{formData.origemImpactoMro.ordemServicoId}</strong>
+                      </span>
+                      {formData.origemImpactoMro.statusOS && (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700">
+                          {formData.origemImpactoMro.statusOS}
+                        </span>
+                      )}
+                    </div>
+                    {formData.origemImpactoMro.dataAberturaOS && (
+                      <span className="text-[11px] text-slate-500">
+                        Abertura OS: <strong>{formData.origemImpactoMro.dataAberturaOS}</strong>
+                      </span>
+                    )}
+                  </div>
+
+                  {formData.origemImpactoMro.tituloOS && (
+                    <p className="text-slate-700 font-medium text-xs">
+                      {formData.origemImpactoMro.tituloOS}
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px] text-slate-600 border-t border-slate-100">
+                    <div className="flex items-center gap-1.5">
+                      <Plane className="w-3.5 h-3.5 text-slate-400" />
+                      <span>
+                        Aeronave: <strong>{formData.origemImpactoMro.prefixoAeronave || 'N/A'}</strong> ({formData.origemImpactoMro.modeloAeronave || 'N/A'})
+                      </span>
+                    </div>
+                    <div>
+                      <span>Base MRO: <strong>{formData.origemImpactoMro.baseNome || 'N/A'}</strong></span>
+                    </div>
+                    <div>
+                      <span>
+                        Técnico Resp: <strong>{formData.origemImpactoMro.tecnicoNome || 'N/A'}</strong>{' '}
+                        {formData.origemImpactoMro.tecnicoId ? (
+                          <span className="font-mono text-slate-400">[ID: {formData.origemImpactoMro.tecnicoId}]</span>
+                        ) : null}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-500">
+                  Nenhuma Ordem de Serviço vinculada. Relacione esta RNC a uma OS da Impacto Aviation MRO para enriquecer a investigação com técnicos, ferramentas e evidências da manutenção.
+                </p>
+              )}
             </div>
 
             <div>
@@ -2566,6 +2718,24 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
         onEditSuggestion={handleEditSuggestion}
         onRejectSuggestion={handleRejectSuggestion}
       />
+
+      {/* Modal de Seleção de Ordem de Serviço da Impacto Aviation MRO */}
+      <ImpactoOsSelectorModal
+        isOpen={isImpactoSelectorOpen}
+        onClose={() => setIsImpactoSelectorOpen(false)}
+        onSelectOS={handleSelectImpactoOS}
+        currentLinkedOsId={formData.origemImpactoMro?.ordemServicoId}
+      />
+
+      {/* Modal de Consulta ao Contexto Completo de Qualidade da OS */}
+      {formData.origemImpactoMro && (
+        <ImpactoQualityContextModal
+          isOpen={isImpactoContextOpen}
+          onClose={() => setIsImpactoContextOpen(false)}
+          ordemServicoId={formData.origemImpactoMro.ordemServicoId}
+          onImportEvidence={handleImportImpactoEvidence}
+        />
+      )}
     </div>
   );
 };

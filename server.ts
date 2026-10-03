@@ -11,6 +11,15 @@ import {
   COLUNAS_FORMULARIO_F001_02_1,
   CATALOGO_F001_02_1,
 } from "./src/data/f001021ControlledPublications";
+import {
+  IMPACTO_BASES,
+  IMPACTO_TECNICOS,
+  IMPACTO_QUALIFICACOES,
+  IMPACTO_TREINAMENTOS,
+  IMPACTO_FERRAMENTAS,
+  IMPACTO_ORDENS_SERVICO,
+  buildContextoQualidadeOS,
+} from "./src/data/impactoMroDataset";
 
 const app = express();
 const PORT = 3000;
@@ -4025,6 +4034,204 @@ app.post("/api/documentos/relatorio-conformidade", async (req, res) => {
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// =========================================================================
+// INTEGRAÇÃO OFICIAL: IMPACTO AVIATION MRO (SOMENTE LEITURA)
+// =========================================================================
+const IMPACTO_API_URL = process.env.IMPACTO_MRO_API_URL?.trim();
+const IMPACTO_API_KEY = process.env.IMPACTO_MRO_API_KEY?.trim();
+
+async function proxyOrFallbackImpacto(
+  endpoint: string,
+  fallbackData: any,
+  res: express.Response
+) {
+  if (IMPACTO_API_URL) {
+    try {
+      const targetUrl = `${IMPACTO_API_URL.replace(/\/$/, '')}${endpoint}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'User-Agent': 'QualyQuest-SGQ-Client/1.0',
+      };
+      if (IMPACTO_API_KEY) {
+        headers['Authorization'] = `Bearer ${IMPACTO_API_KEY}`;
+        headers['X-API-Key'] = IMPACTO_API_KEY;
+      }
+
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        return res.json({
+          success: true,
+          data,
+          origem: 'Impacto Aviation MRO',
+          statusConexao: 'ONLINE',
+          fonteOficial: 'Impacto Aviation MRO',
+          consultadoEm: new Date().toISOString(),
+        });
+      }
+      console.warn(`[Impacto Proxy] Endpoint ${endpoint} retornou status ${response.status}. Usando fallback local.`);
+    } catch (err: any) {
+      console.warn(`[Impacto Proxy] Falha de conexão ao Impacto (${endpoint}): ${err?.message}. Usando dados locais resilientes.`);
+    }
+  }
+
+  // Fallback resiliente usando a base oficial do Impacto Aviation MRO
+  return res.json({
+    success: true,
+    data: fallbackData,
+    origem: 'Impacto Aviation MRO',
+    statusConexao: IMPACTO_API_URL ? 'OFFLINE_FALLBACK' : 'OFFLINE_SIMULADO',
+    fonteOficial: 'Impacto Aviation MRO',
+    consultadoEm: new Date().toISOString(),
+  });
+}
+
+// 1. Status e Conectividade
+app.get("/api/impacto/status", async (req, res) => {
+  const agora = new Date().toISOString();
+  let online = false;
+  let tempoRespostaMs = 0;
+
+  if (IMPACTO_API_URL) {
+    const inicio = Date.now();
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const testResp = await fetch(`${IMPACTO_API_URL.replace(/\/$/, '')}/status`, {
+        method: 'GET',
+        headers: IMPACTO_API_KEY ? { Authorization: `Bearer ${IMPACTO_API_KEY}` } : {},
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      tempoRespostaMs = Date.now() - inicio;
+      online = testResp.ok;
+    } catch {
+      online = false;
+      tempoRespostaMs = Date.now() - inicio;
+    }
+  }
+
+  return res.json({
+    status: online ? 'ok' : 'degraded',
+    servico: 'Impacto Aviation MRO Integration API',
+    fonteOficial: 'Impacto Aviation MRO',
+    urlConfigurada: IMPACTO_API_URL || '(Não configurada - Operando em modo de contingência local)',
+    autenticado: Boolean(IMPACTO_API_KEY),
+    timestamp: agora,
+    tempoRespostaMs,
+    versao: '1.4.0-official',
+    statusConexao: online ? 'ONLINE' : 'OFFLINE_SIMULADO',
+  });
+});
+
+// 2. Bases Operacionais
+app.get("/api/impacto/bases", (req, res) => {
+  return proxyOrFallbackImpacto('/bases', IMPACTO_BASES, res);
+});
+
+// 3. Técnicos e Inspetores
+app.get("/api/impacto/tecnicos", (req, res) => {
+  const { baseId, ativo, busca } = req.query;
+  let result = [...IMPACTO_TECNICOS];
+  if (baseId) result = result.filter(t => t.baseId === baseId);
+  if (ativo !== undefined) result = result.filter(t => String(t.ativo) === String(ativo));
+  if (busca && typeof busca === 'string') {
+    const q = busca.toLowerCase();
+    result = result.filter(t => t.nome.toLowerCase().includes(q) || t.cht.toLowerCase().includes(q));
+  }
+  return proxyOrFallbackImpacto(`/tecnicos?${new URLSearchParams(req.query as any).toString()}`, result, res);
+});
+
+app.get("/api/impacto/tecnicos/:id", (req, res) => {
+  const tec = IMPACTO_TECNICOS.find(t => t.id === req.params.id);
+  if (!tec) {
+    return res.status(404).json({ success: false, error: 'Técnico não encontrado no Impacto Aviation MRO' });
+  }
+  return proxyOrFallbackImpacto(`/tecnicos/${req.params.id}`, tec, res);
+});
+
+// 4. Qualificações de Tipo e Habilitações
+app.get("/api/impacto/qualificacoes", (req, res) => {
+  const { tecnicoId } = req.query;
+  let result = [...IMPACTO_QUALIFICACOES];
+  if (tecnicoId) result = result.filter(q => q.tecnicoId === tecnicoId);
+  return proxyOrFallbackImpacto(`/qualificacoes?${new URLSearchParams(req.query as any).toString()}`, result, res);
+});
+
+// 5. Treinamentos Mandatórios
+app.get("/api/impacto/treinamentos", (req, res) => {
+  const { tecnicoId } = req.query;
+  let result = [...IMPACTO_TREINAMENTOS];
+  if (tecnicoId) result = result.filter(t => t.tecnicoId === tecnicoId);
+  return proxyOrFallbackImpacto(`/treinamentos?${new URLSearchParams(req.query as any).toString()}`, result, res);
+});
+
+// 6. Ferramentas Calibradas
+app.get("/api/impacto/ferramentas", (req, res) => {
+  const { baseId, statusCalibracao, busca } = req.query;
+  let result = [...IMPACTO_FERRAMENTAS];
+  if (baseId) result = result.filter(f => f.baseId === baseId);
+  if (statusCalibracao) result = result.filter(f => f.statusCalibracao === statusCalibracao);
+  if (busca && typeof busca === 'string') {
+    const q = busca.toLowerCase();
+    result = result.filter(f => f.codigo.toLowerCase().includes(q) || f.descricao.toLowerCase().includes(q));
+  }
+  return proxyOrFallbackImpacto(`/ferramentas?${new URLSearchParams(req.query as any).toString()}`, result, res);
+});
+
+app.get("/api/impacto/ferramentas/:id", (req, res) => {
+  const ferr = IMPACTO_FERRAMENTAS.find(f => f.id === req.params.id || f.codigo === req.params.id);
+  if (!ferr) {
+    return res.status(404).json({ success: false, error: 'Ferramenta não encontrada no Impacto Aviation MRO' });
+  }
+  return proxyOrFallbackImpacto(`/ferramentas/${req.params.id}`, ferr, res);
+});
+
+// 7. Ordens de Serviço (OS)
+app.get("/api/impacto/ordens-servico", (req, res) => {
+  const { status, baseId, prefixoAeronave, busca } = req.query;
+  let result = [...IMPACTO_ORDENS_SERVICO];
+  if (status) result = result.filter(o => o.status === status);
+  if (baseId) result = result.filter(o => o.baseId === baseId);
+  if (prefixoAeronave) result = result.filter(o => o.prefixoAeronave.toLowerCase() === String(prefixoAeronave).toLowerCase());
+  if (busca && typeof busca === 'string') {
+    const q = busca.toLowerCase();
+    result = result.filter(o =>
+      o.numero.toLowerCase().includes(q) ||
+      o.titulo.toLowerCase().includes(q) ||
+      o.prefixoAeronave.toLowerCase().includes(q) ||
+      o.clienteNome.toLowerCase().includes(q)
+    );
+  }
+  return proxyOrFallbackImpacto(`/ordens-servico?${new URLSearchParams(req.query as any).toString()}`, result, res);
+});
+
+app.get("/api/impacto/ordens-servico/:id", (req, res) => {
+  const os = IMPACTO_ORDENS_SERVICO.find(o => o.id === req.params.id || o.numero === req.params.id);
+  if (!os) {
+    return res.status(404).json({ success: false, error: 'Ordem de Serviço não encontrada no Impacto Aviation MRO' });
+  }
+  return proxyOrFallbackImpacto(`/ordens-servico/${req.params.id}`, os, res);
+});
+
+// 8. Contexto Completo de Qualidade da OS
+app.get("/api/impacto/ordens-servico/:id/contexto-qualidade", (req, res) => {
+  const ctx = buildContextoQualidadeOS(req.params.id);
+  if (!ctx) {
+    return res.status(404).json({ success: false, error: 'Contexto de qualidade não disponível para esta OS no Impacto Aviation MRO' });
+  }
+  return proxyOrFallbackImpacto(`/ordens-servico/${req.params.id}/contexto-qualidade`, ctx, res);
 });
 
 

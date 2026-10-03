@@ -19,7 +19,8 @@ import {
   CheckSquare,
   Square,
   Layers,
-  ChevronDown
+  ChevronDown,
+  Wrench
 } from 'lucide-react';
 import { NCRecord, StatusGeralNC } from '../types';
 import { formatarData, calcularDiasRestantes, obterCorRisco, obterCorStatus } from '../utils/qualityHelpers';
@@ -27,6 +28,7 @@ import { exportToExcel, exportToCSV } from '../utils/exportHelpers';
 import { printElement } from '../utils/printHelpers';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { ExportDatabaseModal } from './ExportDatabaseModal';
+import { ImpactoQualityContextModal } from './ImpactoQualityContextModal';
 
 interface ReportListViewProps {
   records: NCRecord[];
@@ -68,6 +70,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   const [itemToDelete, setItemToDelete] = useState<NCRecord | null>(null);
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [selectedImpactoOsId, setSelectedImpactoOsId] = useState<string | null>(null);
 
   // Distinct Setores and Categorias
   const setores = useMemo(() => {
@@ -544,6 +547,20 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                             {nc.normaReferencia}
                           </span>
                         )}
+                        {nc.origemImpactoMro && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedImpactoOsId(nc.origemImpactoMro?.ordemServicoId || '');
+                            }}
+                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            title={`Consultar contexto da OS #${nc.origemImpactoMro.numeroOS} no Impacto Aviation MRO`}
+                          >
+                            <Wrench className="w-2.5 h-2.5 text-indigo-600" />
+                            <span>Impacto: {nc.origemImpactoMro.numeroOS}</span>
+                          </button>
+                        )}
                         <span className={`font-semibold ml-auto ${isOverdue ? 'text-rose-600' : 'text-slate-600'}`}>
                           {isEncerrada ? (
                             `Encerrada: ${formatarData(nc.dataEncerramento || nc.verificacaoEficacia?.dataVerificacao || nc.atualizadoEm)}`
@@ -696,6 +713,27 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                               <span className="text-[10px] text-indigo-700 font-semibold bg-indigo-50 px-1.5 py-0.2 rounded mt-0.5 inline-block">
                                 {nc.normaReferencia}
                               </span>
+                            )}
+                            {nc.origemImpactoMro && (
+                              <div className="mt-1 flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedImpactoOsId(nc.origemImpactoMro?.ordemServicoId || '');
+                                  }}
+                                  className="text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                                  title={`Consultar contexto da OS #${nc.origemImpactoMro.numeroOS} (${nc.origemImpactoMro.ordemServicoId}) no Impacto Aviation MRO`}
+                                >
+                                  <Wrench className="w-2.5 h-2.5 text-indigo-600" />
+                                  <span>Impacto: {nc.origemImpactoMro.numeroOS}</span>
+                                </button>
+                                {nc.origemImpactoMro.prefixoAeronave && (
+                                  <span className="text-[10px] text-slate-500 font-mono">
+                                    ({nc.origemImpactoMro.prefixoAeronave})
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </td>
 
@@ -957,6 +995,15 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
         filteredRecords={filteredRecords}
         selectedRecords={selectedRecords}
       />
+
+      {/* Modal de Contexto de Qualidade da OS (Impacto Aviation MRO) */}
+      {selectedImpactoOsId && (
+        <ImpactoQualityContextModal
+          isOpen={Boolean(selectedImpactoOsId)}
+          onClose={() => setSelectedImpactoOsId(null)}
+          ordemServicoId={selectedImpactoOsId}
+        />
+      )}
     </div>
   );
 };

@@ -1,3 +1,5 @@
+import { VinculoImpactoMro } from './types/impactoMro';
+
 export type TipoAcao = 'Corretiva' | 'Preventiva' | 'Oportunidade de Melhoria';
 
 // Vínculo opcional com Auditoria Externa (Fase 8)
@@ -353,7 +355,10 @@ export interface NCRecord {
   analiseSetor?: AnaliseSetorResponsavel;
   origemAuditoriaExterna?: VinculoAuditoriaExterna;
   origemRequisitoCliente?: VinculoRequisitoCliente;
+  origemImpactoMro?: VinculoImpactoMro;
 }
+
+export * from './types/impactoMro';
 
 export interface VinculoRequisitoCliente {
   clienteId: string;

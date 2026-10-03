@@ -1,11 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { Printer, Download, ArrowLeft, CheckCircle2, ShieldCheck, FileCheck, Share2, Trash2, FileSpreadsheet, Sparkles, ExternalLink, Loader2 } from 'lucide-react';
+import { Printer, Download, ArrowLeft, CheckCircle2, ShieldCheck, FileCheck, Share2, Trash2, FileSpreadsheet, Sparkles, ExternalLink, Loader2, Wrench } from 'lucide-react';
 import { NCRecord, OrganizationRecord } from '../types';
 import { formatarData, obterCorRisco, obterCorStatus } from '../utils/qualityHelpers';
 import { exportToExcel } from '../utils/exportHelpers';
 import { downloadOfficialNCPDF, openOfficialNCPrintWindow } from '../utils/printHelpers';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { OrganizationBrandLogo } from './OrganizationBrandLogo';
+import { ImpactoQualityContextModal } from './ImpactoQualityContextModal';
 
 interface OfficialReportViewProps {
   nc?: NCRecord;
@@ -31,6 +32,7 @@ export const OfficialReportView: React.FC<OfficialReportViewProps> = ({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [printSuccessToast, setPrintSuccessToast] = useState<string | null>(null);
+  const [isImpactoContextOpen, setIsImpactoContextOpen] = useState(false);
 
   const showToast = (msg: string) => {
     setPrintSuccessToast(msg);
@@ -200,6 +202,54 @@ export const OfficialReportView: React.FC<OfficialReportViewProps> = ({
         </div>
       </div>
 
+      {/* Impacto Aviation MRO Integration Banner */}
+      {currentNC.origemImpactoMro && (
+        <div className="bg-white rounded-xl border border-indigo-200 p-4 shadow-xs flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-700 shrink-0">
+              <Wrench className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-indigo-950 text-white tracking-wider">
+                  Fonte Oficial de Manutenção
+                </span>
+                <span className="text-xs font-bold text-indigo-950">
+                  Impacto Aviation MRO
+                </span>
+              </div>
+              <div className="text-xs text-slate-600 mt-0.5">
+                Ordem de Serviço: <strong className="font-mono text-indigo-700">{currentNC.origemImpactoMro.numeroOS}</strong> (ID: {currentNC.origemImpactoMro.ordemServicoId})
+                {currentNC.origemImpactoMro.prefixoAeronave && ` • Aeronave: ${currentNC.origemImpactoMro.prefixoAeronave}`}
+                {currentNC.origemImpactoMro.baseNome && ` • Base: ${currentNC.origemImpactoMro.baseNome}`}
+                {currentNC.origemImpactoMro.tecnicoNome && ` • Resp. Técnico: ${currentNC.origemImpactoMro.tecnicoNome}`}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsImpactoContextOpen(true)}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <Wrench className="w-3.5 h-3.5" />
+              <span>Ver Contexto de Qualidade</span>
+            </button>
+            {currentNC.origemImpactoMro.urlNavegavel && (
+              <a
+                href={currentNC.origemImpactoMro.urlNavegavel}
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>Consultar no Impacto</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Mobile Notice */}
       <div className="sm:hidden bg-blue-50 border border-blue-200 text-blue-800 text-[11px] p-2.5 rounded-xl">
         Arraste horizontalmente para visualizar o formulário A4 F 001-29 completo.
@@ -295,6 +345,13 @@ export const OfficialReportView: React.FC<OfficialReportViewProps> = ({
               <span className="ml-4 text-xs font-normal text-slate-700">
                 (Norma / Ref: <strong className="font-semibold">{currentNC.normaReferencia}</strong>)
               </span>
+            )}
+            {currentNC.origemImpactoMro && (
+              <div className="mt-1 text-[11px] font-normal text-slate-800">
+                <strong>Origem / Vínculo MRO:</strong> Impacto Aviation MRO • Ordem de Serviço: <strong className="font-mono">{currentNC.origemImpactoMro.numeroOS}</strong> (ID: {currentNC.origemImpactoMro.ordemServicoId})
+                {currentNC.origemImpactoMro.prefixoAeronave && ` • Aeronave: ${currentNC.origemImpactoMro.prefixoAeronave}`}
+                {currentNC.origemImpactoMro.tecnicoNome && ` • Resp. Técnico: ${currentNC.origemImpactoMro.tecnicoNome}`}
+              </div>
             )}
           </div>
 
@@ -521,6 +578,15 @@ export const OfficialReportView: React.FC<OfficialReportViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal de Consulta ao Contexto Completo de Qualidade da OS */}
+      {currentNC.origemImpactoMro && (
+        <ImpactoQualityContextModal
+          isOpen={isImpactoContextOpen}
+          onClose={() => setIsImpactoContextOpen(false)}
+          ordemServicoId={currentNC.origemImpactoMro.ordemServicoId}
+        />
+      )}
     </div>
   );
 };
