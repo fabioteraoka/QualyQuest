@@ -151,6 +151,16 @@ import {
   subscribeToSmartImportRecords,
   subscribeToImportTemplates,
 } from './services/firebase/smartImportFirestore';
+import {
+  subscribeToAuditRequirements,
+  saveAuditRequirement,
+  saveAuditRequirementsBatch,
+  cancelAuditAndCascadingItems,
+  restoreCancelledAudit,
+  archiveAudit,
+  deleteAuditWithDependencyCheck,
+} from './services/firebase/auditRequirementsFirestore';
+import { RequisitoAuditoriaExterna } from './types/auditRequirements';
 import { INITIAL_RECORDS } from './data/initialRecords';
 import { INITIAL_MANUALS } from './data/initialManuals';
 import { INITIAL_EXTERNAL_AUDITS, INITIAL_AUDIT_FINDINGS, INITIAL_AUDIT_LESSONS } from './data/initialAudits';
@@ -241,10 +251,11 @@ export default function App() {
     | 'importacao-inteligente'
   >('dashboard');
 
-  // FASE 8: State de Auditorias Externas
+  // FASE 8 & 15: State de Auditorias Externas e Requisitos
   const [externalAudits, setExternalAudits] = useState<AuditoriaExternaRecord[]>([]);
   const [auditFindings, setAuditFindings] = useState<ConstatacaoExternaRecord[]>([]);
   const [auditLessons, setAuditLessons] = useState<LicaoAprendidaAuditoria[]>([]);
+  const [auditRequirements, setAuditRequirements] = useState<RequisitoAuditoriaExterna[]>([]);
   const [selectedAuditForFindings, setSelectedAuditForFindings] = useState<AuditoriaExternaRecord | null>(null);
 
   // FASE 9: State de Pessoas, Competências, Treinamentos e Qualificações
@@ -489,6 +500,15 @@ export default function App() {
       }
     );
 
+    // 8.1 Subscribe to Audit Requirements (Fase 8 & 15 - Checklists como Kalitta QA-14)
+    const unsubscribeAuditReqs = subscribeToAuditRequirements(
+      activeOrgId,
+      null,
+      (reqsList) => {
+        setAuditRequirements(reqsList);
+      }
+    );
+
     // 9. Subscribe to Phase 9: Pessoas, Competências, Treinamentos e Qualificações
     const unsubscribePersons = subscribeToPersons(activeOrgId, (list) => setPersons(list));
     const unsubscribeCompetencies = subscribeToCompetencies(activeOrgId, (list) => setCompetencies(list));
@@ -530,6 +550,7 @@ export default function App() {
       unsubscribeAudits();
       unsubscribeFindings();
       unsubscribeLessons();
+      unsubscribeAuditReqs();
       unsubscribePersons();
       unsubscribeCompetencies();
       unsubscribePersonCompetencies();
@@ -847,15 +868,107 @@ export default function App() {
     }
   };
 
-  const handleDeleteAudit = async (auditId: string) => {
+  const handleDeleteAudit = async (auditId: string, forceDelete: boolean = false) => {
     try {
       if (user) {
-        await deleteExternalAudit(activeOrgId, auditId, userProfile);
+        await deleteAuditWithDependencyCheck(activeOrgId, auditId, userProfile, forceDelete);
       }
       setExternalAudits((prev) => prev.filter((a) => a.id !== auditId));
+      setAuditRequirements((prev) => prev.filter((r) => r.auditId !== auditId));
     } catch (e: any) {
-      console.warn('Aviso ao excluir auditoria externa no Firestore (removida na sessão):', e);
-      setExternalAudits((prev) => prev.filter((a) => a.id !== auditId));
+      console.warn('Aviso ao excluir auditoria externa no Firestore:', e);
+      throw e;
+    }
+  };
+
+  const handleCancelAudit = async (auditId: string, motivo: string) => {
+    try {
+      if (user) {
+        await cancelAuditAndCascadingItems(activeOrgId, auditId, motivo, userProfile);
+      }
+      setExternalAudits((prev) =>
+        prev.map((a) =>
+          a.id === auditId
+            ? { ...a, status: 'CANCELADA', motivoCancelamento: motivo, canceladoEm: new Date().toISOString() }
+            : a
+        )
+      );
+      setAuditRequirements((prev) =>
+        prev.map((r) =>
+          r.auditId === auditId
+            ? { ...r, statusRegistro: 'CANCELADO', estadoAcompanhamento: 'SUSPENSO_CANCELADO', motivoCancelamento: motivo }
+            : r
+        )
+      );
+    } catch (e: any) {
+      console.error('Erro ao cancelar auditoria:', e);
+      throw e;
+    }
+  };
+
+  const handleRestoreAudit = async (auditId: string) => {
+    try {
+      if (user) {
+        await restoreCancelledAudit(activeOrgId, auditId, userProfile);
+      }
+      setExternalAudits((prev) =>
+        prev.map((a) => (a.id === auditId ? { ...a, status: 'RECEBIDA', motivoCancelamento: undefined } : a))
+      );
+      setAuditRequirements((prev) =>
+        prev.map((r) => (r.auditId === auditId ? { ...r, statusRegistro: 'ATIVO' } : r))
+      );
+    } catch (e: any) {
+      console.error('Erro ao restaurar auditoria:', e);
+      throw e;
+    }
+  };
+
+  const handleArchiveAudit = async (auditId: string) => {
+    try {
+      if (user) {
+        await archiveAudit(activeOrgId, auditId, userProfile);
+      }
+      setExternalAudits((prev) =>
+        prev.map((a) => (a.id === auditId ? { ...a, status: 'ARQUIVADA', isArquivada: true } : a))
+      );
+    } catch (e: any) {
+      console.error('Erro ao arquivar auditoria:', e);
+      throw e;
+    }
+  };
+
+  const handleSaveAuditRequirement = async (req: RequisitoAuditoriaExterna) => {
+    try {
+      if (user) {
+        await saveAuditRequirement(activeOrgId, req, userProfile);
+      }
+      setAuditRequirements((prev) => {
+        const idx = prev.findIndex((r) => r.id === req.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = req;
+          return next;
+        }
+        return [req, ...prev];
+      });
+    } catch (e: any) {
+      console.error('Erro ao salvar requisito de auditoria:', e);
+      throw e;
+    }
+  };
+
+  const handleSaveBatchAuditRequirements = async (reqs: RequisitoAuditoriaExterna[]) => {
+    try {
+      if (user) {
+        await saveAuditRequirementsBatch(activeOrgId, reqs, userProfile);
+      }
+      setAuditRequirements((prev) => {
+        const ids = new Set(reqs.map((r) => r.id));
+        return [...reqs, ...prev.filter((r) => !ids.has(r.id))];
+      });
+    } catch (e: any) {
+      console.error('Erro ao salvar lote de requisitos de auditoria:', e);
+      throw e;
     }
   };
 
@@ -1474,6 +1587,8 @@ export default function App() {
                 <AuditsManagementView
                   audits={externalAudits}
                   findings={auditFindings}
+                  requirements={auditRequirements}
+                  rncs={records}
                   userProfile={userProfile}
                   activeOrganization={activeOrganization}
                   onSelectAuditForFindings={(audit) => {
@@ -1482,6 +1597,10 @@ export default function App() {
                   }}
                   onSaveAudit={handleSaveAudit}
                   onDeleteAudit={handleDeleteAudit}
+                  onCancelAudit={handleCancelAudit}
+                  onRestoreAudit={handleRestoreAudit}
+                  onArchiveAudit={handleArchiveAudit}
+                  onSaveRequirement={handleSaveAuditRequirement}
                   onNavigateToTab={(tab) => setActiveTab(tab as any)}
                 />
               )}
@@ -1750,6 +1869,9 @@ export default function App() {
                   rncs={records}
                   activeOrganization={activeOrganization}
                   userProfile={userProfile}
+                  auditRequirements={auditRequirements}
+                  onSaveAuditRequirement={handleSaveAuditRequirement}
+                  onSaveAuditRequirementsBatch={handleSaveBatchAuditRequirements}
                   onSaveAvaliacao={handleSaveAvaliacaoCliente}
                   onCriarRNCDeRequisito={handleCriarRNCDeRequisito}
                   onSaveAudit={handleSaveAudit}

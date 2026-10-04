@@ -61,6 +61,8 @@ import { SmartAuditPreparationView } from './smart-audit/SmartAuditPreparationVi
 import { SmartAuditHistoryView } from './smart-audit/SmartAuditHistoryView';
 import { SmartAuditInternalLessonsView } from './smart-audit/SmartAuditInternalLessonsView';
 import { SmartAuditImportView } from './smart-audit/SmartAuditImportView';
+import { AuditRequirementsListView } from './smart-audit/AuditRequirementsListView';
+import { RequisitoAuditoriaExterna } from '../types/auditRequirements';
 
 interface SmartAuditViewProps {
   clientes: ClienteExterno[];
@@ -89,6 +91,9 @@ interface SmartAuditViewProps {
   onSaveLesson?: (lesson: LicaoAprendidaAuditoria) => Promise<void>;
   onSaveRequirement?: (req: RequisitoClienteItem) => Promise<void>;
   onSaveProgram?: (prog: ProgramaChecklistCliente) => Promise<void>;
+  auditRequirements?: RequisitoAuditoriaExterna[];
+  onSaveAuditRequirement?: (req: RequisitoAuditoriaExterna) => Promise<void>;
+  onSaveAuditRequirementsBatch?: (reqs: RequisitoAuditoriaExterna[]) => Promise<void>;
 }
 
 export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
@@ -116,10 +121,13 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
   onSaveLesson,
   onSaveRequirement,
   onSaveProgram,
+  auditRequirements = [],
+  onSaveAuditRequirement,
+  onSaveAuditRequirementsBatch,
 }) => {
   // Navigation & Filtering State
   const [activeMode, setActiveMode] = useState<
-    'EXCECOES' | 'PREPARACAO' | 'HISTORICO' | 'APRENDIZADO' | 'TODOS' | 'MATURIDADE' | 'IMPORTAR'
+    'EXCECOES' | 'PREPARACAO' | 'HISTORICO' | 'APRENDIZADO' | 'TODOS' | 'MATURIDADE' | 'IMPORTAR' | 'REQUISITOS_AUDITORIA'
   >('EXCECOES');
   const [selectedCliente, setSelectedCliente] = useState<string>('TODOS');
   const [selectedBase, setSelectedBase] = useState<string>('BASE-SOD');
@@ -614,6 +622,17 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               Maturidade
+            </button>
+            <button
+              onClick={() => setActiveMode('REQUISITOS_AUDITORIA')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all ${
+                activeMode === 'REQUISITOS_AUDITORIA'
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                  : 'bg-slate-900 text-amber-300 hover:text-white border border-amber-500/30'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Requisitos / Checklists ({auditRequirements.length})</span>
             </button>
             <button
               onClick={() => setActiveMode('IMPORTAR')}
@@ -1176,6 +1195,24 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
         />
       )}
 
+      {/* VISÃO: REQUISITOS INDIVIDUALIZADOS DE AUDITORIAS E CHECKLISTS (FORM QA-14) */}
+      {activeMode === 'REQUISITOS_AUDITORIA' && (
+        <AuditRequirementsListView
+          requirements={auditRequirements}
+          audits={audits}
+          userProfile={userProfile}
+          rncs={rncs}
+          onSaveRequirement={async (req) => {
+            if (onSaveAuditRequirement) {
+              await onSaveAuditRequirement(req);
+            }
+          }}
+          onSaveBatchRequirements={onSaveAuditRequirementsBatch}
+          onCriarRNC={onCriarRNCDeRequisito}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
+
       {/* VISÃO: SMART IMPORT REAL DE ARQUIVOS E AUDITORIAS */}
       {activeMode === 'IMPORTAR' && (
         <SmartAuditImportView
@@ -1188,8 +1225,9 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
           onSaveRequirement={onSaveRequirement}
           onSaveProgram={onSaveProgram}
           onSaveLesson={onSaveLesson}
+          onSaveAuditRequirementsBatch={onSaveAuditRequirementsBatch}
           onImportComplete={() => {
-            setActiveMode('HISTORICO');
+            setActiveMode('REQUISITOS_AUDITORIA');
           }}
         />
       )}

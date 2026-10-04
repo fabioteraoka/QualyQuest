@@ -1299,7 +1299,8 @@ export type StatusAuditoriaExterna =
   | 'ACEITA'
   | 'COM_PENDENCIA'
   | 'ENCERRADA'
-  | 'CANCELADA';
+  | 'CANCELADA'
+  | 'ARQUIVADA';
 
 export type ClassificacaoConstatacao = 
   | 'MAIOR'
@@ -1483,6 +1484,19 @@ export interface AuditoriaExternaRecord {
     aceitas: number;
     rejeitadas: number;
   };
+  // Gestão de Envio, Cancelamento e Arquivamento
+  isArquivada?: boolean;
+  motivoCancelamento?: string;
+  canceladoPorNome?: string;
+  canceladoPorUid?: string;
+  canceladoEm?: string;
+  // Métricas e Rastreabilidade de Requisitos Extraídos
+  totalRequisitos?: number;
+  requisitosAtendidosCount?: number;
+  requisitosPendentesCount?: number;
+  checklistCodigo?: string;
+  checklistRevisao?: string;
+  checklistNome?: string;
   createdAt: string;
   updatedAt: string;
   createdByUserUid: string;
@@ -2975,6 +2989,8 @@ export interface SystemDesignerRule {
   consequenciaViolacao: string;
   exemploPratico: string;
 }
+
+export * from './types/auditRequirements';
 
 
 

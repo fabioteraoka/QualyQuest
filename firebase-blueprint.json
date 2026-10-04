@@ -618,6 +618,24 @@
       },
       "required": ["id", "organizationId", "clienteId", "programaId", "numeroItem", "tituloCurto"]
     },
+    "AuditRequirement": {
+      "title": "Audit Requirement Unit",
+      "description": "Individual external audit requirement, checklist item, decision and response",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "auditId": { "type": "string" },
+        "numeroAuditoria": { "type": "string" },
+        "clienteOuEntidade": { "type": "string" },
+        "numeroItem": { "type": "string" },
+        "capituloOuSecao": { "type": "string" },
+        "textoOriginal": { "type": "string" },
+        "situacaoAtendimento": { "type": "string" },
+        "estadoAcompanhamento": { "type": "string" }
+      },
+      "required": ["id", "organizationId", "auditId", "numeroItem", "textoOriginal", "situacaoAtendimento", "estadoAcompanhamento"]
+    },
     "ClientEvaluation": {
       "title": "Client Requirement Evaluation",
       "description": "Periodic evaluation record for a requirement in a specific station/base with objective evidence and RNC linkage",
@@ -797,6 +815,10 @@
     "/organizations/{organizationId}/client_requirements/{requirementId}": {
       "schema": "ClientRequirement",
       "description": "Individual requirements from client checklists"
+    },
+    "/organizations/{organizationId}/auditRequirements/{requirementId}": {
+      "schema": "AuditRequirement",
+      "description": "Individual requirements from external audit checklists"
     },
     "/organizations/{organizationId}/client_evaluations/{evaluationId}": {
       "schema": "ClientEvaluation",

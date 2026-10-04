@@ -236,6 +236,17 @@ service cloud.firestore {
       }
 
       // ----------------------------------------------------
+      // Audit Requirements Subcollection (organizations/{orgId}/auditRequirements/{requirementId})
+      // ----------------------------------------------------
+      match /auditRequirements/{requirementId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(requirementId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(requirementId);
+      }
+
+      // ----------------------------------------------------
       // Audit Lessons Learned Subcollection (organizations/{orgId}/auditLessonsLearned/{lessonId})
       // ----------------------------------------------------
       match /auditLessonsLearned/{lessonId} {
