@@ -10,14 +10,14 @@ import {
   separarNumeroEDataRevisao,
   COLUNAS_FORMULARIO_F001_02_1,
   CATALOGO_F001_02_1,
-} from "./src/data/f001021ControlledPublications";
+} from "./src/data/f001021ControlledPublications.ts";
 import {
   KALITTA_QA14_ITEMS,
   KALITTA_QA14_METADATA,
-} from "./src/data/sampleKalittaQA14Checklist";
+} from "./src/data/sampleKalittaQA14Checklist.ts";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
