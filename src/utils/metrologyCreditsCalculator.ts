@@ -47,6 +47,12 @@ export interface ResumoContaCreditosMetrologia {
   creditoCritico: number;      // 1 a 30 dias
   creditoEsgotado: number;     // <= 0 dias (vencidas ou débito metrológico)
   emQuarentena: number;
+
+  // Totalizadores Operacionais de Controle Estrito
+  totalVencidas: number;       // Ferramentas com calibração vencida / crédito esgotado
+  totalAVencer: number;        // Ferramentas com vencimento próximo (1 a 60 dias)
+  totalAVencerCritico: number; // Ferramentas com vencimento crítico no mês (≤30 dias)
+  totalCalibradasEmDia: number;// Ferramentas válidas e aptas para liberação CRS
   
   // Cobertura de Certificados
   totalComCertificadoAnexo: number;
@@ -207,6 +213,10 @@ export function calcularResumoCreditosMetrologia(ferramentas: FerramentaCalibrac
       creditoCritico: 0,
       creditoEsgotado: 0,
       emQuarentena: 0,
+      totalVencidas: 0,
+      totalAVencer: 0,
+      totalAVencerCritico: 0,
+      totalCalibradasEmDia: 0,
       totalComCertificadoAnexo: 0,
       taxaCoberturaCertificados: 0,
       taxaConformidadeMetrologica: 0,
@@ -228,11 +238,11 @@ export function calcularResumoCreditosMetrologia(ferramentas: FerramentaCalibrac
     const conta = calcularContaCreditoFerramenta(f);
     contagemAtivas++;
 
-    if (f.status === 'QUARANTENA') {
+    if (f.status === 'QUARANTENA' || f.status === 'QUARENTENA') {
       emQuarentena++;
-    } else if (conta.statusCredito === 'ESGOTADO') {
+    } else if (conta.statusCredito === 'ESGOTADO' || f.status === 'VENCIDA' || conta.saldoDiasCredito <= 0) {
       creditoEsgotado++;
-    } else if (conta.statusCredito === 'CRITICO') {
+    } else if (conta.statusCredito === 'CRITICO' || f.status === 'PROXIMA_VENCIMENTO') {
       creditoCritico++;
       somaSaldoPositivo += conta.saldoDiasCredito;
     } else if (conta.statusCredito === 'ATENCAO') {
@@ -262,6 +272,10 @@ export function calcularResumoCreditosMetrologia(ferramentas: FerramentaCalibrac
     creditoCritico,
     creditoEsgotado,
     emQuarentena,
+    totalVencidas: creditoEsgotado,
+    totalAVencer: creditoCritico + creditoAtencao,
+    totalAVencerCritico: creditoCritico,
+    totalCalibradasEmDia: creditoRegular + creditoAtencao,
     totalComCertificadoAnexo,
     taxaCoberturaCertificados: Math.min(100, taxaCobertura),
     taxaConformidadeMetrologica: Math.min(100, taxaConformidade),

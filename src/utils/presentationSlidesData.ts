@@ -469,17 +469,27 @@ export function gerarSlidesApresentacao(
       { codigoPatrimonio: 'MAN-012', modelo: 'WIKA 232.50', descricao: 'Manômetro de Pressão Hidráulica', laboratorioCalibrador: 'LabMetrologia RBC nº 0124', dataProximaCalibracao: '2026-10-28', frequenciaMeses: 6, dataUltimaCalibracao: '2026-04-28', numeroCertificado: 'CERT-RBC-2026/0488' },
       { codigoPatrimonio: 'PAQ-001', modelo: 'MITUTOYO 500-196', descricao: 'Paquímetro Digital 150mm', laboratorioCalibrador: 'Inmetro RBC nº 0089', dataProximaCalibracao: '2027-01-20', frequenciaMeses: 12, dataUltimaCalibracao: '2026-01-20', numeroCertificado: 'CERT-RBC-2026/0112' },
       { codigoPatrimonio: 'MIC-003', modelo: 'MITUTOYO 293-240', descricao: 'Micrômetro Externo 0-25mm', laboratorioCalibrador: 'Inmetro RBC nº 0089', dataProximaCalibracao: '2026-10-05', frequenciaMeses: 12, dataUltimaCalibracao: '2025-10-05', numeroCertificado: 'CERT-RBC-2025/1033' },
+      { codigoPatrimonio: 'TORQ-009', modelo: 'SNAP-ON QD3RN350', descricao: 'Torquímetro de Estalo 70-350 Nm', laboratorioCalibrador: 'LabMetrologia RBC nº 0124', dataProximaCalibracao: '2026-09-15', frequenciaMeses: 12, dataUltimaCalibracao: '2025-09-15', numeroCertificado: 'CERT-RBC-2025/0912', status: 'VENCIDA' },
     ]
   ).map((f: any) => {
     const conta = calcularContaCreditoFerramenta(f);
+    let situacaoFormatada = '✅ Em Dia (Apta)';
+    if (conta.statusCredito === 'ESGOTADO' || conta.saldoDiasCredito <= 0 || f.status === 'VENCIDA') {
+      situacaoFormatada = '🚨 Vencida (Segregada)';
+    } else if (conta.statusCredito === 'CRITICO' || conta.saldoDiasCredito <= 30) {
+      situacaoFormatada = '⚠️ A Vencer (≤30d)';
+    } else if (conta.statusCredito === 'ATENCAO') {
+      situacaoFormatada = '🟡 Atenção (≤60d)';
+    }
+
     return [
       f.codigoPatrimonio || 'SEM-PAT',
       f.modelo || '—',
       (f.descricao && f.descricao.length > 32 ? f.descricao.substring(0, 30) + '...' : f.descricao) || 'Instrumento de Medição',
       f.dataProximaCalibracao || '—',
-      conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d (${conta.percentualRestante}%)` : `${conta.saldoDiasCredito}d (Esgotado)`,
+      conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d (${conta.percentualRestante}%)` : `${conta.saldoDiasCredito}d (Vencida - Bloqueada)`,
       conta.temCertificadoAnexo ? '📎 Anexo RBC' : (f.numeroCertificado || 'Laudo Pendente'),
-      conta.statusCredito === 'REGULAR' ? 'Conforme' : conta.statusCredito === 'CRITICO' ? 'A Vencer' : 'Esgotado',
+      situacaoFormatada,
     ];
   });
 
@@ -1377,42 +1387,59 @@ export function gerarSlidesApresentacao(
       id: 12,
       numero: 12,
       titulo: 'GESTÃO METROLÓGICA, FERRAMENTAL & CONTA DE CRÉDITOS',
-      subtitulo: 'Controle de calibração RBC, validade metrológica, saldo de créditos e governança de laudos (RBAC 145.109)',
+      subtitulo: 'Controle estrito de calibração RBC, validade metrológica, saldo de créditos, ferramentas vencidas e laudos (RBAC 145.109)',
       categoria: 'Metrologia & Ferramental',
       bloco: 'GRAFICOS_DASHBOARD',
       tipoVisualizacao: 'tabela-executiva',
       imagemDestaque: '/public/screenshots/tools_metrology.jpg',
       metricasPrincipais: [
         {
-          rotulo: 'Instrumentos Monitorados',
+          rotulo: 'Total de Instrumentos',
           valor: totalFerramentasMetrologia > 0 ? totalFerramentasMetrologia : 48,
-          subtitulo: 'Torquímetros, Multímetros, Manômetros',
+          subtitulo: 'Acervo Metrológico RBAC 145',
           status: 'normal',
         },
         {
-          rotulo: 'Conformidade Metrológica',
-          valor: totalFerramentasMetrologia > 0 ? `${resumoMetrologia.taxaConformidadeMetrologica}%` : '96%',
-          subtitulo: 'Calibrados com rastreabilidade RBC',
-          status: resumoMetrologia.taxaConformidadeMetrologica >= 90 ? 'sucesso' : 'alerta',
+          rotulo: 'Calibradas (Em Dia)',
+          valor: totalFerramentasMetrologia > 0 ? (resumoMetrologia.creditoRegular + resumoMetrologia.creditoAtencao) : 44,
+          subtitulo: `${totalFerramentasMetrologia > 0 ? resumoMetrologia.taxaConformidadeMetrologica : 96}% Aptas / Conformes RBC`,
+          status: 'sucesso',
         },
         {
-          rotulo: 'Saldo Médio de Créditos',
-          valor: totalFerramentasMetrologia > 0 ? `${resumoMetrologia.saldoMedioDiasCredito} dias` : '142 dias',
-          subtitulo: 'Validade média remanescente',
-          status: 'normal',
+          rotulo: 'A Vencer no Mês (≤30d)',
+          valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3,
+          subtitulo: 'Aferição em Agendamento',
+          status: (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3) > 0 ? 'alerta' : 'normal',
         },
         {
-          rotulo: 'Cobertura de Certificados',
+          rotulo: 'Ferramentas Vencidas',
+          valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1,
+          subtitulo: (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1) > 0 
+            ? 'Segregadas / Uso Bloqueado' 
+            : '0 Vencidas (100% no Prazo)',
+          status: (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1) > 0 ? 'critico' : 'sucesso',
+        },
+        {
+          rotulo: 'Laudos RBC Anexados',
           valor: totalFerramentasMetrologia > 0 ? `${resumoMetrologia.taxaCoberturaCertificados}%` : '92%',
-          subtitulo: `${resumoMetrologia.totalComCertificadoAnexo || 44} Laudos Anexados`,
-          status: resumoMetrologia.taxaCoberturaCertificados >= 80 ? 'sucesso' : 'alerta',
+          subtitulo: `${totalFerramentasMetrologia > 0 ? (resumoMetrologia.totalComCertificadoAnexo || 0) : 44} Laudos Vinculados`,
+          status: (totalFerramentasMetrologia > 0 ? resumoMetrologia.taxaCoberturaCertificados : 92) >= 80 ? 'sucesso' : 'alerta',
+        },
+        {
+          rotulo: 'Saldo Médio de Crédito',
+          valor: totalFerramentasMetrologia > 0 ? `${resumoMetrologia.saldoMedioDiasCredito} dias` : '142 dias',
+          subtitulo: 'Validade Média Restante',
+          status: 'normal',
         },
       ],
       pontosChave: [
         'Rastreabilidade metrológica ininterrupta à Rede Brasileira de Calibração (RBC / Inmetro / NIST) conforme RBAC 145.109.',
-        resumoMetrologia.creditoCritico > 0 || resumoMetrologia.creditoEsgotado > 0
-          ? `Atenção: ${resumoMetrologia.creditoCritico} instrumento(s) com crédito crítico (≤30d) e ${resumoMetrologia.creditoEsgotado} com crédito esgotado já segregado(s).`
-          : '100% das ferramentas ativas encontram-se dentro do período de crédito metrológico regular e aptas para liberação de aeronaves.',
+        (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1) > 0
+          ? `Controle Estrito de Ferramentas Vencidas: ${totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1} instrumento(s) com calibração vencida (crédito esgotado), imediatamente segregado(s) em quarentena física com bloqueio sistêmico para impedir liberação de aeronaves (CRS).`
+          : 'Controle Estrito: 0 ferramentas vencidas na base; 100% dos instrumentos ativos encontram-se dentro do período de crédito metrológico regular e aptos para operação.',
+        (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3) > 0
+          ? `Gestão Preditiva (A Vencer): ${totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3} instrumento(s) com vencimento próximo (≤30 dias), com processo de recalibração RBC já agendado para evitar ruptura.`
+          : 'Validade Assegurada: Nenhuma ferramenta com vencimento previsto para os próximos 30 dias.',
         'A Conta de Créditos Metrológicos monitora o consumo diário de validade, alertando preventivamente antes da expiração de cada laudo.',
         'Auditoria digital de certificados com laudos RBC anexados na plataforma, garantindo prontidão imediata para inspeções ANAC e EASA.',
       ],
@@ -1425,10 +1452,10 @@ export function gerarSlidesApresentacao(
         titulo: 'Balanço da Conta de Créditos Metrológicos',
         unidade: 'Ferramentas',
         itens: [
-          { rotulo: 'Crédito Regular (>60d)', valor: resumoMetrologia.creditoRegular > 0 ? resumoMetrologia.creditoRegular : 38, cor: '#10b981' },
-          { rotulo: 'Atenção (31-60d)', valor: resumoMetrologia.creditoAtencao > 0 ? resumoMetrologia.creditoAtencao : 6, cor: '#eab308' },
-          { rotulo: 'Crédito Crítico (≤30d)', valor: resumoMetrologia.creditoCritico > 0 ? resumoMetrologia.creditoCritico : 3, cor: '#f97316' },
-          { rotulo: 'Crédito Esgotado / Vencido', valor: resumoMetrologia.creditoEsgotado > 0 ? resumoMetrologia.creditoEsgotado : 1, cor: '#ef4444' },
+          { rotulo: 'Crédito Regular (>60d)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoRegular : 38, cor: '#10b981' },
+          { rotulo: 'Atenção (31-60d)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoAtencao : 6, cor: '#eab308' },
+          { rotulo: 'A Vencer no Mês (≤30d)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3, cor: '#f97316' },
+          { rotulo: 'Ferramentas Vencidas (Segregadas)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1, cor: '#ef4444' },
         ],
       },
       explicacaoGrafico: {
@@ -1439,10 +1466,10 @@ export function gerarSlidesApresentacao(
       origemRastreabilidade: 'Módulo de Ferramentas & Metrologia Operacional (Coleção /calibrated_tools) e Registro de Aferições RBC.',
     },
 
-    // SLIDE 12: AUDITORIAS DA QUALIDADE & CONSTATAÇÕES (FINDINGS)
+    // SLIDE 13: AUDITORIAS DA QUALIDADE & CONSTATAÇÕES (FINDINGS)
     {
-      id: 12,
-      numero: 12,
+      id: 13,
+      numero: 13,
       titulo: 'AUDITORIAS DA QUALIDADE & CONSTATAÇÕES',
       subtitulo: 'Desempenho em auditorias regulatórias (ANAC, EASA, FAA, Clientes) e saneamento de findings',
       categoria: 'Auditorias Externas',

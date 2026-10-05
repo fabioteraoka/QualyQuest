@@ -734,24 +734,32 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
 
             {/* Key Stat Cards on the Slide */}
             {activeSlide.metricasPrincipais && activeSlide.metricasPrincipais.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className={`grid gap-3.5 ${
+                (activeSlide.metricasPrincipais || []).length >= 6
+                  ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6'
+                  : (activeSlide.metricasPrincipais || []).length === 5
+                  ? 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5'
+                  : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+              }`}>
                 {(activeSlide.metricasPrincipais || []).map((m, mIdx) => (
                   <div
                     key={mIdx}
-                    className="bg-white border border-slate-200 rounded-[8px] p-4 shadow-xs"
+                    className="bg-white border border-slate-200 rounded-[8px] p-3.5 sm:p-4 shadow-xs flex flex-col justify-between"
                   >
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                      {m.rotulo}
-                    </span>
-                    <div className={`text-2xl font-extrabold mt-1 tracking-tight ${
-                      m.status === 'critico' ? 'text-rose-600' :
-                      m.status === 'alerta' ? 'text-amber-600' :
-                      m.status === 'sucesso' ? 'text-emerald-600' : 'text-slate-900'
-                    }`}>
-                      {m.valor}
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                        {m.rotulo}
+                      </span>
+                      <div className={`text-xl sm:text-2xl font-extrabold mt-1 tracking-tight ${
+                        m.status === 'critico' ? 'text-rose-600' :
+                        m.status === 'alerta' ? 'text-amber-600' :
+                        m.status === 'sucesso' ? 'text-emerald-600' : 'text-slate-900'
+                      }`}>
+                        {m.valor}
+                      </div>
                     </div>
                     {m.subtitulo && (
-                      <span className="text-xs text-slate-500 mt-1 block">
+                      <span className="text-[11px] text-slate-500 mt-1 block leading-tight">
                         {m.subtitulo}
                       </span>
                     )}
@@ -914,12 +922,24 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                 <SlideVisualRenderer slide={s} records={records} />
 
                 {s.metricasPrincipais && s.metricasPrincipais.length > 0 && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className={`grid gap-2.5 ${
+                    (s.metricasPrincipais || []).length >= 6
+                      ? 'grid-cols-3 sm:grid-cols-6'
+                      : (s.metricasPrincipais || []).length === 5
+                      ? 'grid-cols-2 sm:grid-cols-5'
+                      : 'grid-cols-2 sm:grid-cols-4'
+                  }`}>
                     {(s.metricasPrincipais || []).map((m, mIdx) => (
-                      <div key={mIdx} className="bg-white border border-slate-200 rounded p-3">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase block">{m.rotulo}</span>
-                        <div className="text-xl font-bold text-slate-900 mt-0.5">{m.valor}</div>
-                        {m.subtitulo && <span className="text-[11px] text-slate-500">{m.subtitulo}</span>}
+                      <div key={mIdx} className="bg-white border border-slate-200 rounded p-2.5 sm:p-3 flex flex-col justify-between">
+                        <div>
+                          <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase block leading-tight">{m.rotulo}</span>
+                          <div className={`text-lg sm:text-xl font-bold mt-0.5 ${
+                            m.status === 'critico' ? 'text-rose-600' :
+                            m.status === 'alerta' ? 'text-amber-600' :
+                            m.status === 'sucesso' ? 'text-emerald-600' : 'text-slate-900'
+                          }`}>{m.valor}</div>
+                        </div>
+                        {m.subtitulo && <span className="text-[10px] sm:text-[11px] text-slate-500 mt-0.5 block leading-tight">{m.subtitulo}</span>}
                       </div>
                     ))}
                   </div>

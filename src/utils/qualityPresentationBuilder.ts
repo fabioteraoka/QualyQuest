@@ -623,19 +623,19 @@ export async function exportarApresentacaoPPTX(
       color: COR_TEXT_MUTED,
     });
 
-    // CARDS DE MÉTRICAS NO TOPO (4 Cards)
+    // CARDS DE MÉTRICAS NO TOPO (Até 6 Cards)
     const metricas = slideData.metricasPrincipais || [];
-    const totalCards = Math.min(metricas.length, 4);
+    const totalCards = Math.min(metricas.length, 6);
 
     if (totalCards > 0) {
       const margemX = 0.8;
-      const espacoEntreCards = 0.2;
+      const espacoEntreCards = totalCards > 4 ? 0.12 : 0.2;
       const larguraTotal = 11.7;
       const cardW = (larguraTotal - (totalCards - 1) * espacoEntreCards) / totalCards;
       const cardH = 0.95;
       const cardY = 1.38;
 
-      metricas.slice(0, 4).forEach((m, idx) => {
+      metricas.slice(0, totalCards).forEach((m, idx) => {
         const cardX = margemX + idx * (cardW + espacoEntreCards);
         let corValor = COR_NAVY;
         if (m.status === 'critico') corValor = COR_ROSE;
@@ -652,23 +652,28 @@ export async function exportarApresentacaoPPTX(
           rectRadius: 0.06,
         });
 
-        slide.addText(truncarTexto(m.rotulo.toUpperCase(), 28), {
-          x: cardX + 0.15,
+        const fontLabel = totalCards > 4 ? 6.5 : 7.5;
+        slide.addText(truncarTexto(m.rotulo.toUpperCase(), totalCards > 4 ? 22 : 28), {
+          x: cardX + 0.08,
           y: cardY + 0.08,
-          w: cardW - 0.3,
+          w: cardW - 0.16,
           h: 0.22,
-          fontSize: 7.5,
+          fontSize: fontLabel,
           fontFace: 'Arial',
           bold: true,
           color: COR_TEXT_MUTED,
         });
 
         const valorStr = String(m.valor);
-        const fontSizeValor = valorStr.length > 12 ? 12 : valorStr.length > 8 ? 14 : 16;
+        const fontSizeValor = valorStr.length > 12 
+          ? (totalCards > 4 ? 10 : 12) 
+          : valorStr.length > 8 
+          ? (totalCards > 4 ? 12 : 14) 
+          : (totalCards > 4 ? 14 : 16);
         slide.addText(valorStr, {
-          x: cardX + 0.15,
+          x: cardX + 0.08,
           y: cardY + 0.28,
-          w: cardW - 0.3,
+          w: cardW - 0.16,
           h: 0.38,
           fontSize: fontSizeValor,
           fontFace: 'Arial',
@@ -677,12 +682,13 @@ export async function exportarApresentacaoPPTX(
         });
 
         const subtituloTexto = m.subtitulo || 'Monitoramento contínuo';
-        slide.addText(truncarTexto(subtituloTexto, 35), {
-          x: cardX + 0.15,
+        const fontSub = totalCards > 4 ? 6.5 : 7.5;
+        slide.addText(truncarTexto(subtituloTexto, totalCards > 4 ? 26 : 35), {
+          x: cardX + 0.08,
           y: cardY + 0.68,
-          w: cardW - 0.3,
+          w: cardW - 0.16,
           h: 0.22,
-          fontSize: 7.5,
+          fontSize: fontSub,
           fontFace: 'Arial',
           color: COR_TEXT_MUTED,
         });

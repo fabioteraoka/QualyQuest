@@ -166,12 +166,12 @@ export function calcularEnvelopesSlide(
     h: 1.05,
   });
 
-  // 2. Cards de Métricas (Top KPI)
+  // 2. Cards de Métricas (Top KPI - Até 6 Cards)
   const metricas = slide.metricasPrincipais || [];
-  const totalCards = Math.min(metricas.length, 4);
+  const totalCards = Math.min(metricas.length, 6);
 
   if (totalCards > 0) {
-    const espacoEntreCards = 0.20;
+    const espacoEntreCards = totalCards > 4 ? 0.12 : 0.20;
     const larguraTotal = safeBounds.safeRight - safeBounds.safeLeft;
     const cardW = (larguraTotal - (totalCards - 1) * espacoEntreCards) / totalCards;
     const cardH = 0.95;
