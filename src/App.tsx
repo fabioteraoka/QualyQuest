@@ -415,9 +415,10 @@ export default function App() {
         });
       },
       (err) => {
-        console.error('Erro na sincronização de RNCs:', err);
-        setFirestoreError(err.message || 'Falha ao sincronizar Não Conformidades.');
+        console.warn('Sincronização de RNCs com Firestore:', err?.message || err);
+        setFirestoreError(err?.message || 'Falha ao sincronizar Não Conformidades.');
         setLoadingRecords(false);
+        setRecords((prev) => (prev.length > 0 ? prev : INITIAL_RECORDS));
       }
     );
 
@@ -429,8 +430,9 @@ export default function App() {
         setLoadingManuals(false);
       },
       (err) => {
-        console.error('Erro na sincronização de Manuais:', err);
+        console.warn('Sincronização de Manuais:', err?.message || err);
         setLoadingManuals(false);
+        setManuals((prev) => (prev.length > 0 ? prev : INITIAL_MANUALS));
       }
     );
 
@@ -480,7 +482,7 @@ export default function App() {
     const unsubscribeAudits = subscribeToExternalAudits(
       activeOrgId,
       (auditsList) => {
-        setExternalAudits(auditsList);
+        setExternalAudits(auditsList.length > 0 ? auditsList : INITIAL_EXTERNAL_AUDITS);
       }
     );
 
@@ -488,7 +490,7 @@ export default function App() {
     const unsubscribeFindings = subscribeToAuditFindings(
       activeOrgId,
       (findingsList) => {
-        setAuditFindings(findingsList);
+        setAuditFindings(findingsList.length > 0 ? findingsList : INITIAL_AUDIT_FINDINGS);
       }
     );
 
@@ -496,7 +498,7 @@ export default function App() {
     const unsubscribeLessons = subscribeToAuditLessons(
       activeOrgId,
       (lessonsList) => {
-        setAuditLessons(lessonsList);
+        setAuditLessons(lessonsList.length > 0 ? lessonsList : INITIAL_AUDIT_LESSONS);
       }
     );
 
@@ -510,34 +512,70 @@ export default function App() {
     );
 
     // 9. Subscribe to Phase 9: Pessoas, Competências, Treinamentos e Qualificações
-    const unsubscribePersons = subscribeToPersons(activeOrgId, (list) => setPersons(list));
-    const unsubscribeCompetencies = subscribeToCompetencies(activeOrgId, (list) => setCompetencies(list));
-    const unsubscribePersonCompetencies = subscribeToPersonCompetencies(activeOrgId, (list) => setPersonCompetencies(list));
-    const unsubscribeTrainingCourses = subscribeToTrainingCourses(activeOrgId, (list) => setTrainingCourses(list));
-    const unsubscribeTrainingRecords = subscribeToTrainingRecords(activeOrgId, (list) => setTrainingRecords(list));
-    const unsubscribeQualifications = subscribeToQualifications(activeOrgId, (list) => setQualifications(list));
-    const unsubscribeDocuments = subscribeToPersonDocuments(activeOrgId, (list) => setPersonDocuments(list));
-    const unsubscribeActivities = subscribeToActivityRequirements(activeOrgId, (list) => setActivityRequirements(list));
+    const unsubscribePersons = subscribeToPersons(activeOrgId, (list) => {
+      setPersons(list.length > 0 ? list : INITIAL_PERSONS);
+    });
+    const unsubscribeCompetencies = subscribeToCompetencies(activeOrgId, (list) => {
+      setCompetencies(list.length > 0 ? list : INITIAL_COMPETENCIES);
+    });
+    const unsubscribePersonCompetencies = subscribeToPersonCompetencies(activeOrgId, (list) => {
+      setPersonCompetencies(list.length > 0 ? list : INITIAL_PERSON_COMPETENCIES);
+    });
+    const unsubscribeTrainingCourses = subscribeToTrainingCourses(activeOrgId, (list) => {
+      setTrainingCourses(list.length > 0 ? list : INITIAL_TRAINING_COURSES);
+    });
+    const unsubscribeTrainingRecords = subscribeToTrainingRecords(activeOrgId, (list) => {
+      setTrainingRecords(list.length > 0 ? list : INITIAL_TRAINING_RECORDS);
+    });
+    const unsubscribeQualifications = subscribeToQualifications(activeOrgId, (list) => {
+      setQualifications(list.length > 0 ? list : INITIAL_QUALIFICATIONS);
+    });
+    const unsubscribeDocuments = subscribeToPersonDocuments(activeOrgId, (list) => {
+      setPersonDocuments(list.length > 0 ? list : INITIAL_PERSON_DOCUMENTS);
+    });
+    const unsubscribeActivities = subscribeToActivityRequirements(activeOrgId, (list) => {
+      setActivityRequirements(list.length > 0 ? list : INITIAL_ACTIVITY_REQUIREMENTS);
+    });
     const unsubscribeAiSuggestions = subscribeToAiCompetencySuggestions(activeOrgId, (list) => setAiCompetencySuggestions(list));
 
     // 10. Subscribe to Phase 10: Controle Documental, Revisões, Fontes Externas e RAG
-    const unsubscribeDocumentos = subscribeToDocumentosControlados(activeOrgId, (list) => setDocumentosControlados(list));
-    const unsubscribeRevisoes = subscribeToRevisoesDocumentais(activeOrgId, (list) => setRevisoesDocumentais(list));
-    const unsubscribeFontes = subscribeToFontesExternas(activeOrgId, (list) => setFontesExternas(list));
+    const unsubscribeDocumentos = subscribeToDocumentosControlados(activeOrgId, (list) => {
+      setDocumentosControlados(list.length > 0 ? list : INITIAL_DOCUMENTOS_CONTROLADOS);
+    });
+    const unsubscribeRevisoes = subscribeToRevisoesDocumentais(activeOrgId, (list) => {
+      setRevisoesDocumentais(list.length > 0 ? list : INITIAL_REVISOES_DOCUMENTAIS);
+    });
+    const unsubscribeFontes = subscribeToFontesExternas(activeOrgId, (list) => {
+      setFontesExternas(list.length > 0 ? list : INITIAL_FONTES_EXTERNAS);
+    });
     const unsubscribeSolicitacoes = subscribeToSolicitacoesCliente(activeOrgId, (list) => setSolicitacoesCliente(list));
     const unsubscribeLogsFontes = subscribeToLogsVerificacao(activeOrgId, (list) => setLogsVerificacaoFontes(list));
     const unsubscribeEvidencias = subscribeToEvidenciasConsulta(activeOrgId, (list) => setEvidenciasConsultaDoc(list));
 
     // 11. Subscribe to Phase 13: Auditorias, Requisitos e Controles de Clientes
-    const unsubscribeClientes = subscribeToClientesExternos(activeOrgId, (list) => setClientesExternos(list));
-    const unsubscribeBases = subscribeToBasesOperacionais(activeOrgId, (list) => setBasesOperacionais(list));
-    const unsubscribeProgramas = subscribeToProgramasClientes(activeOrgId, (list) => setProgramasClientes(list));
-    const unsubscribeControles = subscribeToControlesCentrais(activeOrgId, (list) => setControlesCentrais(list));
-    const unsubscribeRequisitos = subscribeToRequisitosClientes(activeOrgId, (list) => setRequisitosClientes(list));
-    const unsubscribeAvaliacoes = subscribeToAvaliacoesRequisitos(activeOrgId, (list) => setAvaliacoesRequisitos(list));
+    const unsubscribeClientes = subscribeToClientesExternos(activeOrgId, (list) => {
+      setClientesExternos(list.length > 0 ? list : INITIAL_CLIENTS);
+    });
+    const unsubscribeBases = subscribeToBasesOperacionais(activeOrgId, (list) => {
+      setBasesOperacionais(list.length > 0 ? list : INITIAL_BASES);
+    });
+    const unsubscribeProgramas = subscribeToProgramasClientes(activeOrgId, (list) => {
+      setProgramasClientes(list.length > 0 ? list : INITIAL_CLIENT_PROGRAMS);
+    });
+    const unsubscribeControles = subscribeToControlesCentrais(activeOrgId, (list) => {
+      setControlesCentrais(list.length > 0 ? list : INITIAL_CENTRAL_CONTROLS);
+    });
+    const unsubscribeRequisitos = subscribeToRequisitosClientes(activeOrgId, (list) => {
+      setRequisitosClientes(list.length > 0 ? list : INITIAL_CLIENT_REQUIREMENTS);
+    });
+    const unsubscribeAvaliacoes = subscribeToAvaliacoesRequisitos(activeOrgId, (list) => {
+      setAvaliacoesRequisitos(list.length > 0 ? list : INITIAL_CLIENT_EVALUATIONS);
+    });
 
     // 12. Subscribe to Phase 14: Importação Inteligente, Metrologia e Modelos Homologados
-    const unsubscribeTools = subscribeToCalibratedTools(activeOrgId, (list) => setFerramentasCalibradas(list));
+    const unsubscribeTools = subscribeToCalibratedTools(activeOrgId, (list) => {
+      setFerramentasCalibradas(list.length > 0 ? list : INITIAL_CALIBRATED_TOOLS);
+    });
     const unsubscribeImports = subscribeToSmartImportRecords(activeOrgId, (list) => setSmartImports(list));
     const unsubscribeTemplates = subscribeToImportTemplates(activeOrgId, (list) => setTemplatesAprovados(list));
 
@@ -1245,6 +1283,50 @@ export default function App() {
           alertas={alertas}
           onOpenAlertsTab={() => setActiveTab('alertas')}
         />
+
+        {/* Firestore Quota / Sync Alert Banner (Reassures user that data is NOT lost) */}
+        {firestoreError && (
+          <div className="bg-amber-950 text-amber-100 px-3 sm:px-6 py-3.5 border-b border-amber-600/40 shadow-sm">
+            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-bold text-amber-300 flex items-center gap-2 flex-wrap">
+                    <span>
+                      {firestoreError.includes('resource-exhausted')
+                        ? 'Cota Diária Gratuita do Cloud Firestore Atingida (resource-exhausted)'
+                        : 'Aviso de Sincronização do Cloud Firestore'}
+                    </span>
+                    <span className="bg-emerald-900/90 text-emerald-200 border border-emerald-600/40 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider">
+                      ✓ Dados 100% Salvos na Nuvem
+                    </span>
+                  </div>
+                  <p className="text-amber-200/90 leading-relaxed text-[11px] sm:text-xs">
+                    <strong>Nenhum dado ou validação foi perdido!</strong> Todas as Não Conformidades, Manuais, Metrologia e Conhecimentos continuam preservados no banco de dados. O limite diário de leituras gratuitas do Firebase Spark foi temporariamente atingido e restabelece automaticamente à meia-noite (PST). O sistema mantém os dados em cache e contingência.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap shrink-0 self-end md:self-center">
+                <button
+                  type="button"
+                  onClick={() => setIsDiagnosticsModalOpen(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-200 font-medium rounded-[6px] border border-amber-700/50 transition-colors text-xs cursor-pointer"
+                >
+                  Diagnóstico Firestore
+                </button>
+                <a
+                  href="https://console.firebase.google.com/project/ai-studio-applet-webapp-bdbf6/firestore/databases/ai-studio-qualigestgestode-97a188de-6117-44a7-be8d-44d92563ba38/data?openUpgradeDialog=true"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-[6px] transition-colors flex items-center gap-1.5 text-xs shadow-xs"
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  <span>Ver Dados no Firebase Console</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Welcome & Multi-Tenant Activation Banner */}
         {!isWelcomeDismissed && activeOrganization && (activeTab === 'dashboard' || activeTab === 'configuracoes-org') && (

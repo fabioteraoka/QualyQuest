@@ -1,6 +1,6 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, persistentLocalCache, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../../firebase-applet-config.json';
 
 // Initialize Firebase App instance safely (singleton pattern)
@@ -9,8 +9,19 @@ export const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfi
 // Initialize Firebase Auth
 export const auth = getAuth(app);
 
-// Initialize Cloud Firestore with specified database ID from config
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+// Initialize Cloud Firestore with specified database ID from config and local persistent cache
+function initFirestore() {
+  try {
+    if (typeof window !== 'undefined') {
+      return initializeFirestore(app, { localCache: persistentLocalCache() }, firebaseConfig.firestoreDatabaseId);
+    }
+  } catch {
+    // Fall back to getFirestore if already created or in SSR/Node
+  }
+  return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+}
+
+export const db = initFirestore();
 
 /**
  * Validates active connection to Firestore using getDocFromServer
