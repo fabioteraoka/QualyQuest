@@ -64,7 +64,16 @@ export class AuthService {
       const profile = await ensureUserProfile(cred.user.uid, cred.user.email || '', cred.user.displayName || undefined);
       return { user: cred.user, profile };
     } catch (error: any) {
-      console.error('AuthService.loginWithGoogle error:', error);
+      console.warn('AuthService.loginWithGoogle error:', error?.code || error?.message);
+      if (error?.code === 'auth/unauthorized-domain' || error?.message?.includes('auth/unauthorized-domain')) {
+        const hostname = typeof window !== 'undefined' ? window.location.hostname : 'este domínio';
+        const customErr = new Error(
+          `O domínio "${hostname}" não está autorizado no Firebase Authentication para login com Google. Adicione este domínio no Firebase Console (Authentication > Configurações > Domínios autorizados) ou acesse via Email/Senha.`
+        );
+        (customErr as any).code = 'auth/unauthorized-domain';
+        (customErr as any).hostname = hostname;
+        throw customErr;
+      }
       throw error;
     }
   }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { ShieldCheck, Mail, Lock, User, LogIn, UserPlus, KeyRound, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, User, LogIn, UserPlus, KeyRound, AlertCircle, CheckCircle2, X, Copy, Check, Globe, Sparkles } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -17,8 +17,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   if (!isOpen) return null;
+
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isUnauthorizedDomain = Boolean(
+    (formError || error)?.includes('unauthorized-domain') || 
+    (formError || error)?.toLowerCase().includes('domínio')
+  );
+
+  const handleCopyHostname = () => {
+    if (currentHostname) {
+      navigator.clipboard.writeText(currentHostname);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 3000);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,10 +146,73 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
           {/* Feedback Messages */}
           {(formError || error) && (
-            <div className="mb-4 p-3 rounded-[8px] bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-800">
-              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <span>{formError || error}</span>
-            </div>
+            isUnauthorizedDomain ? (
+              <div className="mb-4 p-3.5 rounded-[10px] bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <Globe className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-amber-950 text-xs">Domínio Não Autorizado no Google Auth</h4>
+                    <p className="text-[11px] text-amber-800 mt-0.5">
+                      O Google Sign-In exige que a URL do ambiente esteja cadastrada na lista de domínios autorizados do Firebase Authentication.
+                    </p>
+                  </div>
+                </div>
+
+                {currentHostname && (
+                  <div className="bg-white p-2 rounded-[6px] border border-amber-200 flex items-center justify-between gap-2">
+                    <span className="font-mono text-[11px] text-slate-800 truncate" title={currentHostname}>
+                      {currentHostname}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCopyHostname}
+                      className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded text-[10px] font-semibold flex items-center gap-1 shrink-0 transition-colors cursor-pointer"
+                    >
+                      {copiedDomain ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-600" />
+                          <span>Copiado!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3 text-amber-700" />
+                          <span>Copiar</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                <div className="text-[10px] text-amber-800 bg-amber-100/60 p-2 rounded-[6px] space-y-0.5">
+                  <p className="font-semibold">Como autorizar no Firebase Console:</p>
+                  <p>1. Acesse o <strong>Firebase Console</strong> (Projeto: <code>ai-studio-applet-webapp-bdbf6</code>)</p>
+                  <p>2. Vá em <strong>Authentication</strong> &gt; <strong>Settings</strong> &gt; <strong>Authorized domains</strong></p>
+                  <p>3. Adicione o domínio copiado acima.</p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => { setMode('login'); setFormError(null); }}
+                    className="flex-1 py-1.5 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded-[6px] text-[11px] font-semibold text-center transition-colors cursor-pointer"
+                  >
+                    Usar Email / Senha
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 py-1.5 px-2 bg-white hover:bg-slate-50 border border-amber-300 text-amber-900 rounded-[6px] text-[11px] font-semibold text-center transition-colors cursor-pointer"
+                  >
+                    Modo Demo (Sem Login)
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mb-4 p-3 rounded-[8px] bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-800">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>{formError || error}</span>
+              </div>
+            )
           )}
 
           {successMsg && (
@@ -248,9 +326,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             </>
           )}
 
-          <div className="mt-4 pt-3 border-t border-slate-100 text-center">
-            <p className="text-[10px] text-slate-500">
-              Ambiente protegido por Cloud Firestore Security Rules (Fase 1).
+          <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1.5 py-1 px-3 rounded hover:bg-indigo-50 transition-colors cursor-pointer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Continuar no Modo Demonstração Operacional (Sem Login)</span>
+            </button>
+            <p className="text-[10px] text-slate-400 text-center">
+              Ambiente protegido por Cloud Firestore Security Rules • Multi-tenant RBAC
             </p>
           </div>
         </div>

@@ -118,9 +118,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (err?.code === 'auth/popup-closed-by-user') {
         return;
       }
-      const msg = err?.message || 'Falha ao realizar login com Google.';
+      let msg = err?.message || 'Falha ao realizar login com Google.';
+      if (err?.code === 'auth/unauthorized-domain' || err?.message?.includes('unauthorized-domain')) {
+        const hostname = typeof window !== 'undefined' ? window.location.hostname : 'este domínio';
+        msg = `O domínio "${hostname}" não está autorizado no Firebase Authentication para login Google. Adicione-o no Firebase Console (Authentication > Configurações > Domínios autorizados) ou acesse via Email/Senha.`;
+      }
       setError(msg);
-      throw new Error(msg);
+      throw err;
     }
   };
 
