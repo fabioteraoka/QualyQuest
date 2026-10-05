@@ -46,7 +46,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
   const orgName = organization?.name || 'Sua Organização SGQ';
   const orgSigla = organization?.configuration?.identidadeVisual?.siglaAeronautica || 'SGQ';
 
-  // 27 Capítulos Oficiais do Manual de Utilização
+  // 35 Capítulos Oficiais do Manual de Utilização (Fases 1 a 15, ADRs, Smart Import & Roadmap)
   const chapters = useMemo(() => [
     {
       id: 1,
@@ -784,6 +784,248 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 text-white font-bold text-xs hover:bg-slate-700 cursor-pointer shadow-xs"
               >
                 <span>Ver Dashboard Executivo</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 31,
+      title: '31. Auditoria Inteligente por Requisitos com Resolução por Exceção (Fase 13 Avançada)',
+      category: 'Auditorias & Clientes',
+      summary: 'Checklists regulatórios Kalitta QA-14 / EASA / ANAC, árvore hierárquica por Seções, Resolução por Exceção em lote e geração direta de RNC F 001-29.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-sky-900 text-sm flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-sky-600" />
+              <span>Resolução por Exceção: Máxima Eficiência em Auditorias Extensas</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              Auditorias regulatórias e de grandes clientes aéreos frequentemente contêm centenas de itens (ex: Checklist <strong>Kalitta Air QA-14</strong> com 11 seções detalhadas). O paradigma tradicional de preenchimento individual e moroso é substituído pela <strong>Resolução por Exceção</strong>: itens conformes são confirmados em lote pelo auditor líder, concentrando a atenção técnica estritamente nas exceções, observações e desvios que demandam ação corretiva.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">1. Árvore Hierárquica</span>
+              <p className="text-slate-600 text-[11px]">
+                Navegação intuitiva por seções operacionais (Hangar, Ferramental, Publicações, Pessoal, Segurança) com contadores em tempo real de conformidade.
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">2. Confirmação em Lote</span>
+              <p className="text-slate-600 text-[11px]">
+                Botão de aprovação em massa para seções integralmente aderentes, acelerando a auditoria sem abrir mão de evidências obrigatórias.
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">3. Desvio → RNC Automática</span>
+              <p className="text-slate-600 text-[11px]">
+                Marcar um item como Não Conforme abre instantaneamente o modal de emissão da RNC F 001-29 pré-preenchida com o requisito e norma aplicável.
+              </p>
+            </div>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('smart-audit')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-sky-600 text-white font-bold text-xs hover:bg-sky-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Auditoria Inteligente</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 32,
+      title: '32. System Designer Permanente & Registro Oficial de ADRs (Fase 14)',
+      category: 'Arquitetura & Governança',
+      summary: 'Arquitetura viva, registro imutável de Decisões Arquiteturais (ADRs), topologia de sistemas, matriz de integração de dados e rastreabilidade técnica.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-purple-900 text-sm flex items-center gap-2">
+              <Layers className="w-4 h-4 text-purple-600" />
+              <span>System Designer Oficial: Governança Tecnológica Documentada e Viva</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              Em atendimento às melhores práticas de engenharia de software aeronáutico, o QualiGest SGQ mantém o <strong>System Designer Oficial Permanente</strong>. Este módulo atua como o registro fidedigno da arquitetura do sistema, assegurando que todas as decisões estruturais, padrões de segurança e interfaces permaneçam acessíveis para auditorias técnicas e homologação contínua.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">Registro de Decisões Arquiteturais (ADRs)</span>
+              <p className="text-slate-600 text-[11px]">
+                Catálogo histórico de Architectural Decision Records documentando contexto, opções avaliadas, decisão adotada e consequências para o SGQ (ex: isolamento multi-tenant Firestore, motor SSoT 70/30, resiliência server-side com fallback).
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">Topologia & Contratos de Interface</span>
+              <p className="text-slate-600 text-[11px]">
+                Diagramas de componentes em camadas (Frontend React 19 SPA, Backend Node.js Express, Cloud Firestore ABAC e Provedores IA), com matriz de fluxo de dados e inventário de coleções.
+              </p>
+            </div>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('system-designer')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-600 text-white font-bold text-xs hover:bg-purple-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar System Designer Oficial</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 33,
+      title: '33. Motor de Importação Inteligente & Reconciliação com Reversão (Fase 15)',
+      category: 'Recursos & Controles',
+      summary: 'Wizard de 4 etapas: Upload e Detecção, Mapeamento Inteligente com IA Gemini, Validação com Diff e Reconciliação com Reversão Segura (Undo).',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-emerald-900 text-sm flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              <span>Importação Segura em 4 Etapas com Reconciliação e Desfazer</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              O módulo de <strong>Importação Inteligente (Fase 15)</strong> resolve o desafio crítico de migração e carga de dados de ferramentas legadas, planilhas Excel e acervos antigos sem risco de corrupção ou duplicidade no banco operacional.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-[11px]">
+            <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block">Etapa 1: Upload & Tipo</span>
+              <p className="text-slate-600">Detecção automática do tipo de dado (Colaboradores, Treinamentos, Manuais, Ferramental) via parser local XLSX/CSV.</p>
+            </div>
+            <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block">Etapa 2: Mapeamento IA</span>
+              <p className="text-slate-600">Sugestão semântica de colunas assistida por IA Gemini com templates homologados reutilizáveis.</p>
+            </div>
+            <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block">Etapa 3: Diff & Validação</span>
+              <p className="text-slate-600">Pré-visualização colorida de adições (verde), atualizações (azul) e deduplicação sem conflito.</p>
+            </div>
+            <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block">Etapa 4: Carga & Undo</span>
+              <p className="text-slate-600">Gravação em lote no Firestore com histórico e botão de reversão completa (Undo) caso necessário.</p>
+            </div>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('smart-import')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500 cursor-pointer shadow-xs"
+              >
+                <span>Abrir Importação Inteligente</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 34,
+      title: '34. Conectores e API de Integração MRO (Impacto MRO Connect)',
+      category: 'Recursos & Controles',
+      summary: 'Proxy server-side seguro (`/api/impacto/*`), integração com Ordens de Serviço (OS), Ferramental, Pessoal e contingência offline.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-amber-900 text-sm flex items-center gap-2">
+              <Sliders className="w-4 h-4 text-amber-600" />
+              <span>Conectividade Hangar: Integração com Sistemas de Produção MRO</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              O QualiGest SGQ se conecta de forma segura aos sistemas de gestão operacional da oficina através do <strong>Impacto MRO Connect</strong>. Todas as chamadas trafegam pelo proxy do servidor Node.js Express (`server.ts`), mantendo chaves de API restritas e protegidas contra exposição no navegador.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">Ordens de Serviço (OS)</span>
+              <p className="text-slate-600 text-[11px]">
+                Consulta em tempo real de OSs ativas, aeronaves no hangar, escopo de tarefas e histórico de qualidade do atendimento.
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">Ferramental Calibrado</span>
+              <p className="text-slate-600 text-[11px]">
+                Sincronização de certificados de calibração RBC, validade de torquímetros e bloqueio de ferramentas em quarentena.
+              </p>
+            </div>
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">Contingência Operacional</span>
+              <p className="text-slate-600 text-[11px]">
+                Caso o ERP ou conexão externa oscile, o sistema opera em modo de contingência garantindo que nenhuma inspeção seja paralisada.
+              </p>
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 35,
+      title: '35. Visão de Futuro & Horizontes de Evolução Tecnológica (Roadmap Estratégico)',
+      category: 'Fundamentos',
+      summary: 'Os 4 Horizontes de Evolução Tecnológica do QualiGest SGQ (H1 a H4), compromissos de desenvolvimento contínuo e arquitetura preditiva.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-1.5">
+            <h4 className="font-bold text-blue-900 text-sm flex items-center gap-2">
+              <Compass className="w-4 h-4 text-blue-600" />
+              <span>Planejamento Estratégico & Horizontes de Evolução (H1 a H4)</span>
+            </h4>
+            <p className="text-slate-700 leading-relaxed">
+              O desenvolvimento do QualiGest é orientado pela metodologia dos <strong>Quatro Horizontes de Inovação</strong>, assegurando evolução sustentável, blindagem contra regressão e aderência constante às diretrizes internacionais da ANAC, EASA e FAA.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-lg space-y-1">
+              <span className="font-bold text-emerald-950 block text-[12px]">H1: Core Consolidado (100% Homologado)</span>
+              <p className="text-emerald-800 text-[11px]">
+                Fases 1 a 15 ativas em produção: Formulário F 001-29, Ishikawa 6M, Matriz 5x5, Pessoas/CHTs, Máquina Temporal Documental, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, System Designer ADRs e Smart Import.
+              </p>
+            </div>
+            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg space-y-1">
+              <span className="font-bold text-amber-950 block text-[12px]">H2: Conectores ERP & MRO Connect (Em Andamento)</span>
+              <p className="text-amber-800 text-[11px]">
+                Expansão dos conectores com ERPs de grande porte (SAP, Totvs, Quantum), Diário de Bordo Eletrônico (ELB) e automação de leitura de códigos de barras de ferramentas.
+              </p>
+            </div>
+            <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-lg space-y-1">
+              <span className="font-bold text-sky-950 block text-[12px]">H3: SGQ Preditivo & Confiabilidade ATA 100 (Planejado)</span>
+              <p className="text-sky-800 text-[11px]">
+                Modelagem estocástica de falhas em frotas de aeronaves, alertas cruzados de Diretrizes de Aeronavegabilidade (AD/DA) e predição de reposição de componentes críticos.
+              </p>
+            </div>
+            <div className="p-3 bg-slate-100 border border-slate-300 rounded-lg space-y-1">
+              <span className="font-bold text-slate-900 block text-[12px]">H4: Ecossistema Global Inter-MRO (Visão Futura)</span>
+              <p className="text-slate-700 text-[11px]">
+                Rede colaborativa segura e anonimizada entre centros de serviços para intercâmbio de lições aprendidas, benchmarking normativo e inteligência coletiva em segurança operacional.
+              </p>
+            </div>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('visao-roadmap')}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold text-xs hover:bg-blue-500 cursor-pointer shadow-xs"
+              >
+                <span>Abrir Visão e Roadmap Completo</span>
               </button>
             </div>
           )}

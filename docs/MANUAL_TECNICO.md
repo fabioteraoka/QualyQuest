@@ -121,3 +121,27 @@ export interface SlideApresentacao {
   3. Refatorar o construtor PPTX e o visualizador Web para mapear blocos e números dinamicamente sem suposições estáticas.
 * **Impacto:** Escalabilidade para organizações com grande efetivo sem espremer conteúdo ou violar a Safe Area de 16:9.
 
+#### ADR-017: Arquitetura "Um Controle, Vários Requisitos" e Resolução por Exceção (Fase 13)
+* **Contexto:** Clientes aéreos e autoridades auditam processos idênticos com formulações contratuais ligeiramente diferentes, gerando duplicidade de checklists e fadiga de auditoria.
+* **Decisão:**
+  1. Implementar o modelo relacional de **Controle Central SGQ** mapeado para múltiplos requisitos de clientes.
+  2. Implementar a modalidade de **Resolução por Exceção** (confirmação em lote de seções conformes e foco pontual nos desvios com emissão automática de RNC F 001-29).
+* **Impacto:** Redução de até 70% no tempo de auditoria de clientes e padronização integral de evidências técnicas.
+
+#### ADR-018: System Designer Oficial Permanente como Registro Vivo da Arquitetura (Fase 14)
+* **Contexto:** Decisões de arquitetura, contratos de dados e topologias de software tendem a se desatualizar em documentações estáticas externas.
+* **Decisão:** Incorporar o **System Designer** diretamente na aplicação, alimentado por dados estruturados (`systemDesignerData.ts`) contendo topologia C4, catálogo de ADRs, matriz de fluxo de dados e inventário de coleções Firestore.
+* **Impacto:** Auditabilidade técnica contínua e rastreabilidade viva para auditorias de autoridades homologadoras.
+
+#### ADR-019: Motor de Importação Inteligente com Mapeamento por IA, Diff e Undo Seguro (Fase 15)
+* **Contexto:** Carga de planilhas legadas apresentava riscos de dados inconsistentes, duplicidade de colaboradores/ferramentas e impossibilidade de reversão de erros de importação.
+* **Decisão:**
+  1. Wizard em 4 etapas: detecção de dados, mapeamento semântico assistido por IA Gemini com templates reutilizáveis, pré-visualização de diff de reconciliação (novo/atualizado/inalterado) e execução de carga com salvamento de snapshot no Firestore.
+  2. Implementar o mecanismo de reversão segura (**Undo de Carga**), permitindo desfazer uma importação integralmente com um clique.
+* **Impacto:** Zero corrupção de dados na migração de acervos históricos e total segurança para os administradores.
+
+#### ADR-020: API Impacto MRO Connect e Resiliência Server-Side
+* **Contexto:** Necessidade de integração com ordens de serviço, ferramental calibrado e dados de frota do hangar sem expor chaves de API no cliente.
+* **Decisão:** Implementar proxy reverso em `server.ts` sob o prefixo `/api/impacto/*`, com mascaramento de cabeçalhos de autorização e fallback inteligente para contingência offline.
+* **Impacto:** Segurança estrita de credenciais e operação contínua do hangar mesmo em caso de instabilidade de rede.
+

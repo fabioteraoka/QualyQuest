@@ -100,6 +100,57 @@ Gestão integral do corpo técnico de manutenção:
 
 ---
 
+---
+
+## 🚀 As 15 Fases Operacionais do QualiGest SGQ
+
+O QualiGest foi construído através de 15 fases de engenharia contínua, todas homologadas e operando de forma integrada:
+
+1. **Fase 1 — Ficha Oficial de Não Conformidade (Formulário F 001-29):** Digitalização completa do formulário oficial com numeração única, triagem de ação corretiva/preventiva e avaliação de risco inicial e residual.
+2. **Fase 2 — Nuvem Cloud Firestore como SSoT Multiusuário:** Persistência em tempo real via listeners `onSnapshot`, eliminação de dependência de cache local e isolamento estrito por organização (`/organizations/{orgId}/...`).
+3. **Fase 3 — Extrator e Transcrição Inteligente com IA Gemini:** Leitura óptica e semântica de formulários Word (`.docx`), PDF e imagens de RNCs com auto-preenchimento e preenchimento de contingência por regras SGQ.
+4. **Fase 4 — Motor de Investigação Causal (Ishikawa 6M + 5 Porquês + 5W2H):** Encadeamento causal estrito distinguindo fatos comprovados de hipóteses sob validação humana, com plano CAPA detalhado.
+5. **Fase 5 — Base de Conhecimento Validada (N1 a N5) & Comparador Semântico:** Esteira de maturação do conhecimento organizacional e comparador de desvios para evitar retrabalho e reincidências.
+6. **Fase 6 — Dashboard Executivo & Inteligência Analítica:** Curva de Pareto 80/20, tempo médio de fechamento (MTTR), distribuição por capítulo ATA 100 e matriz de risco 5x5 em tempo real.
+7. **Fase 7 — Auditorias Externas (ANAC, EASA, FAA, Clientes):** Controle formal de auditorias recebidas, classificação de constatações (findings Maiores/Menores) e conversão direta de apontamentos em RNCs vinculadas.
+8. **Fase 8 — Saúde do SGQ (sgqHealth) & Central de Alertas Preditivos:** Algoritmo ponderado de maturidade regulatória que audita a integridade de dados e emite alertas preditivos aos 60, 30 e 15 dias.
+9. **Fase 9 — Pessoas, Competências 360° & Central de Vencimentos CHT:** Dossiê integral de colaboradores com carteiras ANAC (CEL, GMP, AVI), cursos regulamentares (Fatores Humanos, SGSO, EWIS), segregação entre status operacional e aptidão técnica, e bloqueio preventivo de assinaturas de liberação.
+10. **Fase 10 — Controle Documental & Consulta Temporal na Data da OS (F 001-02-1):** Catálogo de publicações controladas (AMM, CMM, MOE, POP), consulta reversa que atesta qual revisão exata estava em vigor na data de qualquer ordem de serviço do passado, comparador visual de revisões e monitoramento de fontes externas.
+11. **Fase 11 — Gestão Metrológica, Ferramentas Calibradas & Conta Corrente de Créditos (RBAC 145.109):** Rastreabilidade de instrumentos com calibração RBC (torquímetros, multímetros, manômetros), balanço de créditos e área de quarentena com tranca física e digital.
+12. **Fase 12 — Apresentação Gerencial Oficial 70/30 (Web & PPTX Auto-Fit):** Motor SSoT com 20 slides corporativos divididos em 70% Situação Real da Empresa e 30% Evolução do Sistema, com auto-fit geométrico e Teste de Espelho certificado.
+13. **Fase 13 — Auditoria Inteligente por Requisitos com Resolução por Exceção:** Arquitetura "Um Controle, Vários Requisitos" com checklist Kalitta Air QA-14 / EASA / ANAC, árvore hierárquica por seções e confirmação de conformidade em lote para foco exclusivo nas exceções e desvios.
+14. **Fase 14 — System Designer Oficial Permanente & Registro de ADRs:** Registro vivo e imutável das Decisões Arquiteturais de Software (ADRs), topologia de componentes, matriz de fluxo de dados e inventário técnico de coleções.
+15. **Fase 15 — Motor de Importação Inteligente de Dados & Reconciliação:** Wizard em 4 etapas com upload e detecção de planilhas, mapeamento de colunas assistido por IA Gemini, pré-visualização de diff de reconciliação (novo, atualizado, inalterado) e reversão segura de carga (Undo).
+
+---
+
+## 🔌 API de Integração MRO (Impacto MRO Connect)
+
+O QualiGest disponibiliza um proxy seguro no servidor Node.js Express (`server.ts`) para comunicação bidirecional com os sistemas operacionais do hangar:
+- `GET /api/impacto/health`: Monitoramento de conectividade da oficina.
+- `GET /api/impacto/aeronaves`: Frota e modelos em manutenção.
+- `GET /api/impacto/colaboradores`: Efetivo técnico ativo e qualificações.
+- `GET /api/impacto/ferramentas`: Ferramental calibrado e status metrológico.
+- `GET /api/impacto/ordens-servico`: Ordens de Serviço (OS) ativas e histórico.
+- `GET /api/impacto/ordens-servico/:id/contexto-qualidade`: Dossiê consolidado de qualidade da OS cruzando técnico, ferramentas utilizadas e manuais consultados.
+
+> **Resiliência e Fallback:** Se a conexão externa com o ERP oscilar, o sistema ativa automaticamente o modo de contingência local, garantindo que as operações do hangar jamais sejam interrompidas.
+
+---
+
+## 🔮 Horizontes de Evolução Tecnológica (Roadmap Estratégico)
+
+O plano de evolução do QualiGest é estruturado em **4 Horizontes de Inovação Contínua**:
+
+| Horizonte | Foco Estratégico | Status | Entregas Chave |
+| :--- | :--- | :--- | :--- |
+| **H1: Core Consolidado** | Fases 1 a 15 100% Homologadas | 🟢 **Em Produção** | RNC F 001-29, Ishikawa 6M, 5W2H, Pessoas/CHTs, Máquina Temporal, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, System Designer ADRs e Smart Import. |
+| **H2: Conectores ERP & MRO** | Expansão de Integrações de Hangar | 🟡 **Em Andamento** | Conectores com SAP, Totvs, Quantum, Diário de Bordo Eletrônico (ELB) e leitura ótica de códigos de barras e RFID de ferramental. |
+| **H3: SGQ Preditivo & Frota** | Modelagem Estocástica de Confiabilidade | 🔵 **Planejado** | Análise de confiabilidade ATA 100, predição de falhas de componentes de frota e cruzamento proativo de Diretrizes de Aeronavegabilidade (AD/DA). |
+| **H4: Ecossistema Global Inter-MRO** | Inteligência Coletiva em Segurança de Voo | ⚪ **Visão Futura** | Rede colaborativa segura e anonimizada entre oficinas homologadas para intercâmbio de lições aprendidas e benchmarking regulatório ANAC/EASA/FAA. |
+
+---
+
 ## 🧩 Arquitetura de Navegação em 8 Blocos Operacionais
 
 A navegação do QualiGest é estruturada em torno do ciclo real de trabalho de uma organização de manutenção aeronáutica (RBAC 145 / EASA Part-145):
@@ -212,12 +263,19 @@ npm run start
 
 ---
 
-## 📚 Manual de Operações Integrado
+## 📚 Manual de Operações Integrado (35 Capítulos)
 
-O QualiGest SGQ possui um manual técnico de 27 capítulos diretamente incorporado à aplicação. Acesse a guia **"Manual de Utilização"** no menu principal para consultar:
+O QualiGest SGQ possui um manual técnico de **35 capítulos completos** diretamente incorporado à aplicação. Acesse a guia **"Manual de Utilização"** no menu principal para consultar:
 - Políticas de Não Conformidade conforme o RBAC 145.211;
-- Procedimento para análise de causa raiz e aprovação de CAPA;
-- Simuladores interativos de fluxo de auditoria e liberação técnica.
+- Procedimento para análise de causa raiz (Ishikawa 6M + 5 Porquês) e aprovação de planos CAPA 5W2H;
+- Matriz de Risco 5x5 e esteira de maturação do conhecimento N1 a N5;
+- Gestão de Pessoas, Competências 360° e Bloqueios CHT;
+- Consulta Temporal Documental na data da Ordem de Serviço (F 001-02-1);
+- Gestão Metrológica, Ferramentas Calibradas RBC e Conta Corrente de Créditos;
+- Auditorias de Clientes com Resolução por Exceção (Kalitta QA-14 / EASA / ANAC);
+- System Designer Permanente e Catálogo Oficial de ADRs;
+- Motor de Importação Inteligente em 4 Etapas com Reconciliação e Desfazer (Undo);
+- Simuladores interativos de fluxo operacional e checklist de 12 passos para novos usuários.
 
 ---
 

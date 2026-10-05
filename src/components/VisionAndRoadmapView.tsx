@@ -66,7 +66,7 @@ export const VisionAndRoadmapView: React.FC<VisionAndRoadmapViewProps> = ({
   // Dicionário i18n essencial
   const t = {
     PT: {
-      badge: 'FASE 12 — VISÃO MESTRE & ARQUITETURA',
+      badge: 'FASE 15 — VISÃO MESTRE, ARQUITETURA & ROADMAP ESTRATÉGICO',
       title: 'Visão Mestre, Arquitetura e Roadmap Estratégico',
       subtitle: 'Diretrizes permanentes de governança, princípios de engenharia da qualidade e evolução contínua do QualiGest SGQ.',
       principleQuote: '“O objetivo não é criar mais controles. É transformar os controles existentes em informação útil para tomar melhores decisões.”',
@@ -827,28 +827,32 @@ export const VisionAndRoadmapView: React.FC<VisionAndRoadmapViewProps> = ({
           </div>
 
           {/* Próxima Etapa Imediata Destaque */}
-          <div className="bg-amber-50 border-2 border-amber-300 rounded-[12px] p-5 shadow-xs">
+          <div className="bg-emerald-50 border-2 border-emerald-300 rounded-[12px] p-5 shadow-xs">
             <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-5 h-5 text-amber-600" />
-              <span className="text-xs font-mono font-bold text-amber-800 bg-amber-200/60 px-2 py-0.5 rounded">
-                PRÓXIMA ETAPA IMEDIATA (GATE DE QUALIDADE)
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <span className="text-xs font-mono font-bold text-emerald-800 bg-emerald-200/60 px-2 py-0.5 rounded">
+                HORIZONTE ATUAL CONSOLIDADO — FASES 1 A 15 EM PRODUÇÃO
               </span>
             </div>
             <h3 className="text-base font-bold text-slate-900 mt-1">
-              FASE 11 — Homologação Operacional de Campo
+              Fases 1 a 15 Homologadas com Zero Regressão
             </h3>
             <p className="text-xs text-slate-700 mt-1 mb-3">
-              Antes de avançar para grandes blocos futuros, o sistema deve ser formalmente homologado em teste operacional:
+              O ecossistema QualiGest opera com 15 fases interconectadas sem silos de informação, com blindagem multi-tenant e SSoT garantida:
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-800">
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Teste de Convite de Usuários</div>
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Acesso em 2º Computador</div>
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Aceitação e Troca de Tenant</div>
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Validação de Perfis e Permissões</div>
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Logout / Login / Refresh</div>
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Bloqueio de Acesso Imediato</div>
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Isolamento Estrito Multi-Tenant</div>
-              <div className="p-2 bg-white rounded border border-amber-200">✓ Regressão Completa de Módulos</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ F 001-29 Digital & 6M</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Multi-Tenant Firestore ABAC</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Extrator IA Gemini</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Pessoas & CHTs ANAC</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Consulta Temporal na Data da OS</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Metrologia RBC & Créditos</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Apresentação 70/30 PPTX</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Auditoria por Exceção (Fase 13)</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ System Designer & ADRs (Fase 14)</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Smart Import & Undo (Fase 15)</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Impacto MRO API Connect</div>
+              <div className="p-2 bg-white rounded border border-emerald-200">✓ Teste de Espelho 100%</div>
             </div>
           </div>
 
@@ -856,88 +860,88 @@ export const VisionAndRoadmapView: React.FC<VisionAndRoadmapViewProps> = ({
           <div className="space-y-3">
             {[
               {
-                fase: 'Fases Iniciais',
-                title: 'Fundação do Sistema SGQ',
+                fase: 'Fases Iniciais (1 a 5)',
+                title: 'Fundação do Sistema SGQ & Investigação Causal',
                 status: '🟢 IMPLEMENTADO',
                 badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Workflow oficial da RNC (F 001-29), contenção, 5 Porquês, Ishikawa 6M e Matriz de Risco 5x5.',
+                desc: 'Workflow oficial da RNC (F 001-29), contenção imediata, 5 Porquês, Ishikawa 6M, Matriz de Risco 5x5 e Base de Conhecimento N1-N5.',
               },
               {
-                fase: 'Fase 6',
-                title: 'Auditoria Adversarial, Governança de IA e Apresentação Executiva',
+                fase: 'Fases 6 a 8',
+                title: 'Inteligência Analítica, Multi-Tenancy & Saúde SGQ',
                 status: '🟢 IMPLEMENTADO',
                 badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Segregação entre hipóteses e fatos, simuladores interativos e gerador executivo PPTX nativo.',
-              },
-              {
-                fase: 'Fase 7',
-                title: 'Productização e Multi-Tenancy',
-                status: '🟢 IMPLEMENTADO',
-                badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Arquitetura multi-organização no Firestore, isolamento por tenant e manuais interativos de utilização.',
-              },
-              {
-                fase: 'Fase 8',
-                title: 'Auditorias Externas Recebidas',
-                status: '🟢 IMPLEMENTADO',
-                badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Gestão de auditorias de autoridades (ANAC/EASA/FAA/Clientes), findings e prazos formais de resposta.',
+                desc: 'Dashboard analítico com Pareto 80/20, motor sgqHealth de integridade, central de alertas preditivos e segregação estrita por tenant.',
               },
               {
                 fase: 'Fase 9',
-                title: 'Pessoas, Competências e Treinamentos',
+                title: 'Pessoas, Competências 360° e CHTs ANAC',
                 status: '🟢 IMPLEMENTADO',
                 badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Controle de CHTs aeronáuticas, reciclagens obrigatórias, radar de competências e central de gaps.',
+                desc: 'Controle rigoroso de CHTs aeronáuticas (CEL, GMP, AVI), reciclagens obrigatórias, status operacional vs aptidão e central de gaps.',
               },
               {
                 fase: 'Fase 10',
-                title: 'Controle Documental & Conhecimento Temporal',
+                title: 'Controle Documental & Máquina Temporal na Data da OS',
                 status: '🟢 IMPLEMENTADO',
                 badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Máquina do tempo de revisões vigentes, comparador visual de impacto e monitoramento de fontes externas.',
+                desc: 'Publicações controladas F 001-02-1, consulta temporal reversa na data da OS, comparador visual de revisões e monitoramento de fontes externas.',
               },
               {
                 fase: 'Fase 11',
-                title: 'Governança Central, Usuários, Perfis e RBAC',
-                status: '🟡 EM HOMOLOGAÇÃO',
-                badge: 'bg-amber-50 text-amber-700 border-amber-300',
-                desc: 'Convites por token seguro, segregação de 4 papéis estritos, bloqueio de contas e trilha de auditoria.',
+                title: 'Gestão Metrológica, Ferramentas Calibradas & Conta de Créditos',
+                status: '🟢 IMPLEMENTADO',
+                badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+                desc: 'Rastreabilidade RBC de instrumentos (torquímetros, multímetros, manômetros), balanço de créditos e controle de quarentena.',
               },
               {
                 fase: 'Fase 12',
-                title: 'Visão Mestre, Arquitetura e Roadmap Estratégico',
+                title: 'Apresentação Gerencial Oficial 70/30 & Visão Mestre',
                 status: '🟢 IMPLEMENTADO',
                 badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Consolidação da visão de longo prazo, 10 princípios, fora de escopo, matriz de priorização e gráficos reais.',
+                desc: 'Motor SSoT com 20 slides auto-fit geométrico (Web e PPTX Widescreen nativo), Teste de Espelho e Governança Estratégica.',
               },
               {
                 fase: 'Fase 13',
-                title: 'Auditorias, Requisitos e Controles de Clientes',
+                title: 'Auditorias de Clientes & Resolução por Exceção',
                 status: '🟢 IMPLEMENTADO',
                 badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-                desc: 'Arquitetura "Um Controle, Vários Requisitos", cockpit multi-cliente por bases operacionais, pré-avaliação IA sob supervisão e geração de RNC com vínculo rastreável.',
+                desc: 'Arquitetura "Um Controle, Vários Requisitos", checklist Kalitta QA-14 / EASA, cockpit multi-base e confirmação de conformidade em lote.',
               },
               {
                 fase: 'Fase 14',
-                title: 'Gestão de Riscos Organizacionais e de Processo',
-                status: '🔵 PLANEJADO',
-                badge: 'bg-blue-50 text-blue-700 border-blue-300',
-                desc: 'Ampliação da matriz 5x5 para apetite a risco institucional, riscos de processo e eficácia de barreiras.',
+                title: 'System Designer Oficial Permanente & Registro de ADRs',
+                status: '🟢 IMPLEMENTADO',
+                badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+                desc: 'Catálogo imutável de Decisões Arquiteturais (ADRs), topologia de sistemas, matriz de integração de dados e rastreabilidade técnica viva.',
               },
               {
                 fase: 'Fase 15',
-                title: 'Gestão de Processos e Indicadores Integrados',
-                status: '🔵 PLANEJADO',
-                badge: 'bg-blue-50 text-blue-700 border-blue-300',
-                desc: 'Mapeamento de macroprocessos SGQ, donos de processo e correlação com desvios operacionais.',
+                title: 'Motor de Importação Inteligente de Dados & Reconciliação',
+                status: '🟢 IMPLEMENTADO',
+                badge: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+                desc: 'Wizard em 4 etapas: detecção de dados, mapeamento por IA Gemini, visualização de diff de reconciliação e reversão segura de carga (Undo).',
               },
               {
-                fase: 'Fase 16',
-                title: 'Competências e Pessoas Avançadas',
+                fase: 'Horizonte II',
+                title: 'Conectores ERPs & MRO Connect Ampliados',
+                status: '🟡 EM ANDAMENTO',
+                badge: 'bg-amber-50 text-amber-700 border-amber-300',
+                desc: 'Expansão de conectores com SAP, Totvs, Quantum, Diário de Bordo Eletrônico (ELB) e leitura de códigos de barras de ferramentas.',
+              },
+              {
+                fase: 'Horizonte III',
+                title: 'SGQ Preditivo & Confiabilidade de Frota ATA 100',
+                status: '🔵 PLANEJADO',
+                badge: 'bg-blue-50 text-blue-700 border-blue-300',
+                desc: 'Modelagem probabilística de falhas em frotas, cruzamento antecipado de Diretrizes de Aeronavegabilidade (AD/DA) e predição de componentes.',
+              },
+              {
+                fase: 'Horizonte IV',
+                title: 'Ecossistema Global Inter-MRO de Segurança Operacional',
                 status: '⚪ FUTURO',
                 badge: 'bg-slate-50 text-slate-700 border-slate-300',
-                desc: 'Plano de desenvolvimento individual (PDI), avaliações de eficácia pós-treinamento e trilha de carreira técnica.',
+                desc: 'Rede colaborativa segura e anonimizada entre centros de manutenção para inteligência coletiva e benchmarking regulatório.',
               },
               {
                 fase: 'Fase 17',

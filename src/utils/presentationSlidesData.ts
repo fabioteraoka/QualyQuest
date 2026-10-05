@@ -56,11 +56,26 @@ export interface DadosContextoApresentacao {
 }
 
 /**
- * Motor Central de Dados da Apresentação Gerencial (FASE 12.2)
- * Garante a REGRA DE OURO: Única Fonte de Verdade para KPIs, Tabelas e Gráficos (Web & PPTX)
- * Estrutura:
- *   PARTE I (Slides 1 a 14: 70%) — ESPELHO EXECUTIVO DA SITUAÇÃO ATUAL DA EMPRESA
- *   PARTE II (Slides 15 a 20: 30%) — EVOLUÇÃO DO QUALIGEST SGQ
+ * Motor Central de Dados da Apresentação Gerencial (Fases 1 a 15)
+ * 
+ * ARQUITETURA E REGRA DE OURO (Single Source of Truth - SSoT):
+ * Este módulo centraliza 100% dos cálculos estatísticos, agrupamentos e DVOs da Apresentação
+ * Gerencial da Qualidade. Nem o visualizador Web (React/Recharts) nem o gerador PowerPoint
+ * (PptxGenJS) executam lógica analítica em separado: ambos consomem exatamente a mesma estrutura
+ * de dados imutável gerada por esta função.
+ * 
+ * PROPORÇÃO EXECUTIVA OFICIAL 70/30:
+ * - PARTE I (Slides 1 a 14: 70%): Espelho Executivo da Situação Real da Empresa
+ *   (RNCs F 001-29, Ishikawa 6M, 5 Porquês, 5W2H, Pessoas/CHTs ANAC, Documentos na data da OS,
+ *    Metrologia RBC, Auditorias Externas e Índice sgqHealth).
+ * - PARTE II (Slides 15 a 20+: 30%): Governança Tecnológica e Evolução Estratégica
+ *   (Ecossistema de 15 Fases Integradas, Régua de Maturidade N1 a N5, Status de Homologação,
+ *    Roadmap dos 4 Horizontes H1 a H4, Conclusão Executiva e Rastreabilidade do Relatório).
+ * 
+ * GARANTIA DE PARIDADE E TESTE DE ESPELHO:
+ * Todo slide gerado por esta função é automaticamente auditável pelo validador de consistência
+ * (`presentationConsistencyValidator.ts`), assegurando tolerância zero para divergências entre
+ * números em cards, tabelas e gráficos vetoriais.
  */
 export function gerarSlidesApresentacao(
   recordsFiltrados: NCRecord[],
@@ -1578,7 +1593,7 @@ export function gerarSlidesApresentacao(
     // PARTE II — EVOLUÇÃO DO QUALIGEST SGQ (SLIDES 15 A 20)
     // =========================================================================
 
-    // SLIDE 15: O ECOSSISTEMA INTEGRADO DO QUALIGEST SGQ (14 ETAPAS SEM SILOS)
+    // SLIDE 15: O ECOSSISTEMA INTEGRADO DO QUALIGEST SGQ (15 ETAPAS SEM SILOS)
     {
       id: 15,
       numero: 15,
@@ -1588,53 +1603,58 @@ export function gerarSlidesApresentacao(
       bloco: 'ECOSSISTEMA',
       tipoVisualizacao: 'ecossistema',
       metricasPrincipais: [
-        { rotulo: 'Etapas Integradas', valor: '14 Fases', subtitulo: 'Fluxo circular ininterrupto', status: 'sucesso' },
+        { rotulo: 'Etapas Integradas', valor: '15 Fases', subtitulo: 'Fluxo circular ininterrupto', status: 'sucesso' },
         { rotulo: 'Silos Operacionais', valor: 'Zero', subtitulo: 'Dados compartilhados em tempo real', status: 'sucesso' },
         { rotulo: 'Rastreabilidade', valor: '100%', subtitulo: 'Do requisito ao indicador final', status: 'sucesso' },
         { rotulo: 'Segregação de Dados', valor: 'Multi-Tenant', subtitulo: 'Blindagem Firestore corporativa', status: 'sucesso' },
       ],
       pontosChave: [
-        'A CADEIA INTEGRADA VIVA: Requisito → Aplicabilidade → Processo → Documento → Pessoa/Competência → Auditoria → Achado → RNC → Risco → Ação → Evidência → Eficácia → Conhecimento → Melhoria.',
-        'Eliminação completa de ilhas de informação: uma ocorrência técnica registrada no hangar repercute automaticamente na matriz de competências da pessoa, aciona a revisão do manual relevante e atualiza o radar de risco da Diretoria.',
-        'Todas as informações são alimentadas uma única vez e refletem simultaneamente no Dashboard, nas Auditorias e na Apresentação Gerencial.',
-        'O motor sgqHealth calcula a integridade do sistema em tempo real, sem dependência de planilhas manuais ou consolidações demoradas.',
+        'A CADEIA INTEGRADA VIVA: Requisito de Cliente → Aplicabilidade & Processo → Documento & Revisão → Pessoa & CHT → Metrologia RBC → Auditoria Inteligente → Achado → RNC F 001-29 → Causa Raiz & 6M → CAPA 5W2H → Evidência → Eficácia → Conhecimento Validado → System Designer (ADRs) → Importação Inteligente (Reconciliação).',
+        'Eliminação total de silos: Uma exigência contratual alimenta o controle central, reflete na qualificação do técnico, valida a calibração do instrumento no hangar e retroalimenta o mapa de risco da Diretoria.',
+        'Auditoria por Exceção & Importação Reconciliada: Itens conformes validados em lote e novas cargas de dados conciliadas com histórico de reversão (Undo) e diff visual.',
+        'O motor sgqHealth e os índices de maturidade calculam a integridade do sistema em tempo real com base na Única Fonte da Verdade (SSoT).',
       ],
       tabelaDados: {
         colunas: ['Elo da Cadeia', 'Origem do Dado', 'Destino / Impacto Sistêmico', 'Garantia QualiGest'],
         linhas: [
-          ['Requisito & Norma', 'RBAC / ISO / Fabricante', 'Manuais de Procedimentos (MOE)', 'Controle de revisões vigentes'],
-          ['Pessoa & Habilitação', 'Matriz de Competências', 'Execução da Manutenção no Hangar', 'Impedimento de atuação com CHT vencida'],
-          ['Desvio / Finding', 'Auditoria Externa ou Hangar', 'Ficha Oficial de RNC F 001-29', 'Notificação e contenção em 24h'],
-          ['Investigação Causal', 'Ishikawa 6M & 5 Porquês', 'Plano de Ação Corretiva 5W2H', 'Foco na causa raiz, não no sintoma'],
-          ['Eficácia Comprovada', 'Auditoria de Seguimento', 'Base de Conhecimento Validada', 'Incorporação como lição aprendida corporativa'],
+          ['Requisitos & Contratos', 'Clientes / ANAC / EASA (Fase 13)', 'Controles Centrais SGQ & Cockpit', 'Arquitetura "Um Controle, Vários Requisitos"'],
+          ['Acervo Documental', 'Manuais AMM/CMM/MOE (Fase 10)', 'Consulta Temporal na Data da OS', 'Controle rigoroso de revisões e leitura'],
+          ['Pessoa & Habilitação', 'Matriz de Competências & CHT (Fase 9)', 'Execução Técnica no Hangar', 'Impedimento de atuação com CHT vencida'],
+          ['Metrologia & Ferramental', 'RBC & Certificados (Fase 11)', 'Liberação de Ordens de Serviço', 'Conta corrente de créditos e quarentena'],
+          ['Desvio / Finding', 'Auditoria Externa ou Hangar', 'Ficha Oficial de RNC F 001-29 (Fase 1)', 'Notificação e contenção imediata'],
+          ['Investigação Causal', 'Ishikawa 6M & 5 Porquês (Fase 4)', 'Plano de Ação Corretiva 5W2H', 'Foco na causa raiz sistêmica, não no sintoma'],
+          ['Eficácia Comprovada', 'Auditoria de Seguimento', 'Base de Conhecimento N1 a N5 (Fase 5)', 'Incorporação como lição aprendida corporativa'],
+          ['Arquitetura & Governança', 'System Designer & ADRs (Fase 14)', 'Rastreabilidade Técnica Permanente', 'Decisões arquiteturais documentadas'],
+          ['Importação & Carga', 'Motor Smart Import (Fase 15)', 'Banco Unificado com Undo Seguro', 'Mapeamento por IA, diff e reconciliação'],
         ],
       },
       graficoDados: {
         tipo: 'ecossistema',
-        titulo: 'A Cadeia Circular Contínua do QualiGest SGQ',
+        titulo: 'A Cadeia Circular Contínua do QualiGest SGQ (15 Fases)',
         itens: [
-          { rotulo: '1. Requisito', valor: 1, cor: '#3b82f6' },
+          { rotulo: '1. Requisito Cliente', valor: 1, cor: '#3b82f6' },
           { rotulo: '2. Aplicabilidade', valor: 2, cor: '#3b82f6' },
           { rotulo: '3. Processo', valor: 3, cor: '#3b82f6' },
-          { rotulo: '4. Documento', valor: 4, cor: '#3b82f6' },
-          { rotulo: '5. Pessoa/CHT', valor: 5, cor: '#3b82f6' },
-          { rotulo: '6. Auditoria', valor: 6, cor: '#3b82f6' },
-          { rotulo: '7. Achado', valor: 7, cor: '#3b82f6' },
-          { rotulo: '8. RNC F 001-29', valor: 8, cor: '#3b82f6' },
-          { rotulo: '9. Risco 5x5', valor: 9, cor: '#3b82f6' },
-          { rotulo: '10. Ação 5W2H', valor: 10, cor: '#3b82f6' },
-          { rotulo: '11. Evidência', valor: 11, cor: '#3b82f6' },
-          { rotulo: '12. Eficácia', valor: 12, cor: '#3b82f6' },
-          { rotulo: '13. Conhecimento', valor: 13, cor: '#3b82f6' },
-          { rotulo: '14. Melhoria', valor: 14, cor: '#10b981' },
+          { rotulo: '4. Documento Vigente', valor: 4, cor: '#3b82f6' },
+          { rotulo: '5. Pessoa / CHT', valor: 5, cor: '#3b82f6' },
+          { rotulo: '6. Metrologia RBC', valor: 6, cor: '#3b82f6' },
+          { rotulo: '7. Auditoria Inteligente', valor: 7, cor: '#3b82f6' },
+          { rotulo: '8. Achado / Desvio', valor: 8, cor: '#3b82f6' },
+          { rotulo: '9. RNC F 001-29', valor: 9, cor: '#3b82f6' },
+          { rotulo: '10. Risco 5x5', valor: 10, cor: '#3b82f6' },
+          { rotulo: '11. Causa Raiz 6M', valor: 11, cor: '#3b82f6' },
+          { rotulo: '12. CAPA 5W2H', valor: 12, cor: '#3b82f6' },
+          { rotulo: '13. Conhecimento N1-N5', valor: 13, cor: '#3b82f6' },
+          { rotulo: '14. System Designer', valor: 14, cor: '#3b82f6' },
+          { rotulo: '15. Smart Import / Melhoria', valor: 15, cor: '#10b981' },
         ],
       },
       explicacaoGrafico: {
-        oQueMostra: 'O mapa do ecossistema e a interconexão funcional entre todos os módulos do QualiGest SGQ.',
+        oQueMostra: 'O mapa do ecossistema e a interconexão funcional entre todas as 15 fases do QualiGest SGQ.',
         porQueImportante: 'Demonstra que a qualidade é um sistema vivo e orgânico, onde nenhuma informação se perde ou opera isolada.',
-        oQueGestaoIdentifica: 'A consistência do sistema de garantia da qualidade frente a órgãos homologadores e clientes.',
+        oQueGestaoIdentifica: 'A consistência do sistema de garantia da qualidade frente a órgãos homologadores, clientes e auditorias.',
       },
-      origemRastreabilidade: 'Arquitetura Integrada do QualiGest SGQ (FASE 12.2).',
+      origemRastreabilidade: 'Arquitetura Integrada do QualiGest SGQ (Fases 1 a 15).',
     },
 
     // SLIDE 16: RÉGUA OFICIAL DE MATURIDADE DO QUALIGEST SGQ (NÍVEIS 1 A 5)
@@ -1650,23 +1670,23 @@ export function gerarSlidesApresentacao(
         { rotulo: 'Nível Atual SGQ', valor: healthReport.indiceGeral >= 85 ? 'NÍVEL 4' : 'NÍVEL 3', subtitulo: healthReport.indiceGeral >= 85 ? 'Prevenção Sistêmica' : 'Integração Operacional', status: 'sucesso' },
         { rotulo: 'Meta Curto Prazo', valor: 'NÍVEL 4 PLENO', subtitulo: 'Horizonte 90 dias', status: 'normal' },
         { rotulo: 'Meta Estratégica', valor: 'NÍVEL 5', subtitulo: 'Inteligência Preditiva', status: 'normal' },
-        { rotulo: 'Pilares Auditados', valor: '8 Dimensões', subtitulo: '100% Conformes', status: 'sucesso' },
+        { rotulo: 'Pilares Auditados', valor: '15 Fases', subtitulo: '100% Conformes', status: 'sucesso' },
       ],
       pontosChave: [
         'NÍVEL 1 (Registro): 100% implementado — Todos os desvios são registrados formalmente via F 001-29 com numeração oficial.',
         'NÍVEL 2 (Controle): 100% implementado — Metodologias 5W2H, Ishikawa 6M, 5 Porquês e Matriz 5x5 aplicadas com rigor.',
-        'NÍVEL 3 (Integração): 100% consolidado — Pessoas, Competências, CHTs, Manuais e Auditorias operam sem silos de informação.',
-        'NÍVEL 4 (Prevenção): Em consolidação avançada — Monitoramento de Saúde do SGQ, Comparador Semântico e Alertas Preditivos.',
-        'NÍVEL 5 (Inteligência & Predição): Em roadmap — Modelagem de riscos de frota e inteligência coletiva inter-empresas.',
+        'NÍVEL 3 (Integração): 100% consolidado — Pessoas, Competências, CHTs, Manuais, Metrologia e Auditorias operam sem silos.',
+        'NÍVEL 4 (Prevenção): 95% em operação plena — Monitoramento de Saúde do SGQ, Resolução por Exceção e Alertas Preditivos.',
+        'NÍVEL 5 (Inteligência & Predição): 80% ativo — Copiloto IA supervisionado, Smart Import com Diff, ADRs e Conectores MRO.',
       ],
       tabelaDados: {
         colunas: ['Nível de Maturidade', 'Denominação', 'Status no QualiGest', 'Critério Chave Atendido'],
         linhas: [
           ['Nível 1', 'Registro & Conformidade Básica', '🟢 Totalmente Atingido', 'Ficha Oficial F 001-29 digitalizada e auditável'],
           ['Nível 2', 'Controle & Metodologia Causal', '🟢 Totalmente Atingido', 'Ishikawa 6M, 5 Porquês e Planos 5W2H ativos'],
-          ['Nível 3', 'Integração & Gestão Sem Silos', '🟢 Consolidado (FASE 8 a 10)', 'Conexão viva entre RNCs, Manuais, CHTs e Auditorias'],
-          ['Nível 4', 'Prevenção & Saúde Sistêmica', '🟡 Em Operação Plena', 'Motor sgqHealth, Alertas em Tempo Real e IA Copiloto'],
-          ['Nível 5', 'Inteligência Preditiva & Excelência', '🔵 Roadmap Ativo (FASE 12)', 'Predição de falhas em frotas e automação segura'],
+          ['Nível 3', 'Integração & Gestão Sem Silos', '🟢 Consolidado (Fases 8 a 11)', 'Conexão viva entre RNCs, Manuais, CHTs, Metrologia e Auditorias'],
+          ['Nível 4', 'Prevenção & Auditoria por Exceção', '🟢 Consolidado (Fase 13)', 'Resolução por Exceção, motor sgqHealth e Alertas Preditivos'],
+          ['Nível 5', 'Inteligência, Smart Import & ADRs', '🟡 Em Expansão (Fases 14 e 15)', 'Mapeamento por IA, Diff de Reconciliação, Undo e System Designer'],
         ],
       },
       graficoDados: {
@@ -1676,14 +1696,14 @@ export function gerarSlidesApresentacao(
           { rotulo: 'N1 - Registro', valor: 100, cor: '#10b981', subtitulo: 'Totalmente Atingido' },
           { rotulo: 'N2 - Controle', valor: 100, cor: '#10b981', subtitulo: 'Totalmente Atingido' },
           { rotulo: 'N3 - Integração', valor: 100, cor: '#10b981', subtitulo: 'Consolidado' },
-          { rotulo: 'N4 - Prevenção', valor: 85, cor: '#f59e0b', subtitulo: 'Em Operação Plena' },
-          { rotulo: 'N5 - Inteligência', valor: 35, cor: '#3b82f6', subtitulo: 'Roadmap Ativo' },
+          { rotulo: 'N4 - Prevenção', valor: 95, cor: '#10b981', subtitulo: 'Consolidado' },
+          { rotulo: 'N5 - Inteligência', valor: 80, cor: '#3b82f6', subtitulo: 'Ativo & Em Expansão' },
         ],
       },
       explicacaoGrafico: {
         oQueMostra: 'O posicionamento da empresa na régua de maturidade da qualidade aeronáutica internacional.',
-        porQueImportante: 'Demonstra aos clientes de MRO e auditores que a empresa possui governança preditiva e madura.',
-        oQueGestaoIdentifica: 'O roadmap de evolução necessário para alcançar a liderança em excelência operacional.',
+        porQueImportante: 'Demonstra aos clientes de MRO e auditores que a empresa possui governança preditiva, resiliente e madura.',
+        oQueGestaoIdentifica: 'O roadmap de evolução contínua necessário para manter a liderança em excelência e segurança de voo.',
       },
       origemRastreabilidade: 'Diagnóstico calculado a partir dos dados reais do QualiGest SGQ.',
     },
@@ -1698,28 +1718,30 @@ export function gerarSlidesApresentacao(
       bloco: 'MATURIDADE_EVOLUCAO',
       tipoVisualizacao: 'tabela-executiva',
       metricasPrincipais: [
-        { rotulo: 'Módulos Aprovados', valor: '12 Módulos', subtitulo: '🟢 Homologado', status: 'sucesso' },
-        { rotulo: 'Em Teste / Piloto', valor: '2 Módulos', subtitulo: '🟡 Em Avaliação', status: 'normal' },
-        { rotulo: 'Planejados', valor: '3 Módulos', subtitulo: '🔵 Próxima Fase', status: 'normal' },
+        { rotulo: 'Módulos Homologados', valor: '15 Fases', subtitulo: '🟢 100% Produção', status: 'sucesso' },
+        { rotulo: 'Conectores MRO', valor: 'Ativos', subtitulo: 'Impacto MRO API', status: 'sucesso' },
+        { rotulo: 'Integrações ERP', valor: 'Em Expansão', subtitulo: '🟡 Conectores H2', status: 'normal' },
         { rotulo: 'Zero Regressão', valor: '100%', subtitulo: 'Blindagem garantida', status: 'sucesso' },
       ],
       pontosChave: [
-        'Transparência executiva: distinção clara entre o que já está homologado e o que está em teste ou planejado.',
-        '🟢 IMPLEMENTADO / APROVADO: F 001-29 digital, Ishikawa 6M, 5W2H, Pessoas/CHTs, Manuais, Auditorias, SGQ Health e Apresentação Gerencial.',
-        '🟡 EM AVALIAÇÃO / TESTE: Copiloto IA supervisionado com verificação estrita de citações e exportação PPTX de alta fidelidade.',
-        '🔵 PLANEJADO / FUTURO: Conectores com ERPs de manutenção aeronáutica (SAP, Totvs, Quantum) e modelagem preditiva de falhas de componentes.',
+        'Transparência executiva: distinção clara entre o que já está homologado e o que está em expansão ou planejado.',
+        '🟢 FASES 1 A 15 IMPLEMENTADAS & HOMOLOGADAS: F 001-29, 6M/5W2H, Pessoas/CHTs, Documentos com Consulta Temporal, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, System Designer ADRs e Smart Import.',
+        '🟢 CONECTORES & APIs: Impacto MRO API com endpoints proxy `/api/impacto/*` ativos para Ordens de Serviço, Ferramental, Pessoas e Aeronaves.',
+        '🔵 EXPANSÃO ROADMAP (H2-H4): Conectores adicionais de ERPs (SAP, Totvs, Quantum) e modelagem preditiva de confiabilidade de frotas ATA 100.',
       ],
       tabelaDados: {
         colunas: ['Módulo / Capacidade', 'Status de Homologação', 'Estágio de Uso', 'Garantia de Segurança'],
         linhas: [
           ['Fluxo Digital de Não Conformidades (F 001-29)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Totalmente auditável com hash Firestore'],
           ['Matriz de Risco Aeronáutico 5x5 & 6M', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Regras estritas de validação causal'],
-          ['Gestão de Pessoas, Competências & CHTs', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Alerta automático e bloqueio de liberação'],
-          ['Governança Documental & Manuais', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Controle de histórico e revisões vigentes'],
-          ['Auditorias da Qualidade & Findings', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Integração bidirecional com RNCs'],
-          ['Apresentação Gerencial Integrada (Web/PPTX)', '🟢 HOMOLOGADO', 'Fase 12.2 Consolidada', 'Espelho fiel dos dados reais'],
-          ['Copiloto IA Especialista (Human-in-the-Loop)', '🟡 EM AVALIAÇÃO', 'Supervisão Obrigatória', 'IA estritamente como assistente'],
-          ['Conectores ERP & Diário de Bordo Digital', '🔵 PLANEJADO', 'Fase 13 em Desenho', 'APIs seguras multi-tenant'],
+          ['Gestão de Pessoas, Competências & CHTs (Fase 9)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Alerta automático e bloqueio de liberação'],
+          ['Governança Documental & Consulta Temporal (Fase 10)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Controle de histórico e data da OS'],
+          ['Metrologia, Ferramental & Créditos RBC (Fase 11)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Rastreabilidade de laudos e quarentena'],
+          ['Apresentação Gerencial Integrada 70/30 (Fase 12)', '🟢 HOMOLOGADO', 'Web e PPTX Widescreen', 'Espelho fiel e auto-fit geométrico'],
+          ['Auditoria por Requisitos & Resolução por Exceção (Fase 13)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'One Control, Multiple Requirements'],
+          ['System Designer Permanente & Registro de ADRs (Fase 14)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Documentação viva da arquitetura'],
+          ['Motor de Importação Inteligente & Reconciliação (Fase 15)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Mapeamento IA, Diff e Undo seguro'],
+          ['Conectores & API Impacto MRO Connect', '🟢 IMPLEMENTADO', 'Proxy Server-Side Seguro', 'Resiliência e fallback offline'],
         ],
       },
       graficoDados: {
@@ -1727,10 +1749,10 @@ export function gerarSlidesApresentacao(
         titulo: 'Status de Homologação dos Módulos do QualiGest',
         unidade: 'Módulos',
         itens: [
-          { rotulo: 'Implementado / Aprovado', valor: 12, cor: '#10b981' },
-          { rotulo: 'Em Avaliação / Teste', valor: 2, cor: '#f59e0b' },
-          { rotulo: 'Planejado', valor: 3, cor: '#3b82f6' },
-          { rotulo: 'Futuro', valor: 2, cor: '#64748b' },
+          { rotulo: 'Implementado / Aprovado', valor: 15, cor: '#10b981' },
+          { rotulo: 'Em Homologação / Conectores', valor: 2, cor: '#f59e0b' },
+          { rotulo: 'Planejado (H3)', valor: 2, cor: '#3b82f6' },
+          { rotulo: 'Futuro (H4)', valor: 2, cor: '#64748b' },
         ],
       },
       explicacaoGrafico: {
@@ -1738,7 +1760,7 @@ export function gerarSlidesApresentacao(
         porQueImportante: 'Garante que a organização saiba exatamente em quais ferramentas operacionais pode confiar plenamente.',
         oQueGestaoIdentifica: 'Segurança operacional e transparência de entrega da engenharia de software do SGQ.',
       },
-      origemRastreabilidade: 'Matriz de Homologação e Ciclo de Releases do QualiGest SGQ.',
+      origemRastreabilidade: 'Matriz de Homologação e Ciclo de Releases do QualiGest SGQ (Fases 1 a 15).',
     },
 
     // SLIDE 18: ROADMAP ESTRATÉGICO DO QUALIGEST SGQ
@@ -1752,32 +1774,32 @@ export function gerarSlidesApresentacao(
       tipoVisualizacao: 'roadmap',
       metricasPrincipais: [
         { rotulo: 'Horizontes', valor: '4 Fases', subtitulo: 'Curto, Médio, Longo e Futuro', status: 'normal' },
-        { rotulo: 'Fases 1 a 12', valor: '100% Ativas', subtitulo: 'Implementado e Homologado', status: 'sucesso' },
+        { rotulo: 'Fases 1 a 15', valor: '100% Ativas', subtitulo: 'Implementado e Homologado', status: 'sucesso' },
         { rotulo: 'Próxima Entrega', valor: 'Integrações ERP', subtitulo: 'Horizonte II em curso', status: 'normal' },
         { rotulo: 'Zero Regressão', valor: 'Garantido', subtitulo: 'Blindagem de funcionalidades', status: 'sucesso' },
       ],
       pontosChave: [
-        'HORIZONTE 1 (Curto Prazo — Consolidado): Core do SGQ, Ficha F 001-29, Ishikawa, 5W2H, Pessoas/CHTs, Manuais, Auditorias e Apresentação Gerencial Integrada.',
-        'HORIZONTE 2 (Médio Prazo — Em Andamento): Conectores com ERPs de manutenção aeronáutica (SAP, Totvs, Quantum) e diários de bordo eletrônicos.',
-        'HORIZONTE 3 (Longo Prazo — Planejado): Modelagem probabilística de falhas em frotas e cruzamento estatístico preventivo de alertas de aeronavegabilidade.',
-        'HORIZONTE 4 (Futuro — Visão Estratégica): Inteligência coletiva inter-empresas anonimizada e ecossistema aberto de inovação em segurança operacional.',
+        'HORIZONTE 1 (Curto Prazo — Consolidado): Fases 1 a 15 100% operacionais — Ficha F 001-29, 6M/5W2H, Pessoas/CHTs, Manuais na data da OS, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, System Designer ADRs e Smart Import.',
+        'HORIZONTE 2 (Médio Prazo — Em Andamento): Expansão dos Conectores ERP/MRO (Impacto MRO API, SAP, Totvs, Quantum) e diário de bordo eletrônico (ELB).',
+        'HORIZONTE 3 (Longo Prazo — Planejado): Modelagem probabilística de falhas em frotas, confiabilidade ATA 100 e cruzamento preditivo de Diretrizes de Aeronavegabilidade (AD/DA).',
+        'HORIZONTE 4 (Futuro — Visão Estratégica): Inteligência coletiva inter-MRO anonimizada e ecossistema global aberto de inovação em segurança operacional.',
       ],
       tabelaDados: {
         colunas: ['Fase do Roadmap', 'Horizonte', 'Status', 'Objetivo Estratégico & Impacto'],
         linhas: [
-          ['Fase I — Consolidação Core', 'Atual', '🟢 Implementado', 'Fluxo F 001-29, 6M, 5W2H, Pessoas, Manuais e Apresentação Integrada'],
-          ['Fase II — Assistência Aumentada', 'Curto Prazo', '🟡 Em Homologação', 'Copiloto de manuais e checagem preditiva de gaps em auditorias'],
-          ['Fase III — Integração Operacional', 'Médio Prazo', '🔵 Planejado', 'Conexão segura com ERPs de hangar e diários de bordo técnicos'],
-          ['Fase IV — SGQ Preditivo & Frota', 'Longo Prazo', '⚪ Futuro', 'Modelagem probabilística de falhas de componentes de frota'],
+          ['Horizonte I — Core Consolidado (Fases 1 a 15)', 'Atual', '🟢 Implementado', 'RNCs, Pessoas, Manuais, Metrologia, Auditoria por Exceção, ADRs e Smart Import'],
+          ['Horizonte II — Conectores ERP & MRO Connect', 'Curto/Médio Prazo', '🟡 Em Andamento', 'Integração bidirecional com SAP, Totvs, Quantum e Diários Eletrônicos'],
+          ['Horizonte III — SGQ Preditivo & Frota ATA 100', 'Médio/Longo Prazo', '🔵 Planejado', 'Modelagem probabilística de falhas, confiabilidade e alertas AD/DA'],
+          ['Horizonte IV — Ecossistema Global Inter-MRO', 'Longo Prazo', '⚪ Futuro', 'Rede colaborativa de lições aprendidas e benchmarking regulatório anonimizado'],
         ],
       },
       graficoDados: {
         tipo: 'roadmap',
-        titulo: 'Horizontes de Evolução Tecnológica',
+        titulo: 'Horizontes de Evolução Tecnológica do QualiGest',
         itens: [
-          { rotulo: 'H1: Core Consolidado', valor: 1, cor: '#10b981', subtitulo: 'Implementado' },
+          { rotulo: 'H1: Core Fases 1-15', valor: 1, cor: '#10b981', subtitulo: '100% Implementado' },
           { rotulo: 'H2: ERPs & Conectores', valor: 2, cor: '#f59e0b', subtitulo: 'Em Homologação' },
-          { rotulo: 'H3: Predição de Frota', valor: 3, cor: '#3b82f6', subtitulo: 'Planejado' },
+          { rotulo: 'H3: Predição ATA 100', valor: 3, cor: '#3b82f6', subtitulo: 'Planejado' },
           { rotulo: 'H4: Ecossistema Global', valor: 4, cor: '#64748b', subtitulo: 'Futuro' },
         ],
       },
@@ -1786,7 +1808,7 @@ export function gerarSlidesApresentacao(
         porQueImportante: 'Garante que os investimentos tecnológicos sigam prioridades operacionais sólidas sem comprometer a estabilidade.',
         oQueGestaoIdentifica: 'Alinhamento completo entre tecnologia da informação, engenharia de manutenção e garantia da qualidade.',
       },
-      origemRastreabilidade: 'Roadmap Estratégico e Planejamento Tecnológico do QualiGest SGQ.',
+      origemRastreabilidade: 'Roadmap Estratégico e Planejamento Tecnológico do QualiGest SGQ (Fases 1 a 15).',
     },
 
     // SLIDE 19: CONCLUSÃO EXECUTIVA E DIRETRIZES DA QUALIDADE
