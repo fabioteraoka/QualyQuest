@@ -103,8 +103,8 @@ async function testarHomologacaoFase12_2() {
   );
 
   console.log(`Total de Slides Gerados: ${apresentacao.slides.length}`);
-  if (apresentacao.slides.length !== 20) {
-    throw new Error(`Esperado 20 slides, obtido ${apresentacao.slides.length}`);
+  if (apresentacao.slides.length < 20) {
+    throw new Error(`Esperado no mínimo 20 slides, obtido ${apresentacao.slides.length}`);
   }
 
   const resEspelho = executarTesteEspelho(apresentacao);

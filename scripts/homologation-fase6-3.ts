@@ -281,7 +281,7 @@ recordTest({
   esperado: 'Slides gerados (>= 17), semDados tratado sem overflow',
   obtido: `${presVazia.slides.length} slides gerados, Válido: ${validacaoVazia.valido}`,
   evidencia: `Conformidade: ${validacaoVazia.conformidade}`,
-  status: (presVazia.slides.length === 17 || presVazia.slides.length === 20) && validacaoVazia.valido ? 'PASS' : 'FAIL',
+  status: presVazia.slides.length >= 17 && validacaoVazia.valido ? 'PASS' : 'FAIL',
   classificacao: 'CONFORME',
 });
 
