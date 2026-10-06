@@ -20,7 +20,8 @@ import {
   RefreshCw,
   ExternalLink,
   Download,
-  Building2
+  Building2,
+  UploadCloud
 } from 'lucide-react';
 import {
   RequisitoAuditoriaExterna,
@@ -45,6 +46,7 @@ interface AuditRequirementsListViewProps {
   onSaveBatchRequirements?: (reqs: RequisitoAuditoriaExterna[]) => Promise<void>;
   onCriarRNC?: (payload: Partial<NCRecord>) => void;
   onNavigateToTab?: (tab: string) => void;
+  onOpenImportMode?: () => void;
 }
 
 export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps> = ({
@@ -56,6 +58,7 @@ export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps>
   onSaveBatchRequirements,
   onCriarRNC,
   onNavigateToTab,
+  onOpenImportMode,
 }) => {
   const [selectedAuditId, setSelectedAuditId] = useState<string>('TODAS');
   const [selectedSecao, setSelectedSecao] = useState<string>('TODAS');
@@ -247,12 +250,12 @@ export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps>
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-950 text-amber-300 border border-amber-800/50 flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-                CONTROLE INDIVIDUALIZADO DE REQUISITOS • FORM QA-14
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-950 text-sky-400 border border-sky-800/50 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                CONTROLE INDIVIDUALIZADO DE REQUISITOS DE AUDITORIA
               </span>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                7 Páginas • 69 Itens Estruturados
+                {requirements.length} Requisitos no SGQ
               </span>
             </div>
             <h2 className="text-xl font-bold text-white tracking-tight">
@@ -264,19 +267,35 @@ export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps>
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                if (onOpenImportMode) {
+                  onOpenImportMode();
+                } else if (onNavigateToTab) {
+                  onNavigateToTab('smart-audit');
+                }
+              }}
+              className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer"
+              title="Fazer upload de arquivo real (PDF, DOCX, XLSX, CSV, JSON) para extração via IA"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>Importar Checklist / Arquivo Real</span>
+            </button>
+
             {requirements.length === 0 && (
               <button
                 onClick={handleFastLoadKalitta}
                 disabled={loadingBatch}
-                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                title="Carrega os 69 itens oficiais do modelo Kalitta Air (FORM QA-14) para teste ou demonstração"
               >
                 {loadingBatch ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Sparkles className="w-4 h-4" />
+                  <Sparkles className="w-4 h-4 text-amber-400" />
                 )}
-                <span>Carregar Checklist Kalitta QA-14 (69 Itens)</span>
+                <span>Carregar Modelo Kalitta (Demo)</span>
               </button>
             )}
 
@@ -284,11 +303,11 @@ export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps>
               <button
                 onClick={handleFastLoadKalitta}
                 disabled={loadingBatch}
-                className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Sincronizar novamente itens padrão do FORM QA-14"
+                className="px-3 py-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 border border-slate-750 text-slate-400 hover:text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
+                title="Sincronizar novamente itens padrão do FORM QA-14 para teste"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loadingBatch ? 'animate-spin' : ''}`} />
-                <span>Recarregar Modelo Kalitta</span>
+                <span>Modelo Kalitta (Demo)</span>
               </button>
             )}
           </div>

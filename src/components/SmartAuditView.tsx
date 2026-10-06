@@ -1210,6 +1210,7 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
           onSaveBatchRequirements={onSaveAuditRequirementsBatch}
           onCriarRNC={onCriarRNCDeRequisito}
           onNavigateToTab={onNavigateToTab}
+          onOpenImportMode={() => setActiveMode('IMPORTAR')}
         />
       )}
 

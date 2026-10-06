@@ -309,7 +309,7 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
                         <div className="flex items-center gap-2">
                           <History className="w-4 h-4 text-purple-400" />
                           <span className="text-xs font-bold text-purple-300 uppercase tracking-wide">
-                            3. Memória Histórica — "Já recebemos algo parecido?"
+                            3. Memória Histórica — Precedentes Anteriores
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -318,6 +318,12 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
                             Peso de Confiança: {hist.pesoConfiabilidade}%
                           </span>
                         </div>
+                      </div>
+
+                      {/* Regra Fundamental 3: Precedente NÃO é verdade regulatória */}
+                      <div className="px-3 py-1.5 rounded-lg bg-amber-950/70 border border-amber-600/50 text-amber-300 text-[11px] font-bold flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                        <span>PRECEDENTE INTERNO DE AUDITORIA — NÃO CONSTITUI VERDADE REGULATÓRIA</span>
                       </div>
 
                       {/* Alerta Temporal de Revisão Documental (Item 14 do brief) */}
@@ -359,9 +365,9 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-slate-950/50 border border-slate-850 rounded-xl p-3 text-xs text-slate-500 italic flex items-center gap-2">
-                      <History className="w-4 h-4 text-slate-600" />
-                      Nenhum finding ou auditoria anterior equivalente localizada na memória histórica para este requisito.
+                    <div className="bg-slate-950/50 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 italic flex items-center gap-2">
+                      <History className="w-4 h-4 text-slate-500" />
+                      <span><strong>Precedente de Auditoria:</strong> Nenhum finding ou auditoria anterior equivalente localizada. Declaração de GAP aplicável se não houver procedimento formal.</span>
                     </div>
                   )}
 
@@ -370,7 +376,7 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-sky-300 uppercase tracking-wide flex items-center gap-1.5">
                         <Sparkles className="w-4 h-4 text-sky-400" />
-                        4. Resposta Sugerida pela IA (Pronta para o Auditor)
+                        4. Resposta Sugerida pela IA (Categorização Rigorosa de Fontes)
                       </span>
                       {editingResponseId !== req.id && (
                         <button
@@ -378,11 +384,38 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
                             setEditingResponseId(req.id);
                             setCustomResponseText(item.propostaResposta.textoRespostaSugerida);
                           }}
-                          className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold"
+                          className="text-[11px] text-sky-400 hover:text-sky-300 font-semibold cursor-pointer"
                         >
-                          Personalizar Resposta
+                          Personalizar / Editar
                         </button>
                       )}
+                    </div>
+
+                    {/* Classificação das 5 Fontes Utilizadas */}
+                    <div className="flex flex-wrap gap-1.5 text-[10px]">
+                      {req.referenciaNormativa && (
+                        <span className="px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800/50 font-semibold">
+                          [A. FONTE REGULATÓRIA] {req.referenciaNormativa}
+                        </span>
+                      )}
+                      {item.oQueJaTemos.procedimentos.length > 0 && (
+                        <span className="px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800/50 font-semibold">
+                          [B. FONTE INTERNA] {item.oQueJaTemos.procedimentos[0]}
+                        </span>
+                      )}
+                      {item.evidenciasIdentificadas.length > 0 && (
+                        <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800/50 font-semibold">
+                          [C. EVIDÊNCIA] {item.evidenciasIdentificadas.length} Registro(s)
+                        </span>
+                      )}
+                      {hist && (
+                        <span className="px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800/50 font-semibold">
+                          [D. PRECEDENTE] {hist.numeroAuditoria}
+                        </span>
+                      )}
+                      <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700 font-semibold">
+                        [E. INFERÊNCIA DA IA] Assistida
+                      </span>
                     </div>
 
                     {editingResponseId === req.id ? (
@@ -396,7 +429,7 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
                         <div className="flex justify-end gap-2">
                           <button
                             onClick={() => setEditingResponseId(null)}
-                            className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs"
+                            className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs cursor-pointer"
                           >
                             Cancelar
                           </button>
@@ -405,30 +438,45 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
                               await onAcceptSuggestion(item, 'EDITADO', customResponseText);
                               setEditingResponseId(null);
                             }}
-                            className="px-3 py-1 rounded-lg bg-sky-600 text-white text-xs font-semibold flex items-center gap-1"
+                            className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer"
                           >
                             <Check className="w-3 h-3" />
-                            Salvar Resposta Editada
+                            Salvar Edição
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs text-slate-200 italic font-mono">
+                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 text-xs text-slate-200 italic font-mono leading-relaxed">
                         "{item.propostaResposta.textoRespostaSugerida}"
                       </div>
                     )}
 
-                    <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
+                    {/* Botões de Decisão Humana Obrigatória */}
+                    <div className="text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
                       <span>
-                        Base Regulamentar: <strong>{item.propostaResposta.baseDaResposta.join(', ')}</strong>
+                        Base Normativa: <strong>{item.propostaResposta.baseDaResposta.join(', ') || 'Normas Aeronáuticas'}</strong>
                       </span>
-                      <button
-                        onClick={() => onAcceptSuggestion(item, 'ACEITO')}
-                        className="px-3 py-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1"
-                      >
-                        <Check className="w-3 h-3" />
-                        Adotar Resposta
-                      </button>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <button
+                          onClick={() => onAcceptSuggestion(item, 'REJEITADO')}
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-rose-950 hover:text-rose-300 text-slate-400 text-xs font-medium transition-colors cursor-pointer"
+                        >
+                          Rejeitar
+                        </button>
+                        <button
+                          onClick={() => onAcceptSuggestion(item, 'EDITADO', item.propostaResposta.textoRespostaSugerida + ' [Em Revisão Técnica]')}
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-amber-950 hover:text-amber-300 text-slate-300 text-xs font-medium transition-colors cursor-pointer"
+                        >
+                          Marcar para Revisão
+                        </button>
+                        <button
+                          onClick={() => onAcceptSuggestion(item, 'ACEITO')}
+                          className="px-3 py-1 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                        >
+                          <Check className="w-3 h-3" />
+                          Adotar Resposta
+                        </button>
+                      </div>
                     </div>
                   </div>
 

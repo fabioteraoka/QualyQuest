@@ -218,6 +218,9 @@ export interface ExtracaoChecklistResultado {
   totalItensIdentificados: number;
   secoesIdentificadas: string[];
   grauConfiancaGeral: number;
+  tipoDocumentoDetectado?: 'AUDITORIA_REALIZADA' | 'CHECKLIST_PRE_AUDITORIA' | 'RESPOSTA_AUDITORIA' | 'DOCUMENTO_COMPLEMENTAR';
+  hashSha256?: string;
+  tamanhoBytes?: number;
   itens: Array<{
     tempId: string;
     numeroItem: string;
@@ -235,4 +238,203 @@ export interface ExtracaoChecklistResultado {
     paginaOrigem?: number;
   }>;
   resumoExecutivo: string;
+}
+
+// -------------------------------------------------------------------------
+// FASE AUDITORIA INTELIGENTE: MEMÓRIA DE AUDITORIAS, PRECEDENTES E APRENDIZADO
+// -------------------------------------------------------------------------
+
+/**
+ * Categorias Rígidas de Fontes (Regra Fundamental 3):
+ * A IA deve sempre distinguir e a UI expor claramente.
+ */
+export type TipoFonteAuditoria =
+  | 'FONTE_REGULATORIA'    // AD, RBAC, IS, 14 CFR, EASA, autoridade
+  | 'FONTE_INTERNA'        // Manual, procedimento, MOE, MOMQ, MPO, IT, formulário com revisão
+  | 'EVIDENCIA'            // Registro, certificado RBC, O.S., logbook, CRS, foto
+  | 'PRECEDENTE_AUDITORIA' // Resposta anteriormente aceita por auditor externo (NUNCA verdade regulatória)
+  | 'INFERENCIA_IA';       // Sugestão ou interpretação gerada pela IA, sujeita à validação humana
+
+export interface FonteIdentificadaItem {
+  id: string;
+  categoria: TipoFonteAuditoria;
+  rotuloCategoria: string;
+  identificador: string; // Ex: 'RBAC 145.109', 'MPO-12 Rev. 04', 'Certificado RBC 88219', 'Auditoria SWISS 2025'
+  tituloOuDescricao: string;
+  revisaoCitada?: string;
+  revisaoVigenteNoAcervo?: string;
+  divergenciaRevisao?: boolean;
+  trechoRelevante?: string;
+  confiabilidade: number; // 0-100
+  disponivelNoSistema: boolean;
+  caminhoOuLink?: string;
+}
+
+/**
+ * Status de Conhecimento e Governança da Memória (Regra 20)
+ */
+export type StatusConhecimentoAprendizado =
+  | 'PROPOSED'         // Proposta pela IA ou importação
+  | 'REVIEW_REQUIRED' // Requer revisão humana ou técnica
+  | 'VALIDATED'       // Validado oficialmente por gestor SGQ
+  | 'SUPERSEDED'      // Substituído por nova revisão ou decisão
+  | 'REJECTED'        // Rejeitado como aprendizado institucional
+  | 'ARCHIVED';       // Histórico arquivado
+
+/**
+ * Nível de Correspondência / Matching de Precedente (Regra 29)
+ */
+export type NivelMatchingAuditoria =
+  | 'NIVEL_1_EXATO'       // Mesmo requisito / mesmo código normativo / mesma pergunta exata
+  | 'NIVEL_2_DOCUMENTAL'  // Mesmo manual / mesmo procedimento / mesmo formulário
+  | 'NIVEL_3_SEMANTICO'   // Pergunta ou desvio com termos tecnicamente semelhantes
+  | 'NIVEL_4_RELACIONADO'; // Macrotema ou processo afim
+
+/**
+ * Cobertura de Preparação para o Requisito (Regra 15)
+ */
+export type CoberturaPreparacaoRequisito =
+  | 'FULL_COVERAGE'     // Precedente aceito + manual vigente + evidência disponível
+  | 'PARTIAL_COVERAGE'  // Manual identificado mas evidência factual pendente
+  | 'GAP';              // Requisito sem documentação ou precedente localizado
+
+export interface GapAuditoriaItem {
+  id: string;
+  tipo: 'DOCUMENTAL' | 'OPERACIONAL' | 'AUDITORIA';
+  titulo: string;
+  descricao: string;
+  acaoRecomendada: string;
+}
+
+/**
+ * Registro de Aprendizado Organizacional da Auditoria (Audit Learning Record)
+ * Derivado de NCs encerradas, respostas aceitas e precedentes reais.
+ */
+export interface AuditLearningRecord {
+  id: string; // Ex: 'LRN-2026-001'
+  organizationId: string;
+  auditIdOrigem: string;
+  numeroAuditoriaOrigem: string;
+  entidadeAuditora: string;
+  tipoAuditoria: 'EXTERNAL' | 'INTERNAL' | 'CUSTOMER' | 'AUTHORITY' | 'LESSOR' | 'SUPPLIER' | 'OTHER';
+  
+  // Requisito e Constatação Original
+  numeroItemRequisito: string;
+  perguntaOriginal: string;
+  requisitoNormativo: string;
+  textoOriginalNC?: string;
+  classificacaoOriginal?: 'MAIOR' | 'MENOR' | 'OBSERVACAO';
+  categoriaProcesso: string; // 'Metrologia e Ferramental', 'Pessoas e Treinamentos', etc.
+  
+  // Solução Factual e Ações
+  causaRaizApurada: string;
+  correcaoImediataExecutada: string;
+  acaoCorretivaImplementada: string;
+  respostaApresentada: string;
+  evidenciasApresentadas: Array<{
+    tipo: 'CERTIFICADO' | 'TREINAMENTO' | 'PROCEDIMENTO' | 'ORDEM_SERVICO' | 'FOTO' | 'OUTRO';
+    codigoOuNumero: string;
+    descricao: string;
+    dataRegistro?: string;
+  }>;
+  
+  // Decisão do Auditor Externo
+  resultadoAuditor: 'ACEITA' | 'REJEITADA' | 'PARCIAL' | 'ENCERRADA';
+  comentarioAuditor?: string;
+  motivoEncerramento?: string;
+  dataHomologacao?: string;
+
+  // Contexto Documental no Momento da Auditoria (Versionamento Rígido - Regra 21)
+  documentosUtilizadosNaEpoca: Array<{
+    codigo: string;
+    titulo: string;
+    revisaoNaEpoca: string;
+    trechoRelevante?: string;
+  }>;
+
+  // Status de Governança
+  statusConhecimento: StatusConhecimentoAprendizado;
+  validadoPorNome?: string;
+  validadoPorUid?: string;
+  validadoEm?: string;
+  observacoesValidacao?: string;
+
+  // Estatísticas de Reutilização
+  vezesReutilizadoEmPreparacao: number;
+  ultimaVezConsultado?: string;
+  
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Padrão Recorrente de Auditoria (Regra 17 & 18)
+ */
+export interface PadraoRecorrenteAuditoria {
+  id: string;
+  temaOuProcesso: string;
+  totalOcorrencias: number;
+  auditoriasEnvolvidas: Array<{
+    ano: number;
+    numeroAuditoria: string;
+    clienteOuEntidade: string;
+    tipoResultado: 'OBSERVACAO' | 'RESPOSTA_ACEITA' | 'NC' | 'QUESTIONADO_NOVAMENTE';
+  }>;
+  respostasHistoricasResumo: string;
+  ultimaAcaoImplementada: string;
+  situacaoAtual: 'EFICAZ' | 'NECESSITA_VALIDACAO_EFICACIA' | 'REINCIDENCIA_CRITICA';
+  recomendacaoSGQ: string;
+}
+
+/**
+ * Proposta Estruturada de Preparação de Resposta com Anti-Alucinação (Regra 10, 13, 14, 25)
+ */
+export interface PropostaPreparacaoRequisitoOutput {
+  pergunta: string;
+  requisitoNumero: string;
+  cobertura: CoberturaPreparacaoRequisito;
+  grauConfianca: 'ALTA' | 'MEDIA' | 'BAIXA';
+  scoreConfiancaNumerico: number; // 0-100
+  
+  // Precedente Histórico Localizado (Classificado estritamente como Precedente Interno)
+  precedenteEncontrado?: {
+    auditoriaId: string;
+    numeroAuditoria: string;
+    ano: string;
+    cliente: string;
+    resultadoAuditor: string;
+    respostaAceita: string;
+    nivelMatching: NivelMatchingAuditoria;
+    scoreSimilaridade: number;
+    avisoPrecedente: string; // "PRECEDENTE INTERNO DE AUDITORIA - NÃO CONSTITUI VERDADE REGULATÓRIA"
+  };
+
+  // Fontes Utilizadas Rigorosamente Categorizadas (A, B, C, D, E)
+  fontesUtilizadas: FonteIdentificadaItem[];
+  
+  // Avaliação Temporal Documental
+  alertaRevisaoDocumental?: {
+    documentoCodigo: string;
+    revisaoHistorica: string;
+    revisaoVigente: string;
+    divergente: boolean;
+    mensagemAlerta: string;
+  };
+
+  // Resposta Sugerida (ou Declaração de Ausência)
+  hasInformacaoSuficiente: boolean;
+  respostaSugeridaSintetizada: string;
+  advertenciaAntiAlucinacao?: string; // "INFORMAÇÃO NÃO ENCONTRADA" ou "CONFLITO DE FONTES — REVISÃO HUMANA NECESSÁRIA"
+
+  // Gaps Identificados
+  gaps: GapAuditoriaItem[];
+  
+  // Decisão Humana
+  decisaoHumana?: {
+    status: 'ACEITAR_SUGESTAO' | 'EDITAR' | 'REJEITAR' | 'MARCAR_PARA_REVISAO';
+    respostaEditada?: string;
+    responsavelNome?: string;
+    dataDecisao?: string;
+    observacao?: string;
+  };
 }

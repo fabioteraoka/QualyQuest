@@ -5,8 +5,19 @@ import {
   NCRecord,
   ValidatedKnowledgeRecord,
   AuditoriaDashboardMetrics,
-  ManualRecord
+  ManualRecord,
+  DocumentoControlado
 } from '../types';
+import {
+  FonteIdentificadaItem,
+  TipoFonteAuditoria,
+  NivelMatchingAuditoria,
+  CoberturaPreparacaoRequisito,
+  PropostaPreparacaoRequisitoOutput,
+  GapAuditoriaItem,
+  AuditLearningRecord,
+  StatusConhecimentoAprendizado
+} from '../types/auditRequirements';
 
 /**
  * Remove acentos e converte para caixa baixa para comparação tolerante
@@ -442,5 +453,322 @@ export function calcularMetricasAuditoria(
     auditoriasPorTipo: distribuicaoPorOrigem,
     constatacoesPorClassificacao: classificacaoCounts,
     constatacoesPorSetor: distribuicaoPorSetor,
+  };
+}
+
+// -------------------------------------------------------------------------
+// FASE AUDITORIA INTELIGENTE: MATCHING EM 4 NÍVEIS E ANTI-ALUCINAÇÃO
+// -------------------------------------------------------------------------
+
+export interface ResultadoMatching4Niveis {
+  precedenteEncontrado: ConstatacaoExternaRecord | null;
+  auditoriaOrigem: AuditoriaExternaRecord | null;
+  nivelMatching: NivelMatchingAuditoria | null;
+  scoreSimilaridade: number; // 0 a 100
+  avisoPrecedente: string;
+  justificativaNivel: string;
+}
+
+/**
+ * Busca precedente em 4 níveis estritos de correspondência ontológica:
+ * - Nível 1: Exato (mesmo artigo/item de norma ou pergunta praticamente idêntica)
+ * - Nível 2: Documental (mesmo procedimento/manual interno citado)
+ * - Nível 3: Semântico (termos técnicos-chave sobrepostos)
+ * - Nível 4: Correlato (mesmo setor ou área afim)
+ */
+export function buscarPrecedenteEm4Niveis(
+  pergunta: string,
+  referenciaNormativa: string = '',
+  categoria: string = 'Geral',
+  allFindings: ConstatacaoExternaRecord[] = [],
+  allAudits: AuditoriaExternaRecord[] = []
+): ResultadoMatching4Niveis {
+  const mapAudits = new Map<string, AuditoriaExternaRecord>();
+  allAudits.forEach((a) => mapAudits.set(a.id, a));
+
+  const textoNorm = normalizar(pergunta);
+  const refNorm = normalizar(referenciaNormativa);
+  const tokensPergunta = extrairTokens(pergunta);
+
+  let melhorFinding: ConstatacaoExternaRecord | null = null;
+  let melhorNivel: NivelMatchingAuditoria | null = null;
+  let melhorScore = 0;
+  let justificativa = '';
+
+  for (const f of allFindings) {
+    const fDesc = normalizar(f.descricaoOriginal);
+    const fRef = normalizar(`${f.requisitoNormativo?.norma || ''} ${f.requisitoNormativo?.itemRequisito || ''}`);
+    const tokensF = extrairTokens(f.descricaoOriginal);
+
+    // Nível 1: Exato (mesmo artigo/item de norma ou pergunta idêntica)
+    const itemReqNorm = normalizar(f.requisitoNormativo?.itemRequisito || '');
+    const normaNorm = normalizar(f.requisitoNormativo?.norma || '');
+    const isMesmoItemNormativo = Boolean(
+      (itemReqNorm.length >= 3 && (refNorm.includes(itemReqNorm) || textoNorm.includes(itemReqNorm))) ||
+      (normaNorm && itemReqNorm && (refNorm.includes(normaNorm) || textoNorm.includes(normaNorm)) && (refNorm.includes(itemReqNorm) || textoNorm.includes(itemReqNorm)))
+    );
+
+    if (isMesmoItemNormativo || (refNorm && fRef && (refNorm.includes(fRef) || fRef.includes(refNorm)))) {
+      const jaccard = calcularJaccard(tokensPergunta, tokensF);
+      const score = Math.max(90, Math.min(100, Math.round(jaccard + 50)));
+      if (score > melhorScore) {
+        melhorScore = score;
+        melhorFinding = f;
+        melhorNivel = 'NIVEL_1_EXATO';
+        justificativa = `Nível 1 (Exato): Mesma referência regulatória identificada (${f.requisitoNormativo?.norma || 'Norma'} ${f.requisitoNormativo?.itemRequisito || ''}).`;
+        continue;
+      }
+    }
+
+    // Nível 2: Documental (mesmo procedimento/manual interno citado)
+    const docsF = (f.respostaOficial?.referenciasDocumentais || []).map(normalizar);
+    const hasDocComum = docsF.some((d) => d.length > 3 && (textoNorm.includes(d) || refNorm.includes(d)));
+    if (hasDocComum && melhorScore < 85) {
+      melhorScore = 85;
+      melhorFinding = f;
+      melhorNivel = 'NIVEL_2_DOCUMENTAL';
+      justificativa = `Nível 2 (Documental): Vinculado ao mesmo procedimento interno (${docsF[0] || 'Manual SGQ'}).`;
+      continue;
+    }
+
+    // Nível 3: Semântico (termos técnicos-chave sobrepostos)
+    let matchTokensCount = 0;
+    tokensPergunta.forEach((tp) => {
+      for (const tf of tokensF) {
+        if (tp === tf || (tp.length >= 4 && tf.length >= 4 && (tp.includes(tf) || tf.includes(tp)))) {
+          matchTokensCount++;
+          break;
+        }
+      }
+    });
+    const overlapPercent = tokensPergunta.size > 0 ? (matchTokensCount / tokensPergunta.size) * 100 : 0;
+    const jaccard = calcularJaccard(tokensPergunta, tokensF);
+
+    if ((overlapPercent >= 20 || matchTokensCount >= 2 || jaccard >= 25) && melhorScore < 75) {
+      melhorScore = Math.min(75, Math.round(Math.max(overlapPercent, jaccard) + 35));
+      melhorFinding = f;
+      melhorNivel = 'NIVEL_3_SEMANTICO';
+      justificativa = `Nível 3 (Semântico): Similaridade conceitual de termos técnicos (${matchTokensCount} termos sobrepostos).`;
+      continue;
+    }
+
+    // Nível 4: Correlato (mesmo setor ou área afim)
+    const mesmoSetor = f.setorResponsavel && categoria && normalizar(f.setorResponsavel).includes(normalizar(categoria));
+    if (mesmoSetor && jaccard >= 15 && melhorScore < 55) {
+      melhorScore = 55;
+      melhorFinding = f;
+      melhorNivel = 'NIVEL_4_RELACIONADO';
+      justificativa = `Nível 4 (Correlato): Requisito análogo na mesma área operacional (${categoria}).`;
+    }
+  }
+
+  const auditOrigem = melhorFinding ? (mapAudits.get(melhorFinding.auditId) || null) : null;
+
+  return {
+    precedenteEncontrado: melhorFinding,
+    auditoriaOrigem: auditOrigem,
+    nivelMatching: melhorNivel,
+    scoreSimilaridade: melhorScore,
+    avisoPrecedente: 'PRECEDENTE INTERNO DE AUDITORIA — NÃO CONSTITUI VERDADE REGULATÓRIA',
+    justificativaNivel: justificativa,
+  };
+}
+
+/**
+ * Gera proposta de preparação de resposta técnica com distinção estrita das 5 fontes
+ * e garantia anti-alucinação (declara GAP se evidências não forem encontradas).
+ */
+export function gerarPropostaPreparacaoAntiAlucinacao(
+  pergunta: string,
+  requisitoNumero: string,
+  referenciaNormativa: string = '',
+  categoria: string = 'Geral',
+  allFindings: ConstatacaoExternaRecord[] = [],
+  allAudits: AuditoriaExternaRecord[] = [],
+  documentosControlados: DocumentoControlado[] = []
+): PropostaPreparacaoRequisitoOutput {
+  const matching = buscarPrecedenteEm4Niveis(pergunta, referenciaNormativa, categoria, allFindings, allAudits);
+  const fontes: FonteIdentificadaItem[] = [];
+  const gaps: GapAuditoriaItem[] = [];
+  const lowerPergunta = pergunta.toLowerCase();
+  const lowerRef = referenciaNormativa.toLowerCase();
+
+  // A. FONTE REGULATÓRIA
+  if (referenciaNormativa && referenciaNormativa.trim().length > 0) {
+    fontes.push({
+      id: `SRC-REG-${Date.now()}-1`,
+      categoria: 'FONTE_REGULATORIA',
+      rotuloCategoria: 'A. Fonte Regulatória',
+      identificador: referenciaNormativa,
+      tituloOuDescricao: `Requisito da Autoridade / Norma Aeronáutica: ${referenciaNormativa}`,
+      confiabilidade: 100,
+      disponivelNoSistema: true,
+    });
+  }
+
+  // B. FONTE INTERNA (Manuais e Procedimentos vigentes)
+  const docsRelevantes = documentosControlados.filter((d) => {
+    const dLower = (d.codigo + ' ' + d.titulo).toLowerCase();
+    if (
+      lowerPergunta.includes('calibr') ||
+      lowerPergunta.includes('ferramen') ||
+      lowerPergunta.includes('torque') ||
+      lowerPergunta.includes('torqu') ||
+      lowerPergunta.includes('aferi') ||
+      lowerPergunta.includes('metrolog') ||
+      lowerRef.includes('145.109')
+    ) {
+      return dLower.includes('ferr') || dLower.includes('calibr') || dLower.includes('mpo');
+    }
+    if (
+      lowerPergunta.includes('treina') ||
+      lowerPergunta.includes('cht') ||
+      lowerPergunta.includes('ewis') ||
+      lowerRef.includes('145.163')
+    ) {
+      return dLower.includes('trein') || dLower.includes('p 001') || dLower.includes('qualif');
+    }
+    if (lowerPergunta.includes('fod') || lowerPergunta.includes('pátio')) {
+      return dLower.includes('patio') || dLower.includes('fod') || dLower.includes('pop');
+    }
+    if (lowerPergunta.includes('manual') || lowerPergunta.includes('publica') || lowerPergunta.includes('amm')) {
+      return dLower.includes('doc') || dLower.includes('publica') || dLower.includes('momq');
+    }
+    return dLower.includes('momq');
+  });
+
+  if (docsRelevantes.length > 0) {
+    docsRelevantes.slice(0, 3).forEach((d, idx) => {
+      fontes.push({
+        id: `SRC-INT-${Date.now()}-${idx}`,
+        categoria: 'FONTE_INTERNA',
+        rotuloCategoria: 'B. Fonte Interna (Manual / Procedimento)',
+        identificador: `${d.codigo} Rev. ${d.revisaoAtual}`,
+        tituloOuDescricao: d.titulo,
+        revisaoVigenteNoAcervo: `Rev. ${d.revisaoAtual}`,
+        confiabilidade: 95,
+        disponivelNoSistema: true,
+      });
+    });
+  }
+
+  // D. PRECEDENTE DE AUDITORIA (Classificado expressamente com aviso)
+  let precedenteOutput: PropostaPreparacaoRequisitoOutput['precedenteEncontrado'] = undefined;
+  if (matching.precedenteEncontrado) {
+    const f = matching.precedenteEncontrado;
+    const aud = matching.auditoriaOrigem;
+    const resp = f.respostaOficial?.acaoCorretiva || f.respostaOficial?.correcaoImediata || 'Ação corretiva homologada anteriormente.';
+
+    precedenteOutput = {
+      auditoriaId: f.auditId,
+      numeroAuditoria: aud?.numeroAuditoria || 'AUD-ANTERIOR',
+      ano: aud?.dataInicio?.slice(0, 4) || '2025',
+      cliente: aud?.entidadeAuditora || aud?.clienteNome || 'Cliente / Autoridade Externa',
+      resultadoAuditor: f.status === 'ACEITA' ? 'RESPOSTA_ACEITA' : f.status,
+      respostaAceita: resp,
+      nivelMatching: matching.nivelMatching || 'NIVEL_3_SEMANTICO',
+      scoreSimilaridade: matching.scoreSimilaridade,
+      avisoPrecedente: 'PRECEDENTE INTERNO DE AUDITORIA — NÃO CONSTITUI VERDADE REGULATÓRIA',
+    };
+
+    fontes.push({
+      id: `SRC-PREC-${Date.now()}`,
+      categoria: 'PRECEDENTE_AUDITORIA',
+      rotuloCategoria: 'D. Precedente de Auditoria (Histórico Interno)',
+      identificador: `${aud?.numeroAuditoria || 'AUD-HIST'} / Finding ${f.numeroExterno}`,
+      tituloOuDescricao: `Resposta aceita em auditoria anterior (${precedenteOutput.cliente})`,
+      confiabilidade: f.status === 'ACEITA' ? 90 : 60,
+      disponivelNoSistema: true,
+    });
+  }
+
+  // C. EVIDÊNCIAS
+  if (matching.precedenteEncontrado?.respostaOficial?.evidenciasCitadas?.length) {
+    matching.precedenteEncontrado.respostaOficial.evidenciasCitadas.forEach((ev, idx) => {
+      fontes.push({
+        id: `SRC-EVID-${Date.now()}-${idx}`,
+        categoria: 'EVIDENCIA',
+        rotuloCategoria: 'C. Evidência Documental / Operacional',
+        identificador: ev,
+        tituloOuDescricao: `Registro comprobatório: ${ev}`,
+        confiabilidade: 90,
+        disponivelNoSistema: true,
+      });
+    });
+  }
+
+  // E. INFERÊNCIA DA IA
+  fontes.push({
+    id: `SRC-IA-${Date.now()}`,
+    categoria: 'INFERENCIA_IA',
+    rotuloCategoria: 'E. Inferência da IA (Interpretação Assistida)',
+    identificador: 'CAMO-Engine-IA',
+    tituloOuDescricao: 'Síntese preliminar gerada pelo assistente SGQ, pendente de validação humana.',
+    confiabilidade: matching.precedenteEncontrado ? 85 : 50,
+    disponivelNoSistema: true,
+  });
+
+  // Determinar Cobertura e Anti-Alucinação
+  let cobertura: CoberturaPreparacaoRequisito = 'GAP';
+  let hasInformacao = false;
+  let respostaSugerida = '';
+  let advertencia: string | undefined = undefined;
+
+  const temManual = docsRelevantes.length > 0;
+  const temPrecedenteAceito = matching.precedenteEncontrado?.status === 'ACEITA';
+
+  if (temManual && temPrecedenteAceito) {
+    cobertura = 'FULL_COVERAGE';
+    hasInformacao = true;
+    respostaSugerida = `Conformidade sustentada pelo procedimento interno vigente ${docsRelevantes[0].codigo} (Rev. ${docsRelevantes[0].revisaoAtual}) e alinhada com precedente homologado na auditoria ${precedenteOutput?.numeroAuditoria} (${precedenteOutput?.cliente}): "${precedenteOutput?.respostaAceita}".`;
+  } else if (temManual || temPrecedenteAceito) {
+    cobertura = 'PARTIAL_COVERAGE';
+    hasInformacao = true;
+    if (temManual) {
+      respostaSugerida = `Atendimento baseado no procedimento operacional ${docsRelevantes[0].codigo} (${docsRelevantes[0].titulo}). Recomenda-se colher evidência física/registro da base antes da apresentação.`;
+      gaps.push({
+        id: `GAP-${Date.now()}-1`,
+        tipo: 'OPERACIONAL',
+        titulo: 'Evidência física pendente',
+        descricao: 'Procedimento formal existe, mas registro comprobatório da base ativa não foi anexado.',
+        acaoRecomendada: 'Coletar amostra de registro assinado ou foto comprobatória.',
+      });
+    } else {
+      respostaSugerida = `Precedente histórico identificado na auditoria ${precedenteOutput?.numeroAuditoria}, porém procedimento interno não possui mapeamento direto cadastrado no SGQ.`;
+      gaps.push({
+        id: `GAP-${Date.now()}-2`,
+        tipo: 'DOCUMENTAL',
+        titulo: 'Procedimento interno não mapeado',
+        descricao: 'Há precedente anterior, mas o manual interno relacionado não está vinculado.',
+        acaoRecomendada: 'Formalizar menção no MOMQ ou procedimento operacional padrão.',
+      });
+    }
+  } else {
+    // REGRA ANTI-ALUCINAÇÃO: Não inventar!
+    cobertura = 'GAP';
+    hasInformacao = false;
+    respostaSugerida = `GAP: Nenhuma evidência interna nem precedente anterior localizado no SGQ para o requisito "${pergunta}".`;
+    advertencia = 'INFORMAÇÃO NÃO ENCONTRADA — A IA não inventou dados. Requer validação técnica e levantamento pelo auditor da Qualidade.';
+    gaps.push({
+      id: `GAP-${Date.now()}-0`,
+      tipo: 'AUDITORIA',
+      titulo: 'Ausência total de subsídios institucionais',
+      descricao: `Nenhum procedimento, registro ou resposta aceita anterior foi localizado para "${pergunta}".`,
+      acaoRecomendada: 'Submeter para avaliação presencial do inspetor responsável antes da auditoria.',
+    });
+  }
+
+  return {
+    pergunta,
+    requisitoNumero,
+    cobertura,
+    grauConfianca: cobertura === 'FULL_COVERAGE' ? 'ALTA' : cobertura === 'PARTIAL_COVERAGE' ? 'MEDIA' : 'BAIXA',
+    scoreConfiancaNumerico: cobertura === 'FULL_COVERAGE' ? 92 : cobertura === 'PARTIAL_COVERAGE' ? 68 : 25,
+    precedenteEncontrado: precedenteOutput,
+    fontesUtilizadas: fontes,
+    hasInformacaoSuficiente: hasInformacao,
+    respostaSugeridaSintetizada: respostaSugerida,
+    advertenciaAntiAlucinacao: advertencia,
+    gaps,
   };
 }

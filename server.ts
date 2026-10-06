@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import mammoth from "mammoth";
@@ -3259,11 +3260,15 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
   try {
     const { base64, nomeArquivo, formato, textoManual, tipoDocumentoDeclarado, clienteSugerido } = req.body || {};
     let fullText = textoManual || "";
+    let hashSha256 = "";
+    let tamanhoBytes = 0;
 
     if (base64) {
       const ext = (formato || nomeArquivo?.split(".").pop() || "").toUpperCase();
       const rawData = base64.replace(/^data:[^;]+;base64,/, "");
       const buffer = Buffer.from(rawData, "base64");
+      tamanhoBytes = buffer.length;
+      hashSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
 
       if (["XLSX", "XLS", "CSV"].includes(ext)) {
         try {
@@ -3296,6 +3301,19 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
       } else {
         fullText = buffer.toString("utf-8");
       }
+    } else if (fullText) {
+      tamanhoBytes = Buffer.byteLength(fullText, 'utf-8');
+      hashSha256 = crypto.createHash("sha256").update(fullText).digest("hex");
+    }
+
+    // REGRA 4 DO BRIEF: Se o documento for vazio ou ilegível, retornar IMPORT_FAILED imediatamente.
+    // NUNCA cair silenciosamente para exemplo ou fixture!
+    if (!fullText || fullText.trim().length < 15) {
+      return res.status(400).json({
+        success: false,
+        code: "IMPORT_FAILED",
+        error: "IMPORT_FAILED: Nenhum texto legível foi extraído do arquivo. Verifique se o arquivo não está corrompido, protegido por senha ou vazio. Nenhum dado de exemplo foi carregado.",
+      });
     }
 
     const ai = getGeminiClient();
@@ -3332,22 +3350,38 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
         tipoIdentificado = 'CHECKLIST_PRE_AUDITORIA';
       }
 
-      // Detecção de Cliente / Autoridade
-      let clienteNome = clienteSugerido || 'Cliente / Autoridade Externa';
-      if (lowerFull.includes('kalitta air') || lowerFull.includes('kalitta') || lowerFull.includes('qa-14')) clienteNome = 'Kalitta Air';
-      else if (lowerFull.includes('anac') || lowerFull.includes('agência nacional')) clienteNome = 'ANAC';
-      else if (lowerFull.includes('atlas air') || lowerFull.includes('atlas')) clienteNome = 'Atlas Air';
-      else if (lowerFull.includes('swiss')) clienteNome = 'SWISS International Air Lines';
-      else if (lowerFull.includes('pantanal')) clienteNome = 'Pantanal Linhas Aéreas';
-      else if (lowerFull.includes('lufthansa')) clienteNome = 'Lufthansa Cargo';
+      // Detecção Factual de Cliente / Autoridade sem preconceber Kalitta
+      let clienteNome = clienteSugerido || '';
+      if (!clienteNome) {
+        if (lowerFull.includes('anac') || lowerFull.includes('agência nacional')) clienteNome = 'ANAC';
+        else if (lowerFull.includes('easa')) clienteNome = 'EASA';
+        else if (lowerFull.includes('faa')) clienteNome = 'FAA';
+        else if (lowerFull.includes('kalitta air')) clienteNome = 'Kalitta Air';
+        else if (lowerFull.includes('atlas air')) clienteNome = 'Atlas Air';
+        else if (lowerFull.includes('swiss')) clienteNome = 'SWISS International Air Lines';
+        else if (lowerFull.includes('pantanal')) clienteNome = 'Pantanal Linhas Aéreas';
+        else if (lowerFull.includes('lufthansa')) clienteNome = 'Lufthansa Cargo';
+        else if (lowerFull.includes('latam')) clienteNome = 'LATAM Airlines';
+        else if (lowerFull.includes('azul')) clienteNome = 'Azul Linhas Aéreas';
+        else if (lowerFull.includes('gol')) clienteNome = 'GOL Linhas Aéreas';
+        else {
+          const matchClientHeader = fullText.match(/(?:Client(?:e)?|Operator|Auditor(?:a)?|Entidade|Company|Companhia|Auditee)\s*[:\-]\s*([^\r\n]{3,40})/i);
+          if (matchClientHeader) {
+            clienteNome = matchClientHeader[1].trim();
+          } else {
+            clienteNome = 'Cliente / Autoridade Externa';
+          }
+        }
+      }
 
       // Detecção de Número da Auditoria
-      let numeroAuditoria = clienteNome === 'Kalitta Air' 
-        ? 'AUD-2026-KALITTA-01' 
-        : 'AUD-' + new Date().getFullYear() + '-' + (clienteNome.split(' ')[0] || 'EXT').toUpperCase() + '-01';
-      const matchAudNum = fullText.match(/(?:AUD|AUDIT|OF[ÍI]CIO|RELAT[ÓO]RIO|RT)[A-Z0-9_\-\.\/]{3,30}/i);
+      let numeroAuditoria = '';
+      const matchAudNum = fullText.match(/(?:AUD|AUDIT|OF[ÍI]CIO|RELAT[ÓO]RIO|RT|FORM)[A-Z0-9_\-\.\/]{3,30}/i);
       if (matchAudNum) {
         numeroAuditoria = matchAudNum[0].trim();
+      } else {
+        const cleanClient = clienteNome.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase() || 'EXT';
+        numeroAuditoria = `AUD-${new Date().getFullYear()}-${cleanClient}-01`;
       }
 
       // Requisitos e Findings
@@ -3357,41 +3391,9 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
       const licoes: any[] = [];
       const sugestoesInternas: any[] = [];
 
-      // SE FOR O CHECKLIST KALITTA AIR QA-14 (REV 4): Carrega com precisão os 69 itens estruturados
-      if (lowerFull.includes('kalitta') || lowerFull.includes('qa-14') || lowerFull.includes('line maintenance station audit checklist') || lowerFull.includes('qa 14 rev')) {
-        tipoIdentificado = 'CHECKLIST_PRE_AUDITORIA';
-        clienteNome = 'Kalitta Air';
-        numeroAuditoria = 'AUD-2026-KALITTA-01';
-
-        requisitos = KALITTA_QA14_ITEMS.map((item, idx) => ({
-          numeroItem: item.numeroItem,
-          capituloOuSecao: item.capituloOuSecao,
-          hierarquia: {
-            capitulo: item.capituloOuSecao,
-            secao: item.capituloOuSecao,
-            ordem: idx + 1,
-          },
-          tituloCurto: item.perguntaOuCriterio.slice(0, 60),
-          textoOriginal: item.textoOriginal,
-          criterioAceitacao: item.perguntaOuCriterio,
-          referenciaNormativa: item.referenciaNormativa,
-          campoRespostaOriginal: item.campoRespostaOriginal,
-          categoria: item.categoriaSugerida,
-          criticidade: item.criticidadeSugerida,
-          metodoVerificacao: item.categoriaSugerida === 'Pátio e Hangar' ? 'ASSISTIDO' : 'AUTOMATICO',
-          controleSugeridoCodigo: item.categoriaSugerida === 'Ferramental e Calibração' 
-            ? 'CTRL-FERR-01' 
-            : item.categoriaSugerida === 'Pessoas e Treinamentos' 
-            ? 'CTRL-TREIN-01' 
-            : 'CTRL-DOC-01',
-          paginaOrigem: item.paginaOrigem,
-          grauConfianca: 99,
-          necessitaRevisaoHumana: false,
-        }));
-      } else {
-        // Parser heurístico generalizado para qualquer checklist ou questionário
-        let capituloAtual = 'Geral';
-        let referenciaSecaoAtual = '';
+      // Parser heurístico generalizado para qualquer checklist ou questionário
+      let capituloAtual = 'Geral';
+      let referenciaSecaoAtual = '';
 
         for (let i = 0; i < lines.length; i++) {
           const line = lines[i];
@@ -3452,7 +3454,6 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
             });
           }
         }
-      }
 
       // Procura revisões de procedimentos (ex: P 001-05 Rev. 02, MOMQ Rev. 14)
       const matchesRevisao = fullText.matchAll(/(P\s*001-\d{2}|MOMQ|MPO\s*\d{2}|PTM|MGSO)[^\w\n]{1,10}(?:Rev\.?|Revisão|Edição)\s*([A-Z0-9\.\-]+)/gi);
@@ -3522,45 +3523,13 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
         }
       });
 
-      // Se não encontrou findings, cria finding padrão se o tipo for AUDITORIA_REALIZADA
-      if (tipoIdentificado === 'AUDITORIA_REALIZADA' && findings.length === 0) {
-        findings.push({
-          numeroExterno: 'FIND-01/' + (clienteNome.split(' ')[0] || 'EXT'),
-          classificacao: 'MENOR',
-          descricaoOriginal: 'Constatação registrada durante a auditoria referente ao controle de registros operacionais na base.',
-          requisitoNormativo: { norma: 'RBAC 145', itemRequisito: '145.109' },
-          setorResponsavel: 'Garantia da Qualidade / Hangar',
-          nivelRisco: 'Médio',
-          prazoResposta: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-          respostaOficial: {
-            correcaoImediata: 'Regularização documental imediata.',
-            analiseCausa: 'Omissão de conferência no checklist de encerramento.',
-            acaoCorretiva: 'Ajuste no fluxo de validação cruzada.',
-            evidenciasCitadas: ['Dossiê técnico com carimbo do inspetor'],
-          },
-          statusAceitacao: lowerFull.includes('aceita') || lowerFull.includes('homologada') ? 'RESPOSTA_ACEITA' : 'RESPOSTA_ENVIADA',
-          decisaoAuditorDetalhe: 'Evidência factual aceita pelo auditor.',
-        });
-      }
-
-      // Lições aprendidas e sugestões internas
-      licoes.push({
-        titulo: `Lição Aprendida - Auditoria ${clienteNome}`,
-        oQueAconteceu: `Inspeção com foco em ${requisitos[0]?.categoria || 'controles operacionais e metrologia'}.`,
-        oQueFuncionou: 'Apresentação imediata de evidências rastreáveis e certificados RBC.',
-        recomendacao: 'Manter prontidão de certificados com antecedência de 30 dias do vencimento.',
-      });
-
-      sugestoesInternas.push({
-        tema: 'Controle de Validades e Calibração RBC',
-        justificativa: 'Requisito comumente inspecionado em auditorias de clientes.',
-        recorrenciaObservada: 'Frequente em operadores cargueiros e homologações ANAC',
-      });
+      // NÃO injeta findings sintéticos se não constarem no texto!
+      // NÃO injeta requisitos fictícios se não constarem no texto!
 
       return {
         tipoDocumentoIdentificado: tipoIdentificado,
-        confiancaTipo: 90,
-        resumoExecutivo: `Documento de ${clienteNome} processado com sucesso (${requisitos.length} requisitos e ${findings.length} constatações identificadas).`,
+        confiancaTipo: 85,
+        resumoExecutivo: `Documento de ${clienteNome} processado localmente (${requisitos.length} requisitos e ${findings.length} constatações extraídas do texto real).`,
         dadosAuditoria: {
           numeroAuditoria,
           clienteNome,
@@ -3574,28 +3543,27 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
           status: findings.length > 0 ? (findings.every((f: any) => f.statusAceitacao === 'RESPOSTA_ACEITA') ? 'ACEITA' : 'EM_RESPOSTA') : 'ACEITA',
           referenciaExterna: 'REF-' + Date.now().toString().slice(-6),
         },
-        requisitosChecklist: requisitos.length > 0 ? requisitos : [
-          {
-            numeroItem: '1.1',
-            tituloCurto: 'Qualificação Mandatória de Pessoal de Linha',
-            textoOriginal: 'Todo o pessoal técnico deve ter treinamentos vigentes.',
-            criterioAceitacao: '100% de vigência em EWIS, FTS e Fatores Humanos.',
-            categoria: 'Pessoas e Treinamentos',
-            criticidade: 'CRITICO',
-            metodoVerificacao: 'AUTOMATICO',
-            controleSugeridoCodigo: 'CTRL-TREIN-01',
-          }
-        ],
+        requisitosChecklist: requisitos,
         constatacoesFindings: findings,
         documentosCitadosComRevisao: documentosCitados,
         licoesAprendidas: licoes,
         sugestoesAuditoriaInterna: sugestoesInternas,
         origem: 'HEURISTICA_LOCAL',
+        hashSha256,
+        tamanhoBytes,
+        nomeArquivo: nomeArquivo || 'Documento_Auditoria',
       };
     };
 
     if (!ai || (!fullText || fullText.trim().length < 25)) {
       const fallbackResult = parseHeuristicoDocumento();
+      if (fallbackResult.requisitosChecklist.length === 0 && fallbackResult.constatacoesFindings.length === 0) {
+        return res.status(422).json({
+          success: false,
+          code: "ANALYSIS_FAILED",
+          error: "ANALYSIS_FAILED: O documento possui texto, mas não contém uma estrutura reconhecível de auditoria ou checklist (0 requisitos e 0 constatações encontradas). Nenhum dado sintético foi gerado.",
+        });
+      }
       return res.json({ success: true, ...fallbackResult });
     }
 
@@ -3713,31 +3681,278 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura:
       const parsed = JSON.parse(response.text?.trim() || "{}");
       const heuristico = parseHeuristicoDocumento();
 
-      // Se a IA extraiu menos requisitos do que a análise heurística estruturada (ex: Kalitta 69 itens), prioriza a lista completa
-      let finalRequisitos = Array.isArray(parsed.requisitosChecklist) && parsed.requisitosChecklist.length >= (heuristico.requisitosChecklist?.length || 0)
+      let finalRequisitos = Array.isArray(parsed.requisitosChecklist) && parsed.requisitosChecklist.length > 0
         ? parsed.requisitosChecklist
         : (heuristico.requisitosChecklist || []);
 
+      let finalFindings = Array.isArray(parsed.constatacoesFindings) && parsed.constatacoesFindings.length > 0
+        ? parsed.constatacoesFindings
+        : (heuristico.constatacoesFindings || []);
+
+      // Se nenhum item foi encontrado por nenhum método, retornar ANALYSIS_FAILED (NUNCA carregar exemplo!)
+      if (finalRequisitos.length === 0 && finalFindings.length === 0) {
+        return res.status(422).json({
+          success: false,
+          code: "ANALYSIS_FAILED",
+          error: "ANALYSIS_FAILED: O documento foi lido, mas não foram identificados requisitos estruturados nem constatações de auditoria no seu conteúdo real. O documento pode requerer formatação compatível. Nenhum dado de exemplo foi carregado.",
+        });
+      }
+
       return res.json({
         success: true,
+        hashSha256,
+        tamanhoBytes,
+        nomeArquivo: nomeArquivo || 'Documento_Auditoria',
         tipoDocumentoIdentificado: parsed.tipoDocumentoIdentificado || heuristico.tipoDocumentoIdentificado,
         confiancaTipo: parsed.confiancaTipo || 95,
-        resumoExecutivo: parsed.resumoExecutivo || `Documento de ${heuristico.dadosAuditoria.clienteNome} processado com sucesso (${finalRequisitos.length} requisitos identificados individualmente).`,
+        resumoExecutivo: parsed.resumoExecutivo || `Documento de ${heuristico.dadosAuditoria.clienteNome} processado com sucesso (${finalRequisitos.length} requisitos e ${finalFindings.length} constatações extraídas do documento real).`,
         dadosAuditoria: parsed.dadosAuditoria || heuristico.dadosAuditoria,
         requisitosChecklist: finalRequisitos,
-        constatacoesFindings: Array.isArray(parsed.constatacoesFindings) && parsed.constatacoesFindings.length > 0 
-          ? parsed.constatacoesFindings 
-          : heuristico.constatacoesFindings,
-        documentosCitadosComRevisao: Array.isArray(parsed.documentosCitadosComRevisao) ? parsed.documentosCitadosComRevisao : heuristico.documentosCitadosComRevisao,
+        constatacoesFindings: finalFindings,
+        documentosCitadosComRevisao: Array.isArray(parsed.documentosCitadosComRevisao) && parsed.documentosCitadosComRevisao.length > 0
+          ? parsed.documentosCitadosComRevisao 
+          : heuristico.documentosCitadosComRevisao,
         licoesAprendidas: Array.isArray(parsed.licoesAprendidas) ? parsed.licoesAprendidas : heuristico.licoesAprendidas,
         sugestoesAuditoriaInterna: Array.isArray(parsed.sugestoesAuditoriaInterna) ? parsed.sugestoesAuditoriaInterna : heuristico.sugestoesAuditoriaInterna,
         origem: "IA_GEMINI",
       });
     } catch (aiErr: any) {
-      console.warn("Gemini parse-document warning, using heuristic fallback:", aiErr.message);
+      console.warn("Gemini parse-document warning, using honest heuristic fallback:", aiErr.message);
       const fallbackResult = parseHeuristicoDocumento();
+
+      if (fallbackResult.requisitosChecklist.length === 0 && fallbackResult.constatacoesFindings.length === 0) {
+        return res.status(422).json({
+          success: false,
+          code: "ANALYSIS_FAILED",
+          error: `ANALYSIS_FAILED: A análise avançada por IA falhou (${aiErr.message}) e a extração local não localizou itens estruturados no documento real. Nenhum dado sintético foi injetado.`,
+        });
+      }
+
       return res.json({ success: true, ...fallbackResult });
     }
+  } catch (error: any) {
+    return res.status(500).json({ success: false, code: "SERVER_ERROR", error: error.message });
+  }
+});
+
+// 3.1.1 Endpoint de Avaliação de Requisito de Checklist e Assistente Anti-Alucinação (Regras 9, 10, 13, 14, 15)
+app.post("/api/smart-audit/evaluate-checklist-item", async (req, res) => {
+  try {
+    const {
+      pergunta,
+      requisitoNumero,
+      referenciaNormativa,
+      categoria,
+      auditoriaContexto,
+      manuaisVigentes = [],
+      historicoAuditorias = [],
+      historicoFindings = [],
+      registrosEvidencias = []
+    } = req.body || {};
+
+    const textoPergunta = (pergunta || '').trim();
+    const refNorma = (referenciaNormativa || '').trim();
+    const cat = categoria || 'Geral';
+    const lower = (textoPergunta + ' ' + refNorma + ' ' + cat).toLowerCase();
+
+    // 1. MATCHING DE PRECEDENTE EM 4 NÍVEIS (Regra 29)
+    let precedenteEncontrado: any = null;
+    let nivelMatch: 'NIVEL_1_EXATO' | 'NIVEL_2_DOCUMENTAL' | 'NIVEL_3_SEMANTICO' | 'NIVEL_4_RELACIONADO' | null = null;
+    let scoreSimilaridade = 0;
+
+    for (const f of historicoFindings) {
+      const descF = (f.descricaoOriginal || '').toLowerCase();
+      const refF = (f.requisitoNormativo?.itemRequisito || f.requisitoNormativo?.norma || '').toLowerCase();
+
+      // Nível 1: Exato (mesmo requisito normativo ou pergunta)
+      if (refNorma && refF && (refNorma.toLowerCase().includes(refF) || refF.includes(refNorma.toLowerCase()))) {
+        precedenteEncontrado = f;
+        nivelMatch = 'NIVEL_1_EXATO';
+        scoreSimilaridade = 95;
+        break;
+      }
+
+      // Nível 2: Documental (mesmo procedimento citado)
+      const hasMesmoDoc = (f.respostaOficial?.referenciasDocumentais || []).some((docRef: string) => lower.includes(docRef.toLowerCase()));
+      if (hasMesmoDoc && scoreSimilaridade < 80) {
+        precedenteEncontrado = f;
+        nivelMatch = 'NIVEL_2_DOCUMENTAL';
+        scoreSimilaridade = 80;
+      }
+
+      // Nível 3: Semântico (termos técnicos-chave sobrepostos)
+      const tokensReq = lower.split(/[^a-z0-9]+/).filter((t: string) => t.length > 4);
+      const matchTokens = tokensReq.filter((t: string) => descF.includes(t));
+      if (matchTokens.length >= 2 && scoreSimilaridade < 65) {
+        precedenteEncontrado = f;
+        nivelMatch = 'NIVEL_3_SEMANTICO';
+        scoreSimilaridade = 65;
+      }
+    }
+
+    // 2. BUSCA DE FONTES INTERNAS VIGENTES (Manuais e Procedimentos)
+    const fontesIdentificadas: any[] = [];
+
+    // Adiciona Fonte Regulatória se identificada
+    if (refNorma) {
+      fontesIdentificadas.push({
+        id: `SRC-REG-${Date.now()}`,
+        categoria: 'FONTE_REGULATORIA',
+        rotuloCategoria: 'A. Fonte Regulatória',
+        identificador: refNorma,
+        tituloOuDescricao: `Exigência de Autoridade / Legislação Aeronáutica (${refNorma})`,
+        confiabilidade: 100,
+        disponivelNoSistema: true,
+      });
+    }
+
+    // Identifica manuais internos relevantes no acervo
+    manuaisVigentes.forEach((m: any) => {
+      const mText = (m.codigo + ' ' + m.titulo + ' ' + (m.descricao || '')).toLowerCase();
+      const isRelevante =
+        (lower.includes('calibr') && mText.includes('ferrament')) ||
+        (lower.includes('trein') && mText.includes('treinament')) ||
+        (lower.includes('manual') && mText.includes('document')) ||
+        (lower.includes('peça') && mText.includes('almoxarif')) ||
+        (lower.includes('seguran') && mText.includes('sgso')) ||
+        (m.codigo && lower.includes(m.codigo.toLowerCase()));
+
+      if (isRelevante) {
+        fontesIdentificadas.push({
+          id: `SRC-INT-${m.id || m.codigo}`,
+          categoria: 'FONTE_INTERNA',
+          rotuloCategoria: 'B. Fonte Interna',
+          identificador: `${m.codigo} ${m.revisaoVigente || 'Rev. Vigente'}`,
+          tituloOuDescricao: m.titulo,
+          revisaoVigenteNoAcervo: m.revisaoVigente,
+          confiabilidade: 95,
+          disponivelNoSistema: true,
+        });
+      }
+    });
+
+    // Adiciona Precedente de Auditoria se encontrado (Regra 3: NUNCA REGULATORY TRUTH)
+    let alertaRevisao: any = null;
+    if (precedenteEncontrado) {
+      const parentAudit = historicoAuditorias.find((a: any) => a.id === precedenteEncontrado.auditId);
+      fontesIdentificadas.push({
+        id: `SRC-PREC-${precedenteEncontrado.id}`,
+        categoria: 'PRECEDENTE_AUDITORIA',
+        rotuloCategoria: 'D. Precedente Interno de Auditoria',
+        identificador: `${parentAudit?.numeroAuditoria || 'Auditoria Anterior'} (${parentAudit?.entidadeAuditora || 'Cliente'})`,
+        tituloOuDescricao: `Resposta aceita anteriormente para apontamento em ${precedenteEncontrado.requisitoNormativo?.itemRequisito || 'requisito similar'}.`,
+        confiabilidade: 85,
+        disponivelNoSistema: true,
+      });
+
+      // Checa divergência temporal de revisão
+      const docCitadoNaEpoca = precedenteEncontrado.respostaOficial?.referenciasDocumentais?.[0] || 'MOMQ';
+      const manualAtual = manuaisVigentes.find((m: any) => m.codigo?.toLowerCase() === docCitadoNaEpoca.toLowerCase());
+      if (manualAtual && manualAtual.revisaoVigente && manualAtual.revisaoVigente !== 'Rev. 01') {
+        alertaRevisao = {
+          documentoCodigo: manualAtual.codigo,
+          revisaoHistorica: 'Rev. Anterior',
+          revisaoVigente: manualAtual.revisaoVigente,
+          divergente: true,
+          mensagemAlerta: `Atenção: O procedimento utilizado na época do precedente era uma revisão anterior. A versão vigente no acervo SGQ atual é a ${manualAtual.revisaoVigente}. Verifique atualizações no procedimento antes de responder.`,
+        };
+      }
+    }
+
+    // 3. IDENTIFICAÇÃO DE EVIDÊNCIAS NO SISTEMA
+    const evidenciasEncontradas = registrosEvidencias.filter((e: any) => {
+      const eText = (e.codigo + ' ' + e.descricao).toLowerCase();
+      return lower.split(' ').some((palavra: string) => palavra.length > 4 && eText.includes(palavra));
+    });
+
+    evidenciasEncontradas.forEach((ev: any) => {
+      fontesIdentificadas.push({
+        id: `SRC-EVID-${ev.id || ev.codigo}`,
+        categoria: 'EVIDENCIA',
+        rotuloCategoria: 'C. Evidência',
+        identificador: ev.codigo,
+        tituloOuDescricao: ev.descricao,
+        confiabilidade: 90,
+        disponivelNoSistema: true,
+      });
+    });
+
+    // 4. AVALIAÇÃO DE COBERTURA E GAPS (Regra 15 & 16)
+    const hasManual = fontesIdentificadas.some((f) => f.categoria === 'FONTE_INTERNA');
+    const hasPrecedente = fontesIdentificadas.some((f) => f.categoria === 'PRECEDENTE_AUDITORIA');
+    const hasEvidencia = fontesIdentificadas.some((f) => f.categoria === 'EVIDENCIA');
+
+    let cobertura: 'FULL_COVERAGE' | 'PARTIAL_COVERAGE' | 'GAP' = 'GAP';
+    if (hasManual && hasPrecedente && hasEvidencia) {
+      cobertura = 'FULL_COVERAGE';
+    } else if (hasManual || hasPrecedente) {
+      cobertura = 'PARTIAL_COVERAGE';
+    } else {
+      cobertura = 'GAP';
+    }
+
+    const gaps: any[] = [];
+    if (!hasManual) {
+      gaps.push({
+        id: 'GAP-DOC-01',
+        tipo: 'DOCUMENTAL',
+        titulo: 'Procedimento Interno Não Localizado',
+        descricao: 'Não foi identificado procedimento operacional padrão vigente no acervo QualiGest para este requisito específico.',
+        acaoRecomendada: 'Elaborar ou formalizar instrução de trabalho técnica antes da auditoria.',
+      });
+    }
+    if (!hasEvidencia) {
+      gaps.push({
+        id: 'GAP-OP-01',
+        tipo: 'OPERACIONAL',
+        titulo: 'Evidência Prática Pendente de Amostragem',
+        descricao: 'Embora haja diretriz documental, não há registro recente ou certificado anexado ao sistema comprovando a execução.',
+        acaoRecomendada: 'Coletar ordem de serviço, certificado ou registro de treinamento correspondente nos últimos 30 dias.',
+      });
+    }
+
+    // 5. REGRA ANTI-ALUCINAÇÃO (Regra 14): SE NÃO HÁ FONTES, NÃO INVENTAR!
+    const hasInformacaoSuficiente = hasManual || hasPrecedente;
+    let respostaSugerida = '';
+    let advertenciaAntiAlucinacao = '';
+
+    if (!hasInformacaoSuficiente) {
+      respostaSugerida = 'INFORMAÇÃO NÃO ENCONTRADA. O QualiGest não localizou procedimentos vigentes ou precedentes aceitos no histórico para este item específico. Requer elaboração técnica e validação prévia pelo responsável técnico.';
+      advertenciaAntiAlucinacao = 'INFORMAÇÃO NÃO ENCONTRADA';
+    } else {
+      const docPrincipal = fontesIdentificadas.find((f) => f.categoria === 'FONTE_INTERNA');
+      const respPrec = precedenteEncontrado?.respostaOficial?.acaoCorretiva || precedenteEncontrado?.respostaOficial?.correcaoImediata;
+
+      respostaSugerida = `A organização atende ao requisito através do cumprimento do procedimento ${docPrincipal?.identificador || 'operacional vigente'}, que estabelece o fluxo de controle e conformidade com ${refNorma || 'a regulamentação aplicável'}.${respPrec ? ` Como precedente de auditoria, a organização demonstrou que: "${respPrec}".` : ''} Recomenda-se apresentar ao auditor a evidência vigente no local.`;
+    }
+
+    return res.json({
+      success: true,
+      proposta: {
+        pergunta: textoPergunta,
+        requisitoNumero: requisitoNumero || '1',
+        cobertura,
+        grauConfianca: cobertura === 'FULL_COVERAGE' ? 'ALTA' : cobertura === 'PARTIAL_COVERAGE' ? 'MEDIA' : 'BAIXA',
+        scoreConfiancaNumerico: cobertura === 'FULL_COVERAGE' ? 95 : cobertura === 'PARTIAL_COVERAGE' ? 65 : 15,
+        precedenteEncontrado: precedenteEncontrado ? {
+          auditoriaId: precedenteEncontrado.auditId,
+          numeroAuditoria: historicoAuditorias.find((a: any) => a.id === precedenteEncontrado.auditId)?.numeroAuditoria || 'AUD-ANTERIOR',
+          ano: '2025/2026',
+          cliente: historicoAuditorias.find((a: any) => a.id === precedenteEncontrado.auditId)?.entidadeAuditora || 'Auditoria Externa',
+          resultadoAuditor: precedenteEncontrado.statusAceitacao || 'RESPOSTA_ACEITA',
+          respostaAceita: precedenteEncontrado.respostaOficial?.acaoCorretiva || precedenteEncontrado.respostaOficial?.correcaoImediata || 'Ação aceita pelo auditor.',
+          nivelMatching: nivelMatch,
+          scoreSimilaridade,
+          avisoPrecedente: 'PRECEDENTE INTERNO DE AUDITORIA - NÃO CONSTITUI VERDADE REGULATÓRIA',
+        } : undefined,
+        fontesUtilizadas: fontesIdentificadas,
+        alertaRevisaoDocumental: alertaRevisao,
+        hasInformacaoSuficiente,
+        respostaSugeridaSintetizada: respostaSugerida,
+        advertenciaAntiAlucinacao: advertenciaAntiAlucinacao || undefined,
+        gaps,
+      },
+    });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
   }

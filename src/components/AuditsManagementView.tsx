@@ -28,7 +28,8 @@ import {
   AlertCircle,
   Check,
   Info,
-  RefreshCw
+  RefreshCw,
+  UploadCloud
 } from 'lucide-react';
 import {
   AuditoriaExternaRecord,
@@ -324,11 +325,20 @@ export const AuditsManagementView: React.FC<AuditsManagementViewProps> = ({
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               onClick={() => onNavigateToTab('smart-audit')}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Importar documentos reais de auditoria (PDF, DOCX, XLSX, CSV, JSON)"
+            >
+              <UploadCloud className="w-4 h-4" />
+              <span>Importar Auditoria (Arquivo Real)</span>
+            </button>
+
+            <button
+              onClick={() => onNavigateToTab('smart-audit')}
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold shadow-xs transition-colors cursor-pointer"
-              title="Acessar Auditoria Inteligente e Checklist Kalitta QA-14"
+              title="Acessar Auditoria Inteligente, Memória e Cockpit de Exceções"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Smart Audit (FORM QA-14)</span>
+              <span>Auditoria Inteligente SGQ</span>
             </button>
 
             <button

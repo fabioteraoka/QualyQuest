@@ -54,10 +54,10 @@ export const AuditImportPreviewModal: React.FC<AuditImportPreviewModalProps> = (
   const [editCat, setEditCat] = useState<string>('');
   const [editCrit, setEditCrit] = useState<'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA'>('ALTA');
 
-  // Metadados da Auditoria
-  const [metaCliente, setMetaCliente] = useState<string>(extracao.clienteDetectado || 'Kalitta Air');
-  const [metaCodigo, setMetaCodigo] = useState<string>(extracao.codigoChecklist || 'FORM QA-14');
-  const [metaRevisao, setMetaRevisao] = useState<string>(extracao.revisaoChecklist || 'QA 14 REV: 4');
+  // Metadados da Auditoria Extraída
+  const [metaCliente, setMetaCliente] = useState<string>(extracao.clienteDetectado || 'Cliente / Autoridade Externa');
+  const [metaCodigo, setMetaCodigo] = useState<string>(extracao.codigoChecklist || 'CHK-AUDITORIA');
+  const [metaRevisao, setMetaRevisao] = useState<string>(extracao.revisaoChecklist || 'Rev. 01');
 
   // Lista única de seções
   const secoesDisponiveis = Array.from(new Set(itens.map((it) => it.capituloOuSecao || 'Geral')));

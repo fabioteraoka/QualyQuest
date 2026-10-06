@@ -1353,29 +1353,33 @@ export interface EvidenciaAuditoriaItem {
 export interface RequisitoNormativoVinculado {
   norma: string; // Ex: 'ANAC RBAC 145', 'EASA Part-145', 'MOMQ'
   itemRequisito: string; // Ex: '145.109(a)'
-  descricaoRequisito: string;
-  comoImpactoImplementa: string; // Como a Impacto cumpre este requisito
-  procedimentoInternoRef: string; // Ex: 'MOMQ Seção 3.4.2'
+  descricaoRequisito?: string;
+  comoImpactoImplementa?: string; // Como a Impacto cumpre este requisito
+  procedimentoInternoRef?: string; // Ex: 'MOMQ Seção 3.4.2'
   revisaoProcedimento?: string;
 }
 
 export interface RespostaOficialConstatacao {
-  id: string;
-  versao: number;
-  respostaFactual: string;
+  id?: string;
+  versao?: number;
+  respostaFactual?: string;
   analiseCausa: string;
   correcaoImediata: string;
   acaoCorretiva: string;
   acaoPreventiva?: string;
-  responsavel: string;
-  prazoExecucao: string;
-  referenciasDocumentais: string[];
-  evidenciasIds: string[];
-  statusAprovacao: 'RASCUNHO' | 'SUGESTAO_IA' | 'REVISAO_INTERNA' | 'APROVADA_GESTOR' | 'ENVIADA_AO_AUDITOR';
-  autorNome: string;
+  responsavel?: string;
+  prazoExecucao?: string;
+  referenciasDocumentais?: string[];
+  evidenciasIds?: string[];
+  evidenciasCitadas?: string[];
+  statusAprovacao?: 'RASCUNHO' | 'SUGESTAO_IA' | 'REVISAO_INTERNA' | 'APROVADA_GESTOR' | 'ENVIADA_AO_AUDITOR';
+  autorNome?: string;
   aprovadorNome?: string;
   dataHoraAprovacao?: string;
   sugestaoOriginalIA?: string;
+  elaboradoPor?: string;
+  dataElaboracao?: string;
+  statusEnvio?: string;
   criadoEm?: string;
   atualizadoEm?: string;
   updatedAt?: string;
@@ -1466,6 +1470,7 @@ export interface AuditoriaExternaRecord {
   local: string;
   aeronaveOuProcesso?: string;
   contratoOuCliente?: string;
+  clienteNome?: string; // Alias de conveniência para relatórios e inteligência
   referenciaExterna: string; // Ex: 'Ofício de Auditoria nº 042/2026'
   status: StatusAuditoriaExterna;
   responsavelInterno: string;

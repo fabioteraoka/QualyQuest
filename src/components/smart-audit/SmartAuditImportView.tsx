@@ -37,6 +37,7 @@ import {
 import { AuditImportPreviewModal } from './AuditImportPreviewModal';
 import { KALITTA_QA14_METADATA, KALITTA_QA14_ITEMS } from '../../data/sampleKalittaQA14Checklist';
 import { saveAuditRequirementsBatch } from '../../services/firebase/auditRequirementsFirestore';
+import { saveDocumentFileToStorage } from '../../utils/documentFilesStorage';
 
 export interface UploadedFileItem {
   id: string;
@@ -83,9 +84,9 @@ export const SmartAuditImportView: React.FC<SmartAuditImportViewProps> = ({
   const [globalLoading, setGlobalLoading] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  // Modal de Prévia e Revisão Item a Item para Checklists Estruturados (Kalitta QA-14)
-  const [previewKalittaModalOpen, setPreviewKalittaModalOpen] = useState<boolean>(false);
-  const [extracaoKalittaData, setExtracaoKalittaData] = useState<ExtracaoChecklistResultado | null>(null);
+  // Modal de Prévia e Revisão Item a Item para Qualquer Checklist Estruturado
+  const [previewModalOpen, setPreviewModalOpen] = useState<boolean>(false);
+  const [activePreviewData, setActivePreviewData] = useState<ExtracaoChecklistResultado | null>(null);
 
   // Decisão de incorporação
   const [incorporarAuditoria, setIncorporarAuditoria] = useState<boolean>(true);
@@ -149,6 +150,13 @@ export const SmartAuditImportView: React.FC<SmartAuditImportViewProps> = ({
       const f = files[i];
       const ext = f.name.split('.').pop()?.toUpperCase() || 'FILE';
 
+      // Persistência do documento original com hash e metadados no IndexedDB
+      try {
+        await saveDocumentFileToStorage(`AUDDOC-${Date.now()}-${i}`, `audit_file_${Date.now()}`, f);
+      } catch (stErr) {
+        console.warn('Persistência de arquivo original em storage:', stErr);
+      }
+
       // Lê arquivo em base64
       const base64 = await new Promise<string>((resolve) => {
         const reader = new FileReader();
@@ -188,7 +196,54 @@ export const SmartAuditImportView: React.FC<SmartAuditImportViewProps> = ({
     );
 
     setGlobalLoading(false);
-    showNotification('success', `${novosItens.length} arquivo(s) real(is) carregado(s) e interpretado(s)!`);
+    const erros = processados.filter((p) => p.status === 'ERRO');
+    if (erros.length > 0) {
+      showNotification('error', `Falha ao importar: ${erros[0].erroMensagem}`);
+    } else {
+      showNotification('success', `${novosItens.length} arquivo(s) real(is) carregado(s) e interpretado(s)!`);
+    }
+  };
+
+  // Abrir Modal de Revisão Item a Item para Arquivo Real Carregado
+  const handleOpenPreviewForFile = (item: UploadedFileItem) => {
+    const data = item.resultadoExtraido;
+    if (!data) return;
+
+    const cliente = data.dadosAuditoria?.clienteNome || 'Cliente / Autoridade Externa';
+    const codigo = data.dadosAuditoria?.numeroAuditoria || 'CHK-AUDITORIA';
+    const reqs = data.requisitosChecklist || [];
+    const secoes = Array.from(new Set(reqs.map((r: any) => r.capituloOuSecao || 'Geral')));
+
+    const extracao: ExtracaoChecklistResultado = {
+      sucesso: true,
+      nomeArquivo: item.nome,
+      clienteDetectado: cliente,
+      codigoChecklist: codigo,
+      revisaoChecklist: 'Rev. 01',
+      dataChecklist: data.dadosAuditoria?.dataInicio || new Date().toISOString().split('T')[0],
+      totalItensIdentificados: reqs.length,
+      secoesIdentificadas: secoes as string[],
+      grauConfiancaGeral: data.confiancaTipo || 95,
+      hashSha256: data.hashSha256,
+      tamanhoBytes: data.tamanhoBytes,
+      itens: reqs.map((r: any, idx: number) => ({
+        tempId: `ITEM-${idx + 1}`,
+        numeroItem: r.numeroItem || String(idx + 1),
+        capituloOuSecao: r.capituloOuSecao || 'Geral',
+        textoOriginal: r.textoOriginal || r.tituloCurto,
+        perguntaOuCriterio: r.criterioAceitacao || r.textoOriginal || r.tituloCurto,
+        referenciaNormativa: r.referenciaNormativa,
+        campoRespostaOriginal: r.campoRespostaOriginal,
+        categoriaSugerida: r.categoria,
+        criticidadeSugerida: r.criticidade,
+        grauConfianca: r.grauConfianca || 90,
+        necessitaRevisaoHumana: r.necessitaRevisaoHumana || false,
+      })),
+      resumoExecutivo: data.resumoExecutivo || `Checklist extraído do arquivo ${item.nome} (${reqs.length} itens)`,
+    };
+
+    setActivePreviewData(extracao);
+    setPreviewModalOpen(true);
   };
 
   // Preset Demonstrativo (Apenas quando clicado expressamente em DEMO)
@@ -234,7 +289,7 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
     showNotification('info', 'Exemplo de demonstração SWISS carregado para fins de teste.');
   };
 
-  // Carga e Prévia Oficial do Checklist Kalitta Air FORM QA-14 (69 Itens)
+  // Carga do Checklist Kalitta Air FORM QA-14 como Demonstração / Referência
   const handleLoadKalittaPreset = () => {
     const secoes = Array.from(new Set(KALITTA_QA14_ITEMS.map((i) => i.capituloOuSecao)));
     const extracao: ExtracaoChecklistResultado = {
@@ -265,41 +320,48 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
         'FORM QA-14 LINE MAINTENANCE STATION AUDIT CHECKLIST da Kalitta Quality Assurance Department (QA 14 REV: 4 - 01/09/2026). Contém 69 itens das 7 páginas do documento original.',
     };
 
-    setExtracaoKalittaData(extracao);
-    setPreviewKalittaModalOpen(true);
+    setActivePreviewData(extracao);
+    setPreviewModalOpen(true);
   };
 
-  // Confirmação da gravação do checklist revisado no Firestore
-  const handleConfirmKalittaImport = async (dadosRevisados: ExtracaoChecklistResultado) => {
+  // Confirmação da gravação do checklist revisado no Firestore para qualquer auditoria
+  const handleConfirmChecklistImport = async (dadosRevisados: ExtracaoChecklistResultado) => {
     setGravando(true);
     try {
       const orgId = activeOrganization?.id || 'org_impacto_aviation';
-      const auditId = 'AUD-2026-KALITTA-01';
+      const clienteDetectado = (dadosRevisados.clienteDetectado || 'Cliente Externo').trim();
+      const cleanClienteTag = clienteDetectado.replace(/[^a-zA-Z0-9]/g, '').slice(0, 10).toUpperCase() || 'EXT';
+      const codigoForm = dadosRevisados.codigoChecklist || `CHK-${cleanClienteTag}`;
+      
+      const numeroAuditoria = codigoForm.toUpperCase().includes('AUD')
+        ? codigoForm
+        : `AUD-${new Date().getFullYear()}-${cleanClienteTag}-${Date.now().toString().slice(-4)}`;
+      const auditId = `AUD-${Date.now()}`;
 
       // 1. Gravar ou atualizar a Auditoria Externa
       if (onSaveAudit) {
         const novaAuditoria: AuditoriaExternaRecord = {
           id: auditId,
           organizationId: orgId,
-          numeroAuditoria: 'AUD-2026-KALITTA-01',
-          tipo: 'Cliente',
-          origem: 'Kalitta Air - Quality Assurance Department',
-          entidadeAuditora: 'Kalitta Air',
-          auditoresNomes: ['Auditor Líder Kalitta QA'],
-          dataInicio: new Date().toISOString().split('T')[0],
-          dataTermino: new Date().toISOString().split('T')[0],
-          escopo: 'FORM QA-14 LINE MAINTENANCE STATION AUDIT CHECKLIST (REV 4)',
+          numeroAuditoria,
+          tipo: clienteDetectado.toLowerCase().includes('anac') ? 'ANAC' : clienteDetectado.toLowerCase().includes('faa') ? 'FAA' : clienteDetectado.toLowerCase().includes('easa') ? 'Certificadora' : 'Cliente',
+          origem: clienteDetectado,
+          entidadeAuditora: clienteDetectado,
+          auditoresNomes: ['Auditor Líder da Qualidade'],
+          dataInicio: dadosRevisados.dataChecklist || new Date().toISOString().split('T')[0],
+          dataTermino: dadosRevisados.dataChecklist || new Date().toISOString().split('T')[0],
+          escopo: `${codigoForm} - Checklist de Auditoria e Vigilância Contínua`,
           local: 'Hangar de Manutenção de Linha / Base SOD',
-          referenciaExterna: 'FORM QA-14 REV: 4 (01/09/2026)',
+          referenciaExterna: `${codigoForm} (${dadosRevisados.revisaoChecklist || 'Vigente'})`,
           status: 'RECEBIDA',
           responsavelInterno: userProfile?.displayName || 'Garantia da Qualidade SGQ',
-          documentosRecebidosNomes: [dadosRevisados.nomeArquivo || 'QA 14 Line Maintenance Rev 4.pdf'],
+          documentosRecebidosNomes: [dadosRevisados.nomeArquivo || 'Checklist_Importado.pdf'],
           dataRecebimento: new Date().toISOString().split('T')[0],
           prazoGlobalResposta: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
           totalRequisitos: dadosRevisados.itens.length,
-          checklistCodigo: dadosRevisados.codigoChecklist,
-          checklistRevisao: dadosRevisados.revisaoChecklist,
-          checklistNome: 'LINE MAINTENANCE STATION AUDIT CHECKLIST',
+          checklistCodigo: codigoForm,
+          checklistRevisao: dadosRevisados.revisaoChecklist || 'Rev. 01',
+          checklistNome: `${codigoForm} - Checklist de Auditoria`,
           findingsCount: {
             total: 0,
             maiores: 0,
@@ -318,13 +380,13 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
         await onSaveAudit(novaAuditoria);
       }
 
-      // 2. Gravar os 69 Requisitos individuais vinculados
+      // 2. Gravar os Requisitos individuais vinculados
       const reqsToSave: RequisitoAuditoriaExterna[] = dadosRevisados.itens.map((it, idx) => ({
-        id: `KALITTA-QA14-${it.numeroItem.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}`,
+        id: `REQ-${cleanClienteTag}-${it.numeroItem.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}-${idx + 1}`,
         organizationId: orgId,
         auditId,
-        numeroAuditoria: 'AUD-2026-KALITTA-01',
-        clienteOuEntidade: dadosRevisados.clienteDetectado || 'Kalitta Air',
+        numeroAuditoria,
+        clienteOuEntidade: clienteDetectado,
         dataAuditoria: dadosRevisados.dataChecklist || new Date().toISOString().split('T')[0],
         numeroItem: it.numeroItem,
         capituloOuSecao: it.capituloOuSecao,
@@ -355,7 +417,7 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
           pagina: it.paginaOrigem,
           documentoNome: dadosRevisados.nomeArquivo,
         },
-        grauConfiancaExtracao: it.grauConfianca || 99,
+        grauConfiancaExtracao: it.grauConfianca || 95,
         necessitaRevisaoHumana: it.necessitaRevisaoHumana || false,
         statusRegistro: 'ATIVO',
         createdAt: new Date().toISOString(),
@@ -368,7 +430,7 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
             usuarioUid: userProfile?.uid || 'user_sgq',
             usuarioNome: userProfile?.displayName || 'QualiGest SGQ',
             acao: 'CRIACAO',
-            detalhes: 'Importação oficial de item do FORM QA-14 Line Maintenance Station Audit Checklist (Kalitta Air Rev 4).',
+            detalhes: `Importação de requisito do documento real "${dadosRevisados.nomeArquivo}" (${clienteDetectado}).`,
           },
         ],
       }));
@@ -379,10 +441,10 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
         await saveAuditRequirementsBatch(orgId, reqsToSave, userProfile);
       }
 
-      setPreviewKalittaModalOpen(false);
+      setPreviewModalOpen(false);
       showNotification(
         'success',
-        `Checklist Kalitta QA-14 importado com sucesso! ${reqsToSave.length} requisitos e auditoria AUD-2026-KALITTA-01 registrados no SGQ.`
+        `Checklist "${codigoForm}" (${clienteDetectado}) importado com sucesso! ${reqsToSave.length} requisitos e auditoria "${numeroAuditoria}" registrados no SGQ.`
       );
 
       if (onImportComplete) {
@@ -609,20 +671,20 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               onClick={handleLoadKalittaPreset}
-              className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer"
-              title="Carrega os 69 itens oficiais do FORM QA-14 LINE MAINTENANCE STATION AUDIT CHECKLIST (Kalitta Air Rev 4)"
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-300 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Carrega os 69 itens oficiais do modelo Kalitta Air (FORM QA-14) para teste ou demonstração"
             >
-              <ShieldCheck className="w-4 h-4 text-amber-400" />
-              <span>Checklist Kalitta QA-14 (69 Itens)</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+              <span>Modelo Kalitta QA-14 (Demo)</span>
             </button>
 
             <button
               onClick={handleLoadDemoPreset}
-              className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all"
-              title="Carrega exemplo SWISS sem sobrescrever arquivos selecionados"
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer"
+              title="Carrega exemplo SWISS para demonstração sem sobrescrever arquivos reais"
             >
-              <FileText className="w-4 h-4 text-purple-400" />
-              Exemplo SWISS (Demo)
+              <FileText className="w-3.5 h-3.5 text-purple-400" />
+              <span>Exemplo SWISS (Demo)</span>
             </button>
           </div>
         </div>
@@ -804,6 +866,15 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
                   <FileText className="w-4 h-4 text-emerald-400" />
                   Requisitos Estruturados do Checklist ({dadosExtraidos.requisitosChecklist.length})
                 </h4>
+                {activeItem && (
+                  <button
+                    onClick={() => handleOpenPreviewForFile(activeItem)}
+                    className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-200" />
+                    <span>Revisar Item a Item no Modal Estruturado</span>
+                  </button>
+                )}
               </div>
               <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                 {dadosExtraidos.requisitosChecklist.map((r: any, idx: number) => (
@@ -932,13 +1003,13 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
         </div>
       )}
 
-      {/* Modal Oficial de Prévia e Revisão Item a Item para Kalitta QA-14 / Checklists */}
-      {previewKalittaModalOpen && extracaoKalittaData && (
+      {/* Modal Oficial de Prévia e Revisão Item a Item para Qualquer Checklist Estruturado */}
+      {previewModalOpen && activePreviewData && (
         <AuditImportPreviewModal
-          isOpen={previewKalittaModalOpen}
-          onClose={() => setPreviewKalittaModalOpen(false)}
-          extracao={extracaoKalittaData}
-          onConfirmImport={handleConfirmKalittaImport}
+          isOpen={previewModalOpen}
+          onClose={() => setPreviewModalOpen(false)}
+          extracao={activePreviewData}
+          onConfirmImport={handleConfirmChecklistImport}
           loadingGravacao={gravando}
         />
       )}
