@@ -23,6 +23,27 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+// Endpoint de Observabilidade e Métricas Gemini (Fase 28)
+app.get("/api/gemini/metrics", (req, res) => {
+  const snapshot = geminiMetrics.getSnapshot();
+  return res.json({
+    success: true,
+    metrics: snapshot,
+    cacheSize: geminiCache.size(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.post("/api/gemini/cache/clear", (req, res) => {
+  const { organizationId } = req.body || {};
+  if (organizationId) {
+    geminiCache.invalidateByOrganization(organizationId);
+  } else {
+    geminiCache.clear();
+  }
+  return res.json({ success: true, message: "Cache limpo com sucesso." });
+});
+
 // Helper to extract text from Base64 Word (.docx) document on server
 async function extractTextFromBase64Docx(base64: string): Promise<string> {
   try {
@@ -36,80 +57,45 @@ async function extractTextFromBase64Docx(base64: string): Promise<string> {
   }
 }
 
-// Initialize Gemini SDK lazily / safely
-function getGeminiClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn("GEMINI_API_KEY not configured. Rule-based SGQ extraction will be used.");
-    return null;
-  }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
-  });
-}
+import {
+  getGeminiClient,
+  executeGeminiRequest,
+  geminiMetrics,
+  geminiCache,
+  processInBatches,
+  CHECKLIST_PARSE_SCHEMA,
+  AUDIT_DOCUMENT_PARSE_SCHEMA,
+} from "./server/gemini/index.ts";
 
-// Resilient helper to call Gemini with exponential backoff on 503/429/fetch errors and multi-model fallback
+// Resilient helper routed through the Central Gemini Gateway (Cache + Dedup + Multi-Model Fallback + Metrics)
 async function generateContentWithModelFallback(
   ai: GoogleGenAI,
   options: {
     models?: string[];
     contents: any;
     config?: any;
+    operation?: string;
+    organizationId?: string;
   }
 ) {
-  const candidateModels = options.models || [
-    "gemini-3.8-flash",
-    "gemini-flash-latest",
-    "gemini-3.1-flash-lite",
-  ];
+  const result = await executeGeminiRequest({
+    operation: options.operation || "gemini-operation",
+    contents: options.contents,
+    config: options.config,
+    models: options.models,
+    organizationId: options.organizationId,
+  });
 
-  let lastError: any = null;
-
-  for (const model of candidateModels) {
-    try {
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          return await ai.models.generateContent({
-            model,
-            contents: options.contents,
-            config: options.config,
-          });
-        } catch (err: any) {
-          lastError = err;
-          const isUnavailable =
-            err?.status === "UNAVAILABLE" ||
-            err?.status === 503 ||
-            err?.message?.includes("503") ||
-            err?.message?.includes("high demand") ||
-            err?.message?.includes("RESOURCE_EXHAUSTED") ||
-            err?.message?.includes("fetch failed") ||
-            err?.message?.includes("ECONNREFUSED") ||
-            err?.message?.includes("ETIMEDOUT") ||
-            err?.status === 429;
-
-          if (isUnavailable && attempt < 2) {
-            await new Promise((r) => setTimeout(r, 750));
-            continue;
-          }
-          if (isUnavailable) {
-            console.warn(`[Gemini API] Model ${model} is experiencing temporary high demand (503/429). Trying alternative model...`);
-            break;
-          }
-          throw err;
-        }
-      }
-    } catch (modelErr: any) {
-      lastError = modelErr;
-      console.warn(`[Gemini API] Model ${model} fallback attempt logged:`, modelErr?.message || modelErr);
-    }
-  }
-
-  throw lastError;
+  return {
+    text: result.text,
+    candidates: [
+      {
+        content: {
+          parts: [{ text: result.text }],
+        },
+      },
+    ],
+  };
 }
 
 // Robust rule-based / regex parser for RNC (Formulário F 001-29 e Padrão SGQ Aeronáutico / ISO 9001)
@@ -3179,76 +3165,128 @@ app.post("/api/smart-audit/parse-checklist", async (req, res) => {
       };
     };
 
+    const heuristic = parseHeuristicoChecklist();
+
     if (!ai || (!fullText || fullText.trim().length < 15)) {
-      const fallbackResult = parseHeuristicoChecklist();
-      return res.json({ success: true, ...fallbackResult });
+      return res.json({ success: true, ...heuristic });
     }
 
+    // FASE 16 & 17: Se o documento contiver mais de 25 itens extraídos deterministamente,
+    // preservamos todos os itens individuais sem truncar o texto e enriquecemos em batches seguros
+    if (heuristic.itens && heuristic.itens.length > 25) {
+      try {
+        const enrichedBatches = await processInBatches({
+          items: heuristic.itens,
+          batchSize: 20,
+          maxConcurrency: 2,
+          operationName: "smart-audit-batch-enrich",
+          processBatch: async (batch, batchIndex) => {
+            const batchPrompt = `Você é Auditor da Garantia da Qualidade Aeronáutica.
+Para os seguintes ${batch.length} requisitos de checklist já extraídos, refine e padronize rigorosamente a categoria, criticidade e critério objetivo de aceitação:
+${JSON.stringify(batch.map((b: any) => ({ numeroItem: b.numeroItem, textoOriginal: b.textoOriginal })))}
+
+Retorne um array JSON com os itens refinados preservando numeroItem e textoOriginal:
+[
+  {
+    "numeroItem": "string",
+    "tituloCurto": "string",
+    "textoOriginal": "string",
+    "criterioAceitacao": "string",
+    "categoria": "Pessoas e Treinamentos" | "Ferramental e Calibração" | "Controle Documental" | "Pátio e Hangar" | "EHS" | "Geral",
+    "criticidade": "CRITICO" | "ALTO" | "MEDIO" | "BAIXO",
+    "metodoVerificacao": "AUTOMATICO" | "ASSISTIDO" | "MANUAL" | "DOCUMENTAL",
+    "requerEvidenciaFisica": boolean,
+    "controleSugeridoCodigo": "string"
+  }
+]`;
+
+            try {
+              const batchResult = await executeGeminiRequest<{
+                numeroItem: string;
+                tituloCurto: string;
+                textoOriginal: string;
+                criterioAceitacao: string;
+                categoria: string;
+                criticidade: string;
+                metodoVerificacao: string;
+                requerEvidenciaFisica: boolean;
+                controleSugeridoCodigo: string;
+              }[]>({
+                operation: `smart-audit-enrich-batch-${batchIndex}`,
+                contents: batchPrompt,
+                config: {
+                  responseMimeType: "application/json",
+                },
+                ttlMs: 24 * 60 * 60 * 1000,
+              });
+
+              if (Array.isArray(batchResult.parsed) && batchResult.parsed.length > 0) {
+                // Merge com dados originais para garantir 100% de preservação
+                return batch.map((orig: any) => {
+                  const match = batchResult.parsed?.find((p: any) => p.numeroItem === orig.numeroItem);
+                  return match ? { ...orig, ...match } : orig;
+                });
+              }
+            } catch (bErr) {
+              console.warn(`[Smart Audit Batch ${batchIndex}] Aviso no enriquecimento, mantendo item original:`, bErr);
+            }
+            return batch;
+          },
+        });
+
+        return res.json({
+          success: true,
+          clienteNome: heuristic.clienteNome,
+          programaCodigo: heuristic.programaCodigo,
+          programaNome: heuristic.programaNome,
+          revisao: heuristic.revisao,
+          itens: enrichedBatches.length > 0 ? enrichedBatches : heuristic.itens,
+          origem: "IA_GEMINI_BATCHED",
+        });
+      } catch (batchErr: any) {
+        console.warn("Erro no processamento em batch, retornando heurística determinística:", batchErr);
+        return res.json({ success: true, ...heuristic });
+      }
+    }
+
+    // Para checklists menores (até 25 itens), processamento direto sem truncamento artificial
     const prompt = `Você é o auditor especialista em Qualidade e Homologação Aeronáutica (RBAC 145 / EASA / FAA) do QualiGest.
 Analise o seguinte conteúdo de checklist de auditoria de cliente aéreo e estruture-o rigorosamente em JSON:
 
 REGRAS OBRIGATÓRIAS:
 1. NÃO INVENTE REQUISITOS. Extraia exclusivamente o que está no texto.
 2. Identifique o cliente, código do checklist e revisão.
-3. Para cada requisito, identifique:
-   - numeroItem (ex: "1.1", "2.3.1", "Q2059-4")
-   - tituloCurto (máximo 60 caracteres)
-   - textoOriginal (texto fiel do requisito)
-   - criterioAceitacao (o que o auditor busca objetivamente)
-   - categoria ("Pessoas e Treinamentos" | "Ferramental e Calibração" | "Controle Documental" | "Pátio e Hangar" | "EHS" | "Geral")
-   - criticidade ("CRITICO" | "ALTO" | "MEDIO" | "BAIXO")
-   - metodoVerificacao ("AUTOMATICO" | "ASSISTIDO" | "MANUAL" | "DOCUMENTAL")
-   - requerEvidenciaFisica (true se exige foto do pátio/hangar/equipamento)
-   - controleSugeridoCodigo ("CTRL-TREIN-01" | "CTRL-FERR-01" | "CTRL-DOC-01" | "CTRL-PATIO-01" | "CTRL-SEG-01")
+3. Para cada requisito, identifique numeroItem, tituloCurto, textoOriginal, criterioAceitacao, categoria, criticidade, metodoVerificacao, requerEvidenciaFisica e controleSugeridoCodigo.
 
 Texto do Checklist:
 """
-${fullText.slice(0, 15000)}
-"""
-
-Responda ESTRITAMENTE em formato JSON:
-{
-  "clienteNome": "Nome do Cliente (ex: Atlas Air, Kalitta Air, SWISS)",
-  "programaCodigo": "Código do Checklist (ex: Q2059, QA-14 Rev 4)",
-  "programaNome": "Título do Checklist",
-  "revisao": "Revisão identificada",
-  "itens": [
-    {
-      "numeroItem": "string",
-      "tituloCurto": "string",
-      "textoOriginal": "string",
-      "criterioAceitacao": "string",
-      "categoria": "string",
-      "criticidade": "CRITICO" | "ALTO" | "MEDIO" | "BAIXO",
-      "metodoVerificacao": "AUTOMATICO" | "ASSISTIDO" | "MANUAL" | "DOCUMENTAL",
-      "requerEvidenciaFisica": boolean,
-      "controleSugeridoCodigo": "string"
-    }
-  ]
-}`;
+${fullText}
+"""`;
 
     try {
-      const response = await generateContentWithModelFallback(ai, {
+      const response = await executeGeminiRequest({
+        operation: "smart-audit-parse-checklist",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
+          responseSchema: CHECKLIST_PARSE_SCHEMA,
         },
+        ttlMs: 24 * 60 * 60 * 1000,
       });
 
-      const parsed = JSON.parse(response.text?.trim() || "{}");
+      const parsed = response.parsed || JSON.parse(response.text?.trim() || "{}");
       return res.json({
         success: true,
-        clienteNome: parsed.clienteNome || clienteSugerido || "Cliente Aéreo",
-        programaCodigo: parsed.programaCodigo || "CHK-2026",
-        programaNome: parsed.programaNome || "Checklist Estruturado via IA",
-        revisao: parsed.revisao || "Vigente",
-        itens: Array.isArray(parsed.itens) && parsed.itens.length > 0 ? parsed.itens : parseHeuristicoChecklist().itens,
-        origem: "IA_GEMINI",
+        clienteNome: parsed.clienteNome || clienteSugerido || heuristic.clienteNome || "Cliente Aéreo",
+        programaCodigo: parsed.programaCodigo || heuristic.programaCodigo || "CHK-2026",
+        programaNome: parsed.programaNome || heuristic.programaNome || "Checklist Estruturado via IA",
+        revisao: parsed.revisao || heuristic.revisao || "Vigente",
+        itens: Array.isArray(parsed.itens) && parsed.itens.length > 0 ? parsed.itens : heuristic.itens,
+        origem: response.fromCache ? "IA_GEMINI_CACHE" : "IA_GEMINI",
       });
     } catch (aiErr: any) {
       console.warn("Gemini parse-checklist warning, using heuristic fallback:", aiErr.message);
-      const fallbackResult = parseHeuristicoChecklist();
-      return res.json({ success: true, ...fallbackResult });
+      return res.json({ success: true, ...heuristic });
     }
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
@@ -3671,14 +3709,17 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura:
 }`;
 
     try {
-      const response = await generateContentWithModelFallback(ai, {
+      const response = await executeGeminiRequest({
+        operation: "smart-audit-parse-document",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
+          responseSchema: AUDIT_DOCUMENT_PARSE_SCHEMA,
         },
+        ttlMs: 24 * 60 * 60 * 1000,
       });
 
-      const parsed = JSON.parse(response.text?.trim() || "{}");
+      const parsed = response.parsed || JSON.parse(response.text?.trim() || "{}");
       const heuristico = parseHeuristicoDocumento();
 
       let finalRequisitos = Array.isArray(parsed.requisitosChecklist) && parsed.requisitosChecklist.length > 0
@@ -3714,7 +3755,7 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura:
           : heuristico.documentosCitadosComRevisao,
         licoesAprendidas: Array.isArray(parsed.licoesAprendidas) ? parsed.licoesAprendidas : heuristico.licoesAprendidas,
         sugestoesAuditoriaInterna: Array.isArray(parsed.sugestoesAuditoriaInterna) ? parsed.sugestoesAuditoriaInterna : heuristico.sugestoesAuditoriaInterna,
-        origem: "IA_GEMINI",
+        origem: response.fromCache ? "IA_GEMINI_CACHE" : "IA_GEMINI",
       });
     } catch (aiErr: any) {
       console.warn("Gemini parse-document warning, using honest heuristic fallback:", aiErr.message);
@@ -4049,11 +4090,13 @@ Responda ESTRITAMENTE em formato JSON:
 }`;
 
     try {
-      const response = await generateContentWithModelFallback(ai, {
+      const response = await executeGeminiRequest({
+        operation: "smart-audit-evaluate-checklist-item",
         contents: prompt,
         config: { responseMimeType: "application/json" },
+        ttlMs: 12 * 60 * 60 * 1000,
       });
-      const parsed = JSON.parse(response.text?.trim() || "{}");
+      const parsed = response.parsed || JSON.parse(response.text?.trim() || "{}");
       return res.json({
         success: true,
         sugestao: {

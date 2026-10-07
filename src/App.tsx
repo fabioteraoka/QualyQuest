@@ -1,294 +1,89 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  NCRecord, 
-  ManualRecord, 
-  ComparacaoRNCRecord, 
-  ValidatedKnowledgeRecord, 
-  ConhecimentoValidadoItem,
-  OrganizationRecord,
-  AuditoriaExternaRecord,
-  ConstatacaoExternaRecord,
-  LicaoAprendidaAuditoria,
-  ColaboradorPessoa,
-  CompetenciaItem,
-  CompetenciaColaborador,
-  CursoTreinamento,
-  RegistroTreinamentoColaborador,
-  QualificacaoColaborador,
-  DocumentoEvidenciaPessoa,
-  AtividadeCompetenciaRequerida,
-  SugestaoIACompetencia,
-  DocumentoControlado,
-  RevisaoDocumental,
-  FonteExternaControlada,
-  SolicitacaoRevisaoCliente,
-  LogVerificacaoFonteExterna,
-  RegistroEvidenciaConsultaDocumento,
-} from './types';
-import {
-  subscribeToNonConformities,
-  subscribeToManuals,
-  subscribeToRNCComparisons,
-  subscribeToValidatedKnowledge,
-  subscribeToOrganization,
-  ensureOrganization,
-  saveNonConformity,
-  deleteNonConformity,
-  deleteMultipleNonConformities,
-  saveManual,
-  deleteManual,
-  bootstrapDemonstrationData,
-  DEFAULT_ORGANIZATION_ID,
-  subscribeToExternalAudits,
-  subscribeToAuditFindings,
-  subscribeToAuditLessons,
-  saveExternalAudit,
-  deleteExternalAudit,
-  saveAuditFinding,
-  deleteAuditFinding,
-  criarRNCFromFinding,
-  saveAuditLesson,
-  deleteAuditLesson,
-  promoverLicaoParaConhecimento,
-  checkAndMigrateLegacyHyphenData,
-} from './services/firebase/firestore';
-import { saveManualToDB } from './utils/manualsStorage';
+import { NCRecord } from './types';
+import { DEFAULT_ORGANIZATION_ID, bootstrapDemonstrationData } from './services/firebase/firestore';
 import { useAuth } from './hooks/useAuth';
+import { useAppSubscriptions } from './hooks/useAppSubscriptions';
+import { useAuditActions } from './hooks/useAuditActions';
+import { useNCActions } from './hooks/useNCActions';
 import { gerarAlertas } from './utils/qualityHelpers';
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { AlertBanner } from './components/AlertBanner';
-import { DashboardView } from './components/DashboardView';
-import { SGQHealthView } from './components/SGQHealthView';
-import { ReportListView } from './components/ReportListView';
-import { DocumentExtractorView } from './components/DocumentExtractorView';
-import { NCFormView } from './components/NCFormView';
-import { IncidenceAnalyticsView } from './components/IncidenceAnalyticsView';
-import { AlertsCenterView } from './components/AlertsCenterView';
-import { OfficialReportView } from './components/OfficialReportView';
-import { ManualsRepositoryView } from './components/ManualsRepositoryView';
-import { RNCComparisonView } from './components/RNCComparisonView';
-import { ValidationQueueView } from './components/ValidationQueueView';
-import { KnowledgeBaseView } from './components/KnowledgeBaseView';
-import { QualityPresentationGeneratorView } from './components/QualityPresentationGeneratorView';
-import { SystemArchitectureView } from './components/SystemArchitectureView';
-import { TechnicalDiagnosticsCenterView } from './components/TechnicalDiagnosticsCenterView';
-import { InteractiveTourView } from './components/InteractiveTourView';
-import { OrganizationSettingsView } from './components/OrganizationSettingsView';
-import { NewOrganizationOnboardingView } from './components/NewOrganizationOnboardingView';
-import { WelcomeAdminBanner } from './components/WelcomeAdminBanner';
-import { InitialSetupChecklistModal } from './components/InitialSetupChecklistModal';
-import { ComplianceAuditModal } from './components/ComplianceAuditModal';
-import { TechnicalAuditModal } from './components/TechnicalAuditModal';
-import { AuthModal } from './components/AuthModal';
-import { FirebaseDiagnosticModal } from './components/FirebaseDiagnosticModal';
-import { LocalDataMigrationModal } from './components/LocalDataMigrationModal';
 import { detectLocalMaterial } from './services/localDataMigration';
-import { NoTenantAssignedView } from './components/NoTenantAssignedView';
-import { UserDeactivatedView } from './components/UserDeactivatedView';
-import { CentralAdministrationView } from './components/CentralAdministrationView';
-import { UserPendingOrganizationView } from './components/UserPendingOrganizationView';
-import { UserBlockedOrInactiveView } from './components/UserBlockedOrInactiveView';
-import { UserManualView } from './components/UserManualView';
-import { AuditsManagementView } from './components/AuditsManagementView';
-import { AuditFindingsView } from './components/AuditFindingsView';
-import { AuditLessonsLearnedView } from './components/AuditLessonsLearnedView';
-import { AuditsDashboardView } from './components/AuditsDashboardView';
-import { PersonsCompetenciesView } from './components/PersonsCompetenciesView';
-import { TrainingsQualificationsView } from './components/TrainingsQualificationsView';
-import { ExpirationsGapsCenterView } from './components/ExpirationsGapsCenterView';
-import { CompetenciesDashboardView } from './components/CompetenciesDashboardView';
-import {
-  subscribeToPersons,
-  subscribeToCompetencies,
-  subscribeToPersonCompetencies,
-  subscribeToTrainingCourses,
-  subscribeToTrainingRecords,
-  subscribeToQualifications,
-  subscribeToPersonDocuments,
-  subscribeToActivityRequirements,
-  subscribeToAiCompetencySuggestions,
-} from './services/firebase/competenciesFirestore';
-import { DocumentControlCenterView } from './components/DocumentControlCenterView';
-import { VisionAndRoadmapView } from './components/VisionAndRoadmapView';
-import {
-  subscribeToDocumentosControlados,
-  subscribeToRevisoesDocumentais,
-  subscribeToFontesExternas,
-  subscribeToSolicitacoesCliente,
-  subscribeToLogsVerificacao,
-  subscribeToEvidenciasConsulta,
-} from './services/firebase/documentControlFirestore';
-import { ClientAuditsManagementView } from './components/ClientAuditsManagementView';
-import {
-  subscribeToClientesExternos,
-  subscribeToBasesOperacionais,
-  subscribeToProgramasClientes,
-  subscribeToControlesCentrais,
-  subscribeToRequisitosClientes,
-  subscribeToAvaliacoesRequisitos,
-  saveAvaliacaoRequisito,
-  saveRequisitoCliente,
-  saveProgramaCliente,
-} from './services/firebase/clientRequirementsFirestore';
-import {
-  ClienteExterno,
-  BaseEstacaoOperacao,
-  ProgramaChecklistCliente,
-  ControleCentralSGQ,
-  RequisitoClienteItem,
-  AvaliacaoRequisitoCliente,
-  FerramentaCalibracao,
-  RegistroImportacaoCompleto,
-  TemplateMapeamentoAprovado,
-} from './types';
-import { SmartImportMigrationView } from './components/SmartImportMigrationView';
-import { FerramentasMetrologiaView } from './components/FerramentasMetrologiaView';
-import { SmartAuditView } from './components/SmartAuditView';
-import { SystemDesignerOfficialView } from './components/SystemDesignerOfficialView';
-import {
-  subscribeToCalibratedTools,
-  subscribeToSmartImportRecords,
-  subscribeToImportTemplates,
-} from './services/firebase/smartImportFirestore';
-import {
-  subscribeToAuditRequirements,
-  saveAuditRequirement,
-  saveAuditRequirementsBatch,
-  cancelAuditAndCascadingItems,
-  restoreCancelledAudit,
-  archiveAudit,
-  deleteAuditWithDependencyCheck,
-} from './services/firebase/auditRequirementsFirestore';
-import { RequisitoAuditoriaExterna } from './types/auditRequirements';
-import { INITIAL_RECORDS } from './data/initialRecords';
-import { INITIAL_MANUALS } from './data/initialManuals';
-import { INITIAL_EXTERNAL_AUDITS, INITIAL_AUDIT_FINDINGS, INITIAL_AUDIT_LESSONS } from './data/initialAudits';
-import { 
-  INITIAL_PERSONS, 
-  INITIAL_COMPETENCIES, 
-  INITIAL_PERSON_COMPETENCIES, 
-  INITIAL_TRAINING_COURSES, 
-  INITIAL_TRAINING_RECORDS, 
-  INITIAL_QUALIFICATIONS, 
-  INITIAL_PERSON_DOCUMENTS, 
-  INITIAL_ACTIVITY_REQUIREMENTS 
-} from './data/initialCompetenciesData';
-import { 
-  INITIAL_DOCUMENTOS_CONTROLADOS, 
-  INITIAL_REVISOES_DOCUMENTAIS, 
-  INITIAL_FONTES_EXTERNAS, 
-  INITIAL_SOLICITACOES_CLIENTE, 
-  INITIAL_LOGS_VERIFICACAO, 
-  INITIAL_EVIDENCIAS_CONSULTA 
-} from './data/initialDocumentControl';
-import { 
-  INITIAL_CLIENTS, 
-  INITIAL_BASES, 
-  INITIAL_CLIENT_PROGRAMS, 
-  INITIAL_CENTRAL_CONTROLS, 
-  INITIAL_CLIENT_REQUIREMENTS, 
-  INITIAL_CLIENT_EVALUATIONS 
-} from './data/initialClientRequirements';
-import { INITIAL_CALIBRATED_TOOLS } from './data/initialCalibratedTools';
-import { RefreshCw, Sparkles, UploadCloud, Database, ShieldAlert, LayoutDashboard, FileText, Bell, Plus, Menu, Building2 } from 'lucide-react';
+import { AppViewRouter } from './components/app/AppViewRouter';
+import { AppModals } from './components/app/AppModals';
+import { AppAuthGuards } from './components/app/AppAuthGuards';
+import { AppNotificationBanners } from './components/app/AppNotificationBanners';
+import { MobileBottomNav } from './components/app/MobileBottomNav';
+import { getTitleForTab } from './components/app/tabTitles';
+import { saveNonConformity } from './services/firebase/firestore';
+import { saveAvaliacaoRequisito } from './services/firebase/clientRequirementsFirestore';
+import { RefreshCw } from 'lucide-react';
 
 export default function App() {
-  const { user, userProfile, loading: authLoading, logout } = useAuth();
-  // Quando autenticado, utiliza o tenant vinculado do perfil ou o tenant padrão operacional.
-  // Em modo demo local não autenticado, utiliza DEFAULT_ORGANIZATION_ID.
+  const { user, userProfile, loading: authLoading } = useAuth();
   const activeOrgId = (user && userProfile?.organizationId) ? userProfile.organizationId : DEFAULT_ORGANIZATION_ID;
 
-  // Real-time Firestore state
-  const [records, setRecords] = useState<NCRecord[]>([]);
-  const [manuals, setManuals] = useState<ManualRecord[]>([]);
-  const [comparacoes, setComparacoes] = useState<ComparacaoRNCRecord[]>([]);
-  const [knowledgeList, setKnowledgeList] = useState<ValidatedKnowledgeRecord[]>([]);
-  const [activeOrganization, setActiveOrganization] = useState<OrganizationRecord | null>(null);
-  const [loadingRecords, setLoadingRecords] = useState(true);
-  const [loadingManuals, setLoadingManuals] = useState(true);
-  const [firestoreError, setFirestoreError] = useState<string | null>(null);
+  // Subscriptions & Real-Time Collections Hook
+  const {
+    records,
+    setRecords,
+    manuals,
+    setManuals,
+    comparacoes,
+    knowledgeList,
+    activeOrganization,
+    setActiveOrganization,
+    loadingRecords,
+    firestoreError,
+    externalAudits,
+    setExternalAudits,
+    auditFindings,
+    setAuditFindings,
+    auditLessons,
+    setAuditLessons,
+    auditRequirements,
+    setAuditRequirements,
+    selectedAuditForFindings,
+    setSelectedAuditForFindings,
+    persons,
+    setPersons,
+    competencies,
+    personCompetencies,
+    trainingCourses,
+    setTrainingCourses,
+    trainingRecords,
+    setTrainingRecords,
+    qualifications,
+    setQualifications,
+    personDocuments,
+    activityRequirements,
+    aiCompetencySuggestions,
+    documentosControlados,
+    setDocumentosControlados,
+    revisoesDocumentais,
+    fontesExternas,
+    solicitacoesCliente,
+    logsVerificacaoFontes,
+    evidenciasConsultaDoc,
+    clientesExternos,
+    basesOperacionais,
+    programasClientes,
+    setProgramasClientes,
+    controlesCentrais,
+    requisitosClientes,
+    setRequisitosClientes,
+    avaliacoesRequisitos,
+    setAvaliacoesRequisitos,
+    ferramentasCalibradas,
+    setFerramentasCalibradas,
+    smartImports,
+    templatesAprovados,
+    setTemplatesAprovados,
+  } = useAppSubscriptions({ user, userProfile, authLoading, activeOrgId });
 
   // Active Tab navigation
-  const [activeTab, setActiveTab] = useState<
-    | 'dashboard'
-    | 'visao-evolucao'
-    | 'conhecaQualigest'
-    | 'saudeSGQ'
-    | 'apresentacao'
-    | 'arquitetura'
-    | 'relatorio'
-    | 'extrator'
-    | 'formulario'
-    | 'incidencias'
-    | 'alertas'
-    | 'oficial'
-    | 'manuais'
-    | 'comparacaoRNC'
-    | 'validacaoQueue'
-    | 'knowledgeBase'
-    | 'admin-central'
-    | 'configuracoes-org'
-    | 'onboarding-novo-cliente'
-    | 'manual-utilizacao'
-    | 'auditorias-gestao'
-    | 'auditorias-constatacoes'
-    | 'auditorias-licoes'
-    | 'auditorias-dashboard'
-    | 'pessoas-competencias'
-    | 'treinamentos-qualificacoes'
-    | 'central-vencimentos-gaps'
-    | 'competencias-dashboard'
-    | 'controle-documental'
-    | 'consulta-temporal'
-    | 'fontes-externas'
-    | 'documentos-dashboard'
-    | 'clientes-requisitos'
-    | 'clientes-matriz'
-    | 'clientes-cockpit'
-    | 'smart-audit'
-    | 'system-designer'
-    | 'importacao-inteligente'
-  >('dashboard');
-
-  // FASE 8 & 15: State de Auditorias Externas e Requisitos
-  const [externalAudits, setExternalAudits] = useState<AuditoriaExternaRecord[]>([]);
-  const [auditFindings, setAuditFindings] = useState<ConstatacaoExternaRecord[]>([]);
-  const [auditLessons, setAuditLessons] = useState<LicaoAprendidaAuditoria[]>([]);
-  const [auditRequirements, setAuditRequirements] = useState<RequisitoAuditoriaExterna[]>([]);
-  const [selectedAuditForFindings, setSelectedAuditForFindings] = useState<AuditoriaExternaRecord | null>(null);
-
-  // FASE 9: State de Pessoas, Competências, Treinamentos e Qualificações
-  const [persons, setPersons] = useState<ColaboradorPessoa[]>([]);
-  const [competencies, setCompetencies] = useState<CompetenciaItem[]>([]);
-  const [personCompetencies, setPersonCompetencies] = useState<CompetenciaColaborador[]>([]);
-  const [trainingCourses, setTrainingCourses] = useState<CursoTreinamento[]>([]);
-  const [trainingRecords, setTrainingRecords] = useState<RegistroTreinamentoColaborador[]>([]);
-  const [qualifications, setQualifications] = useState<QualificacaoColaborador[]>([]);
-  const [personDocuments, setPersonDocuments] = useState<DocumentoEvidenciaPessoa[]>([]);
-  const [activityRequirements, setActivityRequirements] = useState<AtividadeCompetenciaRequerida[]>([]);
-  const [aiCompetencySuggestions, setAiCompetencySuggestions] = useState<SugestaoIACompetencia[]>([]);
-
-  // FASE 10: State de Controle Documental, Revisões e Fontes Externas
-  const [documentosControlados, setDocumentosControlados] = useState<DocumentoControlado[]>([]);
-  const [revisoesDocumentais, setRevisoesDocumentais] = useState<RevisaoDocumental[]>([]);
-  const [fontesExternas, setFontesExternas] = useState<FonteExternaControlada[]>([]);
-  const [solicitacoesCliente, setSolicitacoesCliente] = useState<SolicitacaoRevisaoCliente[]>([]);
-  const [logsVerificacaoFontes, setLogsVerificacaoFontes] = useState<LogVerificacaoFonteExterna[]>([]);
-  const [evidenciasConsultaDoc, setEvidenciasConsultaDoc] = useState<RegistroEvidenciaConsultaDocumento[]>([]);
-
-  // FASE 13: State de Auditorias, Requisitos e Controles de Clientes ("Um Controle, Vários Requisitos")
-  const [clientesExternos, setClientesExternos] = useState<ClienteExterno[]>([]);
-  const [basesOperacionais, setBasesOperacionais] = useState<BaseEstacaoOperacao[]>([]);
-  const [programasClientes, setProgramasClientes] = useState<ProgramaChecklistCliente[]>([]);
-  const [controlesCentrais, setControlesCentrais] = useState<ControleCentralSGQ[]>([]);
-  const [requisitosClientes, setRequisitosClientes] = useState<RequisitoClienteItem[]>([]);
-  const [avaliacoesRequisitos, setAvaliacoesRequisitos] = useState<AvaliacaoRequisitoCliente[]>([]);
-
-  // FASE 14: State de Importação Inteligente, Metrologia e Modelos Homologados
-  const [ferramentasCalibradas, setFerramentasCalibradas] = useState<FerramentaCalibracao[]>([]);
-  const [smartImports, setSmartImports] = useState<RegistroImportacaoCompleto[]>([]);
-  const [templatesAprovados, setTemplatesAprovados] = useState<TemplateMapeamentoAprovado[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('dashboard');
 
   // Multi-Tenant Setup Checklist Modal & Welcome Banner State
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);
@@ -300,470 +95,112 @@ export default function App() {
   const [formInitialTab, setFormInitialTab] = useState<'dados' | 'risco' | 'contencao' | 'causa' | 'acao' | 'eficacia'>('dados');
   const [reportFilterStatus, setReportFilterStatus] = useState<string | undefined>(undefined);
 
-  // AI Compliance Audit State
+  // Modals state
   const [auditTargetNC, setAuditTargetNC] = useState<NCRecord | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
-
-  // FASE 5: Technical Audit Modal State
   const [isTechnicalAuditModalOpen, setIsTechnicalAuditModalOpen] = useState(false);
-
-  // Firebase Auth & Diagnostic Modals State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isDiagnosticsModalOpen, setIsDiagnosticsModalOpen] = useState(false);
-
-  // Local Browser Data Migration Modal State & Auto-detection
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
   const [detectedLocalCount, setDetectedLocalCount] = useState<number>(0);
 
-  // Global search term for header
+  // Global search & mobile drawer
   const [headerSearchTerm, setHeaderSearchTerm] = useState('');
-
-  // Mobile sidebar drawer state
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-
-  // Bootstrap Demo Data State
   const [isBootstrapping, setIsBootstrapping] = useState(false);
 
-  // ----------------------------------------------------
-  // REAL-TIME FIRESTORE SUBSCRIPTIONS (SOURCE OF TRUTH)
-  // ----------------------------------------------------
-  useEffect(() => {
-    // Aguarda finalização da verificação de autenticação
-    if (authLoading) return;
+  // Extracted Action Handlers: NCs & Manuals
+  const {
+    handleSaveNC,
+    handleDeleteNC,
+    handleDeleteMultipleNC,
+    handleSaveManual,
+    handleDeleteManual,
+    handleUpdateDeadline,
+  } = useNCActions({
+    activeOrgId,
+    user,
+    userProfile,
+    records,
+    setRecords,
+    manuals,
+    setManuals,
+    selectedNC,
+    setSelectedNC,
+    setActiveTab,
+  });
 
-    // Se o usuário não estiver autenticado, carrega dados de demonstração em memória
-    // e NÃO abre listeners de Firestore sem credenciais (evita erros de permissão)
-    if (!user) {
-      setRecords(INITIAL_RECORDS);
-      setManuals(INITIAL_MANUALS);
-      setComparacoes([]);
-      setKnowledgeList([]);
-      setExternalAudits(INITIAL_EXTERNAL_AUDITS);
-      setAuditFindings(INITIAL_AUDIT_FINDINGS);
-      setAuditLessons(INITIAL_AUDIT_LESSONS);
-      setPersons(INITIAL_PERSONS);
-      setCompetencies(INITIAL_COMPETENCIES);
-      setPersonCompetencies(INITIAL_PERSON_COMPETENCIES);
-      setTrainingCourses(INITIAL_TRAINING_COURSES);
-      setTrainingRecords(INITIAL_TRAINING_RECORDS);
-      setQualifications(INITIAL_QUALIFICATIONS);
-      setPersonDocuments(INITIAL_PERSON_DOCUMENTS);
-      setActivityRequirements(INITIAL_ACTIVITY_REQUIREMENTS);
-      setAiCompetencySuggestions([]);
-      setDocumentosControlados(INITIAL_DOCUMENTOS_CONTROLADOS);
-      setRevisoesDocumentais(INITIAL_REVISOES_DOCUMENTAIS);
-      setFontesExternas(INITIAL_FONTES_EXTERNAS);
-      setSolicitacoesCliente(INITIAL_SOLICITACOES_CLIENTE);
-      setLogsVerificacaoFontes(INITIAL_LOGS_VERIFICACAO);
-      setEvidenciasConsultaDoc(INITIAL_EVIDENCIAS_CONSULTA);
-      setClientesExternos(INITIAL_CLIENTS);
-      setBasesOperacionais(INITIAL_BASES);
-      setProgramasClientes(INITIAL_CLIENT_PROGRAMS);
-      setControlesCentrais(INITIAL_CENTRAL_CONTROLS);
-      setRequisitosClientes(INITIAL_CLIENT_REQUIREMENTS);
-      setAvaliacoesRequisitos(INITIAL_CLIENT_EVALUATIONS);
-      setFerramentasCalibradas(INITIAL_CALIBRATED_TOOLS);
-      setSmartImports([]);
-      setSelectedNC(INITIAL_RECORDS[0] || null);
-      setLoadingRecords(false);
-      setLoadingManuals(false);
-      setFirestoreError(null);
-      return;
-    }
+  // Extracted Action Handlers: Audits
+  const {
+    handleSaveAudit,
+    handleDeleteAudit,
+    handleCancelAudit,
+    handleRestoreAudit,
+    handleArchiveAudit,
+    handleSaveAuditRequirement,
+    handleSaveBatchAuditRequirements,
+    handleSaveFinding,
+    handleDeleteFinding,
+    handleSaveLesson,
+    handleCriarRNCFromFinding,
+    handleCandidatarKnowledge,
+  } = useAuditActions({
+    activeOrgId,
+    user,
+    userProfile,
+    setExternalAudits,
+    setAuditRequirements,
+    setAuditFindings,
+    setAuditLessons,
+  });
 
-    // Immediate memory cleanup upon tenant transition to prevent cross-tenant data retention
-    setRecords([]);
-    setManuals([]);
-    setComparacoes([]);
-    setKnowledgeList([]);
-    setExternalAudits([]);
-    setAuditFindings([]);
-    setAuditLessons([]);
-    setSelectedNC(null);
-    setSelectedAuditForFindings(null);
-    setActiveOrganization(null);
-
-    // Se o usuário autenticado não possui tenant vinculado, suspende sincronização
-    if (!activeOrgId) {
-      setLoadingRecords(false);
-      setLoadingManuals(false);
-      return;
-    }
-
-    setLoadingRecords(true);
-    setLoadingManuals(true);
-    setFirestoreError(null);
-
-    // Auto-migração não-bloqueante de dados gravados anteriormente com hífen
-    if (activeOrgId === DEFAULT_ORGANIZATION_ID) {
-      checkAndMigrateLegacyHyphenData().catch((err) => {
-        console.warn('Auto-migração de dados com hífen finalizada ou ignorada:', err);
-      });
-    }
-
-    // 1. Subscribe to Non-Conformities in Firestore
-    const unsubscribeNCs = subscribeToNonConformities(
-      activeOrgId,
-      (firestoreNCs) => {
-        setRecords(firestoreNCs);
-        setLoadingRecords(false);
-        // Auto-select first NC if currently selected is null or deleted
-        setSelectedNC((prev) => {
-          if (!prev) return firestoreNCs[0] || null;
-          const found = firestoreNCs.find((r) => r?.id === prev?.id);
-          return found || firestoreNCs[0] || null;
-        });
-      },
-      (err) => {
-        console.warn('Sincronização de RNCs com Firestore:', err?.message || err);
-        setFirestoreError(err?.message || 'Falha ao sincronizar Não Conformidades.');
-        setLoadingRecords(false);
-        setRecords((prev) => (prev.length > 0 ? prev : INITIAL_RECORDS));
-      }
-    );
-
-    // 2. Subscribe to Manuals in Firestore
-    const unsubscribeManuals = subscribeToManuals(
-      activeOrgId,
-      (firestoreManuals) => {
-        setManuals(firestoreManuals);
-        setLoadingManuals(false);
-      },
-      (err) => {
-        console.warn('Sincronização de Manuais:', err?.message || err);
-        setLoadingManuals(false);
-        setManuals((prev) => (prev.length > 0 ? prev : INITIAL_MANUALS));
-      }
-    );
-
-    // 3. Subscribe to RNC Comparisons
-    const unsubscribeComparisons = subscribeToRNCComparisons(
-      activeOrgId,
-      (firestoreComparisons) => {
-        setComparacoes(firestoreComparisons);
-      },
-      (err) => {
-        console.warn('Sincronização de Comparações:', err?.message);
-      }
-    );
-
-    // 4. Subscribe to Validated Knowledge
-    const unsubscribeKnowledge = subscribeToValidatedKnowledge(
-      activeOrgId,
-      (firestoreKnowledge) => {
-        setKnowledgeList(firestoreKnowledge);
-      },
-      (err) => {
-        console.warn('Sincronização de Conhecimento:', err?.message);
-      }
-    );
-
-    // 5. Subscribe to Active Organization Configuration & Visual Identity
-    const unsubscribeOrg = subscribeToOrganization(
-      activeOrgId,
-      (org) => {
-        if (org) {
-          setActiveOrganization(org);
-        } else if (activeOrgId === DEFAULT_ORGANIZATION_ID) {
-          // If default demo organization document doesn't exist yet, bootstrap it
-          ensureOrganization(activeOrgId).then((created) => {
-            setActiveOrganization(created);
-          }).catch((err) => {
-            console.warn('Falha ao inicializar organização padrão:', err);
-          });
-        }
-      },
-      (err) => {
-        console.warn('Sincronização em tempo real da organização:', err?.message);
-      }
-    );
-
-    // 6. Subscribe to External Audits (Fase 8)
-    const unsubscribeAudits = subscribeToExternalAudits(
-      activeOrgId,
-      (auditsList) => {
-        setExternalAudits(auditsList.length > 0 ? auditsList : INITIAL_EXTERNAL_AUDITS);
-      }
-    );
-
-    // 7. Subscribe to Audit Findings (Fase 8)
-    const unsubscribeFindings = subscribeToAuditFindings(
-      activeOrgId,
-      (findingsList) => {
-        setAuditFindings(findingsList.length > 0 ? findingsList : INITIAL_AUDIT_FINDINGS);
-      }
-    );
-
-    // 8. Subscribe to Audit Lessons Learned (Fase 8)
-    const unsubscribeLessons = subscribeToAuditLessons(
-      activeOrgId,
-      (lessonsList) => {
-        setAuditLessons(lessonsList.length > 0 ? lessonsList : INITIAL_AUDIT_LESSONS);
-      }
-    );
-
-    // 8.1 Subscribe to Audit Requirements (Fase 8 & 15 - Checklists como Kalitta QA-14)
-    const unsubscribeAuditReqs = subscribeToAuditRequirements(
-      activeOrgId,
-      null,
-      (reqsList) => {
-        setAuditRequirements(reqsList);
-      }
-    );
-
-    // 9. Subscribe to Phase 9: Pessoas, Competências, Treinamentos e Qualificações
-    const unsubscribePersons = subscribeToPersons(activeOrgId, (list) => {
-      setPersons(list.length > 0 ? list : INITIAL_PERSONS);
-    });
-    const unsubscribeCompetencies = subscribeToCompetencies(activeOrgId, (list) => {
-      setCompetencies(list.length > 0 ? list : INITIAL_COMPETENCIES);
-    });
-    const unsubscribePersonCompetencies = subscribeToPersonCompetencies(activeOrgId, (list) => {
-      setPersonCompetencies(list.length > 0 ? list : INITIAL_PERSON_COMPETENCIES);
-    });
-    const unsubscribeTrainingCourses = subscribeToTrainingCourses(activeOrgId, (list) => {
-      setTrainingCourses(list.length > 0 ? list : INITIAL_TRAINING_COURSES);
-    });
-    const unsubscribeTrainingRecords = subscribeToTrainingRecords(activeOrgId, (list) => {
-      setTrainingRecords(list.length > 0 ? list : INITIAL_TRAINING_RECORDS);
-    });
-    const unsubscribeQualifications = subscribeToQualifications(activeOrgId, (list) => {
-      setQualifications(list.length > 0 ? list : INITIAL_QUALIFICATIONS);
-    });
-    const unsubscribeDocuments = subscribeToPersonDocuments(activeOrgId, (list) => {
-      setPersonDocuments(list.length > 0 ? list : INITIAL_PERSON_DOCUMENTS);
-    });
-    const unsubscribeActivities = subscribeToActivityRequirements(activeOrgId, (list) => {
-      setActivityRequirements(list.length > 0 ? list : INITIAL_ACTIVITY_REQUIREMENTS);
-    });
-    const unsubscribeAiSuggestions = subscribeToAiCompetencySuggestions(activeOrgId, (list) => setAiCompetencySuggestions(list));
-
-    // 10. Subscribe to Phase 10: Controle Documental, Revisões, Fontes Externas e RAG
-    const unsubscribeDocumentos = subscribeToDocumentosControlados(activeOrgId, (list) => {
-      setDocumentosControlados(list.length > 0 ? list : INITIAL_DOCUMENTOS_CONTROLADOS);
-    });
-    const unsubscribeRevisoes = subscribeToRevisoesDocumentais(activeOrgId, (list) => {
-      setRevisoesDocumentais(list.length > 0 ? list : INITIAL_REVISOES_DOCUMENTAIS);
-    });
-    const unsubscribeFontes = subscribeToFontesExternas(activeOrgId, (list) => {
-      setFontesExternas(list.length > 0 ? list : INITIAL_FONTES_EXTERNAS);
-    });
-    const unsubscribeSolicitacoes = subscribeToSolicitacoesCliente(activeOrgId, (list) => setSolicitacoesCliente(list));
-    const unsubscribeLogsFontes = subscribeToLogsVerificacao(activeOrgId, (list) => setLogsVerificacaoFontes(list));
-    const unsubscribeEvidencias = subscribeToEvidenciasConsulta(activeOrgId, (list) => setEvidenciasConsultaDoc(list));
-
-    // 11. Subscribe to Phase 13: Auditorias, Requisitos e Controles de Clientes
-    const unsubscribeClientes = subscribeToClientesExternos(activeOrgId, (list) => {
-      setClientesExternos(list.length > 0 ? list : INITIAL_CLIENTS);
-    });
-    const unsubscribeBases = subscribeToBasesOperacionais(activeOrgId, (list) => {
-      setBasesOperacionais(list.length > 0 ? list : INITIAL_BASES);
-    });
-    const unsubscribeProgramas = subscribeToProgramasClientes(activeOrgId, (list) => {
-      setProgramasClientes(list.length > 0 ? list : INITIAL_CLIENT_PROGRAMS);
-    });
-    const unsubscribeControles = subscribeToControlesCentrais(activeOrgId, (list) => {
-      setControlesCentrais(list.length > 0 ? list : INITIAL_CENTRAL_CONTROLS);
-    });
-    const unsubscribeRequisitos = subscribeToRequisitosClientes(activeOrgId, (list) => {
-      setRequisitosClientes(list.length > 0 ? list : INITIAL_CLIENT_REQUIREMENTS);
-    });
-    const unsubscribeAvaliacoes = subscribeToAvaliacoesRequisitos(activeOrgId, (list) => {
-      setAvaliacoesRequisitos(list.length > 0 ? list : INITIAL_CLIENT_EVALUATIONS);
-    });
-
-    // 12. Subscribe to Phase 14: Importação Inteligente, Metrologia e Modelos Homologados
-    const unsubscribeTools = subscribeToCalibratedTools(activeOrgId, (list) => {
-      setFerramentasCalibradas(list.length > 0 ? list : INITIAL_CALIBRATED_TOOLS);
-    });
-    const unsubscribeImports = subscribeToSmartImportRecords(activeOrgId, (list) => setSmartImports(list));
-    const unsubscribeTemplates = subscribeToImportTemplates(activeOrgId, (list) => setTemplatesAprovados(list));
-
-    return () => {
-      unsubscribeNCs();
-      unsubscribeManuals();
-      unsubscribeComparisons();
-      unsubscribeKnowledge();
-      unsubscribeOrg();
-      unsubscribeAudits();
-      unsubscribeFindings();
-      unsubscribeLessons();
-      unsubscribeAuditReqs();
-      unsubscribePersons();
-      unsubscribeCompetencies();
-      unsubscribePersonCompetencies();
-      unsubscribeTrainingCourses();
-      unsubscribeTrainingRecords();
-      unsubscribeQualifications();
-      unsubscribeDocuments();
-      unsubscribeActivities();
-      unsubscribeAiSuggestions();
-      unsubscribeDocumentos();
-      unsubscribeRevisoes();
-      unsubscribeFontes();
-      unsubscribeSolicitacoes();
-      unsubscribeLogsFontes();
-      unsubscribeEvidencias();
-      unsubscribeClientes();
-      unsubscribeBases();
-      unsubscribeProgramas();
-      unsubscribeControles();
-      unsubscribeRequisitos();
-      unsubscribeAvaliacoes();
-      unsubscribeTools();
-      unsubscribeImports();
-      unsubscribeTemplates();
-    };
-  }, [activeOrgId, user?.uid, authLoading]);
-
-  // Scan for local material (IndexedDB / LocalStorage) to assist user in recovering data
+  // Scan local material to assist data recovery
   useEffect(() => {
     detectLocalMaterial(records, manuals)
-      .then((summary) => {
-        setDetectedLocalCount(summary.totalLocalItems);
-      })
-      .catch((err) => {
-        console.warn('Detecção de dados locais:', err);
-      });
+      .then((summary) => setDetectedLocalCount(summary.totalLocalItems))
+      .catch((err) => console.warn('Detecção de dados locais:', err));
   }, [records.length, manuals.length]);
 
-  // Real-time automatic alerts calculation with tenant SLAs
+  // Automatic alerts calculation
   const alertas = useMemo(() => {
     return gerarAlertas(records, activeOrganization?.configuration?.slasInternos);
   }, [records, activeOrganization?.configuration?.slasInternos]);
 
-  // Handle Save / Update NC in Firestore or Local State
-  const handleSaveNC = async (savedNC: NCRecord) => {
-    try {
-      if (user) {
-        await saveNonConformity(activeOrgId, savedNC, userProfile);
-      } else {
-        setRecords((prev) => {
-          const index = prev.findIndex((r) => r.id === savedNC.id);
-          if (index >= 0) {
-            const next = [...prev];
-            next[index] = savedNC;
-            return next;
-          }
-          return [savedNC, ...prev];
-        });
-      }
-      setSelectedNC(savedNC);
-      setActiveTab('oficial');
-    } catch (e: any) {
-      console.warn('Aviso ao sincronizar RNC com Firestore (mantida na sessão):', e);
-      setRecords((prev) => {
-        const index = prev.findIndex((r) => r.id === savedNC.id);
-        if (index >= 0) {
-          const next = [...prev];
-          next[index] = savedNC;
-          return next;
-        }
-        return [savedNC, ...prev];
-      });
-      setSelectedNC(savedNC);
-      setActiveTab('oficial');
+  const handleSaveAvaliacaoCliente = async (avaliacao: any) => {
+    if (user) {
+      await saveAvaliacaoRequisito(activeOrgId, avaliacao, userProfile);
     }
-  };
-
-  // Handle Delete Single NC
-  const handleDeleteNC = async (id: string) => {
-    try {
-      if (user) {
-        await deleteNonConformity(activeOrgId, id, userProfile);
-      }
-      setRecords((prev) => prev.filter((r) => r.id !== id));
-      if (selectedNC?.id === id) {
-        setSelectedNC(null);
-      }
-    } catch (e: any) {
-      console.warn('Aviso ao sincronizar exclusão da RNC (removida na sessão):', e);
-      setRecords((prev) => prev.filter((r) => r.id !== id));
-      if (selectedNC?.id === id) {
-        setSelectedNC(null);
-      }
-    }
-  };
-
-  // Handle Delete Multiple NCs
-  const handleDeleteMultipleNC = async (ids: string[]) => {
-    try {
-      if (user) {
-        await deleteMultipleNonConformities(activeOrgId, ids, userProfile);
-      }
-      setRecords((prev) => prev.filter((r) => !ids.includes(r.id)));
-      if (selectedNC && ids.includes(selectedNC.id)) {
-        setSelectedNC(null);
-      }
-    } catch (e: any) {
-      console.warn('Aviso ao excluir múltiplas RNCs no Firestore (removidas na sessão):', e);
-      setRecords((prev) => prev.filter((r) => !ids.includes(r.id)));
-      if (selectedNC && ids.includes(selectedNC.id)) {
-        setSelectedNC(null);
-      }
-    }
-  };
-
-  // Handle Manual Save / Update
-  const handleSaveManual = async (manual: ManualRecord) => {
-    try {
-      await saveManualToDB(manual);
-      if (user) {
-        await saveManual(activeOrgId, manual, userProfile);
-      } else {
-        setManuals((prev) => {
-          const idx = prev.findIndex((m) => m.id === manual.id);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = manual;
-            return next;
-          }
-          return [manual, ...prev];
-        });
-      }
-    } catch (e: any) {
-      console.warn('Aviso ao salvar manual no Firestore (mantido localmente):', e);
-      setManuals((prev) => {
-        const idx = prev.findIndex((m) => m.id === manual.id);
+    if (avaliacao.id) {
+      setAvaliacoesRequisitos((prev) => {
+        const idx = prev.findIndex((av) => av.id === avaliacao.id);
         if (idx >= 0) {
           const next = [...prev];
-          next[idx] = manual;
+          next[idx] = { ...next[idx], ...avaliacao };
           return next;
         }
-        return [manual, ...prev];
+        return [avaliacao, ...prev];
       });
     }
   };
 
-  // Handle Delete Manual
-  const handleDeleteManual = async (id: string) => {
-    try {
-      if (user) {
-        await deleteManual(activeOrgId, id, userProfile);
-      }
-      setManuals((prev) => prev.filter((m) => m.id !== id));
-    } catch (e: any) {
-      console.warn('Aviso ao excluir manual no Firestore (removido na sessão):', e);
-      setManuals((prev) => prev.filter((m) => m.id !== id));
-    }
+  const handleCriarRNCDeRequisito = (rncPayload: any) => {
+    setSelectedNC(rncPayload as NCRecord);
+    setFormInitialTab('dados');
+    setActiveTab('formulario');
   };
 
-  // Trigger AI Compliance Audit for an NC
   const handleAuditNC = (nc: NCRecord) => {
     setAuditTargetNC(nc);
     setIsAuditModalOpen(true);
   };
 
-  // Apply suggestions from AI Compliance Audit to the NC
   const handleApplyAuditSuggestions = async (updates: Partial<NCRecord>) => {
     if (!auditTargetNC) return;
-
     const updatedNC: NCRecord = {
       ...auditTargetNC,
       ...updates,
       atualizadoEm: new Date().toISOString(),
     };
-
     try {
       await saveNonConformity(activeOrgId, updatedNC, userProfile);
       setSelectedNC(updatedNC);
@@ -772,70 +209,6 @@ export default function App() {
     }
   };
 
-  // Handle Deadline Extension from Alerts Center (Tratamento vs Eficácia)
-  const handleUpdateDeadline = async (
-    ncId: string,
-    novaData: string,
-    motivo: string,
-    tipoPrazo?: 'TRATAMENTO' | 'EFICACIA'
-  ) => {
-    const target = records.find((r) => r.id === ncId);
-    if (!target) return;
-
-    const isEficacia =
-      tipoPrazo === 'EFICACIA' ||
-      target.statusGeral === 'Aguardando Eficácia' ||
-      target.statusGeral === 'Em Monitoramento';
-
-    const dataAnterior = isEficacia
-      ? target.prazoEficacia || target.verificacaoEficacia?.prazoEficacia || target.verificacaoEficacia?.dataPrevista || target.prazoResposta
-      : target.prazoResposta;
-
-    const prefixo = isEficacia ? '[Eficácia] ' : '[Tratamento] ';
-
-    const novoHistorico = [
-      ...(target.historicoPrazos || []),
-      {
-        id: `prazo_${Date.now()}`,
-        dataAnterior,
-        novaData,
-        motivo: `${prefixo}${motivo}`,
-        alteradoEm: new Date().toISOString(),
-        usuario: userProfile?.displayName || user?.email || 'Gestão da Qualidade',
-      },
-    ];
-
-    const updatedNC: NCRecord = {
-      ...target,
-      ...(isEficacia
-        ? {
-            prazoEficacia: novaData,
-            verificacaoEficacia: {
-              ...target.verificacaoEficacia,
-              prazoEficacia: novaData,
-              dataPrevista: novaData,
-            },
-          }
-        : {
-            prazoResposta: novaData,
-            dataLimiteTratamento: novaData,
-            acaoCorretiva: {
-              ...target.acaoCorretiva,
-              dataPrazo: novaData,
-            },
-          }),
-      historicoPrazos: novoHistorico,
-      atualizadoEm: new Date().toISOString(),
-    };
-
-    try {
-      await saveNonConformity(activeOrgId, updatedNC, userProfile);
-    } catch (e) {
-      console.error('Erro ao prorrogar prazo no Firestore:', e);
-    }
-  };
-
-  // Explicit Bootstrap Demo Data Action
   const handleBootstrapDemo = async () => {
     if (!user) {
       setIsAuthModalOpen(true);
@@ -851,1279 +224,254 @@ export default function App() {
     }
   };
 
-  // Open Official View
   const handleViewOfficial = (nc: NCRecord) => {
     setSelectedNC(nc);
     setActiveTab('oficial');
   };
 
-  // Open Edit View
   const handleEditNC = (nc: NCRecord, initialTab: 'dados' | 'risco' | 'contencao' | 'causa' | 'acao' | 'eficacia' = 'dados') => {
     setSelectedNC(nc);
     setFormInitialTab(initialTab);
     setActiveTab('formulario');
   };
 
-  // Open New NC View
   const handleNewNC = () => {
     setSelectedNC(null);
     setFormInitialTab('dados');
     setActiveTab('formulario');
   };
 
-  // Open Report Tab with preset status filter
   const handleOpenReportWithFilter = (statusFilter?: string) => {
     setReportFilterStatus(statusFilter);
     setActiveTab('relatorio');
   };
 
-  // FASE 8 Handlers: Gestão de Auditorias Externas
-  const handleSaveAudit = async (audit: AuditoriaExternaRecord) => {
-    try {
-      if (user) {
-        await saveExternalAudit(activeOrgId, audit, userProfile);
-      }
-      setExternalAudits((prev) => {
-        const idx = prev.findIndex((a) => a.id === audit.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = audit;
-          return next;
-        }
-        return [audit, ...prev];
-      });
-    } catch (e: any) {
-      console.warn('Aviso ao salvar auditoria externa no Firestore (mantida na sessão):', e);
-      setExternalAudits((prev) => {
-        const idx = prev.findIndex((a) => a.id === audit.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = audit;
-          return next;
-        }
-        return [audit, ...prev];
-      });
-    }
-  };
-
-  const handleDeleteAudit = async (auditId: string, forceDelete: boolean = false) => {
-    try {
-      if (user) {
-        await deleteAuditWithDependencyCheck(activeOrgId, auditId, userProfile, forceDelete);
-      }
-      setExternalAudits((prev) => prev.filter((a) => a.id !== auditId));
-      setAuditRequirements((prev) => prev.filter((r) => r.auditId !== auditId));
-    } catch (e: any) {
-      console.warn('Aviso ao excluir auditoria externa no Firestore:', e);
-      throw e;
-    }
-  };
-
-  const handleCancelAudit = async (auditId: string, motivo: string) => {
-    try {
-      if (user) {
-        await cancelAuditAndCascadingItems(activeOrgId, auditId, motivo, userProfile);
-      }
-      setExternalAudits((prev) =>
-        prev.map((a) =>
-          a.id === auditId
-            ? { ...a, status: 'CANCELADA', motivoCancelamento: motivo, canceladoEm: new Date().toISOString() }
-            : a
-        )
-      );
-      setAuditRequirements((prev) =>
-        prev.map((r) =>
-          r.auditId === auditId
-            ? { ...r, statusRegistro: 'CANCELADO', estadoAcompanhamento: 'SUSPENSO_CANCELADO', motivoCancelamento: motivo }
-            : r
-        )
-      );
-    } catch (e: any) {
-      console.error('Erro ao cancelar auditoria:', e);
-      throw e;
-    }
-  };
-
-  const handleRestoreAudit = async (auditId: string) => {
-    try {
-      if (user) {
-        await restoreCancelledAudit(activeOrgId, auditId, userProfile);
-      }
-      setExternalAudits((prev) =>
-        prev.map((a) => (a.id === auditId ? { ...a, status: 'RECEBIDA', motivoCancelamento: undefined } : a))
-      );
-      setAuditRequirements((prev) =>
-        prev.map((r) => (r.auditId === auditId ? { ...r, statusRegistro: 'ATIVO' } : r))
-      );
-    } catch (e: any) {
-      console.error('Erro ao restaurar auditoria:', e);
-      throw e;
-    }
-  };
-
-  const handleArchiveAudit = async (auditId: string) => {
-    try {
-      if (user) {
-        await archiveAudit(activeOrgId, auditId, userProfile);
-      }
-      setExternalAudits((prev) =>
-        prev.map((a) => (a.id === auditId ? { ...a, status: 'ARQUIVADA', isArquivada: true } : a))
-      );
-    } catch (e: any) {
-      console.error('Erro ao arquivar auditoria:', e);
-      throw e;
-    }
-  };
-
-  const handleSaveAuditRequirement = async (req: RequisitoAuditoriaExterna) => {
-    try {
-      if (user) {
-        await saveAuditRequirement(activeOrgId, req, userProfile);
-      }
-      setAuditRequirements((prev) => {
-        const idx = prev.findIndex((r) => r.id === req.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = req;
-          return next;
-        }
-        return [req, ...prev];
-      });
-    } catch (e: any) {
-      console.error('Erro ao salvar requisito de auditoria:', e);
-      throw e;
-    }
-  };
-
-  const handleSaveBatchAuditRequirements = async (reqs: RequisitoAuditoriaExterna[]) => {
-    try {
-      if (user) {
-        await saveAuditRequirementsBatch(activeOrgId, reqs, userProfile);
-      }
-      setAuditRequirements((prev) => {
-        const ids = new Set(reqs.map((r) => r.id));
-        return [...reqs, ...prev.filter((r) => !ids.has(r.id))];
-      });
-    } catch (e: any) {
-      console.error('Erro ao salvar lote de requisitos de auditoria:', e);
-      throw e;
-    }
-  };
-
-  const handleSaveFinding = async (finding: ConstatacaoExternaRecord) => {
-    try {
-      if (user) {
-        await saveAuditFinding(activeOrgId, finding, userProfile);
-      }
-      setAuditFindings((prev) => {
-        const idx = prev.findIndex((f) => f.id === finding.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = finding;
-          return next;
-        }
-        return [finding, ...prev];
-      });
-    } catch (e: any) {
-      console.warn('Aviso ao salvar constatação no Firestore (mantida na sessão):', e);
-      setAuditFindings((prev) => {
-        const idx = prev.findIndex((f) => f.id === finding.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = finding;
-          return next;
-        }
-        return [finding, ...prev];
-      });
-    }
-  };
-
-  const handleDeleteFinding = async (findingId: string) => {
-    try {
-      if (user) {
-        await deleteAuditFinding(activeOrgId, findingId, userProfile);
-      }
-      setAuditFindings((prev) => prev.filter((f) => f.id !== findingId));
-    } catch (e: any) {
-      console.warn('Aviso ao excluir constatação no Firestore (removida na sessão):', e);
-      setAuditFindings((prev) => prev.filter((f) => f.id !== findingId));
-    }
-  };
-
-  const handleSaveLesson = async (lesson: LicaoAprendidaAuditoria) => {
-    try {
-      if (user) {
-        await saveAuditLesson(activeOrgId, lesson, userProfile);
-      }
-      setAuditLessons((prev) => {
-        const idx = prev.findIndex((l) => l.id === lesson.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = lesson;
-          return next;
-        }
-        return [lesson, ...prev];
-      });
-    } catch (e: any) {
-      console.warn('Aviso ao salvar lição aprendida no Firestore (mantida na sessão):', e);
-      setAuditLessons((prev) => {
-        const idx = prev.findIndex((l) => l.id === lesson.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = lesson;
-          return next;
-        }
-        return [lesson, ...prev];
-      });
-    }
-  };
-
-  const handleCriarRNCFromFinding = async (finding: ConstatacaoExternaRecord, audit?: AuditoriaExternaRecord) => {
-    return await criarRNCFromFinding(activeOrgId, finding, audit, userProfile);
-  };
-
-  const handleCandidatarKnowledge = async (lesson: LicaoAprendidaAuditoria) => {
-    try {
-      if (user) {
-        await promoverLicaoParaConhecimento(activeOrgId, lesson, userProfile);
-      }
-    } catch (e: any) {
-      console.warn('Aviso ao promover lição aprendida:', e);
-    }
-  };
-
-  // FASE 13 Handlers: Auditorias, Requisitos e Controles de Clientes
-  const handleSaveAvaliacaoCliente = async (avaliacao: Partial<AvaliacaoRequisitoCliente>) => {
-    try {
-      if (user) {
-        await saveAvaliacaoRequisito(activeOrgId, avaliacao, userProfile);
-      }
-      if (avaliacao.id) {
-        setAvaliacoesRequisitos((prev) => {
-          const idx = prev.findIndex((av) => av.id === avaliacao.id);
-          if (idx >= 0) {
-            const next = [...prev];
-            next[idx] = { ...next[idx], ...avaliacao } as AvaliacaoRequisitoCliente;
-            return next;
-          }
-          return [avaliacao as AvaliacaoRequisitoCliente, ...prev];
-        });
-      }
-    } catch (e: any) {
-      console.warn('Aviso ao salvar avaliação de requisito no Firestore:', e);
-    }
-  };
-
-  const handleCriarRNCDeRequisito = (rncPayload: Partial<NCRecord>) => {
-    setSelectedNC(rncPayload as NCRecord);
-    setFormInitialTab('dados');
-    setActiveTab('formulario');
-  };
-
-  const getTitleForTab = (tab: string) => {
-    switch (tab) {
-      case 'dashboard': return 'Dashboard Executivo';
-      case 'visao-evolucao': return 'Visão Mestre, Arquitetura & Roadmap Estratégico (FASE 12)';
-      case 'saudeSGQ': return 'Saúde & Integridade do SGQ';
-      case 'relatorio': return 'Registros de Não Conformidade (RNC)';
-      case 'manuais': return 'Biblioteca de Manuais & Normas SGQ';
-      case 'extrator': return 'Assistente Extrator de NCs com IA';
-      case 'formulario': return selectedNC ? `Edição de RNC #${selectedNC.numeroNC}` : 'Novo Cadastro de RNC';
-      case 'incidencias': return 'Análise de Incidências & Diagrama de Pareto';
-      case 'alertas': return 'Central de Prazos & Notificações';
-      case 'oficial': return 'Ficha Oficial F 001-29';
-      case 'comparacaoRNC': return 'Comparação & Validação de RNCs Respondidas';
-      case 'validacaoQueue': return 'Fila de Validação de RNCs';
-      case 'knowledgeBase': return 'Base de Conhecimento Validada SGQ';
-      case 'conhecaQualigest': return 'Conheça o QualiGest SGQ (Tour & Homologação)';
-      case 'apresentacao': return 'Apresentação Gerencial da Qualidade';
-      case 'arquitetura': return 'Arquitetura do Sistema SGQ';
-      case 'admin-central': return 'Gestão Central de Organizações, Usuários & Permissões (FASE 11)';
-      case 'configuracoes-org': return 'Configurações da Organização & Identidade';
-      case 'onboarding-novo-cliente': return 'Onboarding & Implantação de Nova Organização';
-      case 'manual-utilizacao': return 'Manual de Utilização & Governança da Qualidade';
-      case 'auditorias-gestao': return 'Gestão de Auditorias Externas';
-      case 'auditorias-constatacoes': return 'Constatações de Auditorias (Findings) & Respostas Oficiais';
-      case 'auditorias-licoes': return 'Lições Aprendidas de Auditorias Externas';
-      case 'auditorias-dashboard': return 'Dashboard Analítico de Auditorias';
-      case 'pessoas-competencias': return 'Matriz de Competências & Pessoas';
-      case 'treinamentos-qualificacoes': return 'Treinamentos, CHTs & Qualificações';
-      case 'central-vencimentos-gaps': return 'Central de Vencimentos & Gaps Críticos';
-      case 'competencias-dashboard': return 'Dashboard de Competências & Compliance';
-      case 'controle-documental': return 'Controle Documental & Acervo Técnico';
-      case 'consulta-temporal': return 'Conhecimento Temporal & RAG Auditável';
-      case 'fontes-externas': return 'Fontes Oficiais Externas & Verificação';
-      case 'documentos-dashboard': return 'Dashboard Executivo de Controle Documental';
-      case 'clientes-requisitos': return 'Auditorias & Requisitos de Clientes (FASE 13)';
-      case 'clientes-matriz': return 'Matriz de Cobertura SGQ — Um Controle, Vários Requisitos';
-      case 'clientes-cockpit': return 'Cockpit & Estações de Clientes';
-      case 'smart-audit': return 'Auditoria Inteligente por Requisitos & Resolução por Exceção (FASE 15)';
-      case 'system-designer': return 'System Designer Oficial do QualiGest (Arquitetura, Coleções & ADRs)';
-      default: return 'Sistema de Qualidade';
-    }
-  };
-
-  // Estado 1: Carregamento inicial de autenticação e perfil
-  if (authLoading || (user && userProfile === null)) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-slate-100 selection:bg-blue-600">
-        <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
-          <div className="w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-xl shadow-blue-500/20 animate-pulse">
-            <Building2 className="w-6 h-6" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-white tracking-wide">QUALIGEST SGQ</h2>
-            <p className="text-xs text-slate-400">Resolvendo perfil de usuário e credenciais aeronáuticas...</p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-blue-400 bg-slate-800/80 px-3.5 py-1.5 rounded-full border border-slate-700/60 font-mono">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            <span>Autenticando sessão segura</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Estado 2: Usuário inativo ou bloqueado
-  if (user && (userProfile?.status === 'INACTIVE' || userProfile?.status === 'INATIVO' || userProfile?.status === 'BLOQUEADO')) {
-    return <UserBlockedOrInactiveView />;
-  }
-
-  // Estado 3: Usuário pendente de vínculo com organização
-  if (user && (!activeOrgId || userProfile?.status === 'PENDENTE')) {
-    if (activeTab === 'onboarding-novo-cliente') {
-      return (
-        <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between selection:bg-blue-600">
-          <header className="max-w-5xl w-full mx-auto flex items-center justify-between p-4 border-b border-slate-800">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-bold shadow-lg shadow-blue-500/20">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold tracking-wide text-white">QUALIGEST SGQ</div>
-                <div className="text-xs text-slate-400">Onboarding de Nova Organização Aeronáutica</div>
-              </div>
-            </div>
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700 transition-colors"
-            >
-              ← Voltar para Convites
-            </button>
-          </header>
-          <main className="max-w-5xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1">
-            <NewOrganizationOnboardingView
-              onOrganizationCreated={(newOrg) => {
-                setActiveOrganization(newOrg);
-                setActiveTab('dashboard');
-              }}
-              onCancel={() => setActiveTab('dashboard')}
-            />
-          </main>
-        </div>
-      );
-    }
-
-    return (
-      <UserPendingOrganizationView
-        onInvitationAccepted={() => {
-          setActiveTab('dashboard');
-        }}
-        onOpenOnboarding={() => {
-          setActiveTab('onboarding-novo-cliente');
-        }}
-      />
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-100/70 text-slate-800 flex font-sans antialiased selection:bg-blue-600 selection:text-white">
-      {/* Enterprise Sidebar (Desktop Persistent & Mobile Slide-Out Drawer) */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={(tab) => {
-          if (tab === 'relatorio') {
-            setReportFilterStatus(undefined);
-          }
-          setActiveTab(tab as any);
-        }}
-        alertas={alertas}
-        activeOrganization={activeOrganization}
-        onOpenChecklist={() => setIsChecklistModalOpen(true)}
-        onOpenOnboarding={() => setActiveTab('onboarding-novo-cliente')}
-        onNewNC={handleNewNC}
-        onOpenExtractor={() => setActiveTab('extrator')}
-        onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-        onOpenTechnicalAudit={() => setIsTechnicalAuditModalOpen(true)}
-        isOpenMobile={isMobileSidebarOpen}
-        onCloseMobile={() => setIsMobileSidebarOpen(false)}
-      />
-
-      {/* Main Layout Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Global Header */}
-        <Header
+    <AppAuthGuards
+      authLoading={authLoading}
+      user={user}
+      userProfile={userProfile}
+      activeOrgId={activeOrgId}
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      setActiveOrganization={setActiveOrganization}
+    >
+      <div className="min-h-screen bg-slate-100/70 text-slate-800 flex font-sans antialiased selection:bg-blue-600 selection:text-white">
+        {/* Sidebar */}
+        <Sidebar
+          activeTab={activeTab as any}
+          setActiveTab={(tab) => {
+            if (tab === 'relatorio') {
+              setReportFilterStatus(undefined);
+            }
+            setActiveTab(tab as any);
+          }}
           alertas={alertas}
           activeOrganization={activeOrganization}
           onOpenChecklist={() => setIsChecklistModalOpen(true)}
           onOpenOnboarding={() => setActiveTab('onboarding-novo-cliente')}
-          onOpenManual={() => setActiveTab('manual-utilizacao')}
-          onOpenAlerts={() => setActiveTab('alertas')}
-          searchTerm={headerSearchTerm}
-          onSearchChange={setHeaderSearchTerm}
-          currentViewTitle={getTitleForTab(activeTab)}
+          onNewNC={handleNewNC}
+          onOpenExtractor={() => setActiveTab('extrator')}
           onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
           onOpenAuth={() => setIsAuthModalOpen(true)}
-          onToggleMobileMenu={() => setIsMobileSidebarOpen((prev) => !prev)}
+          onOpenTechnicalAudit={() => setIsTechnicalAuditModalOpen(true)}
+          isOpenMobile={isMobileSidebarOpen}
+          onCloseMobile={() => setIsMobileSidebarOpen(false)}
         />
 
-        {/* Global Alerts Banner for critical / expired deadlines */}
-        <AlertBanner
-          alertas={alertas}
-          onOpenAlertsTab={() => setActiveTab('alertas')}
-        />
+        {/* Main Layout Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <Header
+            alertas={alertas}
+            activeOrganization={activeOrganization}
+            onOpenChecklist={() => setIsChecklistModalOpen(true)}
+            onOpenOnboarding={() => setActiveTab('onboarding-novo-cliente')}
+            onOpenManual={() => setActiveTab('manual-utilizacao')}
+            onOpenAlerts={() => setActiveTab('alertas')}
+            searchTerm={headerSearchTerm}
+            onSearchChange={setHeaderSearchTerm}
+            currentViewTitle={getTitleForTab(activeTab, selectedNC?.numeroNC)}
+            onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
+            onOpenAuth={() => setIsAuthModalOpen(true)}
+            onToggleMobileMenu={() => setIsMobileSidebarOpen((prev) => !prev)}
+          />
 
-        {/* Firestore Quota / Sync Alert Banner (Reassures user that data is NOT lost) */}
-        {firestoreError && (
-          <div className="bg-amber-950 text-amber-100 px-3 sm:px-6 py-3.5 border-b border-amber-600/40 shadow-sm">
-            <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-3 text-xs">
-              <div className="flex items-start gap-2.5">
-                <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <div className="font-bold text-amber-300 flex items-center gap-2 flex-wrap">
-                    <span>
-                      {firestoreError.includes('resource-exhausted')
-                        ? 'Cota Diária Gratuita do Cloud Firestore Atingida (resource-exhausted)'
-                        : 'Aviso de Sincronização do Cloud Firestore'}
-                    </span>
-                    <span className="bg-emerald-900/90 text-emerald-200 border border-emerald-600/40 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider">
-                      ✓ Dados 100% Salvos na Nuvem
-                    </span>
-                  </div>
-                  <p className="text-amber-200/90 leading-relaxed text-[11px] sm:text-xs">
-                    <strong>Nenhum dado ou validação foi perdido!</strong> Todas as Não Conformidades, Manuais, Metrologia e Conhecimentos continuam preservados no banco de dados. O limite diário de leituras gratuitas do Firebase Spark foi temporariamente atingido e restabelece automaticamente à meia-noite (PST). O sistema mantém os dados em cache e contingência.
-                  </p>
-                </div>
+          <AlertBanner
+            alertas={alertas}
+            onOpenAlertsTab={() => setActiveTab('alertas')}
+          />
+
+          <AppNotificationBanners
+            firestoreError={firestoreError}
+            activeOrganization={activeOrganization}
+            activeOrgId={activeOrgId}
+            activeTab={activeTab}
+            isWelcomeDismissed={isWelcomeDismissed}
+            loadingRecords={loadingRecords}
+            records={records}
+            detectedLocalCount={detectedLocalCount}
+            isBootstrapping={isBootstrapping}
+            onDismissWelcome={() => setIsWelcomeDismissed(true)}
+            onNavigateToTab={(tab) => setActiveTab(tab as any)}
+            onOpenChecklist={() => setIsChecklistModalOpen(true)}
+            onOpenDiagnostics={() => setIsDiagnosticsModalOpen(true)}
+            onOpenMigration={() => setIsMigrationModalOpen(true)}
+            onBootstrapDemo={handleBootstrapDemo}
+            onNewNC={handleNewNC}
+          />
+
+          {/* Main Content Router */}
+          <main className="flex-1 p-3 sm:p-6 lg:p-8 pb-24 lg:pb-8 max-w-7xl w-full mx-auto overflow-x-hidden">
+            {loadingRecords && records.length === 0 ? (
+              <div className="py-24 flex flex-col items-center justify-center space-y-3 text-slate-500">
+                <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+                <p className="text-sm font-medium text-slate-700">Sincronizando registros com o Cloud Firestore...</p>
+                <p className="text-xs text-slate-400">Garantindo única fonte de verdade multiusuário em tempo real</p>
               </div>
-              <div className="flex items-center gap-2 flex-wrap shrink-0 self-end md:self-center">
-                <button
-                  type="button"
-                  onClick={() => setIsDiagnosticsModalOpen(true)}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-200 font-medium rounded-[6px] border border-amber-700/50 transition-colors text-xs cursor-pointer"
-                >
-                  Diagnóstico Firestore
-                </button>
-                <a
-                  href="https://console.firebase.google.com/project/ai-studio-applet-webapp-bdbf6/firestore/databases/ai-studio-qualigestgestode-97a188de-6117-44a7-be8d-44d92563ba38/data?openUpgradeDialog=true"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-[6px] transition-colors flex items-center gap-1.5 text-xs shadow-xs"
-                >
-                  <Database className="w-3.5 h-3.5" />
-                  <span>Ver Dados no Firebase Console</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Welcome & Multi-Tenant Activation Banner */}
-        {!isWelcomeDismissed && activeOrganization && (activeTab === 'dashboard' || activeTab === 'configuracoes-org') && (
-          <div className="max-w-7xl mx-auto w-full px-3 sm:px-6 lg:px-8 pt-4">
-            <WelcomeAdminBanner
-              organization={activeOrganization}
-              onNavigateToTab={(tab) => setActiveTab(tab as any)}
-              onOpenChecklist={() => setIsChecklistModalOpen(true)}
-              onDismiss={() => setIsWelcomeDismissed(true)}
-            />
-          </div>
-        )}
-
-        {/* Cloud Firestore Multi-User Connectivity Banner when database is empty */}
-        {!loadingRecords && records.length === 0 && (
-          <div className="bg-slate-900 text-white px-3 sm:px-6 py-3 border-b border-slate-800">
-            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2.5">
-                <Database className="w-4 h-4 text-blue-400 shrink-0" />
-                <span className="text-center sm:text-left">
-                  <strong>Cloud Firestore Conectado:</strong> Nenhum registro encontrado na organização <code className="text-blue-300 font-mono bg-slate-800 px-1.5 py-0.5 rounded">{activeOrgId}</code>.
-                </span>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap justify-center">
-                <button
-                  onClick={() => setIsMigrationModalOpen(true)}
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white font-semibold rounded-[6px] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs text-xs"
-                  title="Recuperar dados e manuais salvos anteriormente no seu navegador para o Cloud Firestore"
-                >
-                  <UploadCloud className="w-3.5 h-3.5 text-amber-200" />
-                  <span>Recuperar Dados do Navegador{detectedLocalCount > 0 ? ` (${detectedLocalCount})` : ''}</span>
-                </button>
-                <button
-                  onClick={handleBootstrapDemo}
-                  disabled={isBootstrapping}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold rounded-[6px] transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs text-xs"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-blue-200" />
-                  <span>{isBootstrapping ? 'Gravando no Firestore...' : 'Carregar Amostra'}</span>
-                </button>
-                <button
-                  onClick={handleNewNC}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-[6px] transition-colors cursor-pointer border border-slate-700 text-xs"
-                >
-                  + Criar RNC
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Main Content View with responsive padding and mobile bottom clearance */}
-        <main className="flex-1 p-3 sm:p-6 lg:p-8 pb-24 lg:pb-8 max-w-7xl w-full mx-auto overflow-x-hidden">
-          {loadingRecords && records.length === 0 ? (
-            <div className="py-24 flex flex-col items-center justify-center space-y-3 text-slate-500">
-              <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
-              <p className="text-sm font-medium text-slate-700">Sincronizando registros com o Cloud Firestore...</p>
-              <p className="text-xs text-slate-400">Garantindo única fonte de verdade multiusuário em tempo real</p>
-            </div>
-          ) : (
-            <>
-              {/* TAB 1: DASHBOARD */}
-              {activeTab === 'dashboard' && (
-                <DashboardView
-                  records={records}
-                  manualsCount={manuals.length}
-                  alertas={alertas}
-                  onSelectNC={handleViewOfficial}
-                  onViewOfficial={handleViewOfficial}
-                  onNewNC={handleNewNC}
-                  onOpenExtractor={() => setActiveTab('extrator')}
-                  onOpenReportTab={handleOpenReportWithFilter}
-                  onOpenAlertsTab={() => setActiveTab('alertas')}
-                  onOpenManualsTab={() => setActiveTab('manuais')}
-                  onOpenPresentationTab={() => setActiveTab('apresentacao')}
-                  onOpenArchitectureTab={() => setActiveTab('arquitetura')}
-                  onOpenTourTab={() => setActiveTab('conhecaQualigest')}
-                  onAuditNC={handleAuditNC}
-                />
-              )}
-
-              {/* FASE 12.1: REDIRECIONAMENTO INTEGRADO DE VISÃO E EVOLUÇÃO PARA A APRESENTAÇÃO GERENCIAL (BLOCO 7) */}
-              {activeTab === 'visao-evolucao' && (
-                <QualityPresentationGeneratorView
-                  records={records}
-                  manuals={manuals}
-                  knowledgeList={knowledgeList}
-                  comparacoes={comparacoes}
-                  organization={activeOrganization}
-                  organizacaoNome={
-                    activeOrganization?.name ||
-                    (userProfile?.organizationId === 'org_impacto_aviation'
-                      ? 'Impacto Aviation MRO'
-                      : 'Organização SGQ')
-                  }
-                  usuarioResponsavel={userProfile?.displayName || user?.email || 'Gestão da Qualidade'}
-                  externalAudits={externalAudits}
-                  auditFindings={auditFindings}
-                  auditLessons={auditLessons}
-                  persons={persons}
-                  competencies={competencies}
-                  personCompetencies={personCompetencies}
-                  qualifications={qualifications}
-                  trainingRecords={trainingRecords}
-                  trainingCourses={trainingCourses}
-                  personDocuments={personDocuments}
-                  documentosControlados={documentosControlados}
-                  ferramentasCalibradas={ferramentasCalibradas}
-                  alertas={alertas}
-                  initialSlideId={15}
-                  onNavigateToArchitecture={() => setActiveTab('arquitetura')}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                />
-              )}
-
-              {/* FASE 6.2: TOUR INTERATIVO & HOMOLOGAÇÃO "CONHEÇA O QUALIGEST" */}
-              {activeTab === 'conhecaQualigest' && (
-                <InteractiveTourView
-                  records={records}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                  onOpenAuditModal={() => setIsTechnicalAuditModalOpen(true)}
-                />
-              )}
-
-              {/* FASE 5: TAB SAÚDE DO SGQ & ÍNDICE DE INTEGRIDADE */}
-              {activeTab === 'saudeSGQ' && (
-                <SGQHealthView
-                  records={records}
-                  manuals={manuals}
-                  comparacoes={comparacoes}
-                  knowledgeList={knowledgeList}
-                  knowledge={knowledgeList}
-                  onNavigateTab={(tab) => setActiveTab(tab as any)}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                  onOpenAuditModal={() => setIsTechnicalAuditModalOpen(true)}
-                  onSelectNC={(nc, tab) => handleEditNC(nc, tab)}
-                  onSelectRecord={(nc, tab) => handleEditNC(nc, tab)}
-                />
-              )}
-
-              {/* TAB: APRESENTAÇÃO GERENCIAL DA QUALIDADE & EVOLUÇÃO (FASE 12.1) */}
-              {activeTab === 'apresentacao' && (
-                <QualityPresentationGeneratorView
-                  records={records}
-                  manuals={manuals}
-                  knowledgeList={knowledgeList}
-                  comparacoes={comparacoes}
-                  organization={activeOrganization}
-                  organizacaoNome={
-                    activeOrganization?.name ||
-                    (userProfile?.organizationId === 'org_impacto_aviation'
-                      ? 'Impacto Aviation MRO'
-                      : 'Organização SGQ')
-                  }
-                  usuarioResponsavel={userProfile?.displayName || user?.email || 'Gestão da Qualidade'}
-                  externalAudits={externalAudits}
-                  auditFindings={auditFindings}
-                  auditLessons={auditLessons}
-                  persons={persons}
-                  competencies={competencies}
-                  personCompetencies={personCompetencies}
-                  qualifications={qualifications}
-                  trainingRecords={trainingRecords}
-                  trainingCourses={trainingCourses}
-                  personDocuments={personDocuments}
-                  documentosControlados={documentosControlados}
-                  ferramentasCalibradas={ferramentasCalibradas}
-                  alertas={alertas}
-                  onNavigateToArchitecture={() => setActiveTab('arquitetura')}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                />
-              )}
-
-              {/* ADMINISTRAÇÃO: DIAGNÓSTICOS TÉCNICOS & ARQUITETURA CONSOLIDADA */}
-              {(activeTab === 'diagnosticos-tecnicos' || activeTab === 'arquitetura') && (
-                <TechnicalDiagnosticsCenterView
-                  organization={activeOrganization}
-                  onOpenTechnicalAuditModal={() => setIsTechnicalAuditModalOpen(true)}
-                  onOpenFirebaseDiagnosticsModal={() => setIsDiagnosticsModalOpen(true)}
-                  onNavigateToPresentation={() => setActiveTab('apresentacao')}
-                  initialSubTab={activeTab === 'arquitetura' ? 'arquitetura' : 'visao-geral'}
-                />
-              )}
-
-              {/* TAB 2: RELATÓRIO GERAL (TABELA / KANBAN) */}
-              {activeTab === 'relatorio' && (
-                <ReportListView
-                  records={records}
-                  onSelectNC={handleViewOfficial}
-                  onEditNC={handleEditNC}
-                  onViewOfficial={handleViewOfficial}
-                  onNewNC={handleNewNC}
-                  onDeleteNC={handleDeleteNC}
-                  onDeleteMultipleNC={handleDeleteMultipleNC}
-                  onAuditNC={handleAuditNC}
-                  initialStatusFilter={reportFilterStatus}
-                />
-              )}
-
-              {/* TAB 3: BANCO DE DADOS DE MANUAIS & REVISÕES VIGENTES */}
-              {activeTab === 'manuais' && (
-                <ManualsRepositoryView
-                  manuals={manuals}
-                  onSaveManual={handleSaveManual}
-                  onDeleteManual={handleDeleteManual}
-                  onOpenMigrationModal={() => setIsMigrationModalOpen(true)}
-                />
-              )}
-
-              {/* TAB 4: EXTRATOR DE DOCUMENTOS IA */}
-              {activeTab === 'extrator' && (
-                <DocumentExtractorView
-                  onSaveExtracted={handleSaveNC}
-                  onEditExtracted={(nc) => {
-                    setSelectedNC(nc);
-                    setFormInitialTab('dados');
-                    setActiveTab('formulario');
-                  }}
-                  onCancel={() => setActiveTab('dashboard')}
-                />
-              )}
-
-              {/* TAB 5: FORMULÁRIO DE CADASTRO E EDIÇÃO MANUAL (PASSO A PASSO) */}
-              {activeTab === 'formulario' && (
-                <NCFormView
-                  initialData={selectedNC}
-                  initialTab={formInitialTab}
-                  manuals={manuals}
-                  organization={activeOrganization}
-                  onSave={handleSaveNC}
-                  onCancel={() => setActiveTab(selectedNC ? 'oficial' : 'relatorio')}
-                  onDelete={handleDeleteNC}
-                  onAuditNC={handleAuditNC}
-                />
-              )}
-
-              {/* TAB 6: MONITORAMENTO DE INCIDÊNCIAS (PARETO) */}
-              {activeTab === 'incidencias' && (
-                <IncidenceAnalyticsView
-                  records={records}
-                />
-              )}
-
-              {/* TAB 7: CENTRAL DE ALERTAS & PRAZOS */}
-              {activeTab === 'alertas' && (
-                <AlertsCenterView
-                  records={records}
-                  alertas={alertas}
-                  onSelectNC={handleViewOfficial}
-                  onUpdateDeadline={handleUpdateDeadline}
-                  onAuditNC={handleAuditNC}
-                />
-              )}
-
-              {/* TAB 8: FICHA OFICIAL F 001-29 / IMPRESSÃO */}
-              {activeTab === 'oficial' && (
-                <OfficialReportView
-                  nc={selectedNC || records[0]}
-                  record={selectedNC || records[0]}
-                  organization={activeOrganization}
-                  onBack={() => setActiveTab('relatorio')}
-                  onEdit={() => handleEditNC(selectedNC || records[0])}
-                  onDelete={handleDeleteNC}
-                  onAuditNC={handleAuditNC}
-                />
-              )}
-
-              {/* TAB 9: COMPARAÇÃO & VALIDAÇÃO DE RNCs RESPONDIDAS (FASE 3) */}
-              {activeTab === 'comparacaoRNC' && (
-                <RNCComparisonView
-                  organizationId={activeOrgId}
-                  userProfile={userProfile}
-                  records={records}
-                  manuals={manuals}
-                  onSelectRecord={handleViewOfficial}
-                  onNavigateToTab={(tabId: any) => setActiveTab(tabId)}
-                />
-              )}
-
-              {/* TAB 10: FILA DE VALIDAÇÃO DE RNCs RESPONDIDAS */}
-              {activeTab === 'validacaoQueue' && (
-                <ValidationQueueView
-                  organizationId={activeOrgId}
-                  userProfile={userProfile}
-                  records={records}
-                  onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
-                  onNavigateToRecord={handleViewOfficial}
-                />
-              )}
-
-              {/* TAB 11: BASE DE CONHECIMENTO VALIDADA DO SGQ */}
-              {activeTab === 'knowledgeBase' && (
-                <KnowledgeBaseView
-                  organizationId={activeOrgId}
-                  userProfile={userProfile}
-                  records={records}
-                  onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
-                />
-              )}
-
-              {/* FASE 11: GESTÃO CENTRALIZADA DE ORGANIZAÇÕES, USUÁRIOS E PERMISSÕES */}
-              {(activeTab === 'admin-central' || activeTab === 'admin-audit-trail') && (
-                <CentralAdministrationView
-                  organization={activeOrganization}
-                  initialSubTab={activeTab === 'admin-audit-trail' ? 'audit-trail' : 'usuarios'}
-                  onOrganizationUpdated={(updated) => setActiveOrganization(updated)}
-                />
-              )}
-
-              {/* TAB 12: CONFIGURAÇÕES DA ORGANIZAÇÃO (MULTI-TENANCY COMERCIAL) */}
-              {activeTab === 'configuracoes-org' && (
-                <OrganizationSettingsView
-                  organization={activeOrganization}
-                  onOrganizationUpdated={(updated) => setActiveOrganization(updated)}
-                />
-              )}
-
-              {/* TAB 13: ONBOARDING DE NOVO CLIENTE / NOVA ORGANIZAÇÃO */}
-              {activeTab === 'onboarding-novo-cliente' && (
-                <NewOrganizationOnboardingView
-                  onOrganizationCreated={(newOrg) => {
-                    setActiveOrganization(newOrg);
-                    setActiveTab('configuracoes-org');
-                    setIsChecklistModalOpen(true);
-                  }}
-                  onCancel={() => setActiveTab('dashboard')}
-                />
-              )}
-
-              {/* TAB 14: MANUAL DE UTILIZAÇÃO E GOVERNANÇA (FASE 7.2) */}
-              {activeTab === 'manual-utilizacao' && (
-                <UserManualView
-                  organization={activeOrganization}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                />
-              )}
-
-              {/* FASE 8: GESTÃO DE AUDITORIAS EXTERNAS RECEBIDAS */}
-              {activeTab === 'auditorias-gestao' && (
-                <AuditsManagementView
-                  audits={externalAudits}
-                  findings={auditFindings}
-                  requirements={auditRequirements}
-                  rncs={records}
-                  userProfile={userProfile}
-                  activeOrganization={activeOrganization}
-                  onSelectAuditForFindings={(audit) => {
-                    setSelectedAuditForFindings(audit);
-                    setActiveTab('auditorias-constatacoes');
-                  }}
-                  onSaveAudit={handleSaveAudit}
-                  onDeleteAudit={handleDeleteAudit}
-                  onCancelAudit={handleCancelAudit}
-                  onRestoreAudit={handleRestoreAudit}
-                  onArchiveAudit={handleArchiveAudit}
-                  onSaveRequirement={handleSaveAuditRequirement}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                />
-              )}
-
-              {/* FASE 8: CONSTATAÇÕES DE AUDITORIAS (FINDINGS), RESPOSTAS E EVIDÊNCIAS */}
-              {activeTab === 'auditorias-constatacoes' && (
-                <AuditFindingsView
-                  audits={externalAudits}
-                  findings={auditFindings}
-                  selectedAuditId={selectedAuditForFindings?.id}
-                  rncRecords={records}
-                  manuals={manuals}
-                  validatedKnowledge={knowledgeList}
-                  userProfile={userProfile}
-                  onBackToAudits={() => setActiveTab('auditorias-gestao')}
-                  onSaveFinding={handleSaveFinding}
-                  onDeleteFinding={handleDeleteFinding}
-                  onCriarRNCFromFinding={handleCriarRNCFromFinding}
-                  onOpenLessonForm={(finding, audit) => {
-                    setActiveTab('auditorias-licoes');
-                  }}
-                  onNavigateToNC={(ncId) => {
-                    const nc = records.find((r) => r.id === ncId);
-                    if (nc) {
-                      setSelectedNC(nc);
-                      setActiveTab('oficial');
-                    }
-                  }}
-                />
-              )}
-
-              {/* FASE 8: LIÇÕES APRENDIDAS DE AUDITORIAS EXTERNAS */}
-              {activeTab === 'auditorias-licoes' && (
-                <AuditLessonsLearnedView
-                  lessons={auditLessons}
-                  audits={externalAudits}
-                  findings={auditFindings}
-                  userProfile={userProfile}
-                  onSaveLesson={handleSaveLesson}
-                  onCandidatarKnowledge={handleCandidatarKnowledge}
-                  onNavigateToKnowledge={() => setActiveTab('knowledgeBase')}
-                />
-              )}
-
-              {/* FASE 8: DASHBOARD ANALÍTICO DE AUDITORIAS */}
-              {activeTab === 'auditorias-dashboard' && (
-                <AuditsDashboardView
-                  audits={externalAudits}
-                  findings={auditFindings}
-                  lessons={auditLessons}
-                  onBackToAudits={() => setActiveTab('auditorias-gestao')}
-                  onNavigateToFindings={() => setActiveTab('auditorias-constatacoes')}
-                  onNavigateToLessons={() => setActiveTab('auditorias-licoes')}
-                />
-              )}
-
-              {/* FASE 9: PESSOAS, COMPETÊNCIAS & MATRIZ TÉCNICA */}
-              {activeTab === 'pessoas-competencias' && (
-                <PersonsCompetenciesView
-                  organizationId={activeOrgId}
-                  userProfile={userProfile}
-                  persons={persons}
-                  competencies={competencies}
-                  personCompetencies={personCompetencies}
-                  qualifications={qualifications}
-                  trainingRecords={trainingRecords}
-                  documents={personDocuments}
-                  activities={activityRequirements}
-                  nonConformities={records}
-                  bases={basesOperacionais}
-                  initialStatusFilter={initialPersonStatusFilter}
-                  onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
-                  onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
-                  onNavigateToImport={() => setActiveTab('importacao-inteligente')}
-                />
-              )}
-
-              {/* FASE 9: TREINAMENTOS, CHTs & QUALIFICAÇÕES */}
-              {(activeTab === 'treinamentos-qualificacoes' || activeTab === 'cht-qualificacoes') && (
-                <TrainingsQualificationsView
-                  organizationId={activeOrgId}
-                  userProfile={userProfile}
-                  persons={persons}
-                  trainingCourses={trainingCourses}
-                  trainingRecords={trainingRecords}
-                  qualifications={qualifications}
-                  documents={personDocuments}
-                  initialTab={activeTab === 'cht-qualificacoes' ? 'QUALIFICACOES' : 'CURSOS'}
-                  onNavigateToImport={() => setActiveTab('importacao-inteligente')}
-                  onRegistrosRemovidos={(ids) => setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))}
-                />
-              )}
-
-              {/* FASE 9: CENTRAL DE VENCIMENTOS & GAPS */}
-              {(activeTab === 'central-vencimentos-gaps' || activeTab === 'aptidao-operacional') && (
-                <ExpirationsGapsCenterView
-                  organizationId={activeOrgId}
-                  userProfile={userProfile}
-                  persons={persons}
-                  competencies={competencies}
-                  personCompetencies={personCompetencies}
-                  qualifications={qualifications}
-                  trainingRecords={trainingRecords}
-                  documents={personDocuments}
-                  activities={activityRequirements}
-                  aiSuggestions={aiCompetencySuggestions}
-                  ferramentas={ferramentasCalibradas}
-                  documentosControlados={documentosControlados}
-                  recordsNC={records}
-                  initialSubTab={activeTab === 'aptidao-operacional' ? 'SIMULADOR' : 'VENCIMENTOS'}
-                  onNavigateToImport={() => setActiveTab('importacao-inteligente')}
-                  onRegistrosRemovidos={(ids) => setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))}
-                />
-              )}
-
-              {/* FASE 9: DASHBOARD EXECUTIVO DE COMPETÊNCIAS */}
-              {activeTab === 'competencias-dashboard' && (
-                <CompetenciesDashboardView
-                  organizationId={activeOrgId}
-                  persons={persons}
-                  competencies={competencies}
-                  personCompetencies={personCompetencies}
-                  qualifications={qualifications}
-                  trainingRecords={trainingRecords}
-                  documents={personDocuments}
-                  activities={activityRequirements}
-                  onNavigateToPersons={() => {
-                    setInitialPersonStatusFilter('TODOS');
-                    setActiveTab('pessoas-competencias');
-                  }}
-                  onNavigateToPersonsWithStatus={(status) => {
-                    setInitialPersonStatusFilter(status);
-                    setActiveTab('pessoas-competencias');
-                  }}
-                  onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
-                  onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
-                />
-              )}
-
-              {/* FASE 10: CONTROLE DOCUMENTAL, REVISÕES & FONTES EXTERNAS */}
-              {(activeTab === 'controle-documental' ||
-                activeTab === 'verificacao-controle' ||
-                activeTab === 'historico-relatorios' ||
-                activeTab === 'consulta-temporal' ||
-                activeTab === 'fontes-externas' ||
-                activeTab === 'documentos-dashboard' ||
-                activeTab === 'documentos-revisoes' ||
-                activeTab === 'documentos-solicitacoes' ||
-                activeTab === 'documentos-comparador') && (
-                <DocumentControlCenterView
-                  organizationId={activeOrgId}
-                  currentUser={userProfile}
-                  activeOrganization={activeOrganization}
-                  documentos={documentosControlados}
-                  revisoes={revisoesDocumentais}
-                  fontes={fontesExternas}
-                  solicitacoes={solicitacoesCliente}
-                  logsVerificacao={logsVerificacaoFontes}
-                  evidenciasConsulta={evidenciasConsultaDoc}
-                  nonConformities={records}
-                  initialSubTab={
-                    activeTab === 'verificacao-controle' || activeTab === 'fontes-externas' || activeTab === 'documentos-solicitacoes'
-                      ? 'verificacao'
-                      : activeTab === 'historico-relatorios' || activeTab === 'documentos-revisoes' || activeTab === 'consulta-temporal' || activeTab === 'documentos-comparador'
-                      ? 'historico'
-                      : 'acervo'
-                  }
-                  onOpenNCFormWithDoc={() => {
-                    setActiveTab('formulario');
-                  }}
-                />
-              )}
-
-              {/* FASE 13: AUDITORIAS, REQUISITOS E CONTROLES DE CLIENTES */}
-              {(activeTab === 'clientes-requisitos' ||
-                activeTab === 'clientes-matriz' ||
-                activeTab === 'clientes-cockpit' ||
-                activeTab === 'clientes-cronograma' ||
-                activeTab === 'outros-controles') && (
-                <ClientAuditsManagementView
-                  clientes={clientesExternos}
-                  bases={basesOperacionais}
-                  programas={programasClientes}
-                  controles={controlesCentrais}
-                  requisitos={requisitosClientes}
-                  avaliacoes={avaliacoesRequisitos}
-                  activeOrganization={activeOrganization}
-                  userProfile={userProfile}
-                  initialTab={
-                    activeTab === 'clientes-matriz'
-                      ? 'matriz'
-                      : activeTab === 'clientes-cockpit'
-                      ? 'cockpit'
-                      : activeTab === 'clientes-cronograma'
-                      ? 'cronograma'
-                      : 'requisitos'
-                  }
-                  onSaveAvaliacao={handleSaveAvaliacaoCliente}
-                  onCriarRNCDeRequisito={handleCriarRNCDeRequisito}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                />
-              )}
-
-              {/* FASE 14: CONTROLE OPERACIONAL OFICIAL DE FERRAMENTAS & METROLOGIA (RBAC 145.109) */}
-              {activeTab === 'ferramentas-metrologia' && (
-                <FerramentasMetrologiaView
-                  organization={activeOrganization}
-                  user={userProfile}
-                  ferramentasCalibradas={ferramentasCalibradas}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                  onAdicionarFerramenta={(f) => setFerramentasCalibradas((prev) => [f, ...prev.filter((x) => x.id !== f.id)])}
-                  onRemoverFerramenta={(toolId) => setFerramentasCalibradas((prev) => prev.filter((x) => x.id !== toolId))}
-                />
-              )}
-
-              {/* FASE 14: IMPORTAÇÃO INTELIGENTE E MIGRAÇÃO DE CONTROLES EXISTENTES */}
-              {activeTab === 'importacao-inteligente' && (
-                <SmartImportMigrationView
-                  organization={activeOrganization}
-                  user={userProfile}
-                  pessoas={persons}
-                  treinamentos={trainingCourses}
-                  registrosTreinamento={trainingRecords}
-                  documentos={documentosControlados}
-                  ferramentasCalibradas={ferramentasCalibradas}
-                  smartImports={smartImports}
-                  templatesAprovados={templatesAprovados}
-                  onRemoverTemplate={(id) => setTemplatesAprovados((prev) => prev.filter((t) => t.id !== id))}
-                  onSalvarTemplate={(tpl) => setTemplatesAprovados((prev) => [tpl, ...prev.filter((t) => t.id !== tpl.id)])}
-                  initialTab="WIZARD"
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                  onAdicionarPessoa={(p) => setPersons((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}
-                  onAdicionarCurso={(c) => setTrainingCourses((prev) => [c, ...prev.filter((x) => x.id !== c.id)])}
-                  onAdicionarRegistroTreinamento={(r) => setTrainingRecords((prev) => [r, ...prev.filter((x) => x.id !== r.id)])}
-                  onAdicionarFerramenta={(f) => setFerramentasCalibradas((prev) => [f, ...prev.filter((x) => x.id !== f.id)])}
-                  onRemoverFerramenta={(toolId) => setFerramentasCalibradas((prev) => prev.filter((x) => x.id !== toolId))}
-                  onRemoverRegistroTreinamento={(recordId) => setTrainingRecords((prev) => prev.filter((x) => x.id !== recordId))}
-                  onRemoverPessoa={(personId) => setPersons((prev) => prev.filter((x) => x.id !== personId))}
-                  onRemoverCurso={(courseId) => setTrainingCourses((prev) => prev.filter((x) => x.id !== courseId))}
-                  onAdicionarQualificacao={(q) => setQualifications((prev) => [q, ...prev.filter((x) => x.id !== q.id)])}
-                  onRemoverQualificacao={(qualId) => setQualifications((prev) => prev.filter((x) => x.id !== qualId))}
-                  onAdicionarDocumento={(doc) => setDocumentosControlados((prev) => [doc, ...prev.filter((x) => x.id !== doc.id)])}
-                  onRemoverDocumento={(docId) => setDocumentosControlados((prev) => prev.filter((x) => x.id !== docId))}
-                  onCriarRncSugerida={(dadosRnc) => {
-                    handleNewNC();
-                  }}
-                />
-              )}
-
-              {/* FASE 15: AUDITORIA INTELIGENTE POR REQUISITOS E RESOLUÇÃO POR EXCEÇÃO */}
-              {activeTab === 'smart-audit' && (
-                <SmartAuditView
-                  clientes={clientesExternos}
-                  bases={basesOperacionais}
-                  programas={programasClientes}
-                  controles={controlesCentrais}
-                  requisitos={requisitosClientes}
-                  avaliacoes={avaliacoesRequisitos}
-                  ferramentas={ferramentasCalibradas}
-                  treinamentos={trainingRecords}
-                  documentos={documentosControlados}
-                  pessoas={persons}
-                  audits={externalAudits}
-                  findings={auditFindings}
-                  lessons={auditLessons}
-                  rncs={records}
-                  activeOrganization={activeOrganization}
-                  userProfile={userProfile}
-                  auditRequirements={auditRequirements}
-                  onSaveAuditRequirement={handleSaveAuditRequirement}
-                  onSaveAuditRequirementsBatch={handleSaveBatchAuditRequirements}
-                  onSaveAvaliacao={handleSaveAvaliacaoCliente}
-                  onCriarRNCDeRequisito={handleCriarRNCDeRequisito}
-                  onSaveAudit={handleSaveAudit}
-                  onSaveFinding={handleSaveFinding}
-                  onSaveLesson={handleSaveLesson}
-                  onSaveRequirement={async (req) => {
-                    try {
-                      if (user) {
-                        await saveRequisitoCliente(activeOrgId, req, userProfile);
-                      }
-                      setRequisitosClientes((prev) => [req, ...prev.filter((r) => r.id !== req.id)]);
-                    } catch (err) {
-                      console.warn('Erro ao salvar requisito no Firestore:', err);
-                      setRequisitosClientes((prev) => [req, ...prev.filter((r) => r.id !== req.id)]);
-                    }
-                  }}
-                  onSaveProgram={async (prog) => {
-                    try {
-                      if (user) {
-                        await saveProgramaCliente(activeOrgId, prog, userProfile);
-                      }
-                      setProgramasClientes((prev) => [prog, ...prev.filter((p) => p.id !== prog.id)]);
-                    } catch (err) {
-                      console.warn('Erro ao salvar programa no Firestore:', err);
-                      setProgramasClientes((prev) => [prog, ...prev.filter((p) => p.id !== prog.id)]);
-                    }
-                  }}
-                  onNavigateToTab={(tab) => setActiveTab(tab as any)}
-                />
-              )}
-
-              {/* FASE 15: SYSTEM DESIGNER DO QUALIGEST */}
-              {activeTab === 'system-designer' && (
-                <SystemDesignerOfficialView />
-              )}
-            </>
-          )}
-        </main>
-
-        {/* Modal de Checklist de Implantação de Novo Cliente */}
-        <InitialSetupChecklistModal
-          isOpen={isChecklistModalOpen}
-          onClose={() => setIsChecklistModalOpen(false)}
-          organization={activeOrganization}
-          onNavigateToTab={(tab) => {
-            setIsChecklistModalOpen(false);
-            setActiveTab(tab as any);
-          }}
-          onUpdateOrganization={(updated) => setActiveOrganization(updated)}
-        />
-
-        {/* Global AI Compliance Audit Modal */}
-        <ComplianceAuditModal
-          isOpen={isAuditModalOpen}
-          onClose={() => {
-            setIsAuditModalOpen(false);
-            setAuditTargetNC(null);
-          }}
-          nc={auditTargetNC}
-          manuals={manuals}
-          onApplySuggestions={handleApplyAuditSuggestions}
-        />
-
-        {/* FASE 5: Technical Audit Modal (Hardening, Security, Data Integrity, AI Fallback) */}
-        <TechnicalAuditModal
-          isOpen={isTechnicalAuditModalOpen}
-          onClose={() => setIsTechnicalAuditModalOpen(false)}
-          records={records}
-          manuals={manuals}
-          comparacoes={comparacoes}
-          knowledgeList={knowledgeList}
-          userProfile={userProfile}
-        />
-
-        {/* Firebase Authentication Modal */}
-        <AuthModal
-          isOpen={isAuthModalOpen}
-          onClose={() => setIsAuthModalOpen(false)}
-        />
-
-        {/* Firebase & Firestore Diagnostic Modal */}
-        <FirebaseDiagnosticModal
-          isOpen={isDiagnosticsModalOpen}
-          onClose={() => setIsDiagnosticsModalOpen(false)}
-          onOpenAuth={() => setIsAuthModalOpen(true)}
-          onOpenMigration={() => setIsMigrationModalOpen(true)}
-          ncCount={records.length}
-          manualsCount={manuals.length}
-        />
-
-        {/* Local Browser Data Migration Modal (IndexedDB to Cloud Firestore) */}
-        <LocalDataMigrationModal
-          isOpen={isMigrationModalOpen}
-          onClose={() => setIsMigrationModalOpen(false)}
-          activeOrgId={activeOrgId}
-          userProfile={userProfile}
-          currentRecords={records}
-          currentManuals={manuals}
-          onOpenAuthModal={() => setIsAuthModalOpen(true)}
-        />
-
-        {/* Mobile Bottom Navigation Bar (< lg) */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 text-slate-400 px-3 py-2 flex items-center justify-around shadow-2xl">
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-[6px] text-[10px] font-medium transition-colors cursor-pointer ${
-              activeTab === 'dashboard' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span>Dashboard</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setReportFilterStatus(undefined);
-              setActiveTab('relatorio');
-            }}
-            className={`flex flex-col items-center gap-0.5 px-2 py-1 rounded-[6px] text-[10px] font-medium transition-colors cursor-pointer ${
-              activeTab === 'relatorio' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>RNCs ({records.length})</span>
-          </button>
-
-          {/* Center Prominent New NC Button */}
-          <button
-            onClick={handleNewNC}
-            className="flex flex-col items-center justify-center -mt-5 w-11 h-11 rounded-full bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white shadow-lg border-2 border-slate-900 transition-transform active:scale-95 cursor-pointer"
-            aria-label="Nova Não Conformidade"
-            title="Criar Nova RNC"
-          >
-            <Plus className="w-5 h-5" />
-          </button>
-
-          <button
-            onClick={() => setActiveTab('alertas')}
-            className={`relative flex flex-col items-center gap-0.5 px-2 py-1 rounded-[6px] text-[10px] font-medium transition-colors cursor-pointer ${
-              activeTab === 'alertas' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Bell className="w-4 h-4" />
-            <span>Alertas</span>
-            {alertas.filter((a) => a.tipoAlerta === 'VENCIDA' || a.tipoAlerta === 'VENCE_HOJE').length > 0 && (
-              <span className="absolute -top-0.5 right-2 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-slate-900" />
+            ) : (
+              <AppViewRouter
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                activeOrgId={activeOrgId}
+                user={user}
+                userProfile={userProfile}
+                activeOrganization={activeOrganization}
+                setActiveOrganization={setActiveOrganization}
+                records={records}
+                manuals={manuals}
+                comparacoes={comparacoes}
+                knowledgeList={knowledgeList}
+                alertas={alertas}
+                selectedNC={selectedNC}
+                setSelectedNC={setSelectedNC}
+                formInitialTab={formInitialTab}
+                reportFilterStatus={reportFilterStatus}
+                initialPersonStatusFilter={initialPersonStatusFilter}
+                setInitialPersonStatusFilter={setInitialPersonStatusFilter}
+                handleViewOfficial={handleViewOfficial}
+                handleNewNC={handleNewNC}
+                handleEditNC={handleEditNC}
+                handleDeleteNC={handleDeleteNC}
+                handleDeleteMultipleNC={handleDeleteMultipleNC}
+                handleAuditNC={handleAuditNC}
+                handleSaveNC={handleSaveNC}
+                handleOpenReportWithFilter={handleOpenReportWithFilter}
+                handleUpdateDeadline={handleUpdateDeadline}
+                handleSaveManual={handleSaveManual}
+                handleDeleteManual={handleDeleteManual}
+                setIsMigrationModalOpen={setIsMigrationModalOpen}
+                setIsTechnicalAuditModalOpen={setIsTechnicalAuditModalOpen}
+                setIsDiagnosticsModalOpen={setIsDiagnosticsModalOpen}
+                setIsChecklistModalOpen={setIsChecklistModalOpen}
+                externalAudits={externalAudits}
+                auditFindings={auditFindings}
+                auditLessons={auditLessons}
+                auditRequirements={auditRequirements}
+                selectedAuditForFindings={selectedAuditForFindings}
+                setSelectedAuditForFindings={setSelectedAuditForFindings}
+                handleSaveAudit={handleSaveAudit}
+                handleDeleteAudit={handleDeleteAudit}
+                handleCancelAudit={handleCancelAudit}
+                handleRestoreAudit={handleRestoreAudit}
+                handleArchiveAudit={handleArchiveAudit}
+                handleSaveAuditRequirement={handleSaveAuditRequirement}
+                handleSaveBatchAuditRequirements={handleSaveBatchAuditRequirements}
+                handleSaveFinding={handleSaveFinding}
+                handleDeleteFinding={handleDeleteFinding}
+                handleCriarRNCFromFinding={handleCriarRNCFromFinding}
+                handleSaveLesson={handleSaveLesson}
+                handleCandidatarKnowledge={handleCandidatarKnowledge}
+                persons={persons}
+                setPersons={setPersons}
+                competencies={competencies}
+                personCompetencies={personCompetencies}
+                qualifications={qualifications}
+                setQualifications={setQualifications}
+                trainingRecords={trainingRecords}
+                setTrainingRecords={setTrainingRecords}
+                trainingCourses={trainingCourses}
+                setTrainingCourses={setTrainingCourses}
+                personDocuments={personDocuments}
+                activityRequirements={activityRequirements}
+                aiCompetencySuggestions={aiCompetencySuggestions}
+                documentosControlados={documentosControlados}
+                setDocumentosControlados={setDocumentosControlados}
+                revisoesDocumentais={revisoesDocumentais}
+                fontesExternas={fontesExternas}
+                solicitacoesCliente={solicitacoesCliente}
+                logsVerificacaoFontes={logsVerificacaoFontes}
+                evidenciasConsultaDoc={evidenciasConsultaDoc}
+                clientesExternos={clientesExternos}
+                basesOperacionais={basesOperacionais}
+                programasClientes={programasClientes}
+                setProgramasClientes={setProgramasClientes}
+                controlesCentrais={controlesCentrais}
+                requisitosClientes={requisitosClientes}
+                setRequisitosClientes={setRequisitosClientes}
+                avaliacoesRequisitos={avaliacoesRequisitos}
+                handleSaveAvaliacaoCliente={handleSaveAvaliacaoCliente}
+                handleCriarRNCDeRequisito={handleCriarRNCDeRequisito}
+                ferramentasCalibradas={ferramentasCalibradas}
+                setFerramentasCalibradas={setFerramentasCalibradas}
+                smartImports={smartImports}
+                templatesAprovados={templatesAprovados}
+                setTemplatesAprovados={setTemplatesAprovados}
+              />
             )}
-          </button>
+          </main>
 
-          <button
-            onClick={() => setIsMobileSidebarOpen(true)}
-            className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-[6px] text-[10px] font-medium text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-          >
-            <Menu className="w-4 h-4" />
-            <span>Menu</span>
-          </button>
-        </nav>
+          {/* Global Modals Container */}
+          <AppModals
+            isChecklistModalOpen={isChecklistModalOpen}
+            setIsChecklistModalOpen={setIsChecklistModalOpen}
+            activeOrganization={activeOrganization}
+            setActiveOrganization={setActiveOrganization}
+            setActiveTab={setActiveTab}
+            isAuditModalOpen={isAuditModalOpen}
+            setIsAuditModalOpen={setIsAuditModalOpen}
+            auditTargetNC={auditTargetNC}
+            setAuditTargetNC={setAuditTargetNC}
+            manuals={manuals}
+            onApplyAuditSuggestions={handleApplyAuditSuggestions}
+            isTechnicalAuditModalOpen={isTechnicalAuditModalOpen}
+            setIsTechnicalAuditModalOpen={setIsTechnicalAuditModalOpen}
+            records={records}
+            comparacoes={comparacoes}
+            knowledgeList={knowledgeList}
+            userProfile={userProfile}
+            isAuthModalOpen={isAuthModalOpen}
+            setIsAuthModalOpen={setIsAuthModalOpen}
+            isDiagnosticsModalOpen={isDiagnosticsModalOpen}
+            setIsDiagnosticsModalOpen={setIsDiagnosticsModalOpen}
+            isMigrationModalOpen={isMigrationModalOpen}
+            setIsMigrationModalOpen={setIsMigrationModalOpen}
+            activeOrgId={activeOrgId}
+          />
 
-        {/* Footer */}
-        <footer className="bg-white border-t border-slate-200 py-3.5 px-4 sm:px-6 text-center text-xs text-slate-500">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-            <span>
-              <strong className="text-slate-700">QUALIGEST SGQ</strong> — Sistema de Garantia da Qualidade, Auditorias Regulatórias & Não Conformidades
-            </span>
-            <span className="text-[11px] text-slate-400">
-              Padrão Aeronáutico F 001-29 | Cloud Firestore Multi-Tenant | Sincronização em Tempo Real
-            </span>
-          </div>
-        </footer>
+          {/* Mobile Bottom Navigation Bar (< lg) */}
+          <MobileBottomNav
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            recordsCount={records.length}
+            alertas={alertas}
+            onNewNC={handleNewNC}
+            onClearReportFilter={() => setReportFilterStatus(undefined)}
+            onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
+          />
+
+          {/* Footer */}
+          <footer className="bg-white border-t border-slate-200 py-3.5 px-4 sm:px-6 text-center text-xs text-slate-500">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+              <span>
+                <strong className="text-slate-700">QUALIGEST SGQ</strong> — Sistema de Garantia da Qualidade, Auditorias Regulatórias & Não Conformidades
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Padrão Aeronáutico F 001-29 | Cloud Firestore Multi-Tenant | Sincronização em Tempo Real
+              </span>
+            </div>
+          </footer>
+        </div>
       </div>
-    </div>
+    </AppAuthGuards>
   );
 }
