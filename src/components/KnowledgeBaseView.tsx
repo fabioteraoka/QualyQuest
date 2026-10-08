@@ -153,8 +153,13 @@ export const KnowledgeBaseView: React.FC<KnowledgeBaseViewProps> = ({
     try {
       const res = await fetch('/api/generate-knowledge-pattern', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-organization-id': organizationId,
+          'x-user-org-id': userProfile?.organizationId || '',
+        },
         body: JSON.stringify({
+          organizationId,
           comparacoesValidadas: comparisons,
           categoria: 'Calibração e Metrologia',
           setor: 'REC / Manutenção',

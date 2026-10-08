@@ -705,10 +705,16 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
             const base64 = reader.result as string;
             setStatusMensagem(`Extraindo estrutura e tabelas do documento ${ext.toUpperCase()}...`);
             
+            const orgId = organization?.id || user?.organizationId || 'org_impacto_aviation';
             const response = await fetch('/api/smart-import/parse-file', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                'x-organization-id': orgId,
+                'x-user-org-id': user?.organizationId || '',
+              },
               body: JSON.stringify({
+                organizationId: orgId,
                 base64,
                 nomeArquivo: file.name,
                 formato: ext.toUpperCase()
@@ -787,10 +793,16 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     const idLocal = identificarTipoControleAutomatico(nome, colunas, linhas);
 
     try {
+      const orgId = organization?.id || user?.organizationId || 'org_impacto_aviation';
       const resp = await fetch('/api/smart-import/analyze', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-organization-id': orgId,
+          'x-user-org-id': user?.organizationId || '',
+        },
         body: JSON.stringify({
+          organizationId: orgId,
           nomeArquivo: nome,
           colunas,
           amostraLinhas: linhas.slice(0, 5),

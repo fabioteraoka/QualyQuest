@@ -11,6 +11,7 @@ export interface ExecuteGeminiOptions {
   models?: string[];
   ttlMs?: number;
   organizationId?: string;
+  allowPublicTenant?: boolean;
   skipCache?: boolean;
   promptVersion?: string;
   schemaVersion?: string;
@@ -26,10 +27,11 @@ export interface ExecuteGeminiResult<T = any> {
 
 /**
  * Gateway Central para a API Gemini:
- * 1. Cache determinístico normalizado
- * 2. Deduplicação de requisições idênticas em andamento (in-flight)
- * 3. Fallback inteligente com backoff exponencial e proteção contra tempestade de 429/503
- * 4. Métricas de observabilidade de latência, tokens e custos
+ * 1. Isolamento multi-tenant obrigatório por organizationId
+ * 2. Cache determinístico normalizado (SHA-256)
+ * 3. Deduplicação de requisições idênticas em andamento (in-flight)
+ * 4. Fallback inteligente com backoff exponencial e proteção contra 429/503
+ * 5. Métricas de observabilidade: latência real, tokens reais e estimados
  */
 export async function executeGeminiRequest<T = any>(
   options: ExecuteGeminiOptions
@@ -40,22 +42,33 @@ export async function executeGeminiRequest<T = any>(
     config,
     models = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'],
     ttlMs,
-    organizationId = 'public',
+    organizationId,
+    allowPublicTenant = false,
     skipCache = false,
     promptVersion = 'v1',
     schemaVersion = 'v1',
   } = options;
 
+  // Validação estrita de Tenant: impede o uso acidental de 'public' em dados operacionais
+  let finalOrgId = (organizationId || '').trim();
+  if (!finalOrgId) {
+    if (allowPublicTenant) {
+      finalOrgId = 'public';
+    } else {
+      throw new Error(`TENANT_REQUIRED: A operação Gemini '${operation}' requer um organizationId válido para isolamento de dados.`);
+    }
+  }
+
   geminiMetrics.recordRequest(operation);
 
-  // 1. Chave determinística de cache e dedup
+  // 1. Chave determinística de cache e dedup vinculada estritamente ao tenant
   const cacheKeyOptions: CacheKeyOptions = {
     operation,
     input: contents,
     promptVersion,
     schemaVersion,
     model: models[0],
-    organizationId,
+    organizationId: finalOrgId,
   };
   const requestKey = geminiCache.generateKey(cacheKeyOptions);
 
@@ -66,11 +79,12 @@ export async function executeGeminiRequest<T = any>(
       return {
         ...cached,
         fromCache: true,
+        latencyMs: 0,
       };
     }
   }
 
-  // 3. Deduplicação In-Flight
+  // 3. Deduplicação In-Flight (isolada pela chave com tenant)
   return await geminiDedup.execute(requestKey, operation, async () => {
     // Dupla checagem de cache pós-espera de dedup
     if (!skipCache) {
@@ -79,6 +93,7 @@ export async function executeGeminiRequest<T = any>(
         return {
           ...cached,
           fromCache: true,
+          latencyMs: 0,
         };
       }
     }
@@ -90,7 +105,7 @@ export async function executeGeminiRequest<T = any>(
 
     const startTime = Date.now();
     let lastError: any = null;
-    let successfulResult: { text: string; model: string } | null = null;
+    let successfulResult: { text: string; model: string; usageMetadata?: any } | null = null;
 
     // 4. Execução resiliente com fallback ordenado
     for (const model of models) {
@@ -100,6 +115,7 @@ export async function executeGeminiRequest<T = any>(
 
         while (attempt <= maxAttemptsForModel) {
           try {
+            geminiMetrics.recordActualGeminiRequest();
             const response = await ai.models.generateContent({
               model,
               contents,
@@ -110,6 +126,7 @@ export async function executeGeminiRequest<T = any>(
             successfulResult = {
               text: textOutput,
               model,
+              usageMetadata: (response as any).usageMetadata,
             };
             break;
           } catch (err: any) {
@@ -171,10 +188,15 @@ export async function executeGeminiRequest<T = any>(
     const latencyMs = Date.now() - startTime;
     geminiMetrics.recordLatency(latencyMs);
 
-    // Estimativa simples de tokens para observabilidade
-    const estimatedInput = typeof contents === 'string' ? Math.round(contents.length / 4) : 500;
-    const estimatedOutput = Math.round(successfulResult.text.length / 4);
-    geminiMetrics.recordTokens(estimatedInput, estimatedOutput);
+    // Contabilização de tokens: Reais se disponíveis via usageMetadata, senão estimados
+    if (successfulResult.usageMetadata) {
+      const u = successfulResult.usageMetadata;
+      geminiMetrics.recordRealTokens(u.promptTokenCount, u.candidatesTokenCount, u.totalTokenCount);
+    } else {
+      const estimatedInput = typeof contents === 'string' ? Math.round(contents.length / 4) : 500;
+      const estimatedOutput = Math.round(successfulResult.text.length / 4);
+      geminiMetrics.recordTokens(estimatedInput, estimatedOutput);
+    }
 
     let parsedData: T | undefined = undefined;
     if (config?.responseMimeType === 'application/json' && successfulResult.text) {
@@ -193,9 +215,9 @@ export async function executeGeminiRequest<T = any>(
       latencyMs,
     };
 
-    // 5. Armazena no cache se o resultado for válido
+    // 5. Armazena no cache se o resultado for válido (vinculado estritamente a finalOrgId)
     if (!skipCache && (parsedData !== undefined || successfulResult.text.length > 0)) {
-      geminiCache.set(requestKey, finalResult, operation, ttlMs, organizationId);
+      geminiCache.set(requestKey, finalResult, operation, ttlMs, finalOrgId);
     }
 
     return finalResult;

@@ -24,6 +24,8 @@ import { NCRecord, ManualRecord, AuditoriaPertinenciaResultado, VereditoPertinen
 import { sanitizeManualsForAPI } from '../utils/manualsStorage';
 import { auditNCComplianceLocally } from '../utils/sgqExtractor';
 import { obterEstiloSuporteDocumental } from '../utils/qualityHelpers';
+import { useAuth } from '../contexts/AuthContext';
+import { geminiClientCache } from '../utils/geminiClientCache';
 
 interface ComplianceAuditModalProps {
   isOpen: boolean;
@@ -57,11 +59,33 @@ export const ComplianceAuditModal: React.FC<ComplianceAuditModalProps> = ({
     }
   }, [isOpen, nc?.id]);
 
+  const { userProfile } = useAuth();
+
   const handleRunAudit = async () => {
     if (!nc) return;
     setLoading(true);
     setError(null);
     setApplied(false);
+
+    const orgId = nc.organizationId || userProfile?.organizationId || 'org_impacto_aviation';
+    const cacheKey = geminiClientCache.generateKey({
+      organizationId: orgId,
+      operation: 'audit-compliance',
+      input: {
+        ncId: nc.id,
+        desc: nc.descricaoNC,
+        norma: nc.normaReferencia,
+        setor: nc.setor,
+        manualsCount: manuals.length,
+      },
+    });
+
+    const cached = geminiClientCache.get<AuditoriaPertinenciaResultado>(cacheKey, orgId);
+    if (cached) {
+      setResultado(cached);
+      setLoading(false);
+      return;
+    }
 
     try {
       const sanitized = sanitizeManualsForAPI(manuals);
@@ -70,8 +94,13 @@ export const ComplianceAuditModal: React.FC<ComplianceAuditModalProps> = ({
       try {
         const response = await fetch('/api/audit-compliance', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-organization-id': orgId,
+            'x-user-org-id': userProfile?.organizationId || '',
+          },
           body: JSON.stringify({
+            organizationId: orgId,
             nc,
             manuals: sanitized,
           }),
@@ -81,6 +110,7 @@ export const ComplianceAuditModal: React.FC<ComplianceAuditModalProps> = ({
           const data = await response.json();
           if (data && data.success && data.auditoria) {
             auditResult = data.auditoria;
+            geminiClientCache.set(cacheKey, data.auditoria, 30 * 60 * 1000, orgId);
           }
         }
       } catch (fetchErr) {

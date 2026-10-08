@@ -59,6 +59,7 @@ import { DEFAULT_ORG_CONFIG } from '../services/firebase/firestore';
 import { sanitizeManualsForAPI } from '../utils/manualsStorage';
 import { useAuth } from '../contexts/AuthContext';
 import { analisarSetorComIAEHeuristica } from '../utils/sectorAnalyzer';
+import { geminiClientCache } from '../utils/geminiClientCache';
 
 interface NCFormViewProps {
   initialData?: NCRecord | null;
@@ -356,6 +357,26 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
     setIsAISuggestionModalOpen(true);
     setValidationError(null);
 
+    const currentOrgId = organization?.id || userProfile?.organizationId || 'org_impacto_aviation';
+    const cacheKey = geminiClientCache.generateKey({
+      organizationId: currentOrgId,
+      operation: 'ai-suggest',
+      input: {
+        desc: formData.descricaoNC,
+        norma: formData.normaReferencia,
+        setor: formData.setor,
+        manualsCount: (manuals || []).length,
+      },
+    });
+
+    const cachedSugestao = geminiClientCache.get<AISuggestionResult>(cacheKey, currentOrgId);
+    if (cachedSugestao) {
+      setAiSuggestionResult(cachedSugestao);
+      setAiLoading(false);
+      showToast('Sugestão recuperada do cache local instantâneo (0 RPM).');
+      return;
+    }
+
     try {
       let sugestao: AISuggestionResult | null = null;
       const sanitized = sanitizeManualsForAPI(manuals || []);
@@ -363,8 +384,13 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
       try {
         const res = await fetch('/api/ai-suggest', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-organization-id': currentOrgId,
+            'x-user-org-id': userProfile?.organizationId || '',
+          },
           body: JSON.stringify({
+            organizationId: currentOrgId,
             descricaoNC: formData.descricaoNC,
             normaReferencia: formData.normaReferencia,
             setor: formData.setor,
@@ -377,6 +403,7 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
           const data = await res.json();
           if (data && data.success && data.sugestao) {
             sugestao = data.sugestao;
+            geminiClientCache.set(cacheKey, data.sugestao, 30 * 60 * 1000, currentOrgId);
           }
         }
       } catch (fetchErr) {
@@ -663,8 +690,35 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
   // Avaliação de Coerência Causal dos 5 Porquês com a Conclusão & Ação
   const handleEvaluateCoherence = async () => {
     setIsEvaluatingCoherence(true);
+    const currentOrgId = organization?.id || userProfile?.organizationId || 'org_impacto_aviation';
+    const cacheKey = geminiClientCache.generateKey({
+      organizationId: currentOrgId,
+      operation: 'evaluate-root-cause-coherence',
+      input: {
+        whys: formData.analiseCausaRaiz?.cincoPorques,
+        conclusao: formData.analiseCausaRaiz?.detalhes,
+        acao: formData.acaoCorretiva?.descricao,
+      },
+    });
+
+    const cachedCoerencia = geminiClientCache.get<CoerenciaCausaRaizResultado>(cacheKey, currentOrgId);
+    if (cachedCoerencia) {
+      setCoherenceResult(cachedCoerencia);
+      setFormData(prev => ({
+        ...prev,
+        analiseCausaRaiz: {
+          ...prev.analiseCausaRaiz,
+          coerenciaAvaliada: cachedCoerencia,
+        },
+      }));
+      showToast('Diagnóstico recuperado do cache instantâneo.');
+      setIsEvaluatingCoherence(false);
+      return;
+    }
+
     try {
       const payload = {
+        organizationId: currentOrgId,
         descricaoNC: formData.descricaoNC,
         titulo: formData.titulo,
         cincoPorques: formData.analiseCausaRaiz?.cincoPorques || [],
@@ -677,13 +731,18 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
 
       const response = await fetch('/api/evaluate-root-cause-coherence', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-organization-id': currentOrgId,
+          'x-user-org-id': userProfile?.organizationId || '',
+        },
         body: JSON.stringify(payload)
       });
 
       if (!response.ok) throw new Error('Falha ao auditar coerência');
       const data = await response.json();
       if (data.success && data.coerencia) {
+        geminiClientCache.set(cacheKey, data.coerencia, 30 * 60 * 1000, currentOrgId);
         setCoherenceResult(data.coerencia);
         setFormData(prev => ({
           ...prev,
@@ -841,8 +900,10 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
   // ----------------------------------------------------
   const handleAnalyzeSector = async () => {
     setIsAnalyzingSector(true);
+    const currentOrgId = organization?.id || userProfile?.organizationId || 'org_impacto_aviation';
     try {
       const resultado = await analisarSetorComIAEHeuristica({
+        organizationId: currentOrgId,
         descricao: formData.descricaoNC,
         titulo: formData.titulo,
         categoria: formData.categoria,

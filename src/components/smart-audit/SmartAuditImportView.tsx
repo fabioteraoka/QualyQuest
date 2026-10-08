@@ -38,6 +38,7 @@ import { AuditImportPreviewModal } from './AuditImportPreviewModal';
 import { KALITTA_QA14_METADATA, KALITTA_QA14_ITEMS } from '../../data/sampleKalittaQA14Checklist';
 import { saveAuditRequirementsBatch } from '../../services/firebase/auditRequirementsFirestore';
 import { saveDocumentFileToStorage } from '../../utils/documentFilesStorage';
+import { geminiClientCache } from '../../utils/geminiClientCache';
 
 export interface UploadedFileItem {
   id: string;
@@ -106,11 +107,38 @@ export const SmartAuditImportView: React.FC<SmartAuditImportViewProps> = ({
 
   // Processa arquivo via backend com IA ou heurística
   const processarArquivo = async (item: UploadedFileItem): Promise<UploadedFileItem> => {
+    const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
+    const cacheKey = geminiClientCache.generateKey({
+      organizationId: orgId,
+      operation: 'parse-document',
+      input: {
+        nome: item.nome,
+        tamanho: item.tamanho,
+        formato: item.formato,
+        tipo: item.tipoDocumento,
+        manualTextLength: item.resultadoExtraido?._textoManual?.length || 0,
+      },
+    });
+
+    const cachedData = geminiClientCache.get<any>(cacheKey, orgId);
+    if (cachedData) {
+      return {
+        ...item,
+        status: 'PROCESSADO',
+        tipoDocumento: cachedData.tipoDocumentoIdentificado || item.tipoDocumento,
+        resultadoExtraido: cachedData,
+      };
+    }
+
     try {
       const response = await fetch('/api/smart-audit/parse-document', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-organization-id': orgId,
+        },
         body: JSON.stringify({
+          organizationId: orgId,
           base64: item.base64,
           nomeArquivo: item.nome,
           formato: item.formato,
@@ -121,6 +149,7 @@ export const SmartAuditImportView: React.FC<SmartAuditImportViewProps> = ({
 
       const data = await response.json();
       if (data.success) {
+        geminiClientCache.set(cacheKey, data, 60 * 60 * 1000, orgId);
         return {
           ...item,
           status: 'PROCESSADO',

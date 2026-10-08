@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { ManualRecord, ConsultaManualResposta } from '../types';
 import { sanitizeManualsForAPI } from '../utils/manualsStorage';
+import { useAuth } from '../contexts/AuthContext';
+import { geminiClientCache } from '../utils/geminiClientCache';
 
 interface ManualsConsultModalProps {
   isOpen: boolean;
@@ -49,6 +51,8 @@ export const ManualsConsultModal: React.FC<ManualsConsultModalProps> = ({
     'Como deve ser registrada a qualificação e treinamento dos executantes técnicos?',
   ];
 
+  const { userProfile } = useAuth();
+
   const handleSearch = async (queryString?: string) => {
     const q = queryString || query;
     if (!q.trim()) {
@@ -59,6 +63,23 @@ export const ManualsConsultModal: React.FC<ManualsConsultModalProps> = ({
     setLoading(true);
     setError(null);
 
+    const orgId = userProfile?.organizationId || 'org_impacto_aviation';
+    const cacheKey = geminiClientCache.generateKey({
+      organizationId: orgId,
+      operation: 'consult-manuals',
+      input: {
+        pergunta: q.trim().toLowerCase(),
+        manualsCount: manuals.length,
+      },
+    });
+
+    const cached = geminiClientCache.get<ConsultaManualResposta>(cacheKey, orgId);
+    if (cached) {
+      setResult(cached);
+      setLoading(false);
+      return;
+    }
+
     try {
       const sanitized = sanitizeManualsForAPI(manuals);
       let consultaData: ConsultaManualResposta | null = null;
@@ -66,8 +87,13 @@ export const ManualsConsultModal: React.FC<ManualsConsultModalProps> = ({
       try {
         const response = await fetch('/api/consult-manuals', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-organization-id': orgId,
+            'x-user-org-id': userProfile?.organizationId || '',
+          },
           body: JSON.stringify({
+            organizationId: orgId,
             pergunta: q,
             manuals: sanitized,
           }),
@@ -77,6 +103,7 @@ export const ManualsConsultModal: React.FC<ManualsConsultModalProps> = ({
           const data = await response.json();
           if (data && data.success && data.consulta) {
             consultaData = data.consulta;
+            geminiClientCache.set(cacheKey, data.consulta, 30 * 60 * 1000, orgId);
           }
         }
       } catch (fetchErr) {

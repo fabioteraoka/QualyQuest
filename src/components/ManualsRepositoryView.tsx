@@ -33,6 +33,7 @@ import { downloadOriginalManualFile, saveManualToDB } from '../utils/manualsStor
 import { parseManualLocally } from '../utils/sgqExtractor';
 import { extractTextFromWordFile, isWordDocument } from '../utils/wordExtractor';
 import { UploadCloud } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ManualsRepositoryViewProps {
   manuals: ManualRecord[];
@@ -49,6 +50,7 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
   onSelectForAudit,
   onOpenMigrationModal,
 }) => {
+  const { userProfile } = useAuth();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('todos');
   const [selectedManual, setSelectedManual] = useState<ManualRecord | null>(null);
@@ -299,10 +301,16 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
       let parsed: any = null;
 
       try {
+        const orgId = userProfile?.organizationId || 'org_impacto_aviation';
         const response = await fetch('/api/parse-manual', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-organization-id': orgId,
+            'x-user-org-id': userProfile?.organizationId || '',
+          },
           body: JSON.stringify({
+            organizationId: orgId,
             fileBase64: base64,
             mimeType: resolvedMimeType,
             fileName: uploadFile.name,

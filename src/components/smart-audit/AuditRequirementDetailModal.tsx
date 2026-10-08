@@ -37,6 +37,7 @@ import {
   DecisaoOrganizacionalRequisito,
   SugestaoRespostaRequisitoIA,
 } from '../../types/auditRequirements';
+import { geminiClientCache } from '../../utils/geminiClientCache';
 import {
   AuditoriaExternaRecord,
   UserProfile,
@@ -113,11 +114,35 @@ export const AuditRequirementDetailModal: React.FC<AuditRequirementDetailModalPr
   // Consultar Assistente IA via Endpoint
   const handleConsultarIA = async () => {
     setLoadingAi(true);
+    const targetOrg = auditoria?.organizationId || (auditoria as any)?.orgId || 'org_impacto_aviation';
+    const cacheKey = geminiClientCache.generateKey({
+      organizationId: targetOrg,
+      operation: 'assist-requirement-response',
+      input: {
+        reqItem: requisito.numeroItem,
+        reqText: requisito.textoOriginal,
+        norma: requisito.referenciaNormativa,
+        auditNum: auditoria?.numeroAuditoria || requisito.numeroAuditoria,
+      },
+    });
+
+    const cached = geminiClientCache.get<any>(cacheKey, targetOrg);
+    if (cached) {
+      setAiSugestao(cached);
+      showToast('success', 'Sugestão recuperada do cache local instantâneo (0 RPM)');
+      setLoadingAi(false);
+      return;
+    }
+
     try {
       const response = await fetch('/api/smart-audit/assist-requirement-response', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-organization-id': targetOrg,
+        },
         body: JSON.stringify({
+          organizationId: targetOrg,
           requisito: {
             numeroItem: requisito.numeroItem,
             textoOriginal: requisito.textoOriginal,
@@ -138,6 +163,7 @@ export const AuditRequirementDetailModal: React.FC<AuditRequirementDetailModalPr
       const data = await response.json();
       if (data.success && data.sugestao) {
         setAiSugestao(data.sugestao);
+        geminiClientCache.set(cacheKey, data.sugestao, 30 * 60 * 1000, targetOrg);
         showToast('success', 'Assistência inteligente gerada com base no acervo oficial QualiGest!');
       } else {
         throw new Error(data.error || 'Falha ao consultar assistente de IA');

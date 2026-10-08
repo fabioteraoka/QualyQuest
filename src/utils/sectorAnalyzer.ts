@@ -6,6 +6,7 @@ import {
 } from '../types';
 
 export interface SectorAnalysisParams {
+  organizationId?: string;
   descricao?: string;
   titulo?: string;
   categoria?: string;
@@ -300,12 +301,15 @@ export async function analisarSetorComIAEHeuristica(
   params: SectorAnalysisParams
 ): Promise<AnaliseSetorResponsavel> {
   try {
+    const orgId = params.organizationId || 'org_impacto_aviation';
     const response = await fetch('/api/suggest-sector', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-organization-id': orgId,
       },
       body: JSON.stringify({
+        organizationId: orgId,
         descricao: params.descricao,
         titulo: params.titulo,
         categoria: params.categoria,

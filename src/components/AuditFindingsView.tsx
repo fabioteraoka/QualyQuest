@@ -45,6 +45,7 @@ import {
   sugerirRespostaHeuristica,
   SugestaoRespostaAuditoriaOutput
 } from '../utils/auditIntelligence';
+import { geminiClientCache } from '../utils/geminiClientCache';
 
 interface AuditFindingsViewProps {
   audits: AuditoriaExternaRecord[];
@@ -168,12 +169,35 @@ export const AuditFindingsView: React.FC<AuditFindingsViewProps> = ({
     if (!selectedFinding) return;
     setIsAiLoading(true);
 
+    const orgId = userProfile?.organizationId || 'org_impacto_aviation';
+    const cacheKey = geminiClientCache.generateKey({
+      organizationId: orgId,
+      operation: 'audit-assist',
+      input: {
+        findingId: selectedFinding.id,
+        desc: selectedFinding.descricaoOriginal,
+        auditId: currentAudit?.id,
+      },
+    });
+
+    const cached = geminiClientCache.get<any>(cacheKey, orgId);
+    if (cached) {
+      setAiSuggestion(cached);
+      setIsAiLoading(false);
+      return;
+    }
+
     try {
       // Tenta chamar o endpoint de IA no backend
       const response = await fetch('/api/audit-assist', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-organization-id': orgId,
+          'x-user-org-id': userProfile?.organizationId || '',
+        },
         body: JSON.stringify({
+          organizationId: orgId,
           finding: selectedFinding,
           auditoria: currentAudit,
           similarCases: similarCases.slice(0, 2),
@@ -183,6 +207,7 @@ export const AuditFindingsView: React.FC<AuditFindingsViewProps> = ({
       if (response.ok) {
         const data = await response.json();
         if (data.sugestao) {
+          geminiClientCache.set(cacheKey, data.sugestao, 30 * 60 * 1000, orgId);
           setAiSuggestion(data.sugestao);
           setIsAiLoading(false);
           return;

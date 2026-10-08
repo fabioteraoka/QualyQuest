@@ -122,8 +122,13 @@ export const RNCComparisonView: React.FC<RNCComparisonViewProps> = ({
           if (base64Data) {
             const response = await fetch('/api/extract-document-text', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 
+                'Content-Type': 'application/json',
+                'x-organization-id': organizationId,
+                'x-user-org-id': userProfile?.organizationId || '',
+              },
               body: JSON.stringify({
+                organizationId,
                 fileBase64: base64Data,
                 mimeType: file.type,
                 fileName: file.name,
@@ -199,8 +204,13 @@ export const RNCComparisonView: React.FC<RNCComparisonViewProps> = ({
       try {
         const res = await fetch('/api/compare-rnc', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-organization-id': organizationId,
+            'x-user-org-id': userProfile?.organizationId || '',
+          },
           body: JSON.stringify({
+            organizationId,
             rncOriginal: targetRNC,
             textoDocumentoResposta: extractedText,
             nomeArquivo: uploadedFile?.name || 'resposta_colada.txt',

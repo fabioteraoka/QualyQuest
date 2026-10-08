@@ -16,6 +16,7 @@ import { NCRecord } from '../types';
 import { formatarData, obterCorRisco } from '../utils/qualityHelpers';
 import { parseRNCLocalHeuristics } from '../utils/sgqExtractor';
 import { extractTextFromWordFile, isWordDocument } from '../utils/wordExtractor';
+import { useAuth } from '../contexts/AuthContext';
 
 interface DocumentExtractorViewProps {
   onSaveExtracted: (nc: NCRecord) => void;
@@ -43,6 +44,7 @@ export const DocumentExtractorView: React.FC<DocumentExtractorViewProps> = ({
   onEditExtracted,
   onCancel,
 }) => {
+  const { userProfile } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileBase64, setFileBase64] = useState<string>('');
   const [fileMimeType, setFileMimeType] = useState<string>('');
@@ -198,12 +200,18 @@ Status: Não Iniciada`);
     try {
       let ext: any = null;
       let noticeMsg = '';
+      const orgId = userProfile?.organizationId || 'org_impacto_aviation';
 
       try {
         const response = await fetch('/api/extract-nc', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-organization-id': orgId,
+            'x-user-org-id': userProfile?.organizationId || '',
+          },
           body: JSON.stringify({
+            organizationId: orgId,
             fileBase64: fileBase64 || undefined,
             mimeType: fileMimeType || undefined,
             textContent: pastedText || undefined,

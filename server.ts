@@ -67,6 +67,59 @@ import {
   AUDIT_DOCUMENT_PARSE_SCHEMA,
 } from "./server/gemini/index.ts";
 
+const DEFAULT_ORGANIZATION_ID = "org_impacto_aviation";
+
+// Validador e extrator seguro de tenant multi-tenant
+function extractValidatedTenant(req: express.Request): string {
+  const headerOrg = req.headers["x-organization-id"];
+  const userOrg = req.headers["x-user-org-id"];
+  const bodyOrg = req.body?.organizationId;
+  const queryOrg = req.query?.organizationId;
+
+  const candidate = (
+    (typeof headerOrg === "string" ? headerOrg : Array.isArray(headerOrg) ? headerOrg[0] : "") ||
+    (typeof bodyOrg === "string" ? bodyOrg : "") ||
+    (typeof queryOrg === "string" ? queryOrg : "")
+  ).trim();
+
+  // Se o usuário declarou um tenant de usuário e tentou forçar outro diferente sem ser superadmin
+  if (userOrg && typeof userOrg === "string" && candidate && candidate !== userOrg && userOrg !== "superadmin") {
+    throw new Error(`TENANT_ACCESS_DENIED: Usuário pertence a '${userOrg}' e não possui permissão para operar no tenant '${candidate}'.`);
+  }
+
+  if (candidate && /^[a-zA-Z0-9_\-\.]{3,64}$/.test(candidate)) {
+    return candidate;
+  }
+
+  return DEFAULT_ORGANIZATION_ID;
+}
+
+// Divisor inteligente de documentos grandes em blocos sem truncamento e preservando parágrafos
+function splitTextIntoLogicalChunks(text: string, maxChunkLength = 18000): string[] {
+  if (text.length <= maxChunkLength) {
+    return [text];
+  }
+
+  const chunks: string[] = [];
+  const lines = text.split(/\r?\n/);
+  let currentChunk = "";
+
+  for (const line of lines) {
+    if (currentChunk.length + line.length + 1 > maxChunkLength && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = line;
+    } else {
+      currentChunk = currentChunk ? currentChunk + "\n" + line : line;
+    }
+  }
+
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
+}
+
 // Resilient helper routed through the Central Gemini Gateway (Cache + Dedup + Multi-Model Fallback + Metrics)
 async function generateContentWithModelFallback(
   ai: GoogleGenAI,
@@ -75,15 +128,20 @@ async function generateContentWithModelFallback(
     contents: any;
     config?: any;
     operation?: string;
-    organizationId?: string;
+    organizationId: string;
   }
 ) {
+  const orgId = (options.organizationId || "").trim();
+  if (!orgId) {
+    throw new Error(`TENANT_REQUIRED: Operação Gemini '${options.operation || "unnamed"}' exige organizationId explícito para isolamento multi-tenant.`);
+  }
+
   const result = await executeGeminiRequest({
     operation: options.operation || "gemini-operation",
     contents: options.contents,
     config: options.config,
     models: options.models,
-    organizationId: options.organizationId,
+    organizationId: orgId,
   });
 
   return {
@@ -454,8 +512,11 @@ app.post("/api/extract-document-text", async (req, res) => {
       const ai = getGeminiClient();
       if (ai) {
         const cleanMime = mimeType?.includes("pdf") ? "application/pdf" : (mimeType || "application/pdf");
+        const orgId = extractValidatedTenant(req);
         const response = await generateContentWithModelFallback(ai, {
           models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+          operation: "extract-document-text",
+          organizationId: orgId,
           contents: {
             parts: [
               {
@@ -559,8 +620,11 @@ ${textContent ? `Texto extraído do documento:\n${textContent}` : "Extraia a par
   parts.push({ text: promptText });
 
   try {
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "extract-nc",
+      organizationId: orgId,
       contents: { parts },
       config: {
         systemInstruction,
@@ -876,8 +940,11 @@ DIRETRIZES FUNDAMENTAIS DE COERÊNCIA CAUSAL (OBRIGATÓRIO):
 6. ISHIKAWA 6M: Preencha cada uma das 6 dimensões com fatores contribuintes pertinentes.
 7. Toda hipótese gerada DEVE ser classificada como "PENDENTE DE VALIDAÇÃO HUMANA".`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "evaluate-nc",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1160,8 +1227,11 @@ CRITÉRIOS DE AUDITORIA CAUSAL:
    - Forneça uma cadeia 'cincoPorquesSugeridosCoerentes' refinada, fluida e encadeada.
    - Forneça uma 'acaoCorretivaSugeridaAlinhada' que erradique a causa raiz.`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "evaluate-root-cause-coherence",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -1460,8 +1530,11 @@ BANCO DE MANUAIS CADASTRADOS NO SISTEMA:
 ${manualsContext || 'Nenhum manual específico cadastrado.'}`;
 
   try {
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "audit-compliance",
+      organizationId: orgId,
       contents: promptText,
       config: {
         responseMimeType: "application/json",
@@ -1843,8 +1916,11 @@ DIRETRIZES FUNDAMENTAIS:
   parts.push({ text: promptText });
 
   try {
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"],
+      operation: "parse-manual",
+      organizationId: orgId,
       contents: { parts },
       config: {
         responseMimeType: "application/json",
@@ -1991,8 +2067,11 @@ SUA MISSÃO:
 3. Extrair os trechos textuais dos requisitos que embasam a sua resposta.
 4. Fornecer 2 a 4 recomendações práticas de auditoria / boas práticas operacionais.`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "consult-manuals",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -2119,8 +2198,11 @@ Responda em JSON:
   "duvidaMotivo": "se confianca < 70 ou ambiguidade, explique aqui"
 }`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "match-rnc",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -2367,8 +2449,11 @@ Responda em formato JSON rigoroso:
   }
 }`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "compare-rnc",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -2457,8 +2542,11 @@ Responda em formato JSON:
   "justificativaSGQ": "Fundamentação do Gestor SGQ"
 }`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "generate-knowledge-pattern",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -2593,8 +2681,11 @@ Responda em formato JSON estrito:
   ]
 }`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
       models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "suggest-sector",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -2703,7 +2794,11 @@ DIRETRIZES DE GOVERNANÇA AERONÁUTICA:
   "perguntasInvestigacao": ["pergunta 1 a ser checada antes de enviar", "pergunta 2"]
 }`;
 
+    const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
+      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      operation: "audit-assist",
+      organizationId: orgId,
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -2848,7 +2943,11 @@ Responda ESTRITAMENTE em formato JSON com o seguinte formato:
 }`;
 
     try {
+      const orgId = extractValidatedTenant(req);
       const response = await generateContentWithModelFallback(ai, {
+        models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+        operation: "smart-import-analyze",
+        organizationId: orgId,
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -2954,7 +3053,11 @@ Responda ESTRITAMENTE em formato JSON:
     }
   ]
 }`;
+            const orgId = extractValidatedTenant(req);
             const resGemini = await generateContentWithModelFallback(ai, {
+              models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+              operation: "smart-import-parse-file-complement",
+              organizationId: orgId,
               contents: promptPdf,
               config: { responseMimeType: "application/json" },
             });
@@ -3127,47 +3230,21 @@ app.post("/api/smart-audit/parse-checklist", async (req, res) => {
         programaNome: `Checklist de Auditoria Externa (${clienteNome})`,
         revisao: "Rev. Oficial 2026",
         origem: "MOTOR_HEURISTICO_SGQ",
-        itens: itensEncontrados.length > 0 ? itensEncontrados : [
-          {
-            numeroItem: "1.1",
-            tituloCurto: "Qualificação e Treinamento Mandatório do Pessoal de Linha",
-            textoOriginal: "Todo o pessoal alocado na manutenção deve possuir treinamentos vigentes (FTS, EWIS, HF, Segurança Operacional).",
-            criterioAceitacao: "100% dos técnicos com registros no SGQ dentro do prazo de validade.",
-            categoria: "Pessoas e Treinamentos",
-            criticidade: "CRITICO",
-            metodoVerificacao: "AUTOMATICO",
-            requerEvidenciaFisica: false,
-            controleSugeridoCodigo: "CTRL-TREIN-01",
-          },
-          {
-            numeroItem: "2.1",
-            tituloCurto: "Rastreabilidade Metrológica e Calibração RBC de Ferramentas",
-            textoOriginal: "Torquímetros e equipamentos de precisão devem possuir selo de calibração RBC e estar dentro da validade.",
-            criterioAceitacao: "Certificado de calibração emitido por laboratório acreditado com identificação do número de série.",
-            categoria: "Ferramental e Calibração",
-            criticidade: "CRITICO",
-            metodoVerificacao: "AUTOMATICO",
-            requerEvidenciaFisica: false,
-            controleSugeridoCodigo: "CTRL-FERR-01",
-          },
-          {
-            numeroItem: "3.1",
-            tituloCurto: "Inspeção de Limpeza de Pátio e Prevenção de FOD",
-            textoOriginal: "A área de atendimento da aeronave deve estar limpa, sem detritos soltos e com recipientes de FOD identificados.",
-            criterioAceitacao: "Registro fotográfico da área de trabalho antes e depois do atendimento ao voo.",
-            categoria: "Pátio e Hangar",
-            criticidade: "ALTO",
-            metodoVerificacao: "ASSISTIDO",
-            requerEvidenciaFisica: true,
-            controleSugeridoCodigo: "CTRL-PATIO-01",
-          }
-        ],
+        itens: itensEncontrados,
       };
     };
 
+    const orgId = extractValidatedTenant(req);
     const heuristic = parseHeuristicoChecklist();
 
     if (!ai || (!fullText || fullText.trim().length < 15)) {
+      if (!heuristic.itens || heuristic.itens.length === 0) {
+        return res.status(422).json({
+          success: false,
+          code: "ANALYSIS_FAILED",
+          error: "ANALYSIS_FAILED: O documento foi lido, mas nenhum requisito estruturado de checklist foi localizado no conteúdo real. Nenhum dado sintético foi gerado.",
+        });
+      }
       return res.json({ success: true, ...heuristic });
     }
 
@@ -3218,6 +3295,7 @@ Retorne um array JSON com os itens refinados preservando numeroItem e textoOrigi
                   responseMimeType: "application/json",
                 },
                 ttlMs: 24 * 60 * 60 * 1000,
+                organizationId: orgId,
               });
 
               if (Array.isArray(batchResult.parsed) && batchResult.parsed.length > 0) {
@@ -3234,17 +3312,33 @@ Retorne um array JSON com os itens refinados preservando numeroItem e textoOrigi
           },
         });
 
+        const finalBatchItens = enrichedBatches.length > 0 ? enrichedBatches : heuristic.itens;
+        if (!finalBatchItens || finalBatchItens.length === 0) {
+          return res.status(422).json({
+            success: false,
+            code: "ANALYSIS_FAILED",
+            error: "ANALYSIS_FAILED: Nenhum requisito ou item de auditoria identificável foi encontrado no documento real. Nenhum dado sintético foi gerado.",
+          });
+        }
+
         return res.json({
           success: true,
           clienteNome: heuristic.clienteNome,
           programaCodigo: heuristic.programaCodigo,
           programaNome: heuristic.programaNome,
           revisao: heuristic.revisao,
-          itens: enrichedBatches.length > 0 ? enrichedBatches : heuristic.itens,
+          itens: finalBatchItens,
           origem: "IA_GEMINI_BATCHED",
         });
       } catch (batchErr: any) {
         console.warn("Erro no processamento em batch, retornando heurística determinística:", batchErr);
+        if (!heuristic.itens || heuristic.itens.length === 0) {
+          return res.status(422).json({
+            success: false,
+            code: "ANALYSIS_FAILED",
+            error: "ANALYSIS_FAILED: Falha no processamento em lote e nenhum requisito determinístico foi localizado.",
+          });
+        }
         return res.json({ success: true, ...heuristic });
       }
     }
@@ -3272,20 +3366,38 @@ ${fullText}
           responseSchema: CHECKLIST_PARSE_SCHEMA,
         },
         ttlMs: 24 * 60 * 60 * 1000,
+        organizationId: orgId,
       });
 
       const parsed = response.parsed || JSON.parse(response.text?.trim() || "{}");
+      const finalItens = Array.isArray(parsed.itens) && parsed.itens.length > 0 ? parsed.itens : heuristic.itens;
+
+      if (!finalItens || finalItens.length === 0) {
+        return res.status(422).json({
+          success: false,
+          code: "ANALYSIS_FAILED",
+          error: "ANALYSIS_FAILED: Nenhum requisito ou item de auditoria identificável foi encontrado no documento real. Nenhum dado sintético foi gerado.",
+        });
+      }
+
       return res.json({
         success: true,
         clienteNome: parsed.clienteNome || clienteSugerido || heuristic.clienteNome || "Cliente Aéreo",
         programaCodigo: parsed.programaCodigo || heuristic.programaCodigo || "CHK-2026",
         programaNome: parsed.programaNome || heuristic.programaNome || "Checklist Estruturado via IA",
         revisao: parsed.revisao || heuristic.revisao || "Vigente",
-        itens: Array.isArray(parsed.itens) && parsed.itens.length > 0 ? parsed.itens : heuristic.itens,
+        itens: finalItens,
         origem: response.fromCache ? "IA_GEMINI_CACHE" : "IA_GEMINI",
       });
     } catch (aiErr: any) {
       console.warn("Gemini parse-checklist warning, using heuristic fallback:", aiErr.message);
+      if (!heuristic.itens || heuristic.itens.length === 0) {
+        return res.status(422).json({
+          success: false,
+          code: "ANALYSIS_FAILED",
+          error: `ANALYSIS_FAILED: A análise avançada por IA falhou (${aiErr.message}) e a extração local não localizou itens estruturados no documento real. Nenhum dado sintético foi injetado.`,
+        });
+      }
       return res.json({ success: true, ...heuristic });
     }
   } catch (error: any) {
@@ -3520,25 +3632,28 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
             ? 'RESPOSTA_REJEITADA'
             : 'RESPOSTA_ENVIADA';
 
+          const reqItemMatch = line.match(/(?:Item|Requisito|Ref\.?|Section|145\.\d+)\s*([0-9\.\-A-Z]+)/i);
+          const itemReqEncontrado = reqItemMatch ? reqItemMatch[0].trim() : (lowerFull.includes('145.109') ? '145.109' : 'Requisito Auditado');
+
           findings.push({
             numeroExterno: matchFinding[0].trim(),
             classificacao: isMaior ? 'MAIOR' : isObs ? 'OBSERVACAO' : 'MENOR',
             descricaoOriginal: line,
             requisitoNormativo: {
-              norma: lowerFull.includes('rbac 145') ? 'ANAC RBAC 145' : 'Norma da Aviação Civil',
-              itemRequisito: '145.109',
+              norma: lowerFull.includes('rbac 145') ? 'ANAC RBAC 145' : lowerFull.includes('faa') ? 'FAA Part 145' : 'Norma da Aviação Civil',
+              itemRequisito: itemReqEncontrado,
             },
-            setorResponsavel: 'REC - Manutenção / Hangar',
+            setorResponsavel: lowerFull.includes('hangar') || lowerFull.includes('rec') ? 'REC - Manutenção / Hangar' : 'Operação / Manutenção',
             nivelRisco: isMaior ? 'Crítico' : 'Médio',
             prazoResposta: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-            respostaOficial: {
-              correcaoImediata: 'Ação de contenção imediata executada pela equipe técnica da base.',
-              analiseCausa: 'Falha no processo de verificação física periódica.',
-              acaoCorretiva: 'Revisão do procedimento operacional padrão e reciclagem da equipe.',
-              evidenciasCitadas: ['Certificado de conformidade', 'Lista de presença do treinamento'],
-            },
+            respostaOficial: tipoIdentificado === 'RESPOSTA_AUDITORIA' ? {
+              correcaoImediata: line.includes('Correção:') ? line.split('Correção:')[1].trim() : '',
+              analiseCausa: line.includes('Causa:') ? line.split('Causa:')[1].trim() : '',
+              acaoCorretiva: line.includes('Ação:') ? line.split('Ação:')[1].trim() : '',
+              evidenciasCitadas: [],
+            } : undefined,
             statusAceitacao: statusAceite,
-            decisaoAuditorDetalhe: statusAceite === 'RESPOSTA_ACEITA' ? 'Ação aceita conforme relatório do auditor' : 'Pendente de homologação',
+            decisaoAuditorDetalhe: statusAceite === 'RESPOSTA_ACEITA' ? 'Ação aceita conforme parecer no texto' : 'Pendente de homologação',
           });
         }
 
@@ -3576,8 +3691,8 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
           dataInicio: new Date().toISOString().split('T')[0],
           dataTermino: new Date().toISOString().split('T')[0],
           escopo: `Auditoria de Conformidade e Segurança Operacional (${clienteNome})`,
-          baseOuLocal: 'Sorocaba (SOD) / Estações de Linha',
-          auditoresNomes: ['Auditor Líder da Qualidade'],
+          baseOuLocal: lowerFull.includes('sorocaba') ? 'Sorocaba (SOD)' : lowerFull.includes('gru') ? 'Guarulhos (GRU)' : 'Estação Operacional',
+          auditoresNomes: [],
           status: findings.length > 0 ? (findings.every((f: any) => f.statusAceitacao === 'RESPOSTA_ACEITA') ? 'ACEITA' : 'EM_RESPOSTA') : 'ACEITA',
           referenciaExterna: 'REF-' + Date.now().toString().slice(-6),
         },
@@ -3605,8 +3720,13 @@ app.post("/api/smart-audit/parse-document", async (req, res) => {
       return res.json({ success: true, ...fallbackResult });
     }
 
-    const prompt = `Você é o Auditor Chefe e Diretor de Garantia da Qualidade Aeronáutica da IMPACTO Aviation MRO (homologada ANAC RBAC 145, EASA e FAA).
+    const orgId = extractValidatedTenant(req);
+    const heuristico = parseHeuristicoDocumento();
+    const chunks = splitTextIntoLogicalChunks(fullText, 18000);
+
+    const buildDocumentPrompt = (contentPiece: string, chunkIdx: number, totalChunks: number) => `Você é o Auditor Chefe e Diretor de Garantia da Qualidade Aeronáutica da IMPACTO Aviation MRO (homologada ANAC RBAC 145, EASA e FAA).
 Analise o documento de auditoria recebido e extraia rigorosamente todas as informações em formato JSON.
+${totalChunks > 1 ? `ESTE É O BLOCO ${chunkIdx} DE ${totalChunks} DE UM DOCUMENTO EXTENSO. Processe todos os requisitos e constatações deste bloco com rigor integral.` : ""}
 
 REGRAS OBRIGATÓRIAS DE GOVERNANÇA SGQ:
 1. NÃO INVENTE DADOS. Se uma informação não constar expressamente no texto, preencha com string vazia ou array vazio.
@@ -3627,7 +3747,7 @@ REGRAS OBRIGATÓRIAS DE GOVERNANÇA SGQ:
 
 Texto do Documento de Auditoria:
 """
-${fullText.slice(0, 20000)}
+${contentPiece}
 """
 
 Responda ESTRITAMENTE em formato JSON com a seguinte estrutura:
@@ -3709,25 +3829,86 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura:
 }`;
 
     try {
-      const response = await executeGeminiRequest({
-        operation: "smart-audit-parse-document",
-        contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: AUDIT_DOCUMENT_PARSE_SCHEMA,
-        },
-        ttlMs: 24 * 60 * 60 * 1000,
-      });
+      let parsedMerged: any = {};
+      const allRequisitosMap = new Map<string, any>();
+      const allFindingsMap = new Map<string, any>();
+      const allDocsMap = new Map<string, any>();
+      const allLicoes: any[] = [];
+      const allSugestoes: any[] = [];
+      let anyFromCache = false;
 
-      const parsed = response.parsed || JSON.parse(response.text?.trim() || "{}");
-      const heuristico = parseHeuristicoDocumento();
+      for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+        const chunkContent = chunks[cIdx];
+        const chunkPrompt = buildDocumentPrompt(chunkContent, cIdx + 1, chunks.length);
 
-      let finalRequisitos = Array.isArray(parsed.requisitosChecklist) && parsed.requisitosChecklist.length > 0
-        ? parsed.requisitosChecklist
+        const response = await executeGeminiRequest({
+          operation: chunks.length > 1 ? `smart-audit-parse-chunk-${cIdx + 1}` : "smart-audit-parse-document",
+          contents: chunkPrompt,
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: AUDIT_DOCUMENT_PARSE_SCHEMA,
+          },
+          ttlMs: 24 * 60 * 60 * 1000,
+          organizationId: orgId,
+        });
+
+        if (response.fromCache) anyFromCache = true;
+        const chunkParsed = response.parsed || JSON.parse(response.text?.trim() || "{}");
+
+        if (cIdx === 0) {
+          parsedMerged = { ...chunkParsed };
+        }
+
+        // Merge determinístico de requisitos evitando duplicações
+        if (Array.isArray(chunkParsed.requisitosChecklist)) {
+          chunkParsed.requisitosChecklist.forEach((r: any) => {
+            const key = (r.numeroItem || "").trim() || crypto.createHash("sha256").update(r.textoOriginal || r.tituloCurto || "").digest("hex");
+            if (!allRequisitosMap.has(key)) {
+              allRequisitosMap.set(key, r);
+            }
+          });
+        }
+
+        // Merge determinístico de constatações/findings
+        if (Array.isArray(chunkParsed.constatacoesFindings)) {
+          chunkParsed.constatacoesFindings.forEach((f: any) => {
+            const key = (f.numeroExterno || "").trim() || crypto.createHash("sha256").update(f.descricaoOriginal || "").digest("hex");
+            if (!allFindingsMap.has(key)) {
+              allFindingsMap.set(key, f);
+            }
+          });
+        }
+
+        // Merge de documentos citados
+        if (Array.isArray(chunkParsed.documentosCitadosComRevisao)) {
+          chunkParsed.documentosCitadosComRevisao.forEach((d: any) => {
+            const key = `${(d.documento || "").trim().toUpperCase()}_${(d.revisaoCitada || "").trim().toUpperCase()}`;
+            if (!allDocsMap.has(key)) {
+              allDocsMap.set(key, d);
+            }
+          });
+        }
+
+        if (Array.isArray(chunkParsed.licoesAprendidas)) {
+          allLicoes.push(...chunkParsed.licoesAprendidas);
+        }
+        if (Array.isArray(chunkParsed.sugestoesAuditoriaInterna)) {
+          allSugestoes.push(...chunkParsed.sugestoesAuditoriaInterna);
+        }
+      }
+
+      parsedMerged.requisitosChecklist = Array.from(allRequisitosMap.values());
+      parsedMerged.constatacoesFindings = Array.from(allFindingsMap.values());
+      parsedMerged.documentosCitadosComRevisao = Array.from(allDocsMap.values());
+      parsedMerged.licoesAprendidas = allLicoes;
+      parsedMerged.sugestoesAuditoriaInterna = allSugestoes;
+
+      let finalRequisitos = parsedMerged.requisitosChecklist.length > 0
+        ? parsedMerged.requisitosChecklist
         : (heuristico.requisitosChecklist || []);
 
-      let finalFindings = Array.isArray(parsed.constatacoesFindings) && parsed.constatacoesFindings.length > 0
-        ? parsed.constatacoesFindings
+      let finalFindings = parsedMerged.constatacoesFindings.length > 0
+        ? parsedMerged.constatacoesFindings
         : (heuristico.constatacoesFindings || []);
 
       // Se nenhum item foi encontrado por nenhum método, retornar ANALYSIS_FAILED (NUNCA carregar exemplo!)
@@ -3744,18 +3925,22 @@ Responda ESTRITAMENTE em formato JSON com a seguinte estrutura:
         hashSha256,
         tamanhoBytes,
         nomeArquivo: nomeArquivo || 'Documento_Auditoria',
-        tipoDocumentoIdentificado: parsed.tipoDocumentoIdentificado || heuristico.tipoDocumentoIdentificado,
-        confiancaTipo: parsed.confiancaTipo || 95,
-        resumoExecutivo: parsed.resumoExecutivo || `Documento de ${heuristico.dadosAuditoria.clienteNome} processado com sucesso (${finalRequisitos.length} requisitos e ${finalFindings.length} constatações extraídas do documento real).`,
-        dadosAuditoria: parsed.dadosAuditoria || heuristico.dadosAuditoria,
+        tipoDocumentoIdentificado: parsedMerged.tipoDocumentoIdentificado || heuristico.tipoDocumentoIdentificado,
+        confiancaTipo: parsedMerged.confiancaTipo || 95,
+        resumoExecutivo: parsedMerged.resumoExecutivo || `Documento de ${heuristico.dadosAuditoria.clienteNome} processado com sucesso (${finalRequisitos.length} requisitos e ${finalFindings.length} constatações extraídas do documento real).`,
+        dadosAuditoria: parsedMerged.dadosAuditoria || heuristico.dadosAuditoria,
         requisitosChecklist: finalRequisitos,
         constatacoesFindings: finalFindings,
-        documentosCitadosComRevisao: Array.isArray(parsed.documentosCitadosComRevisao) && parsed.documentosCitadosComRevisao.length > 0
-          ? parsed.documentosCitadosComRevisao 
+        documentosCitadosComRevisao: parsedMerged.documentosCitadosComRevisao.length > 0
+          ? parsedMerged.documentosCitadosComRevisao 
           : heuristico.documentosCitadosComRevisao,
-        licoesAprendidas: Array.isArray(parsed.licoesAprendidas) ? parsed.licoesAprendidas : heuristico.licoesAprendidas,
-        sugestoesAuditoriaInterna: Array.isArray(parsed.sugestoesAuditoriaInterna) ? parsed.sugestoesAuditoriaInterna : heuristico.sugestoesAuditoriaInterna,
-        origem: response.fromCache ? "IA_GEMINI_CACHE" : "IA_GEMINI",
+        licoesAprendidas: parsedMerged.licoesAprendidas.length > 0 ? parsedMerged.licoesAprendidas : heuristico.licoesAprendidas,
+        sugestoesAuditoriaInterna: parsedMerged.sugestoesAuditoriaInterna.length > 0 ? parsedMerged.sugestoesAuditoriaInterna : heuristico.sugestoesAuditoriaInterna,
+        origem: anyFromCache ? "IA_GEMINI_CACHE" : "IA_GEMINI",
+        processing: {
+          chunked: chunks.length > 1,
+          chunkCount: chunks.length,
+        },
       });
     } catch (aiErr: any) {
       console.warn("Gemini parse-document warning, using honest heuristic fallback:", aiErr.message);
@@ -4090,11 +4275,13 @@ Responda ESTRITAMENTE em formato JSON:
 }`;
 
     try {
+      const orgId = extractValidatedTenant(req);
       const response = await executeGeminiRequest({
         operation: "smart-audit-evaluate-checklist-item",
         contents: prompt,
         config: { responseMimeType: "application/json" },
         ttlMs: 12 * 60 * 60 * 1000,
+        organizationId: orgId,
       });
       const parsed = response.parsed || JSON.parse(response.text?.trim() || "{}");
       return res.json({
@@ -4163,7 +4350,10 @@ Responda ESTRITAMENTE em JSON com a estrutura:
 }`;
 
     try {
+      const orgId = extractValidatedTenant(req);
       const aiPromise = generateContentWithModelFallback(ai, {
+        operation: "smart-audit-suggest-resolution",
+        organizationId: orgId,
         contents: prompt,
         config: {
           responseMimeType: "application/json",

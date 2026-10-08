@@ -2,6 +2,8 @@ import { geminiCache } from '../server/gemini/cache';
 import { geminiDedup } from '../server/gemini/dedup';
 import { geminiMetrics } from '../server/gemini/metrics';
 import { processInBatches } from '../server/gemini/batch';
+import { executeGeminiRequest } from '../server/gemini/gateway';
+import { geminiClientCache } from '../src/utils/geminiClientCache';
 import { KALITTA_QA14_ITEMS, KALITTA_QA14_METADATA } from '../src/data/sampleKalittaQA14Checklist';
 import fs from 'fs';
 
@@ -99,6 +101,42 @@ async function runVerification() {
 
   assert('CACHE-HIT', cachedHit !== null && cachedHit.resultado === 'Análise Aprovada', 'Cache HIT recuperado com sucesso');
   assert('CACHE-MISS', cachedMiss === null, 'Cache MISS tratado corretamente');
+
+  // Teste de bloqueio de chamada sem tenant
+  let tenantErrorThrown = false;
+  try {
+    await executeGeminiRequest({
+      operation: 'test-no-tenant',
+      contents: 'Prompt sem tenant',
+      organizationId: '',
+    });
+  } catch (err: any) {
+    tenantErrorThrown = err.message.includes('TENANT_REQUIRED');
+  }
+  assert('TENANT-REQUIRED-ENFORCEMENT', tenantErrorThrown, 'Gateway bloqueia estritamente requisição sem organizationId');
+
+  // Teste de invalidação por tenant
+  geminiCache.set(keyOtherTenant, { resultado: 'Análise Tenant Externo' }, 'rnc-analysis', 60000, 'org_cliente_externo');
+  geminiCache.invalidateByOrganization('org_impacto_aviation');
+  assert('TENANT-INVALIDATION-SCOPED', geminiCache.get<any>(key1, 'rnc-analysis') === null && geminiCache.get<any>(keyOtherTenant, 'rnc-analysis') !== null, 'Invalidação de tenant remove apenas os registros da organização alvo');
+
+  // Teste do Cache do Cliente (geminiClientCache)
+  geminiClientCache.clear();
+  const clientKeyA = geminiClientCache.generateKey({
+    organizationId: 'org_a',
+    operation: 'ai-suggest',
+    input: { desc: 'falha' },
+  });
+  const clientKeyB = geminiClientCache.generateKey({
+    organizationId: 'org_b',
+    operation: 'ai-suggest',
+    input: { desc: 'falha' },
+  });
+  assert('CLIENT-CACHE-KEY-ISOLATION', clientKeyA !== clientKeyB, 'Cache do cliente gera chaves distintas por tenant');
+
+  geminiClientCache.set(clientKeyA, { sugestao: 'Plano Org A' }, 60000, 'org_a');
+  assert('CLIENT-CACHE-HIT', geminiClientCache.get<any>(clientKeyA, 'org_a')?.sugestao === 'Plano Org A', 'Cache do cliente recupera dados com tenant correspondente');
+  assert('CLIENT-CACHE-CROSS-TENANT-BLOCKED', geminiClientCache.get<any>(clientKeyA, 'org_b') === null, 'Cache do cliente bloqueia acesso cruzado de outro tenant');
 
   // -------------------------------------------------------------------------
   // TESTE 3: DEDUPLICAÇÃO DE REQUISIÇÕES IN-FLIGHT (Fase 11)
