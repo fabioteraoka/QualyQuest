@@ -4604,11 +4604,16 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
             mensagem = `A fonte externa (${urlAlvo}) encontra-se indisponível ou inacessível no momento. Mantida a revisão vigente controlada "${revisaoAtual}".`;
           }
         } else {
-          // Documento interno ou sem URL externa pública automatizada
-          statusVerificacao = "CONFORME";
+          // Documento sem URL externa configurada ou sem catálogo regulatório
+          statusVerificacao = docItem.statusVerificacao || (docItem.dataUltimaVerificacao ? "CONFORME" : "PENDENTE_VERIFICACAO");
           revisaoOficial = revisaoAtual;
-          mensagem = `Documento sob controle e vigência interna do SGQ. Revisão vigente controlada "${revisaoAtual}" mantida sem alterações.`;
+          mensagem =
+            docItem.detalhesUltimaVerificacao ||
+            "Documento sem fonte externa pública automatizada vinculada. Pendente mapeamento de fonte oficial.";
         }
+
+        const houveConsultaReal = Boolean(matchReg || (urlAlvo && urlAlvo.startsWith("http")));
+        const dataConsultaEfetiva = houveConsultaReal ? agoraIso : (docItem.dataUltimaVerificacao || undefined);
 
         return {
           documentoId: docItem.id || docItem.documentoId,
@@ -4619,8 +4624,8 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
           revisaoOficialIdentificada: revisaoOficial,
           revisaoNaFonte: revisaoOficial,
           statusVerificacao,
-          dataUltimaVerificacao: agoraIso,
-          dataVerificacao: agoraIso,
+          dataUltimaVerificacao: dataConsultaEfetiva,
+          dataVerificacao: dataConsultaEfetiva,
           detalhesUltimaVerificacao: mensagem,
           mensagem,
           urlFonteVerificacao: urlOficial || urlAlvo,
@@ -4628,7 +4633,7 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
             ? "WEB_SCRAPING_ONLINE"
             : matchReg
             ? "CATALOGO_REGULATORIO_OFICIAL"
-            : "VERIFICACAO_INTERNA_SGQ",
+            : "CONTROLE_INTERNO",
         };
       })
     );

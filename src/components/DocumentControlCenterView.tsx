@@ -20,7 +20,6 @@ import {
   compararRevisoes,
   diagnosticarImpactosRevisao,
   executarVerificacaoFonteExterna,
-  simularVerificacaoFonteExterna,
   calcularMetricasDashboardDocumental,
 } from '../services/documentControlEngine';
 import {
@@ -96,6 +95,88 @@ import {
 import { UploadManualModal } from './UploadManualModal';
 import { DocumentFilePreviewModal } from './DocumentFilePreviewModal';
 import { formatFileSize, downloadOrViewDocumentFile } from '../utils/documentFilesStorage';
+
+/**
+ * FORMATAÇÃO OBRIGATÓRIA DA ÚLTIMA VERIFICAÇÃO CONFORME DIRETRIZ SGQ
+ * Formato: dd/mm/aaaa às hh:mm:ss
+ * Se ausente ou nunca realizada: "Pendente de Verificação — nunca verificado"
+ */
+export const formatarDataHoraVerificacao = (iso?: string | null): string => {
+  if (!iso || !iso.trim()) return 'Pendente de Verificação — nunca verificado';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'Pendente de Verificação — nunca verificado';
+    const dataStr = d.toLocaleDateString('pt-BR');
+    const horaStr = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `${dataStr} às ${horaStr}`;
+  } catch {
+    return 'Pendente de Verificação — nunca verificado';
+  }
+};
+
+/**
+ * RENDERIZAÇÃO CLARA E SEM AMBIGUIDADE DO RESULTADO DA VERIFICAÇÃO
+ * Estados: Conforme, Pendente, Não Conclusiva, Fonte Indisponível ou Nova Revisão Identificada
+ */
+export const renderResultadoVerificacaoBadge = (
+  doc: DocumentoControlado,
+  onOpenDiscrepancy?: (doc: DocumentoControlado) => void
+) => {
+  if (!doc.dataUltimaVerificacao || doc.statusVerificacao === 'PENDENTE_VERIFICACAO') {
+    return (
+      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+        <Clock className="w-3 h-3 text-amber-400" />
+        Pendente
+      </span>
+    );
+  }
+  if (doc.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA') {
+    if (onOpenDiscrepancy) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenDiscrepancy(doc);
+          }}
+          className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse hover:bg-rose-500/30 transition-colors cursor-pointer"
+          title={`Nova revisão identificada na fonte: ${doc.revisaoNaFonteIdentificada || 'Verificar'}. Clique para validar decisão técnica.`}
+        >
+          <AlertTriangle className="w-3 h-3 text-rose-400" />
+          Nova Revisão Identificada
+        </button>
+      );
+    }
+    return (
+      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1">
+        <AlertTriangle className="w-3 h-3 text-rose-400" />
+        Nova Revisão Identificada
+      </span>
+    );
+  }
+  if (doc.statusVerificacao === 'FONTE_INDISPONIVEL') {
+    return (
+      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30 flex items-center gap-1">
+        <AlertCircle className="w-3 h-3 text-orange-400" />
+        Fonte Indisponível
+      </span>
+    );
+  }
+  if (doc.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA') {
+    return (
+      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-300 border border-slate-500/30 flex items-center gap-1">
+        <HelpCircle className="w-3 h-3 text-slate-400" />
+        Não Conclusiva
+      </span>
+    );
+  }
+  return (
+    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+      <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+      Conforme
+    </span>
+  );
+};
 
 interface DocumentControlCenterViewProps {
   organizationId: string;
@@ -1300,13 +1381,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                               <HelpCircle className="w-3 h-3 text-slate-400" />
                               Não Conclusiva
                             </span>
-                          ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' ? (
+                          ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' || !doc.dataUltimaVerificacao ? (
                             <span
                               className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1"
-                              title="Aguardando retorno de cliente ou validação técnica"
+                              title="Pendente de verificação contra fonte oficial"
                             >
                               <Clock className="w-3 h-3 text-amber-400" />
-                              Pendente Retorno
+                              Pendente
                             </span>
                           ) : (
                             <span
@@ -1314,7 +1395,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                               title="Revisão vigente conferida e em estrita conformidade"
                             >
                               <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                              Conforme no Mês
+                              Conforme
                             </span>
                           )}
 
@@ -1347,7 +1428,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                       </span>
                     </div>
 
-                    {/* Bloco dos 5 Campos Base Estruturados */}
+                    {/* Bloco dos 5 Campos Mandatórios de Governança Estruturados */}
                     <div className="bg-slate-950/70 rounded-lg p-3 border border-slate-800/80 space-y-1.5 text-xs text-slate-300">
                       <div className="flex items-center justify-between">
                         <span className="text-slate-400 font-medium">Área de Publicação:</span>
@@ -1374,9 +1455,29 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                           {doc.dataRevisao || revVigente?.dataEntradaVigor || doc.atualizadoEm?.split('T')[0] || '-'}
                         </span>
                       </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Tipo de Verificação:</span>
+                        <span className={`font-semibold ${doc.tipoVerificacao === 'AUTOMATICO' ? 'text-indigo-400' : 'text-amber-400'}`}>
+                          {doc.tipoVerificacao === 'AUTOMATICO' ? 'Automática' : 'Manual'}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Última Verificação:</span>
+                        <span
+                          className={`font-mono text-[11px] ${
+                            doc.dataUltimaVerificacao ? 'text-slate-200 font-medium' : 'text-amber-400 font-semibold'
+                          }`}
+                        >
+                          {formatarDataHoraVerificacao(doc.dataUltimaVerificacao)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+                        <span className="text-slate-400 font-medium">Resultado da Verificação:</span>
+                        {renderResultadoVerificacaoBadge(doc, handleOpenDiscrepancyValidation)}
+                      </div>
                     </div>
 
-                    {/* Mapeamento de Fonte & Status do Robô / Verificação */}
+                    {/* Mapeamento de Fonte & Detalhes */}
                     <div className="text-[11px] text-slate-400 space-y-1 pt-1">
                       {doc.urlFonteVerificacao && (
                         <div className="flex items-center justify-between">
@@ -1393,24 +1494,6 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                           </a>
                         </div>
                       )}
-
-                      {/* Data e Hora da Consulta / Verificação Externa */}
-                      <div className="flex items-center justify-between">
-                        <span className="text-slate-500">Última Verificação:</span>
-                        {doc.dataUltimaVerificacao ? (
-                          <span
-                            className="text-slate-300 font-mono text-[10px]"
-                            title="Data e hora em que a fonte foi consultada"
-                          >
-                            {new Date(doc.dataUltimaVerificacao).toLocaleDateString('pt-BR')} às{' '}
-                            {new Date(doc.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                          </span>
-                        ) : (
-                          <span className="text-amber-400 font-mono text-[10px]">
-                            Pendente / Nunca Verificada
-                          </span>
-                        )}
-                      </div>
 
                       {doc.detalhesUltimaVerificacao && (
                         <p className="text-[11px] text-slate-400 bg-slate-950/40 p-2 rounded border border-slate-800/60 line-clamp-2">
@@ -1648,39 +1731,44 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 )}
 
                 {/* Painel Estruturado de Governança Documental: Datas & Vigência */}
-                <div className="mx-6 mt-4 p-4 rounded-xl border bg-slate-950/80 border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                <div className="mx-6 mt-4 p-4 rounded-xl border bg-slate-950/80 border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Revisão Vigente:</span>
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Número da Revisão:</span>
                     <span className="text-emerald-400 font-mono font-bold text-sm">
                       {selectedDocForDetail.numeroRevisao || selectedDocForDetail.revisaoVigenteNumero || 'Rev. 01'}
                     </span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Data da Revisão (Emissão):</span>
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Data da Revisão:</span>
                     <span className="text-slate-200 font-mono font-medium text-xs">
                       {selectedDocForDetail.dataRevisao || selectedDocForDetail.atualizadoEm?.split('T')[0] || '-'}
                     </span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Modalidade:</span>
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Tipo de Verificação:</span>
                     <span className="font-semibold text-xs flex items-center gap-1 text-slate-200">
                       {selectedDocForDetail.tipoVerificacao === 'AUTOMATICO' ? (
-                        <span className="text-indigo-400 flex items-center gap-1"><Bot className="w-3.5 h-3.5" /> AUTOMÁTICO</span>
+                        <span className="text-indigo-400 flex items-center gap-1"><Bot className="w-3.5 h-3.5" /> Automática</span>
                       ) : (
-                        <span className="text-amber-400 flex items-center gap-1"><UserCheck className="w-3.5 h-3.5" /> MANUAL</span>
+                        <span className="text-amber-400 flex items-center gap-1"><UserCheck className="w-3.5 h-3.5" /> Manual</span>
                       )}
                     </span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Última Verificação Externa:</span>
-                    {selectedDocForDetail.dataUltimaVerificacao ? (
-                      <span className="text-slate-200 font-mono text-[11px]">
-                        {new Date(selectedDocForDetail.dataUltimaVerificacao).toLocaleDateString('pt-BR')} às{' '}
-                        {new Date(selectedDocForDetail.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </span>
-                    ) : (
-                      <span className="text-amber-400 font-mono text-[11px]">Pendente de Verificação</span>
-                    )}
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Última Verificação:</span>
+                    <span
+                      className={`font-mono text-[11px] ${
+                        selectedDocForDetail.dataUltimaVerificacao ? 'text-slate-200 font-medium' : 'text-amber-400 font-semibold'
+                      }`}
+                    >
+                      {formatarDataHoraVerificacao(selectedDocForDetail.dataUltimaVerificacao)}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Resultado da Verificação:</span>
+                    <div className="pt-0.5">
+                      {renderResultadoVerificacaoBadge(selectedDocForDetail, handleOpenDiscrepancyValidation)}
+                    </div>
                   </div>
                 </div>
 
@@ -2074,9 +2162,9 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-300 border border-slate-500/30 flex items-center gap-1">
                                 <HelpCircle className="w-3 h-3 text-slate-400" /> Não Conclusiva
                               </span>
-                            ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' ? (
+                            ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' || !doc.dataUltimaVerificacao ? (
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-amber-400" /> Pendente Retorno
+                                <Clock className="w-3 h-3 text-amber-400" /> Pendente
                               </span>
                             ) : (
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
@@ -2089,7 +2177,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         {/* Título */}
                         <h3 className="text-sm font-bold text-white line-clamp-2">{doc.titulo}</h3>
 
-                        {/* Dados de Vigência */}
+                        {/* Dados de Vigência & Governança Estruturados */}
                         <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1.5 text-xs text-slate-300">
                           <div className="flex justify-between">
                             <span className="text-slate-400">Área:</span>
@@ -2100,24 +2188,32 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                             <span className="text-slate-200 font-medium truncate max-w-[170px]">{doc.proprietarioCessor || doc.emissor}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-slate-400">Revisão em Uso:</span>
+                            <span className="text-slate-400">Número da Revisão:</span>
                             <span className="text-emerald-400 font-mono font-bold">{doc.numeroRevisao || doc.revisaoVigenteNumero || 'Rev. 01'}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-400">Data da Revisão:</span>
                             <span className="text-slate-200 font-mono">{doc.dataRevisao || revVigente?.dataEntradaVigor || '-'}</span>
                           </div>
-                          {/* Data e Hora da Consulta / Verificação Externa */}
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Tipo de Verificação:</span>
+                            <span className={`font-semibold ${isAuto ? 'text-indigo-400' : 'text-amber-400'}`}>
+                              {isAuto ? 'Automática' : 'Manual'}
+                            </span>
+                          </div>
                           <div className="flex justify-between pt-1 border-t border-slate-800/60 text-[11px]">
                             <span className="text-slate-500">Última Verificação:</span>
-                            {doc.dataUltimaVerificacao ? (
-                              <span className="text-slate-300 font-mono text-[10px]">
-                                {new Date(doc.dataUltimaVerificacao).toLocaleDateString('pt-BR')} às{' '}
-                                {new Date(doc.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                              </span>
-                            ) : (
-                              <span className="text-amber-400 font-mono text-[10px]">Pendente de verificação</span>
-                            )}
+                            <span
+                              className={`font-mono text-[11px] ${
+                                doc.dataUltimaVerificacao ? 'text-slate-300' : 'text-amber-400 font-semibold'
+                              }`}
+                            >
+                              {formatarDataHoraVerificacao(doc.dataUltimaVerificacao)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between pt-1 border-t border-slate-800/60 text-[11px]">
+                            <span className="text-slate-500">Resultado da Verificação:</span>
+                            {renderResultadoVerificacaoBadge(doc, handleOpenDiscrepancyValidation)}
                           </div>
                         </div>
 
@@ -2462,13 +2558,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   <thead className="bg-slate-900/90 text-slate-400 font-semibold border-b border-slate-800 uppercase tracking-wider text-[11px]">
                     <tr>
                       <th className="p-3">Código</th>
-                      <th className="p-3">Área de Publicação</th>
                       <th className="p-3">Título do Manual</th>
                       <th className="p-3">Proprietário / Cessor</th>
-                      <th className="p-3">Revisão em Uso</th>
+                      <th className="p-3">Número da Revisão</th>
                       <th className="p-3">Data da Revisão</th>
-                      <th className="p-3">Verificação</th>
-                      <th className="p-3">Status</th>
+                      <th className="p-3">Tipo de Verificação</th>
+                      <th className="p-3">Última Verificação</th>
+                      <th className="p-3">Resultado da Verificação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/80 font-normal">
@@ -2478,7 +2574,6 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                       return (
                         <tr key={doc.id} className="hover:bg-slate-900/50 transition-colors">
                           <td className="p-3 font-mono font-bold text-sky-400">{doc.codigo}</td>
-                          <td className="p-3 text-slate-300">{doc.areaPublicacao || 'Regulamentação Aeronáutica'}</td>
                           <td className="p-3 font-medium text-white max-w-xs">{doc.titulo}</td>
                           <td className="p-3 text-slate-300">{doc.proprietarioCessor || doc.emissor}</td>
                           <td className="p-3 font-mono font-bold text-emerald-400">
@@ -2495,13 +2590,14 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                                   : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
                               }`}
                             >
-                              {isAuto ? 'AUTOMÁTICO' : 'MANUAL'}
+                              {isAuto ? 'Automática' : 'Manual'}
                             </span>
                           </td>
+                          <td className="p-3 font-mono text-[11px] text-slate-300 whitespace-nowrap">
+                            {formatarDataHoraVerificacao(doc.dataUltimaVerificacao)}
+                          </td>
                           <td className="p-3">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                              VIGENTE
-                            </span>
+                            {renderResultadoVerificacaoBadge(doc, handleOpenDiscrepancyValidation)}
                           </td>
                         </tr>
                       );
@@ -4820,9 +4916,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                     <div className="flex justify-between">
                       <span className="text-slate-500">Última Consulta / Checagem:</span>
                       <span className="text-slate-200 font-mono">
-                        {selectedDocForDiscrepancyModal.dataUltimaVerificacao
-                          ? new Date(selectedDocForDiscrepancyModal.dataUltimaVerificacao).toLocaleString('pt-BR')
-                          : 'Recentemente'}
+                        {formatarDataHoraVerificacao(selectedDocForDiscrepancyModal.dataUltimaVerificacao)}
                       </span>
                     </div>
                     {selectedDocForDiscrepancyModal.urlFonteVerificacao && (
