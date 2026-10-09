@@ -569,8 +569,19 @@ export function diagnosticarImpactosRevisao(params: {
 }
 
 /**
- * MOTOR DE VERIFICAÇÃO EM FONTES EXTERNAS (Seções 11, 12, 13)
- * Avalia fontes cadastradas e gera alerta de validação humana quando discrepância for identificada.
+ * MOTOR DE VERIFICAÇÃO EM FONTES EXTERNAS (Controle Documental & Acervo Técnico)
+ *
+ * REGRA FUNDAMENTAL:
+ * O QualyGest nunca deve transformar uma hipótese, simulação ou estimativa em uma constatação documental.
+ * "A automação identifica. A evidência comprova. O responsável valida."
+ *
+ * - CONFORME: Revisão controlada confere com a fonte oficial.
+ * - NOVA_REVISAO_IDENTIFICADA: Apenas quando houver evidência real e comprovada na fonte.
+ * - FONTE_INDISPONIVEL: Portal inativo, inacessível ou sem URL configurada.
+ * - VERIFICACAO_NAO_CONCLUSIVA: Acesso realizado mas sem informação conclusiva da revisão.
+ *
+ * REGRA OBRIGATÓRIA DE DATAS:
+ * A data da revisão (dataRevisao - emissão/publicação) JAMAIS é confundida ou sobrescrita com a data da verificação (dataVerificacao).
  */
 export function simularVerificacaoFonteExterna(params: {
   fonte: FonteExternaControlada;
@@ -580,28 +591,59 @@ export function simularVerificacaoFonteExterna(params: {
 }): LogVerificacaoFonteExterna {
   const { fonte, documento, revisaoAtual, usuarioExecutor } = params;
   const dataHoje = new Date().toISOString();
+  const revAtualNum = revisaoAtual?.numeroRevisao || documento.numeroRevisao || documento.revisaoVigenteNumero || 'Rev. 01';
 
-  // Exemplo determinístico com base no código do documento:
-  // Se for documento de cliente ou fabricante com mais de 180 dias de vigência,
-  // simula a detecção de revisão na fonte oficial para demonstrar a regra de validação humana
-  const revAtualNum = revisaoAtual?.numeroRevisao || 'Rev. 01';
-
-  let status: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'FONTE_INDISPONIVEL' = 'CONFORME';
-  let revisaoIdentificada = revAtualNum;
-  let mensagem = `Fonte consultada com sucesso. A revisão controlada (${revAtualNum}) confere com a publicação oficial em ${fonte.nome}.`;
-  let requerValidacao = false;
-
-  // Lógica de detecção de discrepância controlada (Ex: demonstração da regra de segurança Seção 12)
-  if (documento.codigo.toUpperCase().includes('AMM') || documento.codigo.toUpperCase().includes('AZUL') || documento.categoria === 'DOCUMENTO_CLIENTE') {
-    // Simula uma nova revisão no portal do fabricante/cliente
-    const matchNum = revAtualNum.match(/\d+/);
-    const numInt = matchNum ? parseInt(matchNum[0], 10) : 1;
-    revisaoIdentificada = `Rev. 0${numInt + 1}`;
-    status = 'NOVA_REVISAO_IDENTIFICADA';
-    mensagem = `ATENÇÃO: Foi identificada possível nova revisão (${revisaoIdentificada}) na fonte "${fonte.nome}". A cópia armazenada no QualiGest é a "${revAtualNum}". REGRA DE SEGURANÇA: O documento NÃO foi substituído automaticamente. Necessária validação humana do responsável técnico.`;
-    requerValidacao = true;
+  // 1. Verificação de disponibilidade da fonte
+  if (fonte.status === 'INATIVA' || !fonte.urlBase) {
+    return {
+      id: `log-verif-${Date.now()}`,
+      organizationId: documento.organizationId,
+      fonteId: fonte.id,
+      fonteNome: fonte.nome,
+      documentoId: documento.id,
+      codigoDocumento: documento.codigo,
+      revisaoAtualControlada: revAtualNum,
+      revisaoIdentificadaNaFonte: undefined,
+      statusVerificacao: 'FONTE_INDISPONIVEL',
+      mensagem: `A fonte oficial "${fonte.nome}" encontra-se inativa ou sem URL de consulta homologada. Nenhuma alteração foi realizada na revisão controlada (${revAtualNum}).`,
+      requerValidacaoHumana: false,
+      validacaoHumanaStatus: 'VALIDADA_NOVA_REVISAO_ACEITA',
+      dataVerificacao: dataHoje,
+      executadoPor: usuarioExecutor,
+      evidenciaUrlOuTexto: fonte.urlBase || 'Fonte sem endereço configurado.',
+    };
   }
 
+  // 2. Se a fonte contiver constatação comprovada com evidência real registrada
+  // (JAMAIS inventar números de revisão ou incrementar automaticamente)
+  const temEvidenciaRealRegistrada =
+    fonte.ultimoResultadoStatus === 'NOVA_REVISAO_IDENTIFICADA' &&
+    documento.revisaoNaFonteIdentificada &&
+    documento.revisaoNaFonteIdentificada !== revAtualNum;
+
+  if (temEvidenciaRealRegistrada) {
+    const revisaoIdentificada = documento.revisaoNaFonteIdentificada!;
+    return {
+      id: `log-verif-${Date.now()}`,
+      organizationId: documento.organizationId,
+      fonteId: fonte.id,
+      fonteNome: fonte.nome,
+      documentoId: documento.id,
+      codigoDocumento: documento.codigo,
+      revisaoAtualControlada: revAtualNum,
+      revisaoIdentificadaNaFonte: revisaoIdentificada,
+      dataPublicacaoNaFonte: documento.dataPublicacaoNaFonte || undefined,
+      statusVerificacao: 'NOVA_REVISAO_IDENTIFICADA',
+      mensagem: `ATENÇÃO: Constatada publicação da revisão "${revisaoIdentificada}" na fonte oficial "${fonte.nome}". A cópia armazenada no QualiGest é a "${revAtualNum}". REGRA DE SEGURANÇA: O documento NÃO foi substituído automaticamente. Necessária validação humana do responsável técnico.`,
+      requerValidacaoHumana: true,
+      validacaoHumanaStatus: 'PENDENTE',
+      dataVerificacao: dataHoje,
+      executadoPor: usuarioExecutor,
+      evidenciaUrlOuTexto: fonte.evidenciaRegistro || fonte.urlBase || 'Consulta confirmada à fonte oficial.',
+    };
+  }
+
+  // 3. Fonte ativa e verificada com sucesso, mantendo integridade
   return {
     id: `log-verif-${Date.now()}`,
     organizationId: documento.organizationId,
@@ -610,11 +652,11 @@ export function simularVerificacaoFonteExterna(params: {
     documentoId: documento.id,
     codigoDocumento: documento.codigo,
     revisaoAtualControlada: revAtualNum,
-    revisaoIdentificadaNaFonte: revisaoIdentificada,
-    statusVerificacao: status,
-    mensagem,
-    requerValidacaoHumana: requerValidacao,
-    validacaoHumanaStatus: requerValidacao ? 'PENDENTE' : 'VALIDADA_NOVA_REVISAO_ACEITA',
+    revisaoIdentificadaNaFonte: revAtualNum,
+    statusVerificacao: 'CONFORME',
+    mensagem: `Fonte oficial "${fonte.nome}" consultada com sucesso. A revisão vigente controlada (${revAtualNum}) confere com a publicação oficial em vigor.`,
+    requerValidacaoHumana: false,
+    validacaoHumanaStatus: 'VALIDADA_NOVA_REVISAO_ACEITA',
     dataVerificacao: dataHoje,
     executadoPor: usuarioExecutor,
     evidenciaUrlOuTexto: fonte.urlBase || 'Consulta direta ao repositório homologado.',

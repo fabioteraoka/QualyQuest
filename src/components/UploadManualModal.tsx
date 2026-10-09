@@ -220,13 +220,33 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
       return;
     }
 
+    const codigoNorm = codigo.trim().toUpperCase();
+    const revNorm = numeroRevisao.trim();
+
+    // Validação de Duplicidade Cadastral
+    if (!isExistingMode) {
+      const docDuplicado = documentosExistentes.find(
+        (d) => d.codigo.trim().toUpperCase() === codigoNorm
+      );
+      if (docDuplicado) {
+        setUploadError(
+          `O código documental "${codigoNorm}" já está cadastrado no Acervo ("${docDuplicado.titulo}"). Para atualizar ou anexar nova revisão a este manual, ative a opção "Adicionar Revisão a Manual Existente" para garantir a rastreabilidade e evitar duplicidade.`
+        );
+        return;
+      }
+    }
+
     setIsSaving(true);
     setUploadError(null);
 
     try {
       const now = new Date().toISOString();
-      const docId = isExistingMode && selectedDocId ? selectedDocId : `doc-${Date.now()}`;
-      const revId = `rev-${Date.now()}`;
+      const existingDoc = isExistingMode && selectedDocId ? documentosExistentes.find((d) => d.id === selectedDocId) : undefined;
+      const docId = existingDoc ? existingDoc.id : `doc-${Date.now()}`;
+
+      // Se a revisão informada já for a vigente do documento existente, atualizamos o arquivo da revisão atual
+      const ehMesmaRevisaoVigente = existingDoc && (existingDoc.numeroRevisao === revNorm || existingDoc.revisaoVigenteNumero === revNorm);
+      const revId = ehMesmaRevisaoVigente && existingDoc.revisaoVigenteId ? existingDoc.revisaoVigenteId : `rev-${Date.now()}`;
 
       // 1. Salva o binário físico no IndexedDB e gera metadados de armazenamento
       const fileMeta = await saveDocumentFileToStorage(revId, docId, file, revId);
@@ -234,22 +254,22 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
       // Também armazena sob a chave docId para acesso rápido à versão vigente
       await saveDocumentFileToStorage(docId, docId, file, revId);
 
-      // 2. Cria o registro de RevisaoDocumental
+      // 2. Cria ou atualiza o registro de RevisaoDocumental
       const novaRevisao: RevisaoDocumental = {
         id: revId,
         organizationId,
         documentoId: docId,
-        codigoDocumento: codigo.trim().toUpperCase(),
+        codigoDocumento: codigoNorm,
         tituloDocumento: titulo.trim(),
-        numeroRevisao: numeroRevisao.trim(),
+        numeroRevisao: revNorm,
         dataEmissao: dataRevisao,
         dataEntradaVigor: dataRevisao,
         statusCicloVida: 'VIGENTE',
         aprovadoPorNome: currentUser?.displayName || 'Gestor SGQ Homologado',
         aprovadoPorUid: currentUser?.uid,
         dataAprovacao: now,
-        justificativaAprovacao: escopoAlteracoes.trim() || 'Upload e homologação de arquivo técnico no Acervo SGQ',
-        escopoAlteracoes: escopoAlteracoes.trim() || `Publicação da ${numeroRevisao} com arquivo anexado: ${file.name}`,
+        justificativaAprovacao: escopoAlteracoes.trim() || (ehMesmaRevisaoVigente ? `Anexo digital da revisão vigente ${revNorm}: ${file.name}` : `Publicação e homologação da ${revNorm} no Acervo SGQ`),
+        escopoAlteracoes: escopoAlteracoes.trim() || `Arquivo anexado: ${file.name} (${formatFileSize(file.size)})`,
         origemRevisao: tipoVerificacao === 'AUTOMATICO' ? 'FONTE_EXTERNA_OFICIAL' : 'INTERNA',
         fonteVerificacao: urlFonteVerificacao || undefined,
         urlFonteExterna: urlFonteVerificacao || undefined,
@@ -268,22 +288,20 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
       await saveRevisaoDocumental(organizationId, novaRevisao, currentUser);
 
       // 3. Cadastra ou atualiza o DocumentoControlado no controle geral
-      const existingDoc = documentosExistentes.find((d) => d.id === docId);
-
       const docPayload: DocumentoControlado = {
         id: docId,
         organizationId,
-        codigo: codigo.trim().toUpperCase(),
+        codigo: codigoNorm,
         titulo: titulo.trim(),
         categoria,
         tipoSubcategoria: categoria === 'DOCUMENTO_AUTORIDADE' ? 'RBAC' : 'MOMQ',
         emissor: proprietarioCessor.trim(),
         proprietarioCessor: proprietarioCessor.trim(),
         areaPublicacao: areaPublicacao.trim(),
-        numeroRevisao: numeroRevisao.trim(),
-        dataRevisao,
+        numeroRevisao: revNorm,
+        dataRevisao, // Data oficial da revisão informada no cabeçalho/publicação
         revisaoVigenteId: revId,
-        revisaoVigenteNumero: numeroRevisao.trim(),
+        revisaoVigenteNumero: revNorm,
         responsavelNome: currentUser?.displayName || 'Gestor SGQ',
         responsavelUid: currentUser?.uid,
         exigeEvidenciaLeitura: existingDoc?.exigeEvidenciaLeitura ?? true,
@@ -295,8 +313,8 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
         contatoClienteEmail: contatoClienteEmail.trim() || undefined,
         portalFabricanteUrl: portalFabricanteUrl.trim() || undefined,
         statusVerificacao: 'CONFORME',
-        dataUltimaVerificacao: now,
-        detalhesUltimaVerificacao: `Arquivo ${file.name} (${formatFileSize(file.size)}) carregado e homologado como vigente.`,
+        dataUltimaVerificacao: now, // Data e hora da consulta / verificação atual
+        detalhesUltimaVerificacao: `Arquivo digital "${file.name}" (${formatFileSize(file.size)}) homologado como cópia controlada vigente da ${revNorm}.`,
         arquivoNome: fileMeta.arquivoNome,
         arquivoMimeType: fileMeta.arquivoMimeType,
         arquivoTamanhoBytes: fileMeta.arquivoTamanhoBytes,
@@ -590,8 +608,9 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
 
               {/* Data da Revisão */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Data da Revisão / Emissão *
+                <label className="block text-xs font-semibold text-slate-300 mb-1 flex items-center justify-between">
+                  <span>Data da Revisão / Emissão *</span>
+                  <span className="text-[10px] text-amber-400 font-normal">Data de publicação no documento</span>
                 </label>
                 <input
                   type="date"
@@ -600,6 +619,9 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
                   onChange={(e) => setDataRevisao(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500"
                 />
+                <span className="text-[10px] text-slate-500 block mt-0.5">
+                  Data de emissão/vigor informada no manual. Não confundir com a data da verificação.
+                </span>
               </div>
             </div>
 

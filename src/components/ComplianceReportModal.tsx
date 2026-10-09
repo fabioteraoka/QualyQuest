@@ -13,7 +13,8 @@ import {
   Search,
   Filter,
   ExternalLink,
-  Bot
+  Bot,
+  HelpCircle
 } from 'lucide-react';
 import { DocumentoControlado } from '../types';
 
@@ -110,7 +111,7 @@ export const ComplianceReportModal: React.FC<ComplianceReportModalProps> = ({
       `"${d.numeroRevisao || d.revisaoVigenteNumero || 'Rev. 00'}"`,
       `"${d.dataRevisao || d.dataAprovacao || '-'}"`,
       `"${d.tipoVerificacao || 'MANUAL'}"`,
-      `"${d.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA' ? 'DISCREPÂNCIA REGULAMENTAR' : 'CONFORME / VIGENTE'}"`,
+      `"${d.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA' ? 'DISCREPÂNCIA REGULAMENTAR' : d.statusVerificacao === 'FONTE_INDISPONIVEL' ? 'FONTE INDISPONÍVEL' : d.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA' ? 'NÃO CONCLUSIVA' : 'CONFORME / VIGENTE'}"`,
       `"${d.dataUltimaVerificacao ? new Date(d.dataUltimaVerificacao).toLocaleDateString('pt-BR') : '-'}"`,
       `"${(d.detalhesUltimaVerificacao || '').replace(/"/g, '""')}"`
     ]);
@@ -377,6 +378,16 @@ export const ComplianceReportModal: React.FC<ComplianceReportModalProps> = ({
                           <span className="inline-flex items-center gap-1 text-rose-700 font-bold">
                             <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
                             REVISÃO PENDENTE
+                          </span>
+                        ) : doc.statusVerificacao === 'FONTE_INDISPONIVEL' ? (
+                          <span className="inline-flex items-center gap-1 text-orange-700 font-bold">
+                            <AlertTriangle className="w-3.5 h-3.5 text-orange-600" />
+                            FONTE INDISPONÍVEL
+                          </span>
+                        ) : doc.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA' ? (
+                          <span className="inline-flex items-center gap-1 text-slate-700 font-bold">
+                            <HelpCircle className="w-3.5 h-3.5 text-slate-600" />
+                            NÃO CONCLUSIVA
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">

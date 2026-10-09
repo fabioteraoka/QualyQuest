@@ -4442,70 +4442,131 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
           codigoNorm.includes(key) || key.includes(codigoNorm)
         );
 
-        let revisaoOficial = matchReg ? matchReg[1].revisaoOficial : "Emenda Vigente";
-        let urlOficial = matchReg ? matchReg[1].urlOficial : (urlAlvo || "https://www.anac.gov.br");
+        let revisaoOficial = revisaoAtual;
+        let urlOficial = matchReg ? matchReg[1].urlOficial : urlAlvo;
         let extraidoViaWeb = false;
-
-        // Se tiver URL pública, tenta fazer requisição HTTP real com timeout de 3.5 segundos
-        if (urlOficial && urlOficial.startsWith("http")) {
-          try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 3500);
-            const resp = await fetch(urlOficial, {
-              signal: controller.signal,
-              headers: { "User-Agent": "QualiGest-SGQ-AeroCompliance/2026 (RBAC 145 Technical Monitor)" },
-            });
-            clearTimeout(timeoutId);
-
-            if (resp.ok) {
-              const html = await resp.text();
-              extraidoViaWeb = true;
-
-              // Procura padrões de emenda no texto retornado da ANAC
-              if (codigoNorm.includes("145")) {
-                const matchEmenda = html.match(/Emenda\s*(?:n[ºo°]?\s*)?(\d{1,2})/i);
-                if (matchEmenda && matchEmenda[1]) {
-                  revisaoOficial = `Emenda ${matchEmenda[1].padStart(2, "0")}`;
-                }
-              } else if (codigoNorm.includes("IS")) {
-                const matchRev = html.match(/Rev(?:isão)?\.?\s*([A-Z]|\d{1,2})/i);
-                if (matchRev && matchRev[1]) {
-                  revisaoOficial = `Rev. ${matchRev[1]}`;
-                }
-              }
-            }
-          } catch (netErr: any) {
-            // Se der timeout ou CORS/rede offline, mantém a referência oficial do catálogo ANAC
-            extraidoViaWeb = false;
-          }
-        }
+        let statusVerificacao: "CONFORME" | "NOVA_REVISAO_IDENTIFICADA" | "FONTE_INDISPONIVEL" | "VERIFICACAO_NAO_CONCLUSIVA" = "CONFORME";
+        let mensagem = "";
 
         // Normalização para comparação: "Emenda 09" vs "Emenda 9" vs "Rev. 09"
         const limpaRev = (r: string) =>
           r.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/^rev/, "").replace(/^emenda/, "").trim();
 
-        const ehConforme =
-          limpaRev(revisaoAtual) === limpaRev(revisaoOficial) ||
-          revisaoAtual.toLowerCase().includes(revisaoOficial.toLowerCase()) ||
-          revisaoOficial.toLowerCase().includes(revisaoAtual.toLowerCase());
+        if (matchReg) {
+          revisaoOficial = matchReg[1].revisaoOficial;
 
-        const statusVerificacao = ehConforme ? "CONFORME" : "NOVA_REVISAO_IDENTIFICADA";
-        const mensagem = ehConforme
-          ? `Publicação verificada com sucesso contra o portal oficial da autoridade (${extraidoViaWeb ? "Web Scraping ao Vivo" : "Repositório Sincronizado ANAC"}). A revisão "${revisaoAtual}" é a oficialmente vigente.`
-          : `ATENÇÃO: Foi identificada a publicação oficial "${revisaoOficial}" na fonte pública da ANAC/Autoridade. A revisão em uso na oficina é "${revisaoAtual}". Necessária avaliação de impacto regulatório e atualização do acervo.`;
+          // Se tiver URL pública da autoridade, tenta requisição HTTP com timeout de 3.5s
+          if (urlOficial && urlOficial.startsWith("http")) {
+            try {
+              const controller = new AbortController();
+              const timeoutId = setTimeout(() => controller.abort(), 3500);
+              const resp = await fetch(urlOficial, {
+                signal: controller.signal,
+                headers: { "User-Agent": "QualiGest-SGQ-AeroCompliance/2026 (RBAC 145 Technical Monitor)" },
+              });
+              clearTimeout(timeoutId);
+
+              if (resp.ok) {
+                const html = await resp.text();
+                extraidoViaWeb = true;
+
+                if (codigoNorm.includes("145")) {
+                  const matchEmenda = html.match(/Emenda\s*(?:n[ºo°]?\s*)?(\d{1,2})/i);
+                  if (matchEmenda && matchEmenda[1]) {
+                    revisaoOficial = `Emenda ${matchEmenda[1].padStart(2, "0")}`;
+                  }
+                } else if (codigoNorm.includes("IS")) {
+                  const matchRev = html.match(/Rev(?:isão)?\.?\s*([A-Z]|\d{1,2})/i);
+                  if (matchRev && matchRev[1]) {
+                    revisaoOficial = `Rev. ${matchRev[1]}`;
+                  }
+                }
+              }
+            } catch (netErr: any) {
+              extraidoViaWeb = false;
+            }
+          }
+
+          const ehConforme =
+            limpaRev(revisaoAtual) === limpaRev(revisaoOficial) ||
+            revisaoAtual.toLowerCase().includes(revisaoOficial.toLowerCase()) ||
+            revisaoOficial.toLowerCase().includes(revisaoAtual.toLowerCase());
+
+          if (ehConforme) {
+            statusVerificacao = "CONFORME";
+            mensagem = `Publicação regulatória verificada com sucesso contra o portal oficial da autoridade (${extraidoViaWeb ? "Web Scraping ao Vivo" : "Repositório Sincronizado ANAC/FAA"}). A revisão "${revisaoAtual}" é a oficialmente vigente.`;
+          } else {
+            statusVerificacao = "NOVA_REVISAO_IDENTIFICADA";
+            mensagem = `ATENÇÃO: Foi identificada a publicação oficial "${revisaoOficial}" na autoridade reguladora (${matchReg[1].titulo}). A revisão vigente no QualiGest é "${revisaoAtual}". REGRA DE SEGURANÇA: Nenhuma revisão foi substituída automaticamente. Necessária validação humana do responsável técnico.`;
+          }
+        } else if (urlAlvo && urlAlvo.startsWith("http")) {
+          // Documento que não é regulamento geral ANAC, mas possui URL externa vinculada
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3500);
+            const resp = await fetch(urlAlvo, {
+              signal: controller.signal,
+              headers: { "User-Agent": "QualiGest-SGQ-AeroCompliance/2026 (MRO Technical Monitor)" },
+            });
+            clearTimeout(timeoutId);
+
+            if (resp.ok) {
+              const html = await resp.text();
+              const matchRev = html.match(/Rev(?:isão)?\.?\s*(\d{1,2})/i);
+              if (matchRev && matchRev[1]) {
+                const numStr = matchRev[1].padStart(2, "0");
+                revisaoOficial = `Rev. ${numStr}`;
+                extraidoViaWeb = true;
+
+                const ehConforme = limpaRev(revisaoAtual) === limpaRev(revisaoOficial);
+                if (ehConforme) {
+                  statusVerificacao = "CONFORME";
+                  mensagem = `Fonte externa consultada com sucesso (${urlAlvo}). A revisão vigente "${revisaoAtual}" confere com a publicação oficial.`;
+                } else {
+                  statusVerificacao = "NOVA_REVISAO_IDENTIFICADA";
+                  mensagem = `ATENÇÃO: Constatada possível nova revisão "${revisaoOficial}" na fonte externa (${urlAlvo}). A revisão em uso no QualiGest é "${revisaoAtual}". Validação humana obrigatória antes de qualquer alteração no acervo.`;
+                }
+              } else {
+                statusVerificacao = "VERIFICACAO_NAO_CONCLUSIVA";
+                revisaoOficial = revisaoAtual;
+                mensagem = `A fonte externa (${urlAlvo}) foi acessada com sucesso, mas não foi possível determinar com segurança qual revisão está publicada no momento. Mantida a revisão controlada "${revisaoAtual}" sem alteração.`;
+              }
+            } else {
+              statusVerificacao = "FONTE_INDISPONIVEL";
+              revisaoOficial = revisaoAtual;
+              mensagem = `A fonte externa (${urlAlvo}) retornou código de erro HTTP ${resp.status}. Nenhuma alteração foi realizada na revisão controlada "${revisaoAtual}".`;
+            }
+          } catch (fetchErr: any) {
+            statusVerificacao = "FONTE_INDISPONIVEL";
+            revisaoOficial = revisaoAtual;
+            mensagem = `A fonte externa (${urlAlvo}) encontra-se indisponível ou inacessível no momento. Mantida a revisão vigente controlada "${revisaoAtual}".`;
+          }
+        } else {
+          // Documento interno ou sem URL externa pública automatizada
+          statusVerificacao = "CONFORME";
+          revisaoOficial = revisaoAtual;
+          mensagem = `Documento sob controle e vigência interna do SGQ. Revisão vigente controlada "${revisaoAtual}" mantida sem alterações.`;
+        }
 
         return {
           documentoId: docItem.id || docItem.documentoId,
           codigo: docItem.codigo,
           titulo: docItem.titulo,
-          tipoVerificacao: "AUTOMATICO",
+          tipoVerificacao: docItem.tipoVerificacao || "AUTOMATICO",
           revisaoAtual,
           revisaoOficialIdentificada: revisaoOficial,
+          revisaoNaFonte: revisaoOficial,
           statusVerificacao,
           dataUltimaVerificacao: agoraIso,
+          dataVerificacao: agoraIso,
           detalhesUltimaVerificacao: mensagem,
-          urlFonteVerificacao: urlOficial,
-          metodoUtilizado: extraidoViaWeb ? "WEB_SCRAPING_ANAC_ONLINE" : "CATALOGO_REGULATORIO_OFICIAL",
+          mensagem,
+          urlFonteVerificacao: urlOficial || urlAlvo,
+          metodoUtilizado: extraidoViaWeb
+            ? "WEB_SCRAPING_ONLINE"
+            : matchReg
+            ? "CATALOGO_REGULATORIO_OFICIAL"
+            : "VERIFICACAO_INTERNA_SGQ",
         };
       })
     );
@@ -4516,6 +4577,8 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
       totalVerificados: resultados.length,
       totalConformes: resultados.filter((r) => r.statusVerificacao === "CONFORME").length,
       totalDiscrepancias: resultados.filter((r) => r.statusVerificacao === "NOVA_REVISAO_IDENTIFICADA").length,
+      totalIndisponiveis: resultados.filter((r) => r.statusVerificacao === "FONTE_INDISPONIVEL").length,
+      totalNaoConclusivas: resultados.filter((r) => r.statusVerificacao === "VERIFICACAO_NAO_CONCLUSIVA").length,
       resultados,
     });
   } catch (error: any) {

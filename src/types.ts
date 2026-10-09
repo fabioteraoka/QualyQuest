@@ -2097,10 +2097,11 @@ export interface DocumentoControlado {
   dataRevisao?: string; // Sinônimo direto para Data da Revisão
   tipoVerificacao?: 'AUTOMATICO' | 'MANUAL'; // Classificação de Automação
   urlFonteVerificacao?: string; // Mapeamento de Fonte (URL pública para robô ou portal restrito)
-  statusVerificacao?: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO' | 'ERRO_FONTE';
-  dataUltimaVerificacao?: string; // ISO string da última verificação
+  statusVerificacao?: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO' | 'ERRO_FONTE' | 'FONTE_INDISPONIVEL' | 'VERIFICACAO_NAO_CONCLUSIVA';
+  dataUltimaVerificacao?: string; // ISO string da data e hora da consulta à fonte externa (NUNCA confundir com dataRevisao)
   detalhesUltimaVerificacao?: string; // Mensagem de conformidade ou detalhes da nova revisão encontrada
   revisaoNaFonteIdentificada?: string; // Revisão encontrada na fonte oficial durante a última checagem
+  dataPublicacaoNaFonte?: string; // Data de publicação/emissão informada na fonte oficial (se houver)
   contatoClienteNome?: string; // Nome do ponto focal técnico do cliente
   contatoClienteEmail?: string; // E-mail para notificação automática de solicitação de revisão
   portalFabricanteUrl?: string; // URL do portal restrito do fabricante (MyBoeingFleet, AirbusWorld, Cessna 1View)
@@ -2170,7 +2171,7 @@ export interface FonteExternaControlada {
   frequenciaDias: number;
   ultimaVerificacao?: string;
   proximaVerificacao?: string;
-  ultimoResultadoStatus?: 'CONFORME_SEM_ALTERACAO' | 'NOVA_REVISAO_IDENTIFICADA' | 'ERRO_OU_INDISPONIVEL';
+  ultimoResultadoStatus?: 'CONFORME_SEM_ALTERACAO' | 'NOVA_REVISAO_IDENTIFICADA' | 'ERRO_OU_INDISPONIVEL' | 'FONTE_INDISPONIVEL' | 'VERIFICACAO_NAO_CONCLUSIVA';
   ultimoResultadoDetalhes?: string;
   evidenciaRegistro?: string;
   status: 'ATIVA' | 'INATIVA';
@@ -2187,7 +2188,8 @@ export interface LogVerificacaoFonteExterna {
   codigoDocumento: string;
   revisaoAtualControlada: string;
   revisaoIdentificadaNaFonte?: string;
-  statusVerificacao: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'FONTE_INDISPONIVEL';
+  dataPublicacaoNaFonte?: string;
+  statusVerificacao: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'FONTE_INDISPONIVEL' | 'VERIFICACAO_NAO_CONCLUSIVA';
   mensagem: string;
   requerValidacaoHumana: boolean;
   validacaoHumanaStatus: 'PENDENTE' | 'VALIDADA_NOVA_REVISAO_ACEITA' | 'FALSO_POSITIVO_REJEITADA';

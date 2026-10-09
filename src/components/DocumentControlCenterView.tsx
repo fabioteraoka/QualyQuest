@@ -82,6 +82,8 @@ import {
   Upload,
   Download,
   HardDrive,
+  AlertCircle,
+  HelpCircle,
 } from 'lucide-react';
 import { ComplianceReportModal } from './ComplianceReportModal';
 import {
@@ -162,8 +164,14 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   const [selectedCategoria, setSelectedCategoria] = useState<string>('TODAS');
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
   const [selectedTipoVerificacao, setSelectedTipoVerificacao] = useState<'TODOS' | 'AUTOMATICO' | 'MANUAL'>('TODOS');
-  const [selectedStatusVerificacao, setSelectedStatusVerificacao] = useState<'TODOS' | 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO'>('TODOS');
+  const [selectedStatusVerificacao, setSelectedStatusVerificacao] = useState<'TODOS' | 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO' | 'FONTE_INDISPONIVEL' | 'VERIFICACAO_NAO_CONCLUSIVA'>('TODOS');
   const [selectedDocForDetail, setSelectedDocForDetail] = useState<DocumentoControlado | null>(null);
+
+  // Estados de Validação Humana de Discrepância / Nova Revisão (Princípio Fundamental SGQ)
+  const [selectedDocForDiscrepancyModal, setSelectedDocForDiscrepancyModal] = useState<DocumentoControlado | null>(null);
+  const [isDiscrepancyValidationModalOpen, setIsDiscrepancyValidationModalOpen] = useState(false);
+  const [discrepancyRejectionReason, setDiscrepancyRejectionReason] = useState('');
+  const [isProcessingDiscrepancy, setIsProcessingDiscrepancy] = useState(false);
 
   // Estados dos Novos Módulos: Relatório de Conformidade & Verificação Automática/Manual
   const [isComplianceReportOpen, setIsComplianceReportOpen] = useState(false);
@@ -453,17 +461,46 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
         for (const item of data.resultados) {
           const docAlvo = documentos.find((d) => d.id === item.documentoId || d.codigo === item.codigo);
           if (docAlvo) {
+            const dataVerif = item.dataUltimaVerificacao || item.dataVerificacao || new Date().toISOString();
+            const revIdentificada = item.revisaoOficialIdentificada || item.revisaoNaFonte;
+            const msgVerif = item.detalhesUltimaVerificacao || item.mensagem;
+
             const atualizado: DocumentoControlado = {
               ...docAlvo,
               statusVerificacao: item.statusVerificacao,
-              dataUltimaVerificacao: item.dataVerificacao,
-              revisaoNaFonteIdentificada: item.revisaoNaFonte,
-              detalhesUltimaVerificacao: item.mensagem,
+              dataUltimaVerificacao: dataVerif, // Registra exclusivamente a data/hora da consulta
+              revisaoNaFonteIdentificada: revIdentificada,
+              detalhesUltimaVerificacao: msgVerif,
             };
+
             try {
               await saveDocumentoControlado(organizationId, atualizado, currentUser, docAlvo);
             } catch (saveErr) {
               console.warn('Erro ao atualizar documento no Firestore:', saveErr);
+            }
+
+            // Registrar evidência de log de verificação oficial no Firestore para rastreabilidade auditável
+            try {
+              const logEntry: LogVerificacaoFonteExterna = {
+                id: `log-verif-${Date.now()}-${docAlvo.id}`,
+                organizationId,
+                fonteId: docAlvo.fonteExternaId || 'fonte-oficial-publica',
+                fonteNome: item.urlFonteVerificacao || 'Repositório Oficial ANAC/FAA',
+                documentoId: docAlvo.id,
+                codigoDocumento: docAlvo.codigo,
+                revisaoAtualControlada: docAlvo.numeroRevisao || docAlvo.revisaoVigenteNumero || 'Rev. Vigente',
+                revisaoIdentificadaNaFonte: revIdentificada,
+                statusVerificacao: item.statusVerificacao,
+                mensagem: msgVerif,
+                requerValidacaoHumana: item.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA',
+                validacaoHumanaStatus: item.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA' ? 'PENDENTE' : 'VALIDADA_NOVA_REVISAO_ACEITA',
+                dataVerificacao: dataVerif,
+                executadoPor: currentUser?.displayName || currentUser?.email || 'Robô SGQ de Verificação Oficial',
+                evidenciaUrlOuTexto: item.urlFonteVerificacao || undefined,
+              };
+              await saveLogVerificacao(organizationId, logEntry, currentUser);
+            } catch (logErr) {
+              console.warn('Erro ao registrar log de verificação:', logErr);
             }
           }
         }
@@ -477,6 +514,65 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     } finally {
       setIsVerifyingUpdates(false);
     }
+  };
+
+  // Handlers para Validação Humana Obrigatória de Discrepância (Princípio Fundamental SGQ)
+  const handleOpenDiscrepancyValidation = (doc: DocumentoControlado) => {
+    setSelectedDocForDiscrepancyModal(doc);
+    setDiscrepancyRejectionReason('');
+    setIsDiscrepancyValidationModalOpen(true);
+  };
+
+  const handleRejeitarDiscrepancia = async () => {
+    if (!selectedDocForDiscrepancyModal) return;
+    if (!discrepancyRejectionReason.trim()) {
+      alert('Informe a justificativa técnica para rejeição da discrepância (obrigatório para fins de auditoria e RBAC 145).');
+      return;
+    }
+
+    try {
+      setIsProcessingDiscrepancy(true);
+      const doc = selectedDocForDiscrepancyModal;
+      const agora = new Date().toISOString();
+      const justifText = `Discrepância rejeitada (Falso Positivo / Não Aplicável) por ${currentUser?.displayName || 'Auditor SGQ'} em ${new Date().toLocaleDateString('pt-BR')}: ${discrepancyRejectionReason.trim()}`;
+
+      const docAtualizado: DocumentoControlado = {
+        ...doc,
+        statusVerificacao: 'CONFORME',
+        detalhesUltimaVerificacao: justifText,
+        dataUltimaVerificacao: agora,
+      };
+
+      await saveDocumentoControlado(organizationId, docAtualizado, currentUser, doc);
+
+      // Atualizar qualquer log pendente associado a este documento
+      const logPendente = logsVerificacao.find(
+        (l) => l.documentoId === doc.id && l.requerValidacaoHumana && l.validacaoHumanaStatus === 'PENDENTE'
+      );
+      if (logPendente) {
+        const logAtualizado: LogVerificacaoFonteExterna = {
+          ...logPendente,
+          validacaoHumanaStatus: 'FALSO_POSITIVO_REJEITADA',
+          mensagem: `${logPendente.mensagem} [REJEITADA PELO RESPONSÁVEL: ${discrepancyRejectionReason.trim()}]`,
+        };
+        await saveLogVerificacao(organizationId, logAtualizado, currentUser);
+      }
+
+      showToast(`Discrepância rejeitada e justificada. Documento "${doc.codigo}" mantido como CONFORME.`);
+      setIsDiscrepancyValidationModalOpen(false);
+      setSelectedDocForDiscrepancyModal(null);
+    } catch (err: any) {
+      alert(`Erro ao registrar justificativa de rejeição: ${err.message}`);
+    } finally {
+      setIsProcessingDiscrepancy(false);
+    }
+  };
+
+  const handleAceitarEIncorporarNovaRevisao = () => {
+    if (!selectedDocForDiscrepancyModal) return;
+    const doc = selectedDocForDiscrepancyModal;
+    setIsDiscrepancyValidationModalOpen(false);
+    handleOpenUploadModal(doc);
   };
 
   const handleSendCustomerNotification = async (
@@ -751,6 +847,10 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       ultimoResultadoStatus:
         logSimulado.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA'
           ? 'NOVA_REVISAO_IDENTIFICADA'
+          : logSimulado.statusVerificacao === 'FONTE_INDISPONIVEL'
+          ? 'FONTE_INDISPONIVEL'
+          : logSimulado.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA'
+          ? 'VERIFICACAO_NAO_CONCLUSIVA'
           : 'CONFORME_SEM_ALTERACAO',
       ultimoResultadoDetalhes: logSimulado.mensagem,
       updatedAt: new Date().toISOString(),
@@ -1093,6 +1193,8 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                     <option value="TODOS">Todos os Resultados</option>
                     <option value="CONFORME">Conforme (Vigente no Mês)</option>
                     <option value="NOVA_REVISAO_IDENTIFICADA">Nova Revisão Detectada</option>
+                    <option value="FONTE_INDISPONIVEL">Fonte Indisponível</option>
+                    <option value="VERIFICACAO_NAO_CONCLUSIVA">Não Conclusiva</option>
                     <option value="PENDENTE_VERIFICACAO">Pendente Retorno</option>
                   </select>
                 </div>
@@ -1160,12 +1262,33 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
 
                           {/* Badge Status de Conformidade */}
                           {doc.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA' ? (
-                            <span
-                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse"
-                              title={`Nova revisão detectada na fonte: ${doc.revisaoNaFonteIdentificada || 'Verificar'}`}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenDiscrepancyValidation(doc);
+                              }}
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse hover:bg-rose-500/30 transition-colors cursor-pointer"
+                              title={`Nova revisão detectada na fonte: ${doc.revisaoNaFonteIdentificada || 'Verificar'}. Clique para validar decisão técnica.`}
                             >
                               <AlertTriangle className="w-3 h-3 text-rose-400" />
                               Nova Rev. Identificada
+                            </button>
+                          ) : doc.statusVerificacao === 'FONTE_INDISPONIVEL' ? (
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30 flex items-center gap-1"
+                              title="Fonte oficial indisponível ou inacessível no momento"
+                            >
+                              <AlertCircle className="w-3 h-3 text-orange-400" />
+                              Fonte Indisponível
+                            </span>
+                          ) : doc.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA' ? (
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-300 border border-slate-500/30 flex items-center gap-1"
+                              title="Não foi possível determinar com segurança a publicação. Mantida revisão vigente controlada."
+                            >
+                              <HelpCircle className="w-3 h-3 text-slate-400" />
+                              Não Conclusiva
                             </span>
                           ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' ? (
                             <span
@@ -1878,8 +2001,23 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                             )}
 
                             {isNovaRev ? (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenDiscrepancyValidation(doc);
+                                }}
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 flex items-center gap-1 animate-pulse hover:bg-rose-500/30 transition-colors cursor-pointer"
+                              >
                                 <AlertTriangle className="w-3 h-3 text-rose-400" /> Nova Rev. Detectada!
+                              </button>
+                            ) : doc.statusVerificacao === 'FONTE_INDISPONIVEL' ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-300 border border-orange-500/30 flex items-center gap-1">
+                                <AlertCircle className="w-3 h-3 text-orange-400" /> Fonte Indisponível
+                              </span>
+                            ) : doc.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA' ? (
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-500/20 text-slate-300 border border-slate-500/30 flex items-center gap-1">
+                                <HelpCircle className="w-3 h-3 text-slate-400" /> Não Conclusiva
                               </span>
                             ) : doc.statusVerificacao === 'PENDENTE_VERIFICACAO' ? (
                               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1">
@@ -2901,9 +3039,23 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   </div>
 
                   <div className="shrink-0 flex items-center gap-2">
-                    {log.requerValidacaoHumana ? (
-                      <span className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
-                        Aguardando Validação Técnica
+                    {log.requerValidacaoHumana && log.validacaoHumanaStatus === 'PENDENTE' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const docAlvo = documentos.find((d) => d.id === log.documentoId || d.codigo === log.codigoDocumento);
+                          if (docAlvo) {
+                            handleOpenDiscrepancyValidation(docAlvo);
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold hover:bg-amber-500/30 transition-colors cursor-pointer flex items-center gap-1 animate-pulse"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                        Validar Decisão Técnica
+                      </button>
+                    ) : log.validacaoHumanaStatus === 'FALSO_POSITIVO_REJEITADA' ? (
+                      <span className="px-2.5 py-1 rounded bg-slate-800 text-slate-400 border border-slate-700 font-semibold">
+                        Rejeitado pelo SGQ
                       </span>
                     ) : (
                       <span className="px-2.5 py-1 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
@@ -4527,6 +4679,194 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
         documento={previewDoc}
         revisao={previewRev}
       />
+
+      {/* ========================================================================= */}
+      {/* MODAL 7: VALIDAÇÃO HUMANA OBRIGATÓRIA DE DISCREPÂNCIA REGULAMENTAR        */}
+      {/* ========================================================================= */}
+      {isDiscrepancyValidationModalOpen && selectedDocForDiscrepancyModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3 sm:p-5 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-700/80 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-5 border-b border-slate-800 bg-rose-950/20 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <span>Validação Técnica Humana — Discrepância de Revisão</span>
+                    <span className="text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono">
+                      {selectedDocForDiscrepancyModal.codigo}
+                    </span>
+                  </h3>
+                  <p className="text-xs text-rose-300/80 mt-0.5">
+                    Princípio SGQ: A automação identifica. A evidência comprova. O responsável valida.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDiscrepancyValidationModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Conteúdo */}
+            <div className="p-5 overflow-y-auto space-y-4 text-xs text-slate-300">
+              {/* Título do Documento */}
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800">
+                <span className="text-[11px] text-slate-500 block mb-0.5">Título do Manual / Publicação:</span>
+                <span className="font-bold text-white text-sm">{selectedDocForDiscrepancyModal.titulo}</span>
+              </div>
+
+              {/* Comparativo de Revisões */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Revisão Controlada Atual */}
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-slate-400">Revisão Controlada Vigente:</span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono font-bold">
+                      {selectedDocForDiscrepancyModal.numeroRevisao || selectedDocForDiscrepancyModal.revisaoVigenteNumero || 'Rev. Vigente'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Data da Revisão (Emissão):</span>
+                      <span className="text-slate-200 font-mono font-medium">
+                        {selectedDocForDiscrepancyModal.dataRevisao || '-'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Proprietário / Emissor:</span>
+                      <span className="text-slate-200">
+                        {selectedDocForDiscrepancyModal.proprietarioCessor || selectedDocForDiscrepancyModal.emissor}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Revisão Identificada na Fonte */}
+                <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/30 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-rose-300">Identificada na Fonte Oficial:</span>
+                    <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-mono font-bold">
+                      {selectedDocForDiscrepancyModal.revisaoNaFonteIdentificada || 'Nova Publicação'}
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-[11px]">
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Última Consulta / Checagem:</span>
+                      <span className="text-slate-200 font-mono">
+                        {selectedDocForDiscrepancyModal.dataUltimaVerificacao
+                          ? new Date(selectedDocForDiscrepancyModal.dataUltimaVerificacao).toLocaleString('pt-BR')
+                          : 'Recentemente'}
+                      </span>
+                    </div>
+                    {selectedDocForDiscrepancyModal.urlFonteVerificacao && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Fonte:</span>
+                        <a
+                          href={selectedDocForDiscrepancyModal.urlFonteVerificacao}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sky-400 hover:underline flex items-center gap-1 font-mono text-[10px] truncate max-w-[150px]"
+                        >
+                          <span className="truncate">{selectedDocForDiscrepancyModal.urlFonteVerificacao}</span>
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Detalhes / Evidência da Verificação */}
+              {selectedDocForDiscrepancyModal.detalhesUltimaVerificacao && (
+                <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] space-y-1">
+                  <span className="text-slate-400 font-semibold flex items-center gap-1">
+                    <Info className="w-3.5 h-3.5 text-sky-400" /> Detalhes & Evidência Técnica Registrada:
+                  </span>
+                  <p className="text-slate-300 leading-relaxed">
+                    {selectedDocForDiscrepancyModal.detalhesUltimaVerificacao}
+                  </p>
+                </div>
+              )}
+
+              {/* Bloco de Decisão Técnica */}
+              <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-sky-400" />
+                  Decisão do Responsável Técnico Homologado (SGQ)
+                </h4>
+
+                {/* Opção 1: Incorporar Nova Revisão */}
+                <div className="p-3 rounded-lg bg-emerald-950/20 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-emerald-300 text-xs block">Opção 1 — Procedência Confirmada:</span>
+                    <span className="text-[11px] text-slate-300">
+                      Fazer upload do novo arquivo e publicar como revisão vigente oficial no Acervo.
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAceitarEIncorporarNovaRevisao}
+                    className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 transition-colors shadow-sm cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Upload & Incorporar Nova Rev.</span>
+                  </button>
+                </div>
+
+                {/* Opção 2: Rejeitar Discrepância (Falso Positivo ou Não Aplicável) */}
+                <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-2">
+                  <div className="space-y-0.5">
+                    <span className="font-bold text-slate-200 text-xs block">
+                      Opção 2 — Rejeitar Alerta (Falso Positivo / Inaplicável à Frota Homologada):
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Informe a justificativa técnica obrigatória para arquivamento e registro em auditoria:
+                    </span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={discrepancyRejectionReason}
+                    onChange={(e) => setDiscrepancyRejectionReason(e.target.value)}
+                    placeholder="Ex: Emenda aplicável exclusivamente a operadores de linha aérea (RBAC 121), não impactando a oficina RBAC 145; ou falso positivo de portal..."
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-rose-500 resize-none"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={isProcessingDiscrepancy || !discrepancyRejectionReason.trim()}
+                      onClick={handleRejeitarDiscrepancia}
+                      className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>{isProcessingDiscrepancy ? 'Registrando Decisão...' : 'Rejeitar Discrepância & Manter Conforme'}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                A cópia controlada atual permanece inalterada enquanto não houver validação.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsDiscrepancyValidationModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
