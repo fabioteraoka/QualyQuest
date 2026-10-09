@@ -4436,11 +4436,48 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
         const codigoNorm = String(docItem.codigo || "").trim().toUpperCase();
         const revisaoAtual = String(docItem.revisaoAtual || docItem.revisaoVigenteNumero || docItem.numeroRevisao || "Rev. Vigente").trim();
         const urlAlvo = docItem.urlFonteVerificacao || "";
+        const isManual = docItem.tipoVerificacao === "MANUAL";
 
-        // Procura correspondência no catálogo regulatório ANAC / FAA
-        let matchReg = Object.entries(ANAC_PUBLIC_REGULATIONS_REGISTRY).find(([key]) =>
-          codigoNorm.includes(key) || key.includes(codigoNorm)
-        );
+        // REGRA MANDATÓRIA: Documento manual JAMAIS sofre alteração automática de status por robô
+        if (isManual) {
+          return {
+            documentoId: docItem.id || docItem.documentoId,
+            codigo: docItem.codigo,
+            titulo: docItem.titulo,
+            tipoVerificacao: "MANUAL",
+            revisaoAtual,
+            revisaoOficialIdentificada: docItem.revisaoNaFonteIdentificada || revisaoAtual,
+            revisaoNaFonte: docItem.revisaoNaFonteIdentificada || revisaoAtual,
+            statusVerificacao: docItem.statusVerificacao || "PENDENTE_VERIFICACAO",
+            dataUltimaVerificacao: docItem.dataUltimaVerificacao || undefined,
+            dataVerificacao: docItem.dataUltimaVerificacao || undefined,
+            detalhesUltimaVerificacao:
+              docItem.detalhesUltimaVerificacao ||
+              "Documento classificado como verificação MANUAL (portal restrito/cliente/físico). Status preservado sem interferência de robô.",
+            mensagem:
+              docItem.detalhesUltimaVerificacao ||
+              "Documento de verificação manual no portal restrito ou com o cliente. Mantido status anterior até registro formal pelo responsável.",
+            urlFonteVerificacao: urlAlvo,
+            metodoUtilizado: "VERIFICACAO_MANUAL_PRESERVADA",
+            foiIgnoradoPorSerManual: true,
+          };
+        }
+
+        // Procura correspondência estrita no catálogo regulatório oficial ANAC / FAA
+        // Apenas para códigos que realmente sejam regulamentos aeronáuticos
+        const isRegulatorio =
+          codigoNorm.startsWith("RBAC") ||
+          codigoNorm.startsWith("IS ") ||
+          codigoNorm.startsWith("IS-") ||
+          codigoNorm.startsWith("14 CFR") ||
+          codigoNorm.startsWith("RBHA");
+
+        let matchReg = isRegulatorio
+          ? Object.entries(ANAC_PUBLIC_REGULATIONS_REGISTRY).find(([key]) =>
+              codigoNorm.replace(/[\s\-_.]/g, "").includes(key.replace(/[\s\-_.]/g, "")) ||
+              key.replace(/[\s\-_.]/g, "").includes(codigoNorm.replace(/[\s\-_.]/g, ""))
+            )
+          : undefined;
 
         let revisaoOficial = revisaoAtual;
         let urlOficial = matchReg ? matchReg[1].urlOficial : urlAlvo;
@@ -4448,21 +4485,26 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
         let statusVerificacao: "CONFORME" | "NOVA_REVISAO_IDENTIFICADA" | "FONTE_INDISPONIVEL" | "VERIFICACAO_NAO_CONCLUSIVA" = "CONFORME";
         let mensagem = "";
 
-        // Normalização para comparação: "Emenda 09" vs "Emenda 9" vs "Rev. 09"
+        // Função de normalização para comparação de revisões
+        const extrairNumeroRev = (r: string): number | null => {
+          const m = r.match(/\d+/);
+          return m ? parseInt(m[0], 10) : null;
+        };
+
         const limpaRev = (r: string) =>
           r.toLowerCase().replace(/[^a-z0-9]/g, "").replace(/^rev/, "").replace(/^emenda/, "").trim();
 
         if (matchReg) {
           revisaoOficial = matchReg[1].revisaoOficial;
 
-          // Se tiver URL pública da autoridade, tenta requisição HTTP com timeout de 3.5s
+          // Se tiver URL pública da autoridade, tenta requisição HTTP com timeout seguro de 3.5s
           if (urlOficial && urlOficial.startsWith("http")) {
             try {
               const controller = new AbortController();
               const timeoutId = setTimeout(() => controller.abort(), 3500);
               const resp = await fetch(urlOficial, {
                 signal: controller.signal,
-                headers: { "User-Agent": "QualiGest-SGQ-AeroCompliance/2026 (RBAC 145 Technical Monitor)" },
+                headers: { "User-Agent": "QualyGest-SGQ-AeroCompliance/2026 (RBAC 145 Technical Monitor)" },
               });
               clearTimeout(timeoutId);
 
@@ -4496,8 +4538,19 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
             statusVerificacao = "CONFORME";
             mensagem = `Publicação regulatória verificada com sucesso contra o portal oficial da autoridade (${extraidoViaWeb ? "Web Scraping ao Vivo" : "Repositório Sincronizado ANAC/FAA"}). A revisão "${revisaoAtual}" é a oficialmente vigente.`;
           } else {
-            statusVerificacao = "NOVA_REVISAO_IDENTIFICADA";
-            mensagem = `ATENÇÃO: Foi identificada a publicação oficial "${revisaoOficial}" na autoridade reguladora (${matchReg[1].titulo}). A revisão vigente no QualiGest é "${revisaoAtual}". REGRA DE SEGURANÇA: Nenhuma revisão foi substituída automaticamente. Necessária validação humana do responsável técnico.`;
+            // Verificar se a revisão identificada é realmente posterior
+            const numAtual = extrairNumeroRev(revisaoAtual);
+            const numOficial = extrairNumeroRev(revisaoOficial);
+
+            if (numAtual !== null && numOficial !== null && numOficial <= numAtual) {
+              // A revisão oficial é igual ou menor que a controlada no acervo -> Manter Conforme
+              statusVerificacao = "CONFORME";
+              mensagem = `Publicação regulatória oficial verificada. A revisão controlada (${revisaoAtual}) já reflete ou supera o texto base oficial (${revisaoOficial}). Situação CONFORME.`;
+              revisaoOficial = revisaoAtual;
+            } else {
+              statusVerificacao = "NOVA_REVISAO_IDENTIFICADA";
+              mensagem = `ATENÇÃO: Foi identificada a publicação oficial "${revisaoOficial}" na autoridade reguladora (${matchReg[1].titulo}). A revisão vigente no QualyGest é "${revisaoAtual}". REGRA DE SEGURANÇA: Nenhuma revisão foi substituída automaticamente. Necessária validação humana do responsável técnico.`;
+            }
           }
         } else if (urlAlvo && urlAlvo.startsWith("http")) {
           // Documento que não é regulamento geral ANAC, mas possui URL externa vinculada
@@ -4506,7 +4559,7 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
             const timeoutId = setTimeout(() => controller.abort(), 3500);
             const resp = await fetch(urlAlvo, {
               signal: controller.signal,
-              headers: { "User-Agent": "QualiGest-SGQ-AeroCompliance/2026 (MRO Technical Monitor)" },
+              headers: { "User-Agent": "QualyGest-SGQ-AeroCompliance/2026 (MRO Technical Monitor)" },
             });
             clearTimeout(timeoutId);
 
@@ -4515,16 +4568,25 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
               const matchRev = html.match(/Rev(?:isão)?\.?\s*(\d{1,2})/i);
               if (matchRev && matchRev[1]) {
                 const numStr = matchRev[1].padStart(2, "0");
-                revisaoOficial = `Rev. ${numStr}`;
-                extraidoViaWeb = true;
+                const revEncontrada = `Rev. ${numStr}`;
+                const numAtual = extrairNumeroRev(revisaoAtual);
+                const numEncontrado = parseInt(matchRev[1], 10);
 
-                const ehConforme = limpaRev(revisaoAtual) === limpaRev(revisaoOficial);
-                if (ehConforme) {
-                  statusVerificacao = "CONFORME";
-                  mensagem = `Fonte externa consultada com sucesso (${urlAlvo}). A revisão vigente "${revisaoAtual}" confere com a publicação oficial.`;
-                } else {
+                if (numAtual !== null && numEncontrado > numAtual) {
+                  // Realmente encontrou número posterior e comparável
+                  revisaoOficial = revEncontrada;
+                  extraidoViaWeb = true;
                   statusVerificacao = "NOVA_REVISAO_IDENTIFICADA";
-                  mensagem = `ATENÇÃO: Constatada possível nova revisão "${revisaoOficial}" na fonte externa (${urlAlvo}). A revisão em uso no QualiGest é "${revisaoAtual}". Validação humana obrigatória antes de qualquer alteração no acervo.`;
+                  mensagem = `ATENÇÃO: Constatada possível nova revisão "${revisaoOficial}" na fonte externa (${urlAlvo}). A revisão em uso no QualyGest é "${revisaoAtual}". Validação humana obrigatória antes de qualquer alteração no acervo.`;
+                } else if (numAtual !== null && numEncontrado <= numAtual) {
+                  revisaoOficial = revisaoAtual;
+                  extraidoViaWeb = true;
+                  statusVerificacao = "CONFORME";
+                  mensagem = `Fonte externa consultada com sucesso (${urlAlvo}). A revisão em uso "${revisaoAtual}" confere com ou supera o indicativo da fonte.`;
+                } else {
+                  statusVerificacao = "VERIFICACAO_NAO_CONCLUSIVA";
+                  revisaoOficial = revisaoAtual;
+                  mensagem = `A fonte externa (${urlAlvo}) foi acessada, mas a numeração encontrada (${revEncontrada}) não é conclusivamente comparável com a revisão controlada "${revisaoAtual}".`;
                 }
               } else {
                 statusVerificacao = "VERIFICACAO_NAO_CONCLUSIVA";

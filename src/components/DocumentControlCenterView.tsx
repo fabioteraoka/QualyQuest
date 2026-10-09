@@ -19,6 +19,7 @@ import {
   gerarSolicitacaoRevisaoClienteEmail,
   compararRevisoes,
   diagnosticarImpactosRevisao,
+  executarVerificacaoFonteExterna,
   simularVerificacaoFonteExterna,
   calcularMetricasDashboardDocumental,
 } from '../services/documentControlEngine';
@@ -30,6 +31,7 @@ import {
   saveSolicitacaoCliente,
   atualizarStatusSolicitacaoCliente,
   saveLogVerificacao,
+  rejeitarDiscrepanciaVerificacao,
   registrarEvidenciaConsulta,
   inactivateDocumentoControlado,
   reactivateDocumentoControlado,
@@ -461,6 +463,11 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
         for (const item of data.resultados) {
           const docAlvo = documentos.find((d) => d.id === item.documentoId || d.codigo === item.codigo);
           if (docAlvo) {
+            // REGRA FUNDAMENTAL: Documentos de verificação MANUAL não sofrem alteração de status por robô
+            if (docAlvo.tipoVerificacao === 'MANUAL' || item.foiIgnoradoPorSerManual) {
+              continue;
+            }
+
             const dataVerif = item.dataUltimaVerificacao || item.dataVerificacao || new Date().toISOString();
             const revIdentificada = item.revisaoOficialIdentificada || item.revisaoNaFonte;
             const msgVerif = item.detalhesUltimaVerificacao || item.mensagem;
@@ -545,17 +552,20 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
 
       await saveDocumentoControlado(organizationId, docAtualizado, currentUser, doc);
 
-      // Atualizar qualquer log pendente associado a este documento
+      // Atualizar qualquer log pendente associado a este documento via rotina de persistência auditável
       const logPendente = logsVerificacao.find(
         (l) => l.documentoId === doc.id && l.requerValidacaoHumana && l.validacaoHumanaStatus === 'PENDENTE'
       );
       if (logPendente) {
-        const logAtualizado: LogVerificacaoFonteExterna = {
-          ...logPendente,
-          validacaoHumanaStatus: 'FALSO_POSITIVO_REJEITADA',
-          mensagem: `${logPendente.mensagem} [REJEITADA PELO RESPONSÁVEL: ${discrepancyRejectionReason.trim()}]`,
-        };
-        await saveLogVerificacao(organizationId, logAtualizado, currentUser);
+        await rejeitarDiscrepanciaVerificacao(
+          organizationId,
+          logPendente.id,
+          doc.id,
+          discrepancyRejectionReason.trim(),
+          currentUser
+        );
+      } else {
+        await saveDocumentoControlado(organizationId, docAtualizado, currentUser, doc);
       }
 
       showToast(`Discrepância rejeitada e justificada. Documento "${doc.codigo}" mantido como CONFORME.`);
@@ -814,12 +824,12 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     }, 600);
   };
 
-  // Simulação de Verificação de Fonte
+  // Verificação de Fonte Homologada
   const handleVerificarFonte = async (fonte: FonteExternaControlada) => {
     const docRelacionado = documentos.find((d) => d.fonteExternaId === fonte.id) || documentos[0];
     const revVigente = revisoes.find((r) => r.id === docRelacionado?.revisaoVigenteId);
 
-    const logSimulado = simularVerificacaoFonteExterna({
+    const logSimulado = executarVerificacaoFonteExterna({
       fonte,
       documento: docRelacionado || {
         id: 'doc-ext-01',
@@ -1384,15 +1394,23 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         </div>
                       )}
 
-                      {doc.dataUltimaVerificacao && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500">Última Checagem:</span>
-                          <span className="text-slate-300 font-mono text-[10px]">
+                      {/* Data e Hora da Consulta / Verificação Externa */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500">Última Verificação:</span>
+                        {doc.dataUltimaVerificacao ? (
+                          <span
+                            className="text-slate-300 font-mono text-[10px]"
+                            title="Data e hora em que a fonte foi consultada"
+                          >
                             {new Date(doc.dataUltimaVerificacao).toLocaleDateString('pt-BR')} às{' '}
-                            {new Date(doc.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(doc.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                           </span>
-                        </div>
-                      )}
+                        ) : (
+                          <span className="text-amber-400 font-mono text-[10px]">
+                            Pendente / Nunca Verificada
+                          </span>
+                        )}
+                      </div>
 
                       {doc.detalhesUltimaVerificacao && (
                         <p className="text-[11px] text-slate-400 bg-slate-950/40 p-2 rounded border border-slate-800/60 line-clamp-2">
@@ -1628,6 +1646,43 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                     </div>
                   </div>
                 )}
+
+                {/* Painel Estruturado de Governança Documental: Datas & Vigência */}
+                <div className="mx-6 mt-4 p-4 rounded-xl border bg-slate-950/80 border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Revisão Vigente:</span>
+                    <span className="text-emerald-400 font-mono font-bold text-sm">
+                      {selectedDocForDetail.numeroRevisao || selectedDocForDetail.revisaoVigenteNumero || 'Rev. 01'}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Data da Revisão (Emissão):</span>
+                    <span className="text-slate-200 font-mono font-medium text-xs">
+                      {selectedDocForDetail.dataRevisao || selectedDocForDetail.atualizadoEm?.split('T')[0] || '-'}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Modalidade:</span>
+                    <span className="font-semibold text-xs flex items-center gap-1 text-slate-200">
+                      {selectedDocForDetail.tipoVerificacao === 'AUTOMATICO' ? (
+                        <span className="text-indigo-400 flex items-center gap-1"><Bot className="w-3.5 h-3.5" /> AUTOMÁTICO</span>
+                      ) : (
+                        <span className="text-amber-400 flex items-center gap-1"><UserCheck className="w-3.5 h-3.5" /> MANUAL</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-500 block text-[11px] mb-0.5">Última Verificação Externa:</span>
+                    {selectedDocForDetail.dataUltimaVerificacao ? (
+                      <span className="text-slate-200 font-mono text-[11px]">
+                        {new Date(selectedDocForDetail.dataUltimaVerificacao).toLocaleDateString('pt-BR')} às{' '}
+                        {new Date(selectedDocForDetail.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      </span>
+                    ) : (
+                      <span className="text-amber-400 font-mono text-[11px]">Pendente de Verificação</span>
+                    )}
+                  </div>
+                </div>
 
                 {/* Conteúdo com a Linha do Tempo Cronológica */}
                 <div className="p-6 overflow-y-auto space-y-6">
@@ -2052,12 +2107,18 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                             <span className="text-slate-400">Data da Revisão:</span>
                             <span className="text-slate-200 font-mono">{doc.dataRevisao || revVigente?.dataEntradaVigor || '-'}</span>
                           </div>
-                          {doc.dataUltimaVerificacao && (
-                            <div className="flex justify-between pt-1 border-t border-slate-800/60 text-[11px]">
-                              <span className="text-slate-500">Última Checagem:</span>
-                              <span className="text-slate-400 font-mono">{new Date(doc.dataUltimaVerificacao).toLocaleDateString('pt-BR')}</span>
-                            </div>
-                          )}
+                          {/* Data e Hora da Consulta / Verificação Externa */}
+                          <div className="flex justify-between pt-1 border-t border-slate-800/60 text-[11px]">
+                            <span className="text-slate-500">Última Verificação:</span>
+                            {doc.dataUltimaVerificacao ? (
+                              <span className="text-slate-300 font-mono text-[10px]">
+                                {new Date(doc.dataUltimaVerificacao).toLocaleDateString('pt-BR')} às{' '}
+                                {new Date(doc.dataUltimaVerificacao).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              </span>
+                            ) : (
+                              <span className="text-amber-400 font-mono text-[10px]">Pendente de verificação</span>
+                            )}
+                          </div>
                         </div>
 
                         {doc.detalhesUltimaVerificacao && (

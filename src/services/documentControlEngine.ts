@@ -576,14 +576,14 @@ export function diagnosticarImpactosRevisao(params: {
  * "A automação identifica. A evidência comprova. O responsável valida."
  *
  * - CONFORME: Revisão controlada confere com a fonte oficial.
- * - NOVA_REVISAO_IDENTIFICADA: Apenas quando houver evidência real e comprovada na fonte.
+ * - NOVA_REVISAO_IDENTIFICADA: Apenas quando houver evidência real e comprovada na fonte oficial com comprovação técnica.
  * - FONTE_INDISPONIVEL: Portal inativo, inacessível ou sem URL configurada.
  * - VERIFICACAO_NAO_CONCLUSIVA: Acesso realizado mas sem informação conclusiva da revisão.
  *
  * REGRA OBRIGATÓRIA DE DATAS:
  * A data da revisão (dataRevisao - emissão/publicação) JAMAIS é confundida ou sobrescrita com a data da verificação (dataVerificacao).
  */
-export function simularVerificacaoFonteExterna(params: {
+export function executarVerificacaoFonteExterna(params: {
   fonte: FonteExternaControlada;
   documento: DocumentoControlado;
   revisaoAtual: RevisaoDocumental | undefined;
@@ -614,12 +614,69 @@ export function simularVerificacaoFonteExterna(params: {
     };
   }
 
-  // 2. Se a fonte contiver constatação comprovada com evidência real registrada
-  // (JAMAIS inventar números de revisão ou incrementar automaticamente)
+  // 2. Se for documento com verificação MANUAL, não gerar constatações automáticas sem validação documental
+  if (documento.tipoVerificacao === 'MANUAL') {
+    // Se o responsável registrou manualmente uma constatação com evidência comprovada
+    const temEvidenciaManualComprovada =
+      documento.revisaoNaFonteIdentificada &&
+      documento.revisaoNaFonteIdentificada !== revAtualNum &&
+      fonte.ultimoResultadoStatus === 'NOVA_REVISAO_IDENTIFICADA' &&
+      Boolean(fonte.evidenciaRegistro);
+
+    if (temEvidenciaManualComprovada) {
+      const revisaoIdentificada = documento.revisaoNaFonteIdentificada!;
+      return {
+        id: `log-verif-${Date.now()}`,
+        organizationId: documento.organizationId,
+        fonteId: fonte.id,
+        fonteNome: fonte.nome,
+        documentoId: documento.id,
+        codigoDocumento: documento.codigo,
+        revisaoAtualControlada: revAtualNum,
+        revisaoIdentificadaNaFonte: revisaoIdentificada,
+        dataPublicacaoNaFonte: documento.dataPublicacaoNaFonte || undefined,
+        statusVerificacao: 'NOVA_REVISAO_IDENTIFICADA',
+        mensagem: `Evidência de nova revisão (${revisaoIdentificada}) apontada na fonte "${fonte.nome}". Validação humana obrigatória antes de qualquer alteração no acervo.`,
+        requerValidacaoHumana: true,
+        validacaoHumanaStatus: 'PENDENTE',
+        dataVerificacao: dataHoje,
+        executadoPor: usuarioExecutor,
+        evidenciaUrlOuTexto: fonte.evidenciaRegistro || fonte.urlBase,
+      };
+    }
+
+    return {
+      id: `log-verif-${Date.now()}`,
+      organizationId: documento.organizationId,
+      fonteId: fonte.id,
+      fonteNome: fonte.nome,
+      documentoId: documento.id,
+      codigoDocumento: documento.codigo,
+      revisaoAtualControlada: revAtualNum,
+      revisaoIdentificadaNaFonte: revAtualNum,
+      statusVerificacao:
+        documento.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA'
+          ? 'NOVA_REVISAO_IDENTIFICADA'
+          : documento.statusVerificacao === 'FONTE_INDISPONIVEL'
+          ? 'FONTE_INDISPONIVEL'
+          : documento.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA'
+          ? 'VERIFICACAO_NAO_CONCLUSIVA'
+          : 'CONFORME',
+      mensagem: `Conferência manual no portal/fonte oficial "${fonte.nome}" registrada por ${usuarioExecutor}. Revisão em uso: ${revAtualNum}.`,
+      requerValidacaoHumana: false,
+      validacaoHumanaStatus: 'VALIDADA_NOVA_REVISAO_ACEITA',
+      dataVerificacao: dataHoje,
+      executadoPor: usuarioExecutor,
+      evidenciaUrlOuTexto: fonte.urlBase,
+    };
+  }
+
+  // 3. Documento Automático: apenas aceita NOVA_REVISAO se houver evidência real cadastrada
   const temEvidenciaRealRegistrada =
     fonte.ultimoResultadoStatus === 'NOVA_REVISAO_IDENTIFICADA' &&
     documento.revisaoNaFonteIdentificada &&
-    documento.revisaoNaFonteIdentificada !== revAtualNum;
+    documento.revisaoNaFonteIdentificada !== revAtualNum &&
+    Boolean(fonte.evidenciaRegistro);
 
   if (temEvidenciaRealRegistrada) {
     const revisaoIdentificada = documento.revisaoNaFonteIdentificada!;
@@ -634,7 +691,7 @@ export function simularVerificacaoFonteExterna(params: {
       revisaoIdentificadaNaFonte: revisaoIdentificada,
       dataPublicacaoNaFonte: documento.dataPublicacaoNaFonte || undefined,
       statusVerificacao: 'NOVA_REVISAO_IDENTIFICADA',
-      mensagem: `ATENÇÃO: Constatada publicação da revisão "${revisaoIdentificada}" na fonte oficial "${fonte.nome}". A cópia armazenada no QualiGest é a "${revAtualNum}". REGRA DE SEGURANÇA: O documento NÃO foi substituído automaticamente. Necessária validação humana do responsável técnico.`,
+      mensagem: `ATENÇÃO: Constatada publicação da revisão "${revisaoIdentificada}" na fonte oficial "${fonte.nome}". A cópia armazenada no QualyGest é a "${revAtualNum}". REGRA DE SEGURANÇA: O documento NÃO foi substituído automaticamente. Necessária validação humana do responsável técnico.`,
       requerValidacaoHumana: true,
       validacaoHumanaStatus: 'PENDENTE',
       dataVerificacao: dataHoje,
@@ -643,7 +700,7 @@ export function simularVerificacaoFonteExterna(params: {
     };
   }
 
-  // 3. Fonte ativa e verificada com sucesso, mantendo integridade
+  // 4. Fonte ativa e verificada com sucesso, mantendo integridade
   return {
     id: `log-verif-${Date.now()}`,
     organizationId: documento.organizationId,
@@ -662,6 +719,11 @@ export function simularVerificacaoFonteExterna(params: {
     evidenciaUrlOuTexto: fonte.urlBase || 'Consulta direta ao repositório homologado.',
   };
 }
+
+/**
+ * Alias mantido para compatibilidade, direcionando para a rotina oficial sem simulações artificiais
+ */
+export const simularVerificacaoFonteExterna = executarVerificacaoFonteExterna;
 
 /**
  * CÁLCULO DAS MÉTRICAS DO DASHBOARD DOCUMENTAL (Seção 28)

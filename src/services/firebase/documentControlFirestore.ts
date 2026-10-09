@@ -160,6 +160,29 @@ export async function saveDocumentoControlado(
 
   const isNew = !previousDocument && !documento.createdAt;
   const now = new Date().toISOString();
+
+  // Validação de Duplicidade Cadastral na Persistência
+  if (isNew || (previousDocument && previousDocument.codigo.trim().toUpperCase() !== documento.codigo.trim().toUpperCase())) {
+    try {
+      const colDocs = collection(db, 'organizations', organizationId, 'controlled_documents');
+      const qCodigo = query(colDocs, where('codigo', '==', documento.codigo.trim().toUpperCase()));
+      const snapCodigo = await getDocs(qCodigo);
+      const docExistente = snapCodigo.docs.find((d) => d.id !== documento.id);
+      if (docExistente) {
+        const dataDoc = docExistente.data() as DocumentoControlado;
+        if (dataDoc.statusGeral !== 'INATIVO') {
+          throw new Error(
+            `Validação de Persistência: O código documental "${documento.codigo}" já está em uso pelo documento "${dataDoc.titulo}". Duplicidade cadastral bloqueada.`
+          );
+        }
+      }
+    } catch (checkErr: any) {
+      if (checkErr.message?.includes('Validação de Persistência')) throw checkErr;
+      // Caso ocorra falha de rede ou índice, permitir fluxo com log
+      console.warn('Aviso: Verificação de código duplicado offline/bypass:', checkErr);
+    }
+  }
+
   const payload: DocumentoControlado = {
     ...documento,
     organizationId,
@@ -535,6 +558,27 @@ export async function saveRevisaoDocumental(
     uid: auth.currentUser?.uid || 'system',
     role: 'ADMIN',
   };
+
+  // Validação de Unicidade de Revisão por Documento na Persistência
+  try {
+    const colRevs = collection(db, 'organizations', organizationId, 'document_revisions');
+    const qRev = query(colRevs, where('documentoId', '==', revisao.documentoId));
+    const snapRev = await getDocs(qRev);
+    const revDuplicada = snapRev.docs.find(
+      (d) =>
+        d.id !== revisao.id &&
+        (d.data() as RevisaoDocumental).numeroRevisao.trim().toLowerCase() ===
+          revisao.numeroRevisao.trim().toLowerCase()
+    );
+    if (revDuplicada) {
+      throw new Error(
+        `Validação de Persistência: Já existe a revisão "${revisao.numeroRevisao}" cadastrada para o documento "${revisao.codigoDocumento}". Duplicação de revisão documental bloqueada.`
+      );
+    }
+  } catch (revCheckErr: any) {
+    if (revCheckErr.message?.includes('Validação de Persistência')) throw revCheckErr;
+    console.warn('Aviso: Verificação de revisão duplicada bypass:', revCheckErr);
+  }
 
   const payload: RevisaoDocumental = {
     ...revisao,
@@ -972,6 +1016,73 @@ export async function saveLogVerificacao(
         statusVerificacao: log.statusVerificacao,
         requerValidacaoHumana: log.requerValidacaoHumana,
       }),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'external_verification_logs');
+    throw err;
+  }
+}
+
+/**
+ * REJEIÇÃO FORMAL DE DISCREPÂNCIA DE VERIFICAÇÃO (Falso Positivo / Inaplicável)
+ * Exige justificativa técnica e registra usuário, data/hora e decisão na auditoria,
+ * preservando o resultado original da verificação no log.
+ */
+export async function rejeitarDiscrepanciaVerificacao(
+  organizationId: string,
+  logId: string,
+  documentoId: string,
+  motivoRejeicao: string,
+  currentUser?: UserProfile | null
+): Promise<void> {
+  if (!motivoRejeicao || !motivoRejeicao.trim()) {
+    throw new Error('Justificativa técnica é obrigatória para rejeitar uma discrepância de verificação.');
+  }
+
+  const user = currentUser || {
+    displayName: auth.currentUser?.displayName || 'Auditor Técnico SGQ',
+    email: auth.currentUser?.email || 'qualidade@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+  };
+
+  const agora = new Date().toISOString();
+
+  try {
+    const batch = writeBatch(db);
+
+    // 1. Atualizar log de verificação preservando statusVerificacao original
+    const logRef = doc(db, 'organizations', organizationId, 'external_verification_logs', logId);
+    const logSnap = await getDoc(logRef);
+    if (logSnap.exists()) {
+      const logData = logSnap.data() as LogVerificacaoFonteExterna;
+      batch.update(logRef, sanitizeForFirestore({
+        validacaoHumanaStatus: 'FALSO_POSITIVO_REJEITADA',
+        mensagem: `${logData.mensagem || ''} [DECISÃO HUMANA: Discrepância rejeitada por ${user.displayName || user.email} em ${agora}. Motivo técnico: ${motivoRejeicao.trim()}]`,
+      }));
+    }
+
+    // 2. Atualizar documento controlado mantendo como CONFORME
+    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
+    batch.update(docRef, sanitizeForFirestore({
+      statusVerificacao: 'CONFORME',
+      revisaoNaFonteIdentificada: null,
+      detalhesUltimaVerificacao: `Discrepância rejeitada (Falso Positivo / Inaplicável) por ${user.displayName || user.email} em ${new Date().toLocaleDateString('pt-BR')}: ${motivoRejeicao.trim()}`,
+      updatedAt: agora,
+    }));
+
+    await batch.commit();
+
+    // 3. Auditoria formal RBAC 145
+    await recordOrganizationAudit(organizationId, {
+      entity: 'DOCUMENT_CONTROL',
+      entityId: logId,
+      action: 'UPDATE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `Discrepância de verificação rejeitada (Falso Positivo) para o documento ID ${documentoId}. Motivo: ${motivoRejeicao.trim()}`,
+      reason: motivoRejeicao.trim(),
+      details: JSON.stringify({ logId, documentoId, motivo: motivoRejeicao.trim(), dataDecisao: agora }),
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'external_verification_logs');

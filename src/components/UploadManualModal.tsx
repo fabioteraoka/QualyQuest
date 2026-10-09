@@ -312,9 +312,15 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
         contatoClienteNome: contatoClienteNome.trim() || undefined,
         contatoClienteEmail: contatoClienteEmail.trim() || undefined,
         portalFabricanteUrl: portalFabricanteUrl.trim() || undefined,
-        statusVerificacao: 'CONFORME',
-        dataUltimaVerificacao: now, // Data e hora da consulta / verificação atual
-        detalhesUltimaVerificacao: `Arquivo digital "${file.name}" (${formatFileSize(file.size)}) homologado como cópia controlada vigente da ${revNorm}.`,
+        // REGRA DE GOVERNANÇA DOCUMENTAL:
+        // O upload de arquivo NÃO constitui verificação em fonte externa.
+        // A data da verificação pertence à consulta à fonte; a data da revisão pertence ao documento.
+        // Se nunca houve verificação em fonte externa, manter status anterior ou PENDENTE_VERIFICACAO.
+        statusVerificacao: existingDoc?.statusVerificacao || 'PENDENTE_VERIFICACAO',
+        dataUltimaVerificacao: existingDoc?.dataUltimaVerificacao || undefined,
+        detalhesUltimaVerificacao:
+          existingDoc?.detalhesUltimaVerificacao ||
+          `Arquivo digital "${file.name}" (${formatFileSize(file.size)}) arquivado no acervo como ${revNorm}. Pendente conferência contra fonte oficial.`,
         arquivoNome: fileMeta.arquivoNome,
         arquivoMimeType: fileMeta.arquivoMimeType,
         arquivoTamanhoBytes: fileMeta.arquivoTamanhoBytes,
