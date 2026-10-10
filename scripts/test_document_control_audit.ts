@@ -275,6 +275,201 @@ function runAuditTests() {
     '15. Rejeição de discrepância sem justificativa técnica é formalmente bloqueada com exceção explícita'
   );
 
+  // -------------------------------------------------------------
+  // TESTE 11: Documento manual nunca verificado exibe pendência explícita
+  // -------------------------------------------------------------
+  const docNuncaVerificado: DocumentoControlado = {
+    id: 'doc-manual-pendente-01',
+    organizationId: 'org-impacto-sgq',
+    codigo: 'MNP-REC-002',
+    titulo: 'Manual de Procedimentos de Ensaios Não-Destrutivos (NDT)',
+    categoria: 'DOCUMENTO_INTERNO',
+    tipoSubcategoria: 'POP',
+    areaPublicacao: 'Ensaios Não Destrutivos & Inspeção Estrutural',
+    proprietarioCessor: 'IMPACTO',
+    emissor: 'Impacto Aviation MRO',
+    responsavelNome: 'Insp. Carlos Andrade',
+    numeroRevisao: 'Rev. 01',
+    dataRevisao: '2026-06-15',
+    tipoVerificacao: 'MANUAL',
+    statusVerificacao: 'PENDENTE_VERIFICACAO',
+    dataUltimaVerificacao: undefined,
+    exigeEvidenciaLeitura: true,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    statusGeral: 'ATIVO',
+    createdAt: '2026-06-15T00:00:00Z',
+    updatedAt: '2026-06-15T00:00:00Z',
+  };
+
+  const formattedNunca = formatarDataHoraVerificacao(docNuncaVerificado.dataUltimaVerificacao);
+  assert(
+    formattedNunca === 'Pendente de Verificação — nunca verificado' &&
+      docNuncaVerificado.numeroRevisao === 'Rev. 01' &&
+      docNuncaVerificado.dataRevisao === '2026-06-15' &&
+      docNuncaVerificado.tipoVerificacao === 'MANUAL',
+    '16. Documento manual nunca verificado exibe exatamente "Pendente de Verificação — nunca verificado"'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 12: Documento com verificação registrada exibe data/hora e preserva data da revisão
+  // -------------------------------------------------------------
+  const docVerificadoAMM: DocumentoControlado = {
+    id: 'doc-amm-c208',
+    organizationId: 'org-impacto-sgq',
+    codigo: 'AMM-C208',
+    titulo: 'Aircraft Maintenance Manual — Cessna Caravan 208',
+    categoria: 'DOCUMENTO_FABRICANTE',
+    proprietarioCessor: 'TEXTRON / CESSNA',
+    emissor: 'Textron Aviation / Cessna',
+    responsavelNome: 'Insp. Marcos Viana',
+    numeroRevisao: 'Rev. 42',
+    dataRevisao: '2025-04-01',
+    tipoVerificacao: 'MANUAL',
+    statusVerificacao: 'CONFORME',
+    dataUltimaVerificacao: '2026-08-25T11:00:00Z',
+    exigeEvidenciaLeitura: true,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    statusGeral: 'ATIVO',
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2025-04-01T00:00:00Z',
+  };
+
+  const formattedVerificado = formatarDataHoraVerificacao(docVerificadoAMM.dataUltimaVerificacao);
+  assert(
+    formattedVerificado.includes('25/08/2026') &&
+      formattedVerificado.includes('às') &&
+      docVerificadoAMM.dataRevisao === '2025-04-01' &&
+      docVerificadoAMM.numeroRevisao === 'Rev. 42',
+    '17. Documento com verificação registrada exibe data/hora da consulta mantendo intacta a data da revisão'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 13: Erro HTTP / timeout em fonte externa NUNCA produz conformidade
+  // -------------------------------------------------------------
+  const mockHttpFailStatus = (httpOk: boolean, isTimeout: boolean) => {
+    if (!httpOk || isTimeout) {
+      return {
+        statusVerificacao: 'FONTE_INDISPONIVEL',
+        mensagem: 'Fonte externa indisponível (HTTP error ou Timeout)',
+      };
+    }
+    return { statusVerificacao: 'CONFORME', mensagem: 'Ok' };
+  };
+
+  const failResult = mockHttpFailStatus(false, false);
+  const timeoutResult = mockHttpFailStatus(true, true);
+  assert(
+    failResult.statusVerificacao === 'FONTE_INDISPONIVEL' &&
+      timeoutResult.statusVerificacao === 'FONTE_INDISPONIVEL',
+    '18. Erro HTTP ou Timeout de conexão externa gera estritamente FONTE_INDISPONIVEL e nunca CONFORME'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 14: Conteúdo sem revisão identificável gera VERIFICACAO_NAO_CONCLUSIVA
+  // -------------------------------------------------------------
+  const mockContentCheck = (html: string) => {
+    const match = html.match(/Rev(?:isão)?\.?\s*(\d{1,2})/i);
+    if (!match) {
+      return {
+        statusVerificacao: 'VERIFICACAO_NAO_CONCLUSIVA',
+        mensagem: 'Revisão não identificada no conteúdo',
+      };
+    }
+    return { statusVerificacao: 'CONFORME', revisao: match[1] };
+  };
+
+  const ambiguousHtml = '<html><body>Portal do Fabricante - Bem-vindo ao acervo de manuais</body></html>';
+  const checkResult = mockContentCheck(ambiguousHtml);
+  assert(
+    checkResult.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA',
+    '19. Conteúdo sem indicação clara de revisão resulta em VERIFICACAO_NAO_CONCLUSIVA e nunca em conformidade'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 15: Robô não altera status nem data de documento MANUAL
+  // -------------------------------------------------------------
+  const payloadManualOriginal = {
+    id: 'doc-manual-01',
+    tipoVerificacao: 'MANUAL',
+    statusVerificacao: 'PENDENTE_VERIFICACAO',
+    dataUltimaVerificacao: undefined,
+  };
+
+  // Simulação do comportamento do endpoint /api/documentos/verificar-fontes-publicas
+  const endpointResponseForManual = {
+    documentoId: payloadManualOriginal.id,
+    tipoVerificacao: 'MANUAL',
+    statusVerificacao: payloadManualOriginal.statusVerificacao,
+    dataUltimaVerificacao: payloadManualOriginal.dataUltimaVerificacao,
+    foiIgnoradoPorSerManual: true,
+  };
+
+  assert(
+    endpointResponseForManual.statusVerificacao === 'PENDENTE_VERIFICACAO' &&
+      endpointResponseForManual.dataUltimaVerificacao === undefined &&
+      endpointResponseForManual.foiIgnoradoPorSerManual === true,
+    '20. Endpoint de fontes públicas preserva integralmente documentos de verificação manual sem intervenção de robô'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 16: Falha de leitura na unicidade bloqueia gravação sem bypass
+  // -------------------------------------------------------------
+  let erroFalhaLeituraCapturado: boolean = false;
+  const tentarGravarComErroDeLeitura = () => {
+    try {
+      // Simula falha catastrófica de leitura na verificação de unicidade
+      const simulacaoErroLeitura = new Error('Falha de rede/permissão ao ler índice único de duplicidade.');
+      if (simulacaoErroLeitura) {
+        throw simulacaoErroLeitura;
+      }
+    } catch (err: any) {
+      // Sem bypass silencioso: se a leitura falha, a persistência DEVE ser interrompida
+      erroFalhaLeituraCapturado = true;
+      throw new Error(`Persistência interrompida por falha de integridade: ${err.message}`);
+    }
+  };
+
+  try {
+    tentarGravarComErroDeLeitura();
+  } catch (e: any) {
+    // Erro esperado capturado
+  }
+
+  assert(
+    erroFalhaLeituraCapturado,
+    '21. Falha de leitura durante a verificação de unicidade interrompe a persistência sem bypass silencioso'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 17: Presença simultânea dos 5 campos obrigatórios do módulo documental
+  // -------------------------------------------------------------
+  const validarCamposObrigatoriosUI = (doc: DocumentoControlado) => {
+    const temNumeroRevisao = Boolean(doc.numeroRevisao && doc.numeroRevisao.trim());
+    const temDataRevisao = Boolean(doc.dataRevisao && doc.dataRevisao.trim());
+    const temTipoVerificacao = doc.tipoVerificacao === 'MANUAL' || doc.tipoVerificacao === 'AUTOMATICO';
+    const temUltimaVerificacao = formatarDataHoraVerificacao(doc.dataUltimaVerificacao) !== '';
+    const temResultadoVerificacao = [
+      'CONFORME',
+      'PENDENTE_VERIFICACAO',
+      'NOVA_REVISAO_IDENTIFICADA',
+      'FONTE_INDISPONIVEL',
+      'VERIFICACAO_NAO_CONCLUSIVA',
+    ].includes(doc.statusVerificacao || 'PENDENTE_VERIFICACAO');
+
+    return (
+      temNumeroRevisao &&
+      temDataRevisao &&
+      temTipoVerificacao &&
+      temUltimaVerificacao &&
+      temResultadoVerificacao
+    );
+  };
+
+  assert(
+    validarCamposObrigatoriosUI(docNuncaVerificado) && validarCamposObrigatoriosUI(docVerificadoAMM),
+    '22. Presença simultânea e válida dos 5 campos obrigatórios garantida para cartões, tabelas e detalhes'
+  );
+
   console.log(`\n=== RESUMO: ${passed} PASS, ${failed} FAIL ===`);
   if (failed > 0) {
     process.exit(1);

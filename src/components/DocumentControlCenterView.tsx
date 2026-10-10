@@ -19,7 +19,6 @@ import {
   gerarSolicitacaoRevisaoClienteEmail,
   compararRevisoes,
   diagnosticarImpactosRevisao,
-  executarVerificacaoFonteExterna,
   calcularMetricasDashboardDocumental,
 } from '../services/documentControlEngine';
 import {
@@ -905,50 +904,130 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     }, 600);
   };
 
-  // Verificação de Fonte Homologada
+  // Verificação Real de Fonte Homologada (Sem simulação e sem documentos fictícios)
   const handleVerificarFonte = async (fonte: FonteExternaControlada) => {
-    const docRelacionado = documentos.find((d) => d.fonteExternaId === fonte.id) || documentos[0];
-    const revVigente = revisoes.find((r) => r.id === docRelacionado?.revisaoVigenteId);
+    const docsRelacionados = documentos.filter((d) => d.fonteExternaId === fonte.id);
 
-    const logSimulado = executarVerificacaoFonteExterna({
-      fonte,
-      documento: docRelacionado || {
-        id: 'doc-ext-01',
-        organizationId,
-        codigo: 'DOC-EXT',
-        titulo: fonte.nome,
-        categoria: 'DOCUMENTO_FABRICANTE',
-        emissor: fonte.nome,
-        responsavelNome: currentUser?.displayName || 'Garantia da Qualidade',
-        exigeEvidenciaLeitura: false,
-        aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
-        statusGeral: 'ATIVO',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      revisaoAtual: revVigente,
-      usuarioExecutor: currentUser?.displayName || currentUser?.email || 'Auditor SGQ',
-    });
+    if (docsRelacionados.length === 0) {
+      alert(
+        `Nenhum documento controlado está vinculado a esta fonte externa ("${fonte.nome}"). Vincule documentos no Acervo antes de realizar a verificação.`
+      );
+      return;
+    }
 
-    await saveLogVerificacao(organizationId, logSimulado, currentUser);
+    // Se a fonte ou todos os documentos forem manuais (portal com login/2FA, físico ou cliente):
+    const ehFonteManual =
+      fonte.tipoFonte === 'FABRICANTE' ||
+      fonte.tipoFonte === 'CLIENTE' ||
+      docsRelacionados.every((d) => d.tipoVerificacao === 'MANUAL');
 
-    const fonteAtualizada: FonteExternaControlada = {
-      ...fonte,
-      ultimaVerificacao: new Date().toISOString(),
-      ultimoResultadoStatus:
-        logSimulado.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA'
-          ? 'NOVA_REVISAO_IDENTIFICADA'
-          : logSimulado.statusVerificacao === 'FONTE_INDISPONIVEL'
-          ? 'FONTE_INDISPONIVEL'
-          : logSimulado.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA'
-          ? 'VERIFICACAO_NAO_CONCLUSIVA'
-          : 'CONFORME_SEM_ALTERACAO',
-      ultimoResultadoDetalhes: logSimulado.mensagem,
-      updatedAt: new Date().toISOString(),
-    };
-    await saveFonteExterna(organizationId, fonteAtualizada, currentUser);
+    if (ehFonteManual) {
+      const docManual = docsRelacionados[0];
+      setSelectedDocForVerificationModal(docManual);
+      if (docManual.categoria === 'DOCUMENTO_CLIENTE' || docManual.tipoSubcategoria === 'CONTRATO_CLIENTE') {
+        setIsCustomerNotificationModalOpen(true);
+      } else {
+        setIsManufacturerAlertModalOpen(true);
+      }
+      showToast(`Fonte de verificação manual: abrindo formulário de conferência técnica para "${docManual.codigo}".`);
+      return;
+    }
 
-    showToast(`Verificação da fonte "${fonte.nome}" concluída! Status: ${logSimulado.statusVerificacao}`);
+    // Fonte automatizada (pública com URL): executa checagem real contra endpoint do backend
+    try {
+      setIsVerifyingUpdates(true);
+      const res = await fetch('/api/documentos/verificar-fontes-publicas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          documentos: docsRelacionados,
+        }),
+      });
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || 'Falha na checagem da fonte');
+      }
+
+      const agora = new Date().toISOString();
+      let statusFinalFonte: FonteExternaControlada['ultimoResultadoStatus'] = 'CONFORME_SEM_ALTERACAO';
+      let msgFinalFonte = `Consulta real realizada em ${new Date().toLocaleString('pt-BR')}.`;
+
+      if (Array.isArray(data.resultados)) {
+        for (const item of data.resultados) {
+          const docAlvo = documentos.find((d) => d.id === item.documentoId || d.codigo === item.codigo);
+          if (docAlvo && docAlvo.tipoVerificacao === 'AUTOMATICO') {
+            const dataVerif = item.dataUltimaVerificacao || agora;
+            const revIdentificada = item.revisaoOficialIdentificada || item.revisaoNaFonte;
+            const msgVerif = item.detalhesUltimaVerificacao || item.mensagem;
+
+            const atualizado: DocumentoControlado = {
+              ...docAlvo,
+              statusVerificacao: item.statusVerificacao,
+              dataUltimaVerificacao: dataVerif,
+              revisaoNaFonteIdentificada: revIdentificada,
+              detalhesUltimaVerificacao: msgVerif,
+            };
+            await saveDocumentoControlado(organizationId, atualizado, currentUser, docAlvo);
+
+            const logEntry: LogVerificacaoFonteExterna = {
+              id: `log-verif-${Date.now()}-${docAlvo.id}`,
+              organizationId,
+              fonteId: fonte.id,
+              fonteNome: fonte.nome,
+              documentoId: docAlvo.id,
+              codigoDocumento: docAlvo.codigo,
+              revisaoAtualControlada: docAlvo.numeroRevisao || docAlvo.revisaoVigenteNumero || 'Rev. Vigente',
+              revisaoIdentificadaNaFonte: revIdentificada,
+              statusVerificacao: item.statusVerificacao,
+              mensagem: msgVerif,
+              requerValidacaoHumana: item.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA',
+              validacaoHumanaStatus:
+                item.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA' ? 'PENDENTE' : 'VALIDADA_NOVA_REVISAO_ACEITA',
+              dataVerificacao: dataVerif,
+              executadoPor: currentUser?.displayName || currentUser?.email || 'Robô SGQ',
+              evidenciaUrlOuTexto: item.urlFonteVerificacao || fonte.urlBase,
+            };
+            await saveLogVerificacao(organizationId, logEntry, currentUser);
+
+            if (item.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA') {
+              statusFinalFonte = 'NOVA_REVISAO_IDENTIFICADA';
+              msgFinalFonte = msgVerif;
+            } else if (item.statusVerificacao === 'FONTE_INDISPONIVEL' && statusFinalFonte !== 'NOVA_REVISAO_IDENTIFICADA') {
+              statusFinalFonte = 'FONTE_INDISPONIVEL';
+              msgFinalFonte = msgVerif;
+            } else if (item.statusVerificacao === 'VERIFICACAO_NAO_CONCLUSIVA' && statusFinalFonte === 'CONFORME_SEM_ALTERACAO') {
+              statusFinalFonte = 'VERIFICACAO_NAO_CONCLUSIVA';
+              msgFinalFonte = msgVerif;
+            }
+          }
+        }
+      }
+
+      const fonteAtualizada: FonteExternaControlada = {
+        ...fonte,
+        ultimaVerificacao: agora,
+        ultimoResultadoStatus: statusFinalFonte,
+        ultimoResultadoDetalhes: msgFinalFonte,
+        updatedAt: agora,
+      };
+      await saveFonteExterna(organizationId, fonteAtualizada, currentUser);
+      showToast(`Consulta real à fonte "${fonte.nome}" concluída! Status: ${statusFinalFonte}`);
+    } catch (err: any) {
+      const agora = new Date().toISOString();
+      const fonteIndisponivel: FonteExternaControlada = {
+        ...fonte,
+        ultimaVerificacao: agora,
+        ultimoResultadoStatus: 'FONTE_INDISPONIVEL',
+        ultimoResultadoDetalhes: `Falha na conexão externa: ${err.message || 'Fonte inacessível'}`,
+        updatedAt: agora,
+      };
+      await saveFonteExterna(organizationId, fonteIndisponivel, currentUser);
+      showToast(`Fonte "${fonte.nome}" retornou erro de conexão: registrada como Fonte Indisponível.`);
+    } finally {
+      setIsVerifyingUpdates(false);
+    }
   };
 
   // Registrar Evidência de Consulta Técnica (Seção 21)

@@ -700,7 +700,7 @@ export function executarVerificacaoFonteExterna(params: {
     };
   }
 
-  // 4. Fonte ativa e verificada com sucesso, mantendo integridade
+  // 4. Fonte ativa: se não houver extração real de dados nem evidência documental, o resultado é não conclusivo
   return {
     id: `log-verif-${Date.now()}`,
     organizationId: documento.organizationId,
@@ -709,21 +709,16 @@ export function executarVerificacaoFonteExterna(params: {
     documentoId: documento.id,
     codigoDocumento: documento.codigo,
     revisaoAtualControlada: revAtualNum,
-    revisaoIdentificadaNaFonte: revAtualNum,
-    statusVerificacao: 'CONFORME',
-    mensagem: `Fonte oficial "${fonte.nome}" consultada com sucesso. A revisão vigente controlada (${revAtualNum}) confere com a publicação oficial em vigor.`,
+    revisaoIdentificadaNaFonte: undefined,
+    statusVerificacao: 'VERIFICACAO_NAO_CONCLUSIVA',
+    mensagem: `A fonte oficial "${fonte.nome}" foi acessada, mas não há extração automatizada nem evidência conclusiva para ${documento.codigo}. Mantida a revisão vigente controlada (${revAtualNum}).`,
     requerValidacaoHumana: false,
     validacaoHumanaStatus: 'VALIDADA_NOVA_REVISAO_ACEITA',
     dataVerificacao: dataHoje,
     executadoPor: usuarioExecutor,
-    evidenciaUrlOuTexto: fonte.urlBase || 'Consulta direta ao repositório homologado.',
+    evidenciaUrlOuTexto: fonte.urlBase || 'Consulta sem extração conclusiva.',
   };
 }
-
-/**
- * Alias mantido para compatibilidade, direcionando para a rotina oficial sem simulações artificiais
- */
-export const simularVerificacaoFonteExterna = executarVerificacaoFonteExterna;
 
 /**
  * CÁLCULO DAS MÉTRICAS DO DASHBOARD DOCUMENTAL (Seção 28)

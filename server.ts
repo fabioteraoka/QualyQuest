@@ -4482,7 +4482,7 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
         let revisaoOficial = revisaoAtual;
         let urlOficial = matchReg ? matchReg[1].urlOficial : urlAlvo;
         let extraidoViaWeb = false;
-        let statusVerificacao: "CONFORME" | "NOVA_REVISAO_IDENTIFICADA" | "FONTE_INDISPONIVEL" | "VERIFICACAO_NAO_CONCLUSIVA" = "CONFORME";
+        let statusVerificacao: "CONFORME" | "NOVA_REVISAO_IDENTIFICADA" | "FONTE_INDISPONIVEL" | "VERIFICACAO_NAO_CONCLUSIVA" | "PENDENTE_VERIFICACAO" = "PENDENTE_VERIFICACAO";
         let mensagem = "";
 
         // Função de normalização para comparação de revisões
@@ -4496,6 +4496,8 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
 
         if (matchReg) {
           revisaoOficial = matchReg[1].revisaoOficial;
+          let consultaHttpFalhou = false;
+          let httpErroDetalhe = "";
 
           // Se tiver URL pública da autoridade, tenta requisição HTTP com timeout seguro de 3.5s
           if (urlOficial && urlOficial.startsWith("http")) {
@@ -4510,46 +4512,71 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
 
               if (resp.ok) {
                 const html = await resp.text();
-                extraidoViaWeb = true;
+                let identificouNoHtml = false;
 
                 if (codigoNorm.includes("145")) {
                   const matchEmenda = html.match(/Emenda\s*(?:n[ºo°]?\s*)?(\d{1,2})/i);
                   if (matchEmenda && matchEmenda[1]) {
                     revisaoOficial = `Emenda ${matchEmenda[1].padStart(2, "0")}`;
+                    identificouNoHtml = true;
                   }
                 } else if (codigoNorm.includes("IS")) {
                   const matchRev = html.match(/Rev(?:isão)?\.?\s*([A-Z]|\d{1,2})/i);
                   if (matchRev && matchRev[1]) {
                     revisaoOficial = `Rev. ${matchRev[1]}`;
+                    identificouNoHtml = true;
                   }
                 }
+
+                if (identificouNoHtml) {
+                  extraidoViaWeb = true;
+                } else {
+                  // Conectou mas não identificou no conteúdo
+                  statusVerificacao = "VERIFICACAO_NAO_CONCLUSIVA";
+                  mensagem = `A autoridade regulatória (${urlOficial}) foi acessada com sucesso, mas o conteúdo retornado não permitiu identificar com segurança a revisão ou emenda oficial. Mantida a revisão controlada "${revisaoAtual}".`;
+                }
+              } else {
+                consultaHttpFalhou = true;
+                httpErroDetalhe = `código de erro HTTP ${resp.status}`;
               }
             } catch (netErr: any) {
-              extraidoViaWeb = false;
+              consultaHttpFalhou = true;
+              httpErroDetalhe = netErr.name === "AbortError" ? "tempo limite esgotado (timeout)" : "falha de conectividade com o portal da autoridade";
             }
           }
 
-          const ehConforme =
-            limpaRev(revisaoAtual) === limpaRev(revisaoOficial) ||
-            revisaoAtual.toLowerCase().includes(revisaoOficial.toLowerCase()) ||
-            revisaoOficial.toLowerCase().includes(revisaoAtual.toLowerCase());
+          if (consultaHttpFalhou) {
+            statusVerificacao = "FONTE_INDISPONIVEL";
+            revisaoOficial = revisaoAtual;
+            mensagem = `A fonte oficial da autoridade reguladora (${urlOficial}) encontra-se indisponível no momento (${httpErroDetalhe}). Nenhuma alteração foi realizada na revisão controlada "${revisaoAtual}".`;
+          } else if (statusVerificacao !== "VERIFICACAO_NAO_CONCLUSIVA") {
+            // Comparação estrita de revisão
+            const ehConforme =
+              limpaRev(revisaoAtual) === limpaRev(revisaoOficial) ||
+              revisaoAtual.toLowerCase().includes(revisaoOficial.toLowerCase()) ||
+              revisaoOficial.toLowerCase().includes(revisaoAtual.toLowerCase());
 
-          if (ehConforme) {
-            statusVerificacao = "CONFORME";
-            mensagem = `Publicação regulatória verificada com sucesso contra o portal oficial da autoridade (${extraidoViaWeb ? "Web Scraping ao Vivo" : "Repositório Sincronizado ANAC/FAA"}). A revisão "${revisaoAtual}" é a oficialmente vigente.`;
-          } else {
-            // Verificar se a revisão identificada é realmente posterior
-            const numAtual = extrairNumeroRev(revisaoAtual);
-            const numOficial = extrairNumeroRev(revisaoOficial);
-
-            if (numAtual !== null && numOficial !== null && numOficial <= numAtual) {
-              // A revisão oficial é igual ou menor que a controlada no acervo -> Manter Conforme
+            if (ehConforme) {
               statusVerificacao = "CONFORME";
-              mensagem = `Publicação regulatória oficial verificada. A revisão controlada (${revisaoAtual}) já reflete ou supera o texto base oficial (${revisaoOficial}). Situação CONFORME.`;
-              revisaoOficial = revisaoAtual;
+              mensagem = `Publicação regulatória verificada com sucesso contra o portal oficial da autoridade (${extraidoViaWeb ? "Web Scraping ao Vivo" : "Repositório Sincronizado ANAC/FAA"}). A revisão "${revisaoAtual}" é a oficialmente vigente.`;
             } else {
-              statusVerificacao = "NOVA_REVISAO_IDENTIFICADA";
-              mensagem = `ATENÇÃO: Foi identificada a publicação oficial "${revisaoOficial}" na autoridade reguladora (${matchReg[1].titulo}). A revisão vigente no QualyGest é "${revisaoAtual}". REGRA DE SEGURANÇA: Nenhuma revisão foi substituída automaticamente. Necessária validação humana do responsável técnico.`;
+              // Verificar se a revisão identificada é realmente posterior
+              const numAtual = extrairNumeroRev(revisaoAtual);
+              const numOficial = extrairNumeroRev(revisaoOficial);
+
+              if (numAtual !== null && numOficial !== null && numOficial <= numAtual) {
+                // A revisão oficial é igual ou menor que a controlada no acervo -> Manter Conforme
+                statusVerificacao = "CONFORME";
+                mensagem = `Publicação regulatória oficial verificada. A revisão controlada (${revisaoAtual}) já reflete ou supera o texto base oficial (${revisaoOficial}). Situação CONFORME.`;
+                revisaoOficial = revisaoAtual;
+              } else if (numAtual !== null && numOficial !== null && numOficial > numAtual) {
+                statusVerificacao = "NOVA_REVISAO_IDENTIFICADA";
+                mensagem = `ATENÇÃO: Foi identificada a publicação oficial "${revisaoOficial}" na autoridade reguladora (${matchReg[1].titulo}). A revisão vigente no QualyGest é "${revisaoAtual}". REGRA DE SEGURANÇA: Nenhuma revisão foi substituída automaticamente. Necessária validação humana do responsável técnico.`;
+              } else {
+                statusVerificacao = "VERIFICACAO_NAO_CONCLUSIVA";
+                revisaoOficial = revisaoAtual;
+                mensagem = `A publicação oficial (${revisaoOficial}) não pôde ser comparada conclusivamente com a revisão controlada "${revisaoAtual}". Validação humana exigida.`;
+              }
             }
           }
         } else if (urlAlvo && urlAlvo.startsWith("http")) {
@@ -4601,11 +4628,12 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
           } catch (fetchErr: any) {
             statusVerificacao = "FONTE_INDISPONIVEL";
             revisaoOficial = revisaoAtual;
-            mensagem = `A fonte externa (${urlAlvo}) encontra-se indisponível ou inacessível no momento. Mantida a revisão vigente controlada "${revisaoAtual}".`;
+            const detErr = fetchErr.name === "AbortError" ? "tempo limite esgotado (timeout)" : "falha de conexão";
+            mensagem = `A fonte externa (${urlAlvo}) encontra-se indisponível ou inacessível no momento (${detErr}). Mantida a revisão vigente controlada "${revisaoAtual}".`;
           }
         } else {
           // Documento sem URL externa configurada ou sem catálogo regulatório
-          statusVerificacao = docItem.statusVerificacao || (docItem.dataUltimaVerificacao ? "CONFORME" : "PENDENTE_VERIFICACAO");
+          statusVerificacao = docItem.statusVerificacao || "PENDENTE_VERIFICACAO";
           revisaoOficial = revisaoAtual;
           mensagem =
             docItem.detalhesUltimaVerificacao ||
@@ -4613,7 +4641,10 @@ app.post("/api/documentos/verificar-fontes-publicas", async (req, res) => {
         }
 
         const houveConsultaReal = Boolean(matchReg || (urlAlvo && urlAlvo.startsWith("http")));
-        const dataConsultaEfetiva = houveConsultaReal ? agoraIso : (docItem.dataUltimaVerificacao || undefined);
+        const dataConsultaEfetiva =
+          houveConsultaReal && statusVerificacao !== "PENDENTE_VERIFICACAO"
+            ? agoraIso
+            : (docItem.dataUltimaVerificacao || undefined);
 
         return {
           documentoId: docItem.id || docItem.documentoId,

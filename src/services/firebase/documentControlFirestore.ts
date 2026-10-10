@@ -10,6 +10,7 @@ import {
   getDocs,
   getDoc,
   updateDoc,
+  runTransaction,
 } from 'firebase/firestore';
 import { db, auth } from './config';
 import {
@@ -77,7 +78,25 @@ export function subscribeToDocumentosControlados(
 
       const list: DocumentoControlado[] = [];
       snapshot.forEach((snap) => {
-        list.push(snap.data() as DocumentoControlado);
+        const raw = snap.data();
+        let dataUltimaVerif: string | undefined = undefined;
+        if (raw.dataUltimaVerificacao) {
+          if (typeof raw.dataUltimaVerificacao?.toDate === 'function') {
+            dataUltimaVerif = raw.dataUltimaVerificacao.toDate().toISOString();
+          } else if (
+            typeof raw.dataUltimaVerificacao === 'object' &&
+            typeof raw.dataUltimaVerificacao.seconds === 'number'
+          ) {
+            dataUltimaVerif = new Date(raw.dataUltimaVerificacao.seconds * 1000).toISOString();
+          } else if (typeof raw.dataUltimaVerificacao === 'string') {
+            dataUltimaVerif = raw.dataUltimaVerificacao.trim() || undefined;
+          }
+        }
+        list.push({
+          ...raw,
+          id: snap.id,
+          dataUltimaVerificacao: dataUltimaVerif,
+        } as DocumentoControlado);
       });
       callback(list);
     },
@@ -160,40 +179,57 @@ export async function saveDocumentoControlado(
 
   const isNew = !previousDocument && !documento.createdAt;
   const now = new Date().toISOString();
-
-  // Validação de Duplicidade Cadastral na Persistência
-  if (isNew || (previousDocument && previousDocument.codigo.trim().toUpperCase() !== documento.codigo.trim().toUpperCase())) {
-    try {
-      const colDocs = collection(db, 'organizations', organizationId, 'controlled_documents');
-      const qCodigo = query(colDocs, where('codigo', '==', documento.codigo.trim().toUpperCase()));
-      const snapCodigo = await getDocs(qCodigo);
-      const docExistente = snapCodigo.docs.find((d) => d.id !== documento.id);
-      if (docExistente) {
-        const dataDoc = docExistente.data() as DocumentoControlado;
-        if (dataDoc.statusGeral !== 'INATIVO') {
-          throw new Error(
-            `Validação de Persistência: O código documental "${documento.codigo}" já está em uso pelo documento "${dataDoc.titulo}". Duplicidade cadastral bloqueada.`
-          );
-        }
-      }
-    } catch (checkErr: any) {
-      if (checkErr.message?.includes('Validação de Persistência')) throw checkErr;
-      // Caso ocorra falha de rede ou índice, permitir fluxo com log
-      console.warn('Aviso: Verificação de código duplicado offline/bypass:', checkErr);
-    }
-  }
+  const codigoNorm = documento.codigo.trim().toUpperCase();
 
   const payload: DocumentoControlado = {
     ...documento,
+    codigo: codigoNorm,
     organizationId,
     updatedAt: now,
     createdAt: documento.createdAt || now,
     statusGeral: documento.statusGeral || 'ATIVO',
   };
 
+  const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documento.id);
+  const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', codigoNorm);
+
   try {
-    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documento.id);
-    await setDoc(docRef, sanitizeForFirestore(payload), { merge: true });
+    // PROTEÇÃO TRANSACIONAL CONTRA CONCORRÊNCIA E DUPLICIDADE NO FIRESTORE
+    await runTransaction(db, async (transaction) => {
+      // 1. Verificar unicidade do código documental no índice transacional
+      const codeIndexSnap = await transaction.get(codeIndexRef);
+      if (codeIndexSnap.exists()) {
+        const codeData = codeIndexSnap.data();
+        if (codeData.documentoId !== documento.id && codeData.statusGeral !== 'INATIVO') {
+          throw new Error(
+            `Validação de Persistência: O código documental "${documento.codigo}" já está em uso pelo documento ID ${codeData.documentoId} ("${codeData.titulo || ''}"). Duplicidade cadastral bloqueada concorrencialmente.`
+          );
+        }
+      }
+
+      // 2. Se o documento já existia e o código foi alterado, limpar índice anterior
+      const docSnap = await transaction.get(docRef);
+      if (docSnap.exists()) {
+        const oldCodigo = (docSnap.data()?.codigo || '').trim().toUpperCase();
+        if (oldCodigo && oldCodigo !== codigoNorm) {
+          const oldCodeRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', oldCodigo);
+          transaction.delete(oldCodeRef);
+        }
+      }
+
+      // 3. Persistir atomicamente o documento e a reserva de código único
+      transaction.set(docRef, sanitizeForFirestore(payload), { merge: true });
+      transaction.set(
+        codeIndexRef,
+        sanitizeForFirestore({
+          documentoId: documento.id,
+          codigo: codigoNorm,
+          titulo: documento.titulo,
+          statusGeral: payload.statusGeral,
+          updatedAt: now,
+        })
+      );
+    });
 
     await recordOrganizationAudit(organizationId, {
       entity: 'DOCUMENT_CONTROL',
@@ -227,7 +263,7 @@ export async function saveDocumentoControlado(
       reason: isNew ? 'Novo documento inserido no Acervo SGQ' : 'Atualização de metadados documentais',
       origin: 'CONTROLE_DOCUMENTAL',
     });
-  } catch (err) {
+  } catch (err: any) {
     handleFirestoreError(err, OperationType.WRITE, 'controlled_documents');
     throw err;
   }
@@ -559,26 +595,8 @@ export async function saveRevisaoDocumental(
     role: 'ADMIN',
   };
 
-  // Validação de Unicidade de Revisão por Documento na Persistência
-  try {
-    const colRevs = collection(db, 'organizations', organizationId, 'document_revisions');
-    const qRev = query(colRevs, where('documentoId', '==', revisao.documentoId));
-    const snapRev = await getDocs(qRev);
-    const revDuplicada = snapRev.docs.find(
-      (d) =>
-        d.id !== revisao.id &&
-        (d.data() as RevisaoDocumental).numeroRevisao.trim().toLowerCase() ===
-          revisao.numeroRevisao.trim().toLowerCase()
-    );
-    if (revDuplicada) {
-      throw new Error(
-        `Validação de Persistência: Já existe a revisão "${revisao.numeroRevisao}" cadastrada para o documento "${revisao.codigoDocumento}". Duplicação de revisão documental bloqueada.`
-      );
-    }
-  } catch (revCheckErr: any) {
-    if (revCheckErr.message?.includes('Validação de Persistência')) throw revCheckErr;
-    console.warn('Aviso: Verificação de revisão duplicada bypass:', revCheckErr);
-  }
+  const revNumNorm = revisao.numeroRevisao.trim().toLowerCase().replace(/\s+/g, '_');
+  const revKey = `${revisao.documentoId}__${revNumNorm}`;
 
   const payload: RevisaoDocumental = {
     ...revisao,
@@ -586,9 +604,52 @@ export async function saveRevisaoDocumental(
     updatedAt: new Date().toISOString(),
   };
 
+  const revDocRef = doc(db, 'organizations', organizationId, 'document_revisions', revisao.id);
+  const revIndexRef = doc(db, 'organizations', organizationId, 'controlled_document_revisions_codes', revKey);
+
   try {
-    const docRef = doc(db, 'organizations', organizationId, 'document_revisions', revisao.id);
-    await setDoc(docRef, sanitizeForFirestore(payload), { merge: true });
+    // PROTEÇÃO TRANSACIONAL CONTRA CONCORRÊNCIA E DUPLICIDADE DE REVISÃO NO FIRESTORE
+    await runTransaction(db, async (transaction) => {
+      // 1. Verificar unicidade do número de revisão para este documento específico
+      const indexSnap = await transaction.get(revIndexRef);
+      if (indexSnap.exists()) {
+        const indexData = indexSnap.data();
+        if (indexData.revisaoId !== revisao.id) {
+          throw new Error(
+            `Validação de Persistência: Já existe a revisão "${revisao.numeroRevisao}" cadastrada para o documento "${revisao.codigoDocumento}". Duplicação de revisão documental bloqueada concorrencialmente.`
+          );
+        }
+      }
+
+      // 2. Se a revisão já existia e o número de revisão foi alterado, desalocar índice anterior
+      const existingRevSnap = await transaction.get(revDocRef);
+      if (existingRevSnap.exists()) {
+        const oldNum = (existingRevSnap.data()?.numeroRevisao || '').trim().toLowerCase().replace(/\s+/g, '_');
+        if (oldNum && oldNum !== revNumNorm) {
+          const oldIndexRef = doc(
+            db,
+            'organizations',
+            organizationId,
+            'controlled_document_revisions_codes',
+            `${revisao.documentoId}__${oldNum}`
+          );
+          transaction.delete(oldIndexRef);
+        }
+      }
+
+      // 3. Persistir atomicamente a revisão e o índice único
+      transaction.set(revDocRef, sanitizeForFirestore(payload), { merge: true });
+      transaction.set(
+        revIndexRef,
+        sanitizeForFirestore({
+          revisaoId: revisao.id,
+          documentoId: revisao.documentoId,
+          codigoDocumento: revisao.codigoDocumento,
+          numeroRevisao: revisao.numeroRevisao,
+          updatedAt: payload.updatedAt,
+        })
+      );
+    });
 
     await recordOrganizationAudit(organizationId, {
       entity: 'DOCUMENT_CONTROL',
@@ -604,7 +665,7 @@ export async function saveRevisaoDocumental(
         dataEntradaVigor: revisao.dataEntradaVigor,
       }),
     });
-  } catch (err) {
+  } catch (err: any) {
     handleFirestoreError(err, OperationType.WRITE, 'document_revisions');
     throw err;
   }

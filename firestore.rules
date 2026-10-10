@@ -367,6 +367,19 @@ service cloud.firestore {
                          (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(documentId);
       }
 
+      // FASE 10: Índices Transacionais de Unicidade de Código e Revisão
+      match /controlled_documents_codes/{codeId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) &&
+                                         (isGestorSGQ() || isSystemAdmin());
+      }
+
+      match /document_revisions_index/{indexId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) &&
+                                         (isGestorSGQ() || isSystemAdmin());
+      }
+
       // ----------------------------------------------------
       // FASE 10: Revisões Documentais (organizations/{orgId}/document_revisions/{revisionId})
       // Imutabilidade: Revisões aprovadas / vigentes protegidas contra edição arbitrária
