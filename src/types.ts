@@ -2999,5 +2999,145 @@ export interface SystemDesignerRule {
 
 export * from './types/auditRequirements';
 
+// =========================================================================
+// AUDITORIA E RECONCILIAÇÃO DE DUPLICIDADES NO CONTROLE DOCUMENTAL
+// =========================================================================
+
+export type TipoConflitoDuplicidade =
+  | 'CODIGO_EXATO'
+  | 'CODIGO_NORMALIZADO_EQUIVALENTE'
+  | 'TITULO_MUITO_SEMELHANTE'
+  | 'MESMO_TITULO_OU_FABRICANTE_CODIGO_DIFERENTE'
+  | 'INDICE_AUSENTE'
+  | 'INDICE_DIVERGENTE_OU_ORFAO'
+  | 'REVISAO_DUPLICADA'
+  | 'REVISAO_ORFA';
+
+export type GrauSeveridadeDuplicidade =
+  | 'CRITICO_BLOQUEANTE'
+  | 'ALERTA_REVISAO_HUMANA'
+  | 'INFORMATIVO';
+
+export interface DocumentoDuplicidadeDetalhe {
+  id: string;
+  codigo: string;
+  codigoNormalizado: string;
+  chaveAlfanumerica: string;
+  titulo: string;
+  numeroRevisao: string;
+  dataRevisao?: string;
+  revisaoVigenteId?: string;
+  statusGeral: 'ATIVO' | 'INATIVO' | 'CANCELADO';
+  tipoVerificacao?: 'AUTOMATICO' | 'MANUAL';
+  statusVerificacao?: string;
+  dataUltimaVerificacao?: string;
+  categoria?: string;
+  emissor?: string;
+  proprietarioCessor?: string;
+  totalRevisoes: number;
+  revisoesIds: string[];
+  revisoesNumeros: string[];
+  temArquivo: boolean;
+  arquivoNome?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GrupoDuplicidade {
+  id: string;
+  tipoConflito: TipoConflitoDuplicidade;
+  grauSeveridade: GrauSeveridadeDuplicidade;
+  descricao: string;
+  chaveAgrupamento: string;
+  documentoPrincipalSugeridoId?: string;
+  documentos: DocumentoDuplicidadeDetalhe[];
+  revisoesOrfas?: RevisaoDocumental[];
+  justificativaSugerida: string;
+  podeConsolidarAutomaticamente: boolean;
+  statusResolucao: 'PENDENTE' | 'RESOLVIDO' | 'IGNORADO_LEGITIMO_DISTINTO';
+  decisaoHumana?: {
+    acaoEscolhida: 'CONSOLIDAR_NO_PRINCIPAL' | 'MANTER_DISTINTOS' | 'INATIVAR_SECUNDARIOS';
+    documentoPrincipalId: string;
+    justificativa: string;
+    responsavelNome: string;
+    dataDecisao: string;
+  };
+}
+
+export interface RelatorioAuditoriaDuplicidades {
+  organizationId: string;
+  executadoEm: string;
+  executadoPor: string;
+  totalDocumentosAnalisados: number;
+  totalRevisoesAnalisadas: number;
+  totalIndicesAnalisados: number;
+  totalGruposDuplicidade: number;
+  grupos: GrupoDuplicidade[];
+  resumo: {
+    criticos: number;
+    alertas: number;
+    revisoesOrfas: number;
+    indicesAusentesOuDivergentes: number;
+    conflitosResolvidos: number;
+  };
+}
+
+export interface PlanoReconciliacaoItem {
+  grupoId: string;
+  documentoPrincipalId: string;
+  documentosSecundariosIds: string[];
+  acao: 'CONSOLIDAR_MIGRANDO_REVISOES' | 'INATIVAR_PRESERVANDO_HISTORICO' | 'MANTER_LEGITIMO_DISTINTO';
+  migrarRevisoes: boolean;
+  migrarArquivos: boolean;
+  migrarEvidenciasELogs: boolean;
+  justificativaTecnica: string;
+}
+
+export interface PlanoReconciliacao {
+  organizationId: string;
+  criadoEm: string;
+  responsavelNome: string;
+  itens: PlanoReconciliacaoItem[];
+}
+
+export interface ResultadoReconciliacaoItem {
+  grupoId: string;
+  sucesso: boolean;
+  documentoPrincipalId: string;
+  documentosConsolidadosIds: string[];
+  totalRevisoesMigradas: number;
+  totalIndicesAtualizados: number;
+  mensagem: string;
+  erro?: string;
+}
+
+export interface ResultadoReconciliacao {
+  organizationId: string;
+  executadoEm: string;
+  modo: 'SIMULACAO_DRY_RUN' | 'EXECUCAO_CONFIRMADA';
+  totalGruposProcessados: number;
+  totalSucessos: number;
+  totalFalhas: number;
+  itens: ResultadoReconciliacaoItem[];
+  auditoriaRegistradaId?: string;
+}
+
+export interface ResultadoReconstrucaoIndices {
+  organizationId: string;
+  executadoEm: string;
+  modo: 'SIMULACAO_DRY_RUN' | 'EXECUCAO_CONFIRMADA';
+  totalDocumentosVerificados: number;
+  totalIndicesGerados: number;
+  totalConflitosDetectados: number;
+  conflitos: {
+    codigo: string;
+    codigoNormalizado: string;
+    documentosConflitantes: { id: string; codigo: string; titulo: string }[];
+    motivoBloqueio: string;
+  }[];
+  sucesso: boolean;
+  mensagem: string;
+}
+
 
 

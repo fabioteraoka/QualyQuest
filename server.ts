@@ -4871,6 +4871,153 @@ app.post("/api/documentos/relatorio-conformidade", async (req, res) => {
 });
 
 // =========================================================================
+// MÓDULO DE AUDITORIA E RECONCILIAÇÃO DE DUPLICIDADES DOCUMENTAIS (FASE 30)
+// =========================================================================
+
+// Função interna de normalização para o backend
+const normalizarCodDoc = (c: string): string => {
+  if (!c) return "";
+  return c
+    .trim()
+    .toUpperCase()
+    .normalize("NFKC")
+    .replace(/[\s_/]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+};
+
+const chaveAlphaDoc = (c: string): string => {
+  if (!c) return "";
+  return c
+    .toUpperCase()
+    .normalize("NFKC")
+    .replace(/[^A-Z0-9]/g, "");
+};
+
+// 1. Endpoint de Auditoria de Duplicidades (Somente Leitura)
+app.post("/api/documentos/auditoria-duplicidades", async (req, res) => {
+  try {
+    const { organizationId, documentos, revisoes, indices } = req.body || {};
+    if (!organizationId) {
+      return res.status(400).json({ success: false, error: "organizationId é obrigatório." });
+    }
+
+    const docs = Array.isArray(documentos) ? documentos.filter((d: any) => d.organizationId === organizationId) : [];
+    const revs = Array.isArray(revisoes) ? revisoes.filter((r: any) => r.organizationId === organizationId) : [];
+
+    const grupos: any[] = [];
+    const processedIds = new Set<string>();
+
+    const revsPorDoc = new Map<string, any[]>();
+    revs.forEach((r: any) => {
+      const list = revsPorDoc.get(r.documentoId) || [];
+      list.push(r);
+      revsPorDoc.set(r.documentoId, list);
+    });
+
+    const docsAtivos = docs.filter((d: any) => d.statusGeral !== "INATIVO");
+
+    // Identificar duplicidades por código exato ou código normalizado
+    for (let i = 0; i < docsAtivos.length; i++) {
+      const docA = docsAtivos[i];
+      if (processedIds.has(docA.id)) continue;
+
+      const grupo = [docA];
+      const normA = normalizarCodDoc(docA.codigo);
+      const alphaA = chaveAlphaDoc(docA.codigo);
+
+      for (let j = i + 1; j < docsAtivos.length; j++) {
+        const docB = docsAtivos[j];
+        if (processedIds.has(docB.id)) continue;
+
+        const normB = normalizarCodDoc(docB.codigo);
+        const alphaB = chaveAlphaDoc(docB.codigo);
+
+        if (docA.codigo?.trim() === docB.codigo?.trim()) {
+          grupo.push(docB);
+        } else if (normA === normB || (alphaA.length >= 4 && alphaA === alphaB)) {
+          grupo.push(docB);
+        }
+      }
+
+      if (grupo.length > 1) {
+        grupo.forEach((d: any) => processedIds.add(d.id));
+        const ehExato = grupo.every((d) => d.codigo?.trim() === docA.codigo?.trim());
+
+        // Sugere o master (com mais revisões ou mais antigo)
+        const ordenados = [...grupo].sort((a, b) => {
+          const rA = (revsPorDoc.get(a.id) || []).length;
+          const rB = (revsPorDoc.get(b.id) || []).length;
+          if (rB !== rA) return rB - rA;
+          return (a.createdAt || "").localeCompare(b.createdAt || "");
+        });
+
+        grupos.push({
+          id: `dup-cod-${normA || docA.id}`,
+          tipoConflito: ehExato ? "CODIGO_EXATO" : "CODIGO_NORMALIZADO_EQUIVALENTE",
+          grauSeveridade: "CRITICO_BLOQUEANTE",
+          descricao: ehExato
+            ? `Códigos documentais rigorosamente idênticos ("${docA.codigo}"). Multiplicidade de cadastros-pai detectada.`
+            : `Códigos documentalmente equivalentes após normalização ("${docA.codigo}" vs "${grupo[1]?.codigo}").`,
+          chaveAgrupamento: normA,
+          documentoPrincipalSugeridoId: ordenados[0].id,
+          documentos: grupo.map((d: any) => ({
+            id: d.id,
+            codigo: d.codigo,
+            codigoNormalizado: normalizarCodDoc(d.codigo),
+            titulo: d.titulo,
+            numeroRevisao: d.numeroRevisao || d.revisaoVigenteNumero || "S/R",
+            dataRevisao: d.dataRevisao,
+            statusGeral: d.statusGeral || "ATIVO",
+            totalRevisoes: (revsPorDoc.get(d.id) || []).length,
+            temArquivo: Boolean(d.arquivoNome || d.arquivoUrl),
+            createdAt: d.createdAt,
+          })),
+          justificativaSugerida: `Consolidar revisões no manual principal "${ordenados[0].codigo}" (${ordenados[0].id}) e inativar logicamente os cadastros duplicados com rastreabilidade auditável.`,
+          podeConsolidarAutomaticamente: true,
+          statusResolucao: "PENDENTE",
+        });
+      }
+    }
+
+    // Identificar revisões órfãs
+    const docIdsSet = new Set(docs.map((d: any) => d.id));
+    const revisoesOrfas = revs.filter((r: any) => !docIdsSet.has(r.documentoId));
+    if (revisoesOrfas.length > 0) {
+      grupos.push({
+        id: `orfas-revs-${Date.now()}`,
+        tipoConflito: "REVISAO_ORFA",
+        grauSeveridade: "CRITICO_BLOQUEANTE",
+        descricao: `Encontradas ${revisoesOrfas.length} revisões órfãs sem documento-pai correspondente no acervo.`,
+        chaveAgrupamento: "revisoes_orfas",
+        revisoesOrfas,
+        documentos: [],
+        justificativaSugerida: "Vincular as revisões órfãs ao documento-pai correspondente ou expurgar revisões de testes.",
+        podeConsolidarAutomaticamente: false,
+        statusResolucao: "PENDENTE",
+      });
+    }
+
+    return res.json({
+      success: true,
+      organizationId,
+      executadoEm: new Date().toISOString(),
+      totalDocumentosAnalisados: docs.length,
+      totalRevisoesAnalisadas: revs.length,
+      totalGruposDuplicidade: grupos.length,
+      grupos,
+      resumo: {
+        criticos: grupos.filter((g) => g.grauSeveridade === "CRITICO_BLOQUEANTE").length,
+        alertas: grupos.filter((g) => g.grauSeveridade === "ALERTA_REVISAO_HUMANA").length,
+        revisoesOrfas: revisoesOrfas.length,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =========================================================================
 // INTEGRAÇÃO OFICIAL: IMPACTO AVIATION MRO (SOMENTE LEITURA)
 // Base URL da API: .../api/v1/integration
 // O consumidor recebe diretamente o envelope: success/version/timestamp/source/data/meta

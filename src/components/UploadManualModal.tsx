@@ -23,12 +23,20 @@ import {
 } from '../types';
 import {
   saveDocumentFileToStorage,
+  deleteDocumentFileFromStorage,
   formatFileSize,
 } from '../utils/documentFilesStorage';
 import {
   saveDocumentoControlado,
   saveRevisaoDocumental,
+  deleteDocumentoControlado,
+  deleteRevisaoDocumental,
+  validarUnicidadeCodigoDocumental,
 } from '../services/firebase/documentControlFirestore';
+import {
+  normalizeDocumentCode,
+  canonicalAlphanumericKey,
+} from '../services/documentControlAuditReconciliation';
 
 interface UploadManualModalProps {
   isOpen: boolean;
@@ -220,17 +228,26 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
       return;
     }
 
-    const codigoNorm = codigo.trim().toUpperCase();
+    const codigoNorm = normalizeDocumentCode(codigo);
+    const chaveAlpha = canonicalAlphanumericKey(codigo);
     const revNorm = numeroRevisao.trim();
 
-    // Validação de Duplicidade Cadastral
+    if (!codigoNorm) {
+      setUploadError('Informe um código identificador válido para o documento.');
+      return;
+    }
+
+    // Validação Rigorosa de Duplicidade Cadastral (Pré-Flight)
     if (!isExistingMode) {
-      const docDuplicado = documentosExistentes.find(
-        (d) => d.codigo.trim().toUpperCase() === codigoNorm
-      );
+      const docDuplicado = documentosExistentes.find((d) => {
+        const dNorm = normalizeDocumentCode(d.codigo);
+        const dAlpha = canonicalAlphanumericKey(d.codigo);
+        return dNorm === codigoNorm || (chaveAlpha.length >= 4 && dAlpha === chaveAlpha);
+      });
+
       if (docDuplicado) {
         setUploadError(
-          `O código documental "${codigoNorm}" já está cadastrado no Acervo ("${docDuplicado.titulo}"). Para atualizar ou anexar nova revisão a este manual, ative a opção "Adicionar Revisão a Manual Existente" para garantir a rastreabilidade e evitar duplicidade.`
+          `O código documental "${codigo}" (normalizado: "${codigoNorm}") já está cadastrado no Acervo como "${docDuplicado.codigo} — ${docDuplicado.titulo}" (ID: ${docDuplicado.id}). Para atualizar ou anexar nova revisão a este manual sem criar documento duplicado, selecione a opção "Adicionar Revisão a Manual Existente".`
         );
         return;
       }
@@ -239,27 +256,103 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
     setIsSaving(true);
     setUploadError(null);
 
+    // Variáveis de rastreamento de compensação (Rollback)
+    let createdNewParentDoc = false;
+    let createdRevisionId: string | null = null;
+    let savedStorageIds: string[] = [];
+    let targetDocId = '';
+
     try {
       const now = new Date().toISOString();
-      const existingDoc = isExistingMode && selectedDocId ? documentosExistentes.find((d) => d.id === selectedDocId) : undefined;
-      const docId = existingDoc ? existingDoc.id : `doc-${Date.now()}`;
+      const existingDoc =
+        isExistingMode && selectedDocId ? documentosExistentes.find((d) => d.id === selectedDocId) : undefined;
+
+      targetDocId = existingDoc ? existingDoc.id : `doc-${Date.now()}`;
+
+      // Pré-verificação transacional no Firestore para garantir que o código está disponível
+      if (!existingDoc) {
+        const preCheck = await validarUnicidadeCodigoDocumental(organizationId, codigoNorm);
+        if (!preCheck.disponivel) {
+          throw new Error(
+            preCheck.mensagem ||
+              `O código documental "${codigoNorm}" já se encontra reservado no Firestore por outro manual.`
+          );
+        }
+      }
 
       // Se a revisão informada já for a vigente do documento existente, atualizamos o arquivo da revisão atual
-      const ehMesmaRevisaoVigente = existingDoc && (existingDoc.numeroRevisao === revNorm || existingDoc.revisaoVigenteNumero === revNorm);
-      const revId = ehMesmaRevisaoVigente && existingDoc.revisaoVigenteId ? existingDoc.revisaoVigenteId : `rev-${Date.now()}`;
+      const ehMesmaRevisaoVigente =
+        existingDoc &&
+        (existingDoc.numeroRevisao === revNorm || existingDoc.revisaoVigenteNumero === revNorm);
+      const revId =
+        ehMesmaRevisaoVigente && existingDoc.revisaoVigenteId
+          ? existingDoc.revisaoVigenteId
+          : `rev-${Date.now()}`;
 
-      // 1. Salva o binário físico no IndexedDB e gera metadados de armazenamento
-      const fileMeta = await saveDocumentFileToStorage(revId, docId, file, revId);
+      // =========================================================================
+      // ETAPA 1: ANCORAGEM DO DOCUMENTO CONTROLADO PRIMEIRO
+      // Se for novo manual, salva o documento no Firestore PRIMEIRO.
+      // Se falhar (ex: concorrência ou permissão), encerra ANTES de salvar arquivos ou revisões.
+      // =========================================================================
+      let docPayload: DocumentoControlado;
 
-      // Também armazena sob a chave docId para acesso rápido à versão vigente
-      await saveDocumentFileToStorage(docId, docId, file, revId);
+      if (!existingDoc) {
+        docPayload = {
+          id: targetDocId,
+          organizationId,
+          codigo: codigo.trim(),
+          titulo: titulo.trim(),
+          categoria,
+          tipoSubcategoria: categoria === 'DOCUMENTO_AUTORIDADE' ? 'RBAC' : 'MOMQ',
+          emissor: proprietarioCessor.trim(),
+          proprietarioCessor: proprietarioCessor.trim(),
+          areaPublicacao: areaPublicacao.trim(),
+          numeroRevisao: revNorm,
+          dataRevisao,
+          revisaoVigenteId: revId,
+          revisaoVigenteNumero: revNorm,
+          responsavelNome: currentUser?.displayName || 'Gestor SGQ',
+          responsavelUid: currentUser?.uid,
+          exigeEvidenciaLeitura: true,
+          aplicabilidadePadrao: {
+            statusDeterminacao: 'DETERMINADA',
+            observacoesAplicabilidade: 'Aplicável a todas as bases e modelos operacionais da organização.',
+          },
+          statusGeral: 'ATIVO',
+          tipoVerificacao,
+          urlFonteVerificacao: urlFonteVerificacao.trim() || undefined,
+          contatoClienteNome: contatoClienteNome.trim() || undefined,
+          contatoClienteEmail: contatoClienteEmail.trim() || undefined,
+          portalFabricanteUrl: portalFabricanteUrl.trim() || undefined,
+          statusVerificacao: 'PENDENTE_VERIFICACAO',
+          dataUltimaVerificacao: undefined,
+          detalhesUltimaVerificacao: `Arquivo digital "${file.name}" anexado como ${revNorm}. Pendente conferência contra fonte oficial.`,
+          createdAt: now,
+          updatedAt: now,
+        };
 
-      // 2. Cria ou atualiza o registro de RevisaoDocumental
+        // Salva o documento-pai primeiro (garante reserva transacional do código)
+        await saveDocumentoControlado(organizationId, docPayload, currentUser);
+        createdNewParentDoc = true;
+      } else {
+        docPayload = { ...existingDoc };
+      }
+
+      // =========================================================================
+      // ETAPA 2: ARMAZENAMENTO FÍSICO DO ARQUIVO COM RASTREAMENTO
+      // =========================================================================
+      const fileMeta = await saveDocumentFileToStorage(revId, targetDocId, file, revId);
+      await saveDocumentFileToStorage(targetDocId, targetDocId, file, revId);
+      savedStorageIds.push(revId, targetDocId);
+
+      // =========================================================================
+      // ETAPA 3: CRIAÇÃO OU ATUALIZAÇÃO DA REVISÃO DOCUMENTAL
+      // =========================================================================
       const novaRevisao: RevisaoDocumental = {
         id: revId,
         organizationId,
-        documentoId: docId,
-        codigoDocumento: codigoNorm,
+        documentoId: targetDocId,
+        codigoDocumento: codigo.trim(),
         tituloDocumento: titulo.trim(),
         numeroRevisao: revNorm,
         dataEmissao: dataRevisao,
@@ -268,8 +361,13 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
         aprovadoPorNome: currentUser?.displayName || 'Gestor SGQ Homologado',
         aprovadoPorUid: currentUser?.uid,
         dataAprovacao: now,
-        justificativaAprovacao: escopoAlteracoes.trim() || (ehMesmaRevisaoVigente ? `Anexo digital da revisão vigente ${revNorm}: ${file.name}` : `Publicação e homologação da ${revNorm} no Acervo SGQ`),
-        escopoAlteracoes: escopoAlteracoes.trim() || `Arquivo anexado: ${file.name} (${formatFileSize(file.size)})`,
+        justificativaAprovacao:
+          escopoAlteracoes.trim() ||
+          (ehMesmaRevisaoVigente
+            ? `Anexo digital da revisão vigente ${revNorm}: ${file.name}`
+            : `Publicação e homologação da ${revNorm} no Acervo SGQ`),
+        escopoAlteracoes:
+          escopoAlteracoes.trim() || `Arquivo anexado: ${file.name} (${formatFileSize(file.size)})`,
         origemRevisao: tipoVerificacao === 'AUTOMATICO' ? 'FONTE_EXTERNA_OFICIAL' : 'INTERNA',
         fonteVerificacao: urlFonteVerificacao || undefined,
         urlFonteExterna: urlFonteVerificacao || undefined,
@@ -286,41 +384,24 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
       };
 
       await saveRevisaoDocumental(organizationId, novaRevisao, currentUser);
+      createdRevisionId = revId;
 
-      // 3. Cadastra ou atualiza o DocumentoControlado no controle geral
-      const docPayload: DocumentoControlado = {
-        id: docId,
-        organizationId,
-        codigo: codigoNorm,
+      // =========================================================================
+      // ETAPA 4: SINCRONIZAÇÃO FINAL DO DOCUMENTO CONTROLADO
+      // Atualiza os metadados do documento-pai com a nova revisão vigente e o arquivo
+      // =========================================================================
+      const docFinalPayload: DocumentoControlado = {
+        ...docPayload,
         titulo: titulo.trim(),
         categoria,
-        tipoSubcategoria: categoria === 'DOCUMENTO_AUTORIDADE' ? 'RBAC' : 'MOMQ',
-        emissor: proprietarioCessor.trim(),
         proprietarioCessor: proprietarioCessor.trim(),
         areaPublicacao: areaPublicacao.trim(),
         numeroRevisao: revNorm,
-        dataRevisao, // Data oficial da revisão informada no cabeçalho/publicação
+        dataRevisao,
         revisaoVigenteId: revId,
         revisaoVigenteNumero: revNorm,
-        responsavelNome: currentUser?.displayName || 'Gestor SGQ',
-        responsavelUid: currentUser?.uid,
-        exigeEvidenciaLeitura: existingDoc?.exigeEvidenciaLeitura ?? true,
-        aplicabilidadePadrao: existingDoc?.aplicabilidadePadrao || { tipo: 'TODAS_BASES_E_MODELOS' },
-        statusGeral: 'ATIVO',
         tipoVerificacao,
         urlFonteVerificacao: urlFonteVerificacao.trim() || undefined,
-        contatoClienteNome: contatoClienteNome.trim() || undefined,
-        contatoClienteEmail: contatoClienteEmail.trim() || undefined,
-        portalFabricanteUrl: portalFabricanteUrl.trim() || undefined,
-        // REGRA DE GOVERNANÇA DOCUMENTAL:
-        // O upload de arquivo NÃO constitui verificação em fonte externa.
-        // A data da verificação pertence à consulta à fonte; a data da revisão pertence ao documento.
-        // Se nunca houve verificação em fonte externa, manter status anterior ou PENDENTE_VERIFICACAO.
-        statusVerificacao: existingDoc?.statusVerificacao || 'PENDENTE_VERIFICACAO',
-        dataUltimaVerificacao: existingDoc?.dataUltimaVerificacao || undefined,
-        detalhesUltimaVerificacao:
-          existingDoc?.detalhesUltimaVerificacao ||
-          `Arquivo digital "${file.name}" (${formatFileSize(file.size)}) arquivado no acervo como ${revNorm}. Pendente conferência contra fonte oficial.`,
         arquivoNome: fileMeta.arquivoNome,
         arquivoMimeType: fileMeta.arquivoMimeType,
         arquivoTamanhoBytes: fileMeta.arquivoTamanhoBytes,
@@ -328,23 +409,59 @@ export const UploadManualModal: React.FC<UploadManualModalProps> = ({
         arquivoUrl: fileMeta.arquivoCaminho,
         dataUpload: fileMeta.dataUpload,
         arquivoBase64: fileMeta.arquivoBase64,
-        createdAt: existingDoc?.createdAt || now,
-        updatedAt: now,
+        updatedAt: new Date().toISOString(),
       };
 
-      await saveDocumentoControlado(organizationId, docPayload, currentUser);
+      await saveDocumentoControlado(organizationId, docFinalPayload, currentUser, docPayload);
 
       onSuccess(
-        docPayload,
+        docFinalPayload,
         novaRevisao,
         isExistingMode
-          ? `Nova revisão ${numeroRevisao} do documento "${codigo}" salva com arquivo anexado!`
+          ? `Nova revisão ${numeroRevisao} do manual "${codigo}" salva e vinculada com integridade ao cadastro existente!`
           : `Novo manual "${codigo} — ${titulo}" cadastrado e arquivado com sucesso no Acervo!`
       );
       onClose();
     } catch (err: any) {
-      console.error('Erro ao fazer upload do manual:', err);
-      setUploadError(err.message || 'Erro ao processar e salvar o manual. Tente novamente.');
+      console.error('Erro na sequência de upload do manual. Executando compensação segura:', err);
+
+      // ROTINA DE COMPENSAÇÃO (ROLLBACK SEGURO PARA EVITAR ÓRFÃOS)
+      if (createdRevisionId && targetDocId) {
+        try {
+          await deleteRevisaoDocumental(
+            organizationId,
+            createdRevisionId,
+            targetDocId,
+            currentUser,
+            'Rollback automático: falha durante persistência do upload'
+          );
+        } catch (eRev) {
+          console.warn('Compensação: erro ao limpar revisão criada:', eRev);
+        }
+      }
+
+      for (const storageId of savedStorageIds) {
+        try {
+          await deleteDocumentFileFromStorage(storageId);
+        } catch (eFile) {
+          console.warn('Compensação: erro ao limpar arquivo físico:', eFile);
+        }
+      }
+
+      if (createdNewParentDoc && targetDocId) {
+        try {
+          await deleteDocumentoControlado(
+            organizationId,
+            targetDocId,
+            currentUser,
+            'Rollback automático: falha durante persistência do upload'
+          );
+        } catch (eDoc) {
+          console.warn('Compensação: erro ao limpar documento-pai incompleto:', eDoc);
+        }
+      }
+
+      setUploadError(err.message || 'Erro ao processar e salvar o manual. A operação foi cancelada com segurança.');
     } finally {
       setIsSaving(false);
     }

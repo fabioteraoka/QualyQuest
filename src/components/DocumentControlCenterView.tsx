@@ -93,6 +93,7 @@ import {
 } from './ManualVerificationModals';
 import { UploadManualModal } from './UploadManualModal';
 import { DocumentFilePreviewModal } from './DocumentFilePreviewModal';
+import { DocumentDuplicityAuditView } from './DocumentDuplicityAuditView';
 import { formatFileSize, downloadOrViewDocumentFile } from '../utils/documentFilesStorage';
 
 /**
@@ -189,7 +190,7 @@ interface DocumentControlCenterViewProps {
   evidenciasConsulta: RegistroEvidenciaConsultaDocumento[];
   nonConformities?: NCRecord[];
   onOpenNCFormWithDoc?: (docCodigo: string, revisao: string) => void;
-  initialSubTab?: 'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard';
+  initialSubTab?: 'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades';
 }
 
 export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps> = ({
@@ -207,7 +208,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   initialSubTab = 'acervo',
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard'
+    'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades'
   >(
     initialSubTab === 'fontes' || initialSubTab === 'solicitacoes'
       ? 'verificacao'
@@ -1128,6 +1129,14 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               <span>{isVerifyingUpdates ? 'Verificando Fontes...' : 'Verificar Atualizações'}</span>
             </button>
             <button
+              onClick={() => setActiveSubTab('duplicidades')}
+              className="px-3.5 py-2 rounded-lg bg-amber-600/90 hover:bg-amber-600 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
+              title="Auditoria de duplicidades e reconciliação de manuais no acervo"
+            >
+              <ShieldAlert className="w-4 h-4" />
+              <span>Auditoria de Duplicidades</span>
+            </button>
+            <button
               onClick={() => {
                 setSelectedDocForDetail(null);
                 setIsNewDocModalOpen(true);
@@ -1140,7 +1149,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
           </div>
         </div>
 
-        {/* Nova Estrutura Unificada de 3 Sub-Abas Mandatadas para Eliminar Duplicidade */}
+        {/* Estrutura Unificada de Sub-Abas do Centro de Controle Documental */}
         <div className="mt-6 flex flex-wrap gap-2 border-b border-slate-800 pb-2">
           {[
             {
@@ -1163,6 +1172,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               subtitle: 'Auditoria / Comunicação à Autoridade',
               icon: History,
               count: revisoes.length,
+            },
+            {
+              id: 'duplicidades',
+              label: '4. Auditoria & Duplicidades',
+              subtitle: 'Reconciliação e Unicidade SGQ',
+              icon: ShieldAlert,
+              count: undefined,
             },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -3786,6 +3802,19 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUB-ABA 4: AUDITORIA DE DUPLICIDADES & RECONCILIAÇÃO SGQ                   */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'duplicidades' && (
+        <DocumentDuplicityAuditView
+          organizationId={organizationId}
+          currentUser={currentUser}
+          documentos={documentos}
+          revisoes={revisoes}
+          showToast={showToast}
+        />
       )}
 
       {/* ========================================================================= */}

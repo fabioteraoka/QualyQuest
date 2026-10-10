@@ -133,6 +133,26 @@ export async function getDocumentFileFromStorage(id: string): Promise<StoredDocu
 }
 
 /**
+ * Exclui arquivo físico do IndexedDB para rotinas de compensação e limpeza
+ */
+export async function deleteDocumentFileFromStorage(id: string): Promise<boolean> {
+  try {
+    const db = await openFileDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const store = tx.objectStore(STORE_NAME);
+
+    return await new Promise<boolean>((resolve) => {
+      const req = store.delete(id);
+      req.onsuccess = () => resolve(true);
+      req.onerror = () => resolve(false);
+    });
+  } catch (err) {
+    console.warn('Erro ao excluir arquivo do IndexedDB:', err);
+    return false;
+  }
+}
+
+/**
  * Dispara o download ou visualização de um arquivo de manual
  */
 export async function downloadOrViewDocumentFile(

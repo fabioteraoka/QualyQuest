@@ -380,6 +380,12 @@ service cloud.firestore {
                                          (isGestorSGQ() || isSystemAdmin());
       }
 
+      match /controlled_document_revisions_codes/{indexId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) &&
+                                         (isGestorSGQ() || isSystemAdmin());
+      }
+
       // ----------------------------------------------------
       // FASE 10: Revisões Documentais (organizations/{orgId}/document_revisions/{revisionId})
       // Imutabilidade: Revisões aprovadas / vigentes protegidas contra edição arbitrária

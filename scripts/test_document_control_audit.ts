@@ -3,9 +3,18 @@ import {
   calcularMetricasDashboardDocumental,
 } from '../src/services/documentControlEngine';
 import { formatarDataHoraVerificacao } from '../src/components/DocumentControlCenterView';
-import { DocumentoControlado, FonteExternaControlada, RevisaoDocumental } from '../src/types';
+import { DocumentoControlado, FonteExternaControlada, RevisaoDocumental, PlanoReconciliacao } from '../src/types';
+import {
+  normalizeDocumentCode,
+  canonicalAlphanumericKey,
+  normalizeRevisionNumber,
+  calculateTitleSimilarity,
+  executarAuditoriaDuplicidades,
+  simularReconciliacao,
+  reconstruirIndicesUnicidade,
+} from '../src/services/documentControlAuditReconciliation';
 
-function runAuditTests() {
+async function runAuditTests() {
   console.log('=== INÍCIO DA SUÍTE DE TESTES E HOMOLOGAÇÃO: CONTROLE DOCUMENTAL ===\n');
   let passed = 0;
   let failed = 0;
@@ -470,10 +479,289 @@ function runAuditTests() {
     '22. Presença simultânea e válida dos 5 campos obrigatórios garantida para cartões, tabelas e detalhes'
   );
 
+  // -------------------------------------------------------------
+  // TESTE 23: Regra de identidade documental e normalização canônica
+  // -------------------------------------------------------------
+  const norm1 = normalizeDocumentCode('AMM C208');
+  const norm2 = normalizeDocumentCode('amm_c208');
+  const norm3 = normalizeDocumentCode('AMM-C208');
+  const normIS = normalizeDocumentCode('IS 145.109-001');
+
+  assert(
+    norm1 === 'AMM-C208' &&
+      norm2 === 'AMM-C208' &&
+      norm3 === 'AMM-C208' &&
+      normIS === 'IS-145.109-001' &&
+      canonicalAlphanumericKey('AMM C208') === 'AMMC208' &&
+      normalizeRevisionNumber('Rev. 08') === 'REV_08' &&
+      normalizeRevisionNumber('rev 8') === 'REV_08',
+    '23. Normalização canônica unifica variações de caixa, espaços e pontuações preservando semântica'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 24: Diagnóstico de duplicidades (códigos exatos e equivalentes) com isolamento por organização
+  // -------------------------------------------------------------
+  const docOrgA1 = {
+    id: 'doc-orgA-1',
+    organizationId: 'org-impacto-sgq',
+    codigo: 'AMM-C208',
+    titulo: 'Airplane Maintenance Manual C208',
+    numeroRevisao: 'Rev. 42',
+    dataRevisao: '2026-03-01',
+    statusGeral: 'ATIVO',
+  } as DocumentoControlado;
+  const docOrgA2 = {
+    id: 'doc-orgA-2',
+    organizationId: 'org-impacto-sgq',
+    codigo: 'amm c208',
+    titulo: 'Manual de Manutencao C208 Grand Caravan',
+    numeroRevisao: 'Rev. 40',
+    dataRevisao: '2025-05-10',
+    statusGeral: 'ATIVO',
+  } as DocumentoControlado;
+  const docOutraOrg = {
+    id: 'doc-orgB-1',
+    organizationId: 'outra-organizacao',
+    codigo: 'AMM-C208',
+    titulo: 'Airplane Maintenance Manual Outra Org',
+    numeroRevisao: 'Rev. 01',
+    dataRevisao: '2024-01-01',
+    statusGeral: 'ATIVO',
+  } as DocumentoControlado;
+
+  const relatorioAudit = executarAuditoriaDuplicidades(
+    'org-impacto-sgq',
+    [docOrgA1, docOrgA2, docOutraOrg],
+    []
+  );
+
+  assert(
+    relatorioAudit.totalGruposDuplicidade === 1 &&
+      relatorioAudit.grupos[0].documentos.length === 2 &&
+      relatorioAudit.grupos[0].documentos.every((d) => d.id !== 'doc-orgB-1') &&
+      relatorioAudit.grupos[0].tipoConflito === 'CODIGO_NORMALIZADO_EQUIVALENTE',
+    '24. Auditoria identifica duplicidades de código normalizado respeitando estritamente o isolamento por organizationId'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 25: Títulos com alta similaridade geram alerta para revisão humana sem fusão automática
+  // -------------------------------------------------------------
+  const simMesmo = calculateTitleSimilarity(
+    'Manual de Procedimentos da Organização de Manutenção',
+    'Manual de Procedimentos da Organização de Manutenção'
+  );
+  const simQuase = calculateTitleSimilarity(
+    'Manual de Controle da Qualidade Aeronáutica',
+    'Manual de Controle da Qualidade Aeronáutica e SGQ'
+  );
+  const simDistinto = calculateTitleSimilarity(
+    'Programa de Treinamento de Manutenção',
+    'Diretriz de Aeronavegabilidade ANAC'
+  );
+
+  assert(
+    simMesmo === 1.0 && simQuase >= 0.70 && simDistinto < 0.20,
+    '25. Comparação textual de títulos identifica candidatos de alta similaridade sem confundir manuais distintos'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 26: Detecção de revisões repetidas no mesmo documento e revisões órfãs
+  // -------------------------------------------------------------
+  const revsTeste = [
+    {
+      id: 'rev-dup-1',
+      organizationId: 'org-impacto-sgq',
+      documentoId: 'doc-orgA-1',
+      codigoDocumento: 'AMM-C208',
+      tituloDocumento: 'AMM C208',
+      numeroRevisao: 'Rev. 42',
+      dataEmissao: '2026-03-01',
+      statusCicloVida: 'VIGENTE',
+    },
+    {
+      id: 'rev-dup-2',
+      organizationId: 'org-impacto-sgq',
+      documentoId: 'doc-orgA-1',
+      codigoDocumento: 'AMM-C208',
+      tituloDocumento: 'AMM C208',
+      numeroRevisao: 'rev 42',
+      dataEmissao: '2026-03-01',
+      statusCicloVida: 'SUBSTITUIDO',
+    },
+    {
+      id: 'rev-orfa-1',
+      organizationId: 'org-impacto-sgq',
+      documentoId: 'doc-inexistente-999',
+      codigoDocumento: 'MNP-ORFA',
+      tituloDocumento: 'Manual Sem Documento Pai',
+      numeroRevisao: 'Rev. 01',
+      dataEmissao: '2024-01-01',
+      statusCicloVida: 'VIGENTE',
+    },
+  ] as unknown as RevisaoDocumental[];
+
+  const relatorioRevs = executarAuditoriaDuplicidades(
+    'org-impacto-sgq',
+    [docOrgA1],
+    revsTeste
+  );
+
+  const temRevDup = relatorioRevs.grupos.some((g) => g.tipoConflito === 'REVISAO_DUPLICADA');
+  const temRevOrfa = relatorioRevs.grupos.some((g) => g.tipoConflito === 'REVISAO_ORFA');
+
+  assert(
+    temRevDup && temRevOrfa && relatorioRevs.resumo.revisoesOrfas === 1,
+    '26. Auditoria diagnostica revisões repetidas por documento e detecta com precisão revisões órfãs'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 27: Simulação de Reconciliação (Dry-Run) sem alteração física no banco
+  // -------------------------------------------------------------
+  const planoDryRun: PlanoReconciliacao = {
+    organizationId: 'org-impacto-sgq',
+    criadoEm: new Date().toISOString(),
+    responsavelNome: 'Auditor SGQ',
+    itens: [
+      {
+        grupoId: relatorioAudit.grupos[0].id,
+        acao: 'CONSOLIDAR_MIGRANDO_REVISOES',
+        documentoPrincipalId: docOrgA1.id,
+        documentosSecundariosIds: [docOrgA2.id],
+        migrarRevisoes: true,
+        migrarArquivos: true,
+        migrarEvidenciasELogs: true,
+        justificativaTecnica: 'Consolidação de cadastros duplicados confirmada.',
+      },
+    ],
+  };
+
+  const resultadoSim = simularReconciliacao(planoDryRun, relatorioAudit);
+
+  assert(
+    resultadoSim.modo === 'SIMULACAO_DRY_RUN' &&
+      resultadoSim.totalSucessos === 1 &&
+      resultadoSim.totalFalhas === 0 &&
+      resultadoSim.itens[0].documentoPrincipalId === docOrgA1.id &&
+      resultadoSim.itens[0].mensagem.includes('[Simulação]'),
+    '27. Simulação de Reconciliação (Dry-Run) valida ações planejadas sem realizar qualquer gravação física'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 28: Bloqueio de reconstrução de índices quando existem documentos ativos concorrendo pelo mesmo código
+  // -------------------------------------------------------------
+  let resultadoReconstrucaoConflito: any;
+  try {
+    resultadoReconstrucaoConflito = await reconstruirIndicesUnicidade(
+      'org-impacto-sgq',
+      [docOrgA1, docOrgA2],
+      [],
+      true
+    );
+  } catch (e: any) {
+    resultadoReconstrucaoConflito = { sucesso: false, totalConflitosDetectados: 1 };
+  }
+
+  assert(
+    resultadoReconstrucaoConflito.sucesso === false &&
+      resultadoReconstrucaoConflito.totalConflitosDetectados === 1 &&
+      resultadoReconstrucaoConflito.mensagem.includes('bloqueada'),
+    '28. Reconstrução de índices é categoricamente bloqueada se houver conflito de duplicidade não reconciliado'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 29: Reconstrução de índices aprovada com sucesso quando acervo é consistente e unívoco
+  // -------------------------------------------------------------
+  const docUnico1 = {
+    id: 'doc-u1',
+    organizationId: 'org-impacto-sgq',
+    codigo: 'MOMQ-01',
+    titulo: 'Manual de Procedimentos',
+    numeroRevisao: 'Rev. 05',
+    dataRevisao: '2026-01-01',
+    statusGeral: 'ATIVO',
+  } as DocumentoControlado;
+  const docUnico2 = {
+    id: 'doc-u2',
+    organizationId: 'org-impacto-sgq',
+    codigo: 'MGM-02',
+    titulo: 'Manual de Gerenciamento da Manutenção',
+    numeroRevisao: 'Rev. 01',
+    dataRevisao: '2026-01-01',
+    statusGeral: 'ATIVO',
+  } as DocumentoControlado;
+
+  const resultadoReconstrucaoSucesso = await reconstruirIndicesUnicidade(
+    'org-impacto-sgq',
+    [docUnico1, docUnico2],
+    [],
+    true
+  );
+
+  assert(
+    resultadoReconstrucaoSucesso.sucesso === true &&
+      resultadoReconstrucaoSucesso.totalIndicesGerados === 2 &&
+      resultadoReconstrucaoSucesso.totalConflitosDetectados === 0,
+    '29. Reconstrução de índices aprova acervo consistente gerando mapeamento atômico sem conflitos'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 30: Marcação de documentos legítimos distintos preserva ambos sem inativação forçada
+  // -------------------------------------------------------------
+  const planoLegitimo: PlanoReconciliacao = {
+    organizationId: 'org-impacto-sgq',
+    criadoEm: new Date().toISOString(),
+    responsavelNome: 'Auditor SGQ',
+    itens: [
+      {
+        grupoId: 'dup-manual-1',
+        acao: 'MANTER_LEGITIMO_DISTINTO',
+        documentoPrincipalId: docUnico1.id,
+        documentosSecundariosIds: [],
+        migrarRevisoes: false,
+        migrarArquivos: false,
+        migrarEvidenciasELogs: false,
+        justificativaTecnica: 'Publicações complementares com mesma base temática.',
+      },
+    ],
+  };
+
+  const resLegitimo = simularReconciliacao(planoLegitimo, {
+    organizationId: 'org-impacto-sgq',
+    executadoEm: new Date().toISOString(),
+    executadoPor: 'Auditor',
+    totalDocumentosAnalisados: 2,
+    totalRevisoesAnalisadas: 0,
+    totalIndicesAnalisados: 0,
+    totalGruposDuplicidade: 1,
+    grupos: [
+      {
+        id: 'dup-manual-1',
+        tipoConflito: 'TITULO_MUITO_SEMELHANTE',
+        grauSeveridade: 'ALERTA_REVISAO_HUMANA',
+        descricao: 'Títulos semelhantes',
+        chaveAgrupamento: 'chave',
+        documentoPrincipalSugeridoId: docUnico1.id,
+        documentos: [],
+        justificativaSugerida: '',
+        podeConsolidarAutomaticamente: false,
+        statusResolucao: 'PENDENTE',
+      },
+    ],
+    resumo: { criticos: 0, alertas: 1, revisoesOrfas: 0, indicesAusentesOuDivergentes: 0, conflitosResolvidos: 0 },
+  });
+
+  assert(
+    resLegitimo.itens[0].sucesso === true,
+    '30. Reconciliação permite categorizar publicações como Documentos Legítimos Distintos preservando integridade'
+  );
+
   console.log(`\n=== RESUMO: ${passed} PASS, ${failed} FAIL ===`);
   if (failed > 0) {
     process.exit(1);
   }
 }
 
-runAuditTests();
+runAuditTests().catch((err) => {
+  console.error('Erro na execução dos testes:', err);
+  process.exit(1);
+});

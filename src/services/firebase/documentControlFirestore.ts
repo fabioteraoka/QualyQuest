@@ -38,6 +38,11 @@ import {
   INITIAL_LOGS_VERIFICACAO,
   INITIAL_EVIDENCIAS_CONSULTA,
 } from '../../data/initialDocumentControl';
+import {
+  normalizeDocumentCode,
+  canonicalAlphanumericKey,
+  normalizeRevisionNumber,
+} from '../documentControlAuditReconciliation';
 
 // ============================================================================
 // 1. DOCUMENTOS CONTROLADOS (IDENTIDADE LÓGICA)
@@ -160,6 +165,39 @@ export function verificarDependenciasDocumento(
   };
 }
 
+/**
+ * Validação prévia de unicidade de código documental no Firestore (Read-Only Pre-flight)
+ * Permite checar antes de iniciar o upload se o código ou sua forma normalizada já está reservada.
+ */
+export async function validarUnicidadeCodigoDocumental(
+  organizationId: string,
+  codigo: string,
+  excludeDocumentoId?: string
+): Promise<{ disponivel: boolean; documentoOcupanteId?: string; mensagem?: string }> {
+  const norm = normalizeDocumentCode(codigo);
+  if (!norm) return { disponivel: false, mensagem: 'Código documental inválido ou vazio.' };
+
+  try {
+    const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', norm);
+    const snap = await getDoc(codeIndexRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.statusGeral !== 'INATIVO' && data.documentoId !== excludeDocumentoId) {
+        return {
+          disponivel: false,
+          documentoOcupanteId: data.documentoId,
+          mensagem: `O código documental "${codigo}" (normalizado: "${norm}") já está em uso pelo documento ID ${data.documentoId} ("${data.titulo || ''}").`,
+        };
+      }
+    }
+    return { disponivel: true };
+  } catch (err: any) {
+    console.warn('Aviso ao consultar unicidade de código no Firestore:', err);
+    // Se falhar a leitura na verificação prévia, reportar impedimento por precaução
+    return { disponivel: false, mensagem: `Falha de verificação no Firestore: ${err.message}` };
+  }
+}
+
 export async function saveDocumentoControlado(
   organizationId: string,
   documento: DocumentoControlado,
@@ -179,11 +217,16 @@ export async function saveDocumentoControlado(
 
   const isNew = !previousDocument && !documento.createdAt;
   const now = new Date().toISOString();
-  const codigoNorm = documento.codigo.trim().toUpperCase();
+  const codigoNorm = normalizeDocumentCode(documento.codigo);
+  const chaveAlpha = canonicalAlphanumericKey(documento.codigo);
+
+  if (!codigoNorm) {
+    throw new Error('Validação de Persistência: O código identificador do documento não pode ser vazio.');
+  }
 
   const payload: DocumentoControlado = {
     ...documento,
-    codigo: codigoNorm,
+    codigo: documento.codigo.trim(),
     organizationId,
     updatedAt: now,
     createdAt: documento.createdAt || now,
@@ -202,7 +245,7 @@ export async function saveDocumentoControlado(
         const codeData = codeIndexSnap.data();
         if (codeData.documentoId !== documento.id && codeData.statusGeral !== 'INATIVO') {
           throw new Error(
-            `Validação de Persistência: O código documental "${documento.codigo}" já está em uso pelo documento ID ${codeData.documentoId} ("${codeData.titulo || ''}"). Duplicidade cadastral bloqueada concorrencialmente.`
+            `Validação de Persistência: O código documental "${documento.codigo}" (normalizado: "${codigoNorm}") já está em uso pelo documento ID ${codeData.documentoId} ("${codeData.titulo || ''}"). Duplicidade cadastral bloqueada concorrencialmente.`
           );
         }
       }
@@ -210,9 +253,10 @@ export async function saveDocumentoControlado(
       // 2. Se o documento já existia e o código foi alterado, limpar índice anterior
       const docSnap = await transaction.get(docRef);
       if (docSnap.exists()) {
-        const oldCodigo = (docSnap.data()?.codigo || '').trim().toUpperCase();
-        if (oldCodigo && oldCodigo !== codigoNorm) {
-          const oldCodeRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', oldCodigo);
+        const oldCodigo = docSnap.data()?.codigo || '';
+        const oldCodigoNorm = normalizeDocumentCode(oldCodigo);
+        if (oldCodigoNorm && oldCodigoNorm !== codigoNorm) {
+          const oldCodeRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', oldCodigoNorm);
           transaction.delete(oldCodeRef);
         }
       }
@@ -223,7 +267,9 @@ export async function saveDocumentoControlado(
         codeIndexRef,
         sanitizeForFirestore({
           documentoId: documento.id,
-          codigo: codigoNorm,
+          codigo: documento.codigo.trim(),
+          codigoNormalizado: codigoNorm,
+          chaveAlfanumerica: chaveAlpha,
           titulo: documento.titulo,
           statusGeral: payload.statusGeral,
           updatedAt: now,
@@ -293,17 +339,35 @@ export async function inactivateDocumentoControlado(
   const now = new Date().toISOString();
   try {
     const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
-    await setDoc(
-      docRef,
-      sanitizeForFirestore({
-        statusGeral: 'INATIVO',
-        updatedAt: now,
-        inativadoEm: now,
-        inativadoPor: user.displayName,
-        motivoInativacao: motivo || 'Inativação/Obsolescência com preservação de acervo histórico',
-      }),
-      { merge: true }
-    );
+    await runTransaction(db, async (transaction) => {
+      const docSnap = await transaction.get(docRef);
+      if (docSnap.exists()) {
+        const codigo = docSnap.data()?.codigo || '';
+        const codigoNorm = normalizeDocumentCode(codigo);
+        if (codigoNorm) {
+          const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', codigoNorm);
+          transaction.set(
+            codeIndexRef,
+            sanitizeForFirestore({
+              statusGeral: 'INATIVO',
+              updatedAt: now,
+            }),
+            { merge: true }
+          );
+        }
+      }
+      transaction.set(
+        docRef,
+        sanitizeForFirestore({
+          statusGeral: 'INATIVO',
+          updatedAt: now,
+          inativadoEm: now,
+          inativadoPor: user.displayName,
+          motivoInativacao: motivo || 'Inativação/Obsolescência com preservação de acervo histórico',
+        }),
+        { merge: true }
+      );
+    });
 
     await recordOrganizationAudit(organizationId, {
       entity: 'DOCUMENT_CONTROL',
@@ -346,17 +410,49 @@ export async function reactivateDocumentoControlado(
   const now = new Date().toISOString();
   try {
     const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
-    await setDoc(
-      docRef,
-      sanitizeForFirestore({
-        statusGeral: 'ATIVO',
-        updatedAt: now,
-        reativadoEm: now,
-        reativadoPor: user.displayName,
-        motivoReativacao: motivo || 'Reativação para acervo documental vigente',
-      }),
-      { merge: true }
-    );
+    await runTransaction(db, async (transaction) => {
+      const docSnap = await transaction.get(docRef);
+      if (!docSnap.exists()) {
+        throw new Error(`Documento ID ${documentoId} não encontrado para reativação.`);
+      }
+      const data = docSnap.data();
+      const codigo = data.codigo || '';
+      const codigoNorm = normalizeDocumentCode(codigo);
+      if (codigoNorm) {
+        const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', codigoNorm);
+        const indexSnap = await transaction.get(codeIndexRef);
+        if (indexSnap.exists()) {
+          const indexData = indexSnap.data();
+          if (indexData.documentoId !== documentoId && indexData.statusGeral !== 'INATIVO') {
+            throw new Error(
+              `Bloqueio de Reativação: O código "${codigo}" (normalizado: "${codigoNorm}") já está ativo e em uso pelo documento ID ${indexData.documentoId} ("${indexData.titulo || ''}"). Reativação cancelada para evitar duplicidade.`
+            );
+          }
+        }
+        transaction.set(
+          codeIndexRef,
+          sanitizeForFirestore({
+            documentoId,
+            codigo: codigo.trim(),
+            codigoNormalizado: codigoNorm,
+            titulo: data.titulo,
+            statusGeral: 'ATIVO',
+            updatedAt: now,
+          })
+        );
+      }
+      transaction.set(
+        docRef,
+        sanitizeForFirestore({
+          statusGeral: 'ATIVO',
+          updatedAt: now,
+          reativadoEm: now,
+          reativadoPor: user.displayName,
+          motivoReativacao: motivo || 'Reativação para acervo documental vigente',
+        }),
+        { merge: true }
+      );
+    });
 
     await recordOrganizationAudit(organizationId, {
       entity: 'DOCUMENT_CONTROL',
@@ -424,7 +520,21 @@ export async function deleteDocumentoControlado(
 
   try {
     const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documentoId);
+    const docSnap = await getDoc(docRef);
+    const codigoDocOrig = docSnap.exists() ? docSnap.data()?.codigo || codigoDoc : codigoDoc;
+    const codigoNorm = normalizeDocumentCode(codigoDocOrig);
+
     await deleteDoc(docRef);
+
+    // Limpa o índice do código em controlled_documents_codes
+    if (codigoNorm) {
+      try {
+        const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', codigoNorm);
+        await deleteDoc(codeIndexRef);
+      } catch (idxErr) {
+        console.warn('Aviso ao remover índice do código:', idxErr);
+      }
+    }
 
     // Se solicitado excluir junto o histórico/revisões vinculadas (limpeza de importações/duplicidades)
     if (forcarExclusaoComHistorico !== false) {
@@ -436,6 +546,18 @@ export async function deleteDocumentoControlado(
           const batch = writeBatch(db);
           revSnap.forEach((snap) => {
             batch.delete(snap.ref);
+            const rData = snap.data();
+            const rNumNorm = (rData?.numeroRevisao || '').trim().toLowerCase().replace(/\s+/g, '_');
+            if (rNumNorm) {
+              const rIndexRef = doc(
+                db,
+                'organizations',
+                organizationId,
+                'controlled_document_revisions_codes',
+                `${documentoId}__${rNumNorm}`
+              );
+              batch.delete(rIndexRef);
+            }
           });
           await batch.commit();
         }
@@ -483,7 +605,32 @@ export async function deleteRevisaoDocumental(
 
   try {
     const revRef = doc(db, 'organizations', organizationId, 'document_revisions', revisaoId);
+    const revSnap = await getDoc(revRef);
+    let revIndexKey = '';
+    if (revSnap.exists()) {
+      const revData = revSnap.data();
+      const revNumNorm = (revData?.numeroRevisao || '').trim().toLowerCase().replace(/\s+/g, '_');
+      if (revNumNorm) {
+        revIndexKey = `${documentoId}__${revNumNorm}`;
+      }
+    }
+
     await deleteDoc(revRef);
+
+    if (revIndexKey) {
+      try {
+        const revIndexRef = doc(
+          db,
+          'organizations',
+          organizationId,
+          'controlled_document_revisions_codes',
+          revIndexKey
+        );
+        await deleteDoc(revIndexRef);
+      } catch (idxErr) {
+        console.warn('Aviso ao remover índice da revisão excluída:', idxErr);
+      }
+    }
 
     // Verificar se o documento possui esta revisão como a vigente e atualizar se necessário
     try {
