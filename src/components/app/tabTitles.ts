@@ -32,6 +32,7 @@ export function getTitleForTab(tab: string, selectedNCNumber?: string): string {
     case 'consulta-temporal': return 'Conhecimento Temporal & RAG Auditável';
     case 'fontes-externas': return 'Fontes Oficiais Externas & Verificação';
     case 'documentos-dashboard': return 'Dashboard Executivo de Controle Documental';
+    case 'documentos-inativos': return 'Arquivo de Manuais Inativos & Consolidados';
     case 'clientes-requisitos': return 'Auditorias & Requisitos de Clientes (FASE 13)';
     case 'clientes-matriz': return 'Matriz de Cobertura SGQ — Um Controle, Vários Requisitos';
     case 'clientes-cockpit': return 'Cockpit & Estações de Clientes';

@@ -553,9 +553,11 @@ export async function executarReconciliacaoFirestore(
 
       let totalMigradas = 0;
 
-      // 1. Coleta revisões a serem migradas dos documentos secundários
+      // 1. Coleta revisões a serem migradas dos documentos secundários e revisões órfãs do código
       const revisoesParaAtualizar: RevisaoDocumental[] = [];
+      const masterNorm = normalizeDocumentCode(docMaster.codigo);
 
+      // Revisões dos documentos secundários
       item.documentosSecundariosIds.forEach((secId) => {
         const revsSec = revisoesAtuais.filter((r) => r.documentoId === secId);
         revsSec.forEach((r) => {
@@ -565,10 +567,53 @@ export async function executarReconciliacaoFirestore(
             codigoDocumento: docMaster.codigo,
             tituloDocumento: docMaster.titulo,
             updatedAt: agora,
-            observacoes: `${r.observacoes || ''} [Migrado do documento duplicado ID ${secId} por Reconciliação SGQ em ${agora}]`.trim(),
+            observacoes: `${r.observacoes || ''} [Migrado do cadastro duplicado ID ${secId} por Reconciliação SGQ em ${agora}]`.trim(),
           });
         });
       });
+
+      // Inclui revisões órfãs cujo código coincida com o master
+      revisoesAtuais.forEach((r) => {
+        const rNorm = normalizeDocumentCode(r.codigoDocumento || '');
+        const docExiste = documentosAtuais.some((d) => d.id === r.documentoId);
+        if (
+          !docExiste &&
+          rNorm === masterNorm &&
+          !revisoesParaAtualizar.some((p) => p.id === r.id) &&
+          r.documentoId !== docMaster.id
+        ) {
+          revisoesParaAtualizar.push({
+            ...r,
+            documentoId: docMaster.id,
+            codigoDocumento: docMaster.codigo,
+            tituloDocumento: docMaster.titulo,
+            updatedAt: agora,
+            observacoes: `${r.observacoes || ''} [Revisão órfã reconectada ao documento master por Reconciliação SGQ em ${agora}]`.trim(),
+          });
+        }
+      });
+
+      // Determina a revisão mais recente e herança de arquivo digital
+      let revMaisRecente = docMaster.numeroRevisao || '';
+      let dataRevMaisRecente = docMaster.dataRevisao || '';
+      const docsSecundarios = item.documentosSecundariosIds
+        .map((id) => documentosAtuais.find((d) => d.id === id))
+        .filter(Boolean) as DocumentoControlado[];
+
+      // Compara com secundários para garantir que o master reflita a versão mais alta
+      docsSecundarios.forEach((sec) => {
+        const matchSec = sec.numeroRevisao?.match(/\d+(\.\d+)?/);
+        const numSec = matchSec ? parseFloat(matchSec[0]) : null;
+        const matchMaster = revMaisRecente?.match(/\d+(\.\d+)?/);
+        const numMaster = matchMaster ? parseFloat(matchMaster[0]) : null;
+        if (numSec !== null && (numMaster === null || numSec > numMaster)) {
+          revMaisRecente = sec.numeroRevisao || '';
+          dataRevMaisRecente = sec.dataRevisao || dataRevMaisRecente;
+        }
+      });
+
+      // Herança de anexo físico se o master não possuir arquivo e o secundário possuir
+      const secComArquivo = docsSecundarios.find((s) => s.arquivoNome);
 
       // 2. Transação no Firestore para aplicar migração e consolidação atômica
       await runTransaction(db, async (transaction) => {
@@ -618,7 +663,6 @@ export async function executarReconciliacaoFirestore(
           const secDoc = documentosAtuais.find((d) => d.id === secId);
           if (secDoc) {
             const secNorm = normalizeDocumentCode(secDoc.codigo);
-            const masterNorm = normalizeDocumentCode(docMaster.codigo);
             if (secNorm === masterNorm) {
               // Garante que o índice pertença exclusivamente ao master
               const codeIndexRef = doc(
@@ -645,12 +689,24 @@ export async function executarReconciliacaoFirestore(
 
         // Atualiza o documento principal com contadores e revisão vigente consolidada
         const docMasterRef = doc(db, 'organizations', organizationId, 'controlled_documents', docMaster.id);
+        const atualizacoesMaster: Record<string, any> = {
+          updatedAt: agora,
+          numeroRevisao: revMaisRecente,
+          dataRevisao: dataRevMaisRecente,
+          detalhesUltimaVerificacao: `${docMaster.detalhesUltimaVerificacao || ''} [Reconciliado com ${item.documentosSecundariosIds.length} cadastros em ${agora}]`.trim(),
+        };
+
+        if (!docMaster.arquivoNome && secComArquivo) {
+          atualizacoesMaster.arquivoNome = secComArquivo.arquivoNome;
+          atualizacoesMaster.arquivoUrl = secComArquivo.arquivoUrl;
+          atualizacoesMaster.arquivoCaminho = secComArquivo.arquivoCaminho;
+          atualizacoesMaster.arquivoTamanhoBytes = secComArquivo.arquivoTamanhoBytes;
+          atualizacoesMaster.arquivoBase64 = secComArquivo.arquivoBase64;
+        }
+
         transaction.set(
           docMasterRef,
-          sanitizeForFirestore({
-            updatedAt: agora,
-            detalhesUltimaVerificacao: `${docMaster.detalhesUltimaVerificacao || ''} [Reconciliado com ${item.documentosSecundariosIds.length} cadastros em ${agora}]`.trim(),
-          }),
+          sanitizeForFirestore(atualizacoesMaster),
           { merge: true }
         );
       });

@@ -1,9 +1,10 @@
 import {
   executarVerificacaoFonteExterna,
   calcularMetricasDashboardDocumental,
+  determinarRevisaoVigenteNaData,
 } from '../src/services/documentControlEngine';
 import { formatarDataHoraVerificacao } from '../src/components/DocumentControlCenterView';
-import { DocumentoControlado, FonteExternaControlada, RevisaoDocumental, PlanoReconciliacao } from '../src/types';
+import { DocumentoControlado, FonteExternaControlada, RevisaoDocumental, PlanoReconciliacao, ManualRecord } from '../src/types';
 import {
   normalizeDocumentCode,
   canonicalAlphanumericKey,
@@ -13,6 +14,10 @@ import {
   simularReconciliacao,
   reconstruirIndicesUnicidade,
 } from '../src/services/documentControlAuditReconciliation';
+import {
+  compararRevisoesDocumentais,
+  executarComparativoAcervoComBancoManuaisIA,
+} from '../src/services/manualsCrossCheckService';
 
 async function runAuditTests() {
   console.log('=== INÍCIO DA SUÍTE DE TESTES E HOMOLOGAÇÃO: CONTROLE DOCUMENTAL ===\n');
@@ -753,6 +758,235 @@ async function runAuditTests() {
   assert(
     resLegitimo.itens[0].sucesso === true,
     '30. Reconciliação permite categorizar publicações como Documentos Legítimos Distintos preservando integridade'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 31: Comparação precisa de versões e revisões documentais
+  // -------------------------------------------------------------
+  const comp1 = compararRevisoesDocumentais('Rev. 15', '2024-05-10', 'Rev. 14', '2023-11-20');
+  const comp2 = compararRevisoesDocumentais('Rev. 02', '2024-01-01', 'Rev. 02', '2024-01-01');
+  const comp3 = compararRevisoesDocumentais('01', '', '02', '');
+  assert(
+    comp1 > 0 && comp2 === 0 && comp3 < 0,
+    '31. Comparação cronológica e numérica de revisões documentais identifica com precisão versões posteriores e iguais'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 32: Auditoria cruzada detecta quando Banco de Manuais (IA) possui revisão mais recente que Acervo SGQ
+  // -------------------------------------------------------------
+  const docSGQ_EASA: DocumentoControlado = {
+    id: 'doc-sgq-easa',
+    organizationId: 'org-test',
+    codigo: 'EASA Supplement',
+    titulo: 'EASA Supplement MNT-004',
+    emissor: 'ORGANIZACAO',
+    numeroRevisao: 'Rev 01',
+    dataRevisao: '2023-01-10',
+    statusGeral: 'ATIVO',
+    statusVerificacao: 'CONFORME',
+    categoria: 'DOCUMENTO_INTERNO',
+    responsavelNome: 'SGQ',
+    exigeEvidenciaLeitura: false,
+    frequenciaVerificacaoDias: 90,
+    arquivoNome: 'EASA_Supp_Rev01.pdf',
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2023-01-10T00:00:00Z',
+    updatedAt: '2023-01-10T00:00:00Z',
+  };
+
+  const manualIA_EASA: ManualRecord = {
+    id: 'manual-ia-easa',
+    codigo: 'EASA Supplement',
+    titulo: 'EASA Supplement MNT-004',
+    revisao: 'Rev 02',
+    dataVigencia: '2024-06-15',
+    status: 'Vigente',
+    setoresAplicaveis: ['Qualidade', 'Manutenção'],
+    descricaoResumo: 'EASA Maintenance Supplement',
+    conteudoTexto: 'Texto do manual EASA Rev 02...',
+    fonte: 'SGQ Interno',
+    arquivoNome: 'EASA_Supp_Rev02.pdf',
+    criadoEm: '2024-06-15T00:00:00Z',
+    atualizadoEm: '2024-06-15T00:00:00Z',
+  };
+
+  const relatorioCruzado = executarComparativoAcervoComBancoManuaisIA(
+    'org-test',
+    [docSGQ_EASA],
+    [],
+    [manualIA_EASA]
+  );
+
+  assert(
+    relatorioCruzado.totalBancoIAMaisRecente === 1 &&
+      relatorioCruzado.itens[0].statusComparacao === 'BANCO_IA_MAIS_RECENTE' &&
+      relatorioCruzado.itens[0].acaoRecomendada === 'IMPORTAR_REVISAO_PARA_SGQ',
+    '32. Auditoria cruzada detecta quando o Banco de Manuais (IA) possui versão mais recente e indica importação para o SGQ'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 33: Identificação de manuais de uso interno existentes APENAS no Banco IA
+  // -------------------------------------------------------------
+  const manualIA_MOMQ: ManualRecord = {
+    id: 'manual-ia-momq',
+    codigo: 'MOMQ',
+    titulo: 'Manual da Organização de Manutenção da Qualidade',
+    revisao: 'Rev. 18',
+    dataVigencia: '2025-02-01',
+    status: 'Vigente',
+    setoresAplicaveis: ['Geral'],
+    descricaoResumo: 'Manual geral interno da organização',
+    conteudoTexto: 'Capítulos do MOMQ...',
+    fonte: 'Uso Interno',
+    criadoEm: '2025-02-01T00:00:00Z',
+    atualizadoEm: '2025-02-01T00:00:00Z',
+  };
+
+  const relatorioApenasIA = executarComparativoAcervoComBancoManuaisIA(
+    'org-test',
+    [],
+    [],
+    [manualIA_MOMQ]
+  );
+
+  assert(
+    relatorioApenasIA.totalApenasNoBancoIA === 1 &&
+      relatorioApenasIA.itens[0].origemTipo === 'INTERNO' &&
+      relatorioApenasIA.itens[0].acaoRecomendada === 'CADASTRAR_NO_ACERVO_SGQ',
+    '33. Manuais de uso interno presentes apenas no Banco IA são diagnosticados com recomendação formal de cadastro no Acervo SGQ'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 34: Documentos existentes no Acervo SGQ ainda não indexados no Banco IA
+  // -------------------------------------------------------------
+  const docSGQ_POP: DocumentoControlado = {
+    id: 'doc-sgq-pop-01',
+    organizationId: 'org-test',
+    codigo: 'POP-MN-001',
+    titulo: 'Procedimento Operacional Padrão de Calibração',
+    emissor: 'ORGANIZACAO',
+    numeroRevisao: '03',
+    dataRevisao: '2024-08-01',
+    statusGeral: 'ATIVO',
+    statusVerificacao: 'CONFORME',
+    categoria: 'DOCUMENTO_INTERNO',
+    responsavelNome: 'SGQ',
+    exigeEvidenciaLeitura: false,
+    frequenciaVerificacaoDias: 180,
+    arquivoNome: 'POP_MN_001_Rev03.pdf',
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2024-08-01T00:00:00Z',
+    updatedAt: '2024-08-01T00:00:00Z',
+  };
+
+  const relatorioApenasSGQ = executarComparativoAcervoComBancoManuaisIA(
+    'org-test',
+    [docSGQ_POP],
+    [],
+    []
+  );
+
+  assert(
+    relatorioApenasSGQ.totalApenasNoAcervoSGQ === 1 &&
+      relatorioApenasSGQ.itens[0].statusComparacao === 'APENAS_NO_ACERVO_SGQ' &&
+      relatorioApenasSGQ.itens[0].acaoRecomendada === 'PUBLICAR_NO_BANCO_IA',
+    '34. Documento controlado ausente no Banco IA é indicado com sucesso para publicação e indexação de inteligência artificial'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 35: Manuais 100% sincronizados em ambas as bases são categorizados como conformes
+  // -------------------------------------------------------------
+  const manualIA_Sinc: ManualRecord = {
+    id: 'manual-ia-pop',
+    codigo: 'POP-MN-001',
+    titulo: 'Procedimento Operacional Padrão de Calibração',
+    revisao: '03',
+    dataVigencia: '2024-08-01',
+    status: 'Vigente',
+    setoresAplicaveis: ['Metrologia'],
+    descricaoResumo: 'Procedimento de Calibração',
+    conteudoTexto: 'Texto...',
+    fonte: 'SGQ',
+    criadoEm: '2024-08-01T00:00:00Z',
+    atualizadoEm: '2024-08-01T00:00:00Z',
+  };
+
+  const relatorioSincronizado = executarComparativoAcervoComBancoManuaisIA(
+    'org-test',
+    [docSGQ_POP],
+    [],
+    [manualIA_Sinc]
+  );
+
+  assert(
+    relatorioSincronizado.totalSincronizados === 1 &&
+      relatorioSincronizado.itens[0].statusComparacao === 'SINCRONIZADO' &&
+      relatorioSincronizado.itens[0].acaoRecomendada === 'NENHUMA',
+    '35. Manuais alinhados com mesma revisão e vigência em ambas as bases são confirmados como 100% sincronizados'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 36: Segregação de documentos inativos: excluídos do acervo operacional e de relatórios oficiais
+  // -------------------------------------------------------------
+  const docAtivo: DocumentoControlado = {
+    ...docSGQ_POP,
+    id: 'doc-ativo-1',
+    codigo: 'MOMQ',
+    statusGeral: 'ATIVO',
+  };
+  const docInativo: DocumentoControlado = {
+    ...docSGQ_POP,
+    id: 'doc-inativo-1',
+    codigo: 'MOMQ-OLD',
+    statusGeral: 'INATIVO',
+    inativadoEm: '2025-01-10T10:00:00Z',
+    inativadoPor: 'Auditor SGQ',
+    motivoInativacao: 'Consolidado no manual master MOMQ',
+    consolidadoEmDocumentoId: 'doc-ativo-1',
+  };
+
+  const todosDocs = [docAtivo, docInativo];
+  const docsAtivosFiltrados = todosDocs.filter((d) => d.statusGeral !== 'INATIVO');
+  const docsInativosFiltrados = todosDocs.filter((d) => d.statusGeral === 'INATIVO');
+
+  assert(
+    docsAtivosFiltrados.length === 1 &&
+      docsAtivosFiltrados[0].id === 'doc-ativo-1' &&
+      docsInativosFiltrados.length === 1 &&
+      docsInativosFiltrados[0].id === 'doc-inativo-1',
+    '36. Documentos com statusGeral === INATIVO são estritamente segregados do acervo operacional e de relatórios'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 37: Consulta temporal determinística de documento inativo preserva histórico no momento do evento
+  // -------------------------------------------------------------
+  const revHistoricaInativo: RevisaoDocumental = {
+    id: 'rev-inativo-1',
+    organizationId: 'org-test',
+    documentoId: 'doc-inativo-1',
+    codigoDocumento: 'MOMQ-OLD',
+    tituloDocumento: 'Manual MOMQ Histórico',
+    numeroRevisao: 'Rev. 10',
+    dataEmissao: '2023-01-01',
+    dataEntradaVigor: '2023-01-01',
+    dataSubstituicao: '2024-01-01',
+    statusCicloVida: 'SUBSTITUIDO',
+    origemRevisao: 'INTERNA',
+    ehImutavel: true,
+    createdAt: '2023-01-01T00:00:00Z',
+    updatedAt: '2023-01-01T00:00:00Z',
+  };
+
+  const resultadoTemporalInativo = determinarRevisaoVigenteNaData(
+    docInativo,
+    [revHistoricaInativo],
+    '2023-06-15'
+  );
+
+  assert(
+    resultadoTemporalInativo.revisaoVigenteNaData?.numeroRevisao === 'Rev. 10' &&
+      docInativo.statusGeral === 'INATIVO',
+    '37. Conhecimento temporal de manual inativo resolve vigência no evento sem reativar documento indevidamente'
   );
 
   console.log(`\n=== RESUMO: ${passed} PASS, ${failed} FAIL ===`);

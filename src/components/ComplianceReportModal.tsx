@@ -43,8 +43,13 @@ export const ComplianceReportModal: React.FC<ComplianceReportModalProps> = ({
   const [filterTipo, setFilterTipo] = useState<'TODOS' | 'AUTOMATICO' | 'MANUAL'>('TODOS');
   const [searchTerm, setSearchTerm] = useState('');
 
+  // REGRA DE CONFORMIDADE SGQ: Manuais inativos/consolidados são categoricamente excluídos do relatório oficial
+  const docsAtivos = useMemo(() => {
+    return (documentos || []).filter((d) => d.statusGeral !== 'INATIVO');
+  }, [documentos]);
+
   const filteredDocs = useMemo(() => {
-    return documentos.filter((d) => {
+    return docsAtivos.filter((d) => {
       if (filterTipo !== 'TODOS') {
         const docTipo = d.tipoVerificacao || 'MANUAL';
         if (docTipo !== filterTipo) return false;
@@ -59,18 +64,18 @@ export const ComplianceReportModal: React.FC<ComplianceReportModalProps> = ({
       }
       return true;
     });
-  }, [documentos, filterTipo, searchTerm]);
+  }, [docsAtivos, filterTipo, searchTerm]);
 
   // Estatísticas de Conformidade
   const stats = useMemo(() => {
-    const total = documentos.length;
-    const automaticos = documentos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length;
+    const total = docsAtivos.length;
+    const automaticos = docsAtivos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length;
     const manuais = total - automaticos;
-    const conformes = documentos.filter((d) => d.statusVerificacao === 'CONFORME' || !d.statusVerificacao).length;
-    const discrepantes = documentos.filter((d) => d.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA').length;
+    const conformes = docsAtivos.filter((d) => d.statusVerificacao === 'CONFORME' || !d.statusVerificacao).length;
+    const discrepantes = docsAtivos.filter((d) => d.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA').length;
     const taxa = total > 0 ? Math.round((conformes / total) * 100) : 100;
     return { total, automaticos, manuais, conformes, discrepantes, taxa };
-  }, [documentos]);
+  }, [docsAtivos]);
 
   // Hash de Auditoria Rastreável
   const hashRelatorio = useMemo(() => {

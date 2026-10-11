@@ -40,6 +40,7 @@ import {
   saveDocumentoControlado,
   saveRevisaoDocumental,
 } from './documentControlFirestore';
+import { normalizeDocumentCode } from '../documentControlAuditReconciliation';
 import { normalizarStatusColaborador } from '../../utils/smartImportEngine';
 import { INITIAL_CALIBRATED_TOOLS } from '../../data/initialCalibratedTools';
 
@@ -383,6 +384,7 @@ export async function efetivarImportacaoNoQualigest(
   let totalCriados = 0;
   let totalAtualizados = 0;
   let totalIgnorados = 0;
+  const avisosFalhas: string[] = [];
   const idsGerados: string[] = [];
   const registrosCriadosSnapshot: SnapshotRegistroCriado[] = [];
   const registrosAtualizadosSnapshot: SnapshotRegistroAtualizado[] = [];
@@ -797,14 +799,56 @@ export async function efetivarImportacaoNoQualigest(
 
   // 3. Processar CONTROLE_DOCUMENTAL (Manuais, POPs, ITs, Normas, Formulários)
   if (tipoControle === 'CONTROLE_DOCUMENTAL') {
+    // Rastreia documentos-pai resolvidos neste lote de importação para anexar revisões subsequentes ao mesmo manual
+    const docIdPorCodigoNormLote = new Map<string, { id: string; doc?: DocumentoControlado }>();
+
     for (const linha of linhasParaImportar) {
       const dados = linha.dadosMapeados;
-      const isAtualizacao = (linha.decisaoUsuario === 'ATUALIZAR' || linha.documentoAcao === 'NOVA_REVISAO') && Boolean(linha.registroExistenteId);
-      const docId = isAtualizacao && linha.registroExistenteId
-        ? linha.registroExistenteId
-        : `doc-imp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      const rawCodigo = dados.codigo || dados.publicacao || (linha.dadosExistentesSnapshot as DocumentoControlado | undefined)?.codigo || 'DOC-GEN';
+      const docCodigo = String(rawCodigo).trim();
+      const codigoNorm = normalizeDocumentCode(docCodigo);
 
-      const dadosExistentes = isAtualizacao ? (linha.dadosExistentesSnapshot as DocumentoControlado | undefined) : undefined;
+      let isAtualizacao = (linha.decisaoUsuario === 'ATUALIZAR' || linha.documentoAcao === 'NOVA_REVISAO') && Boolean(linha.registroExistenteId);
+      let docId = isAtualizacao && linha.registroExistenteId ? linha.registroExistenteId : '';
+      let dadosExistentes = isAtualizacao ? (linha.dadosExistentesSnapshot as DocumentoControlado | undefined) : undefined;
+
+      // RESOLUÇÃO DE IDENTIDADE E UNICIDADE DO DOCUMENTO-PAI:
+      // 1) Se já temos um documento-pai resolvido para este mesmo código neste lote de importação:
+      if (!docId && codigoNorm && docIdPorCodigoNormLote.has(codigoNorm)) {
+        const itemLote = docIdPorCodigoNormLote.get(codigoNorm)!;
+        docId = itemLote.id;
+        isAtualizacao = true;
+        dadosExistentes = itemLote.doc || dadosExistentes;
+      }
+
+      // 2) Se o código já existe no Firestore (em controlled_documents_codes):
+      if (!docId && codigoNorm) {
+        try {
+          const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', codigoNorm);
+          const codeIndexSnap = await getDoc(codeIndexRef);
+          if (codeIndexSnap.exists()) {
+            const codeData = codeIndexSnap.data();
+            if (codeData?.documentoId && codeData?.statusGeral !== 'INATIVO') {
+              docId = codeData.documentoId;
+              isAtualizacao = true;
+              if (!dadosExistentes) {
+                const existingSnap = await getDoc(doc(db, 'organizations', organizationId, 'controlled_documents', docId));
+                if (existingSnap.exists()) {
+                  dadosExistentes = existingSnap.data() as DocumentoControlado;
+                }
+              }
+            }
+          }
+        } catch (errCodeCheck) {
+          console.warn('Verificação de código pré-existente no Firestore:', errCodeCheck);
+        }
+      }
+
+      // 3) Se for realmente um novo documento sem colisão:
+      if (!docId) {
+        docId = `doc-imp-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+      }
+
       const hoje = new Date().toISOString().split('T')[0];
 
       // Revisão SEMPRE COMO STRING (ex: 'Rev. 08', 'Rev. D', '02', 'Ago.26') — NUNCA CONVERTER PARA NÚMERO
@@ -813,8 +857,8 @@ export async function efetivarImportacaoNoQualigest(
 
       // Status: GOVERNANÇA DE DADOS
       // STATUS_NAO_INFORMADO não deve ser convertido silenciosamente para 'ATIVO'
-      let statusGeral: 'ATIVO' | 'INATIVO' | 'CANCELADO' = 'ATIVO';
-      let statusDet = dados.status ? String(dados.status).trim() : '';
+      let statusGeral: 'ATIVO' | 'INATIVO' | 'CANCELADO' = dadosExistentes?.statusGeral || 'ATIVO';
+      let statusDet = dados.status ? String(dados.status).trim() : (dadosExistentes?.status || '');
       if (
         !statusDet ||
         statusDet.toUpperCase().includes('NAO_INFORMADO') ||
@@ -829,7 +873,7 @@ export async function efetivarImportacaoNoQualigest(
       }
 
       // Categoria documental semântica
-      let cat: CategoriaDocumental = 'DOCUMENTO_INTERNO';
+      let cat: CategoriaDocumental = dadosExistentes?.categoria || 'DOCUMENTO_INTERNO';
       const catRaw = String(dados.tipoDocumento || dados.categoria || '').toUpperCase();
       if (catRaw.includes('NORMATIV') || catRaw.includes('RBAC') || catRaw.includes('LEGISLACAO') || catRaw.includes('ANAC') || catRaw.includes('IS 145')) {
         cat = 'DOCUMENTO_AUTORIDADE';
@@ -837,17 +881,17 @@ export async function efetivarImportacaoNoQualigest(
         cat = 'DOCUMENTO_FABRICANTE';
       } else if (catRaw.includes('CLIENTE') || catRaw.includes('PROGRAMA')) {
         cat = 'DOCUMENTO_CLIENTE';
-      } else {
+      } else if (!dadosExistentes) {
         cat = 'DOCUMENTO_INTERNO';
       }
 
-      const docCodigo = dados.codigo || dados.publicacao || dadosExistentes?.codigo || 'DOC-GEN';
       const docTitulo = dados.titulo || dadosExistentes?.titulo || 'Documento sem título';
       const docEmissor = dados.emissor || dados.proprietarioCessor || dados.responsavel || dadosExistentes?.emissor || 'IMPACTO';
       const docResponsavel = dados.responsavel || dados.proprietarioCessor || dadosExistentes?.responsavelNome || (user?.displayName || 'Gestor SGQ');
       const docDataAprovacao = dados.dataAprovacao || dados.dataRevisao || hoje;
 
       const novoDoc: DocumentoControlado = {
+        ...(dadosExistentes || {}),
         id: docId,
         organizationId,
         codigo: docCodigo,
@@ -859,8 +903,8 @@ export async function efetivarImportacaoNoQualigest(
         revisaoVigenteNumero: revisaoStr,
         statusGeral,
         status: statusDet,
-        exigeEvidenciaLeitura: false,
-        aplicabilidadePadrao: {
+        exigeEvidenciaLeitura: dadosExistentes?.exigeEvidenciaLeitura ?? false,
+        aplicabilidadePadrao: dadosExistentes?.aplicabilidadePadrao || {
           statusDeterminacao: 'DETERMINADA',
         },
         createdAt: dadosExistentes?.createdAt || new Date().toISOString(),
@@ -883,52 +927,75 @@ export async function efetivarImportacaoNoQualigest(
         novoDoc.camposCustomizados = camposCustomizadosDoc;
       }
 
-      await saveDocumentoControlado(organizationId, novoDoc, user, dadosExistentes);
+      try {
+        await saveDocumentoControlado(organizationId, novoDoc, user, dadosExistentes);
 
-      // Criar registro da revisão na coleção document_revisions
-      const revId = `rev-imp-${docId}-${Date.now().toString(36)}`;
-      const novaRevisao: RevisaoDocumental = {
-        id: revId,
-        organizationId,
-        documentoId: docId,
-        codigoDocumento: novoDoc.codigo,
-        tituloDocumento: novoDoc.titulo,
-        numeroRevisao: revisaoStr,
-        dataEmissao: docDataAprovacao,
-        dataEntradaVigor: docDataAprovacao,
-        statusCicloVida: 'VIGENTE',
-        origemRevisao: 'IMPORTACAO',
-        aprovadoPorNome: docResponsavel,
-        dataAprovacao: docDataAprovacao,
-        escopoAlteracoes: dados.observacoes || `Importado via Smart Import do arquivo ${nomeArquivo}`,
-        ehImutavel: false,
-        createdAt: dadosExistentes?.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+        if (codigoNorm) {
+          docIdPorCodigoNormLote.set(codigoNorm, { id: docId, doc: novoDoc });
+        }
 
-      await saveRevisaoDocumental(organizationId, novaRevisao, user);
+        // Criar registro da revisão na coleção document_revisions
+        // Se já existe essa mesma revisão cadastrada para este documento, reutiliza o ID da revisão para atualizar
+        const revNumNorm = revisaoStr.trim().toLowerCase().replace(/\s+/g, '_');
+        const revKey = `${docId}__${revNumNorm}`;
+        let revId = `rev-imp-${docId}-${Date.now().toString(36)}`;
+        try {
+          const revIndexRef = doc(db, 'organizations', organizationId, 'controlled_document_revisions_codes', revKey);
+          const revIndexSnap = await getDoc(revIndexRef);
+          if (revIndexSnap.exists() && revIndexSnap.data()?.revisaoId) {
+            revId = revIndexSnap.data().revisaoId;
+          }
+        } catch (errRevCheck) {
+          console.warn('Verificação de revisão pré-existente:', errRevCheck);
+        }
 
-      if (callbacksEstado.adicionarDocumento) {
-        callbacksEstado.adicionarDocumento(novoDoc);
-      }
+        const novaRevisao: RevisaoDocumental = {
+          id: revId,
+          organizationId,
+          documentoId: docId,
+          codigoDocumento: novoDoc.codigo,
+          tituloDocumento: novoDoc.titulo,
+          numeroRevisao: revisaoStr,
+          dataEmissao: docDataAprovacao,
+          dataEntradaVigor: docDataAprovacao,
+          statusCicloVida: 'VIGENTE',
+          origemRevisao: 'IMPORTACAO',
+          aprovadoPorNome: docResponsavel,
+          dataAprovacao: docDataAprovacao,
+          escopoAlteracoes: dados.observacoes || `Importado via Smart Import do arquivo ${nomeArquivo}`,
+          ehImutavel: false,
+          createdAt: dadosExistentes?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
 
-      idsGerados.push(docId);
+        await saveRevisaoDocumental(organizationId, novaRevisao, user);
 
-      if (isAtualizacao && dadosExistentes) {
-        totalAtualizados++;
-        registrosAtualizadosSnapshot.push({
-          modulo: 'CONTROLLED_DOCUMENT',
-          id: docId,
-          dadosAnteriores: dadosExistentes,
-          dadosNovos: novoDoc,
-        });
-      } else {
-        totalCriados++;
-        registrosCriadosSnapshot.push({
-          modulo: 'CONTROLLED_DOCUMENT',
-          id: docId,
-          dados: novoDoc,
-        });
+        if (callbacksEstado.adicionarDocumento) {
+          callbacksEstado.adicionarDocumento(novoDoc);
+        }
+
+        idsGerados.push(docId);
+
+        if (isAtualizacao && dadosExistentes) {
+          totalAtualizados++;
+          registrosAtualizadosSnapshot.push({
+            modulo: 'CONTROLLED_DOCUMENT',
+            id: docId,
+            dadosAnteriores: dadosExistentes,
+            dadosNovos: novoDoc,
+          });
+        } else {
+          totalCriados++;
+          registrosCriadosSnapshot.push({
+            modulo: 'CONTROLLED_DOCUMENT',
+            id: docId,
+            dados: novoDoc,
+          });
+        }
+      } catch (errDoc: any) {
+        console.error(`Erro ao importar documento ${docCodigo} na linha ${linha.indiceLinha}:`, errDoc);
+        // Não quebra toda a importação por conta de um registro com conflito pontual
+        avisosFalhas.push(`Linha ${linha.indiceLinha} (${docCodigo}): ${errDoc.message}`);
       }
     }
   }

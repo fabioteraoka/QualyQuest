@@ -738,7 +738,10 @@ export function calcularMetricasDashboardDocumental(
     OUTRO_CONTROLADO: 0,
   };
 
-  if (!documentos || documentos.length === 0) {
+  // SEGREGACÃO REGULAMENTAR SGQ: Documentos inativos/consolidados são excluídos das métricas ativas e relatórios
+  const docsAtivos = (documentos || []).filter((d) => d.statusGeral !== 'INATIVO');
+
+  if (!docsAtivos || docsAtivos.length === 0) {
     const fontesAtivas = (fontes || []).filter((f) => f.status === 'ATIVA').length;
     return {
       totalDocumentosControlados: 0,
@@ -752,7 +755,7 @@ export function calcularMetricasDashboardDocumental(
       distribuicaoPorCategoria: distCategoriaVazia,
       distribuicaoPorSetor: {},
       distribuicaoPorOrigem: {},
-      totalRevisoesArmazenadas: 0,
+      totalRevisoesArmazenadas: (revisoes || []).length,
       semDados: true,
 
       // Aliases diretos para DocumentControlCenterView
@@ -784,7 +787,7 @@ export function calcularMetricasDashboardDocumental(
   const distSetor: Record<string, number> = {};
   const distOrigem: Record<string, number> = {};
 
-  documentos.forEach((doc) => {
+  docsAtivos.forEach((doc) => {
     // Contagem de categoria
     distCategoria[doc.categoria] = (distCategoria[doc.categoria] || 0) + 1;
 

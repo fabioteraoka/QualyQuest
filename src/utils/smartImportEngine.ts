@@ -19,6 +19,7 @@ import {
   AcaoConflitoDuplicidade,
   StatusColaborador,
 } from '../types';
+import { normalizeDocumentCode } from '../services/documentControlAuditReconciliation';
 
 export interface ResultadoNormalizacaoStatusColaborador {
   status: StatusColaborador;
@@ -1356,6 +1357,7 @@ export function validarECompararLinhasImportacao(
   // Cache de pessoas e cursos detectados no lote para evitar duplicidades intra-planilha (Fase 14.1-A)
   const pessoasLoteMap = new Map<string, { id: string; nome: string; matricula: string; setor?: string; funcao?: string; isNew: boolean }>();
   const cursosLoteMap = new Map<string, { id: string; titulo: string; codigo: string; isNew: boolean }>();
+  const documentosLoteMap = new Map<string, { id: string; codigo: string; titulo: string; revisaoVigenteNumero: string }>();
 
   linhasOriginais.forEach((linhaOriginal, index) => {
     // Ignorar linhas completamente vazias provenientes de rodapés ou células em branco da planilha
@@ -1999,7 +2001,9 @@ export function validarECompararLinhasImportacao(
         }
       }
     } else if (tipoControle === 'CONTROLE_DOCUMENTAL') {
-      const codNorm = normalizarTexto(dadosMapeados.codigo || '');
+      const rawCod = String(dadosMapeados.codigo || dadosMapeados.publicacao || '').trim();
+      const codNorm = normalizarTexto(rawCod);
+      const codigoCanonico = normalizeDocumentCode(rawCod);
       const tituloNorm = normalizarTexto(dadosMapeados.titulo || '');
 
       if (!codNorm && !tituloNorm) {
@@ -2009,9 +2013,15 @@ export function validarECompararLinhasImportacao(
         mensagensValidacao.push('Documento sem código ou título identificável.');
         totalInvalidos++;
       } else {
-        const docExistente = (contexto.documentosExistentes || []).find(
-          (d) => normalizarTexto(d.codigo) === codNorm || (tituloNorm && normalizarTexto(d.titulo) === tituloNorm)
-        );
+        const docExistente =
+          (contexto.documentosExistentes || []).find(
+            (d) =>
+              (codigoCanonico && normalizeDocumentCode(d.codigo) === codigoCanonico) ||
+              (codNorm && normalizarTexto(d.codigo) === codNorm) ||
+              (tituloNorm && normalizarTexto(d.titulo) === tituloNorm)
+          ) ||
+          (codigoCanonico ? documentosLoteMap.get(codigoCanonico) : undefined) ||
+          (codNorm ? documentosLoteMap.get(codNorm) : undefined);
 
         if (docExistente) {
           registroExistenteId = docExistente.id;
@@ -2043,11 +2053,30 @@ export function validarECompararLinhasImportacao(
             if (statusQualidade === 'OK') statusQualidade = 'ATENCAO';
             mensagensValidacao.push(`Documento já existe no Controle Documental. A importação registrará a nova revisão histórica (${dadosMapeados.numeroRevisao || dadosMapeados.revisaoNumero || 'Nova'}).`);
           }
+
+          const docCacheItem = {
+            id: docExistente.id,
+            codigo: docExistente.codigo,
+            titulo: docExistente.titulo,
+            revisaoVigenteNumero: docExistente.revisaoVigenteNumero || 'Rev. 00',
+          };
+          if (codigoCanonico) documentosLoteMap.set(codigoCanonico, docCacheItem);
+          if (codNorm) documentosLoteMap.set(codNorm, docCacheItem);
         } else {
           classificacaoReconciliacao = 'NOVO';
           decisaoUsuario = 'CRIAR';
           documentoAcao = 'CRIAR_DOCUMENTO';
           totalNovos++;
+
+          // Registrar no cache do lote para que linhas seguintes com mesmo código no mesmo arquivo sejam vinculadas como nova revisão
+          const placeholderDoc = {
+            id: `doc-imp-${Date.now()}-${index}`,
+            codigo: rawCod || 'DOC-GEN',
+            titulo: dadosMapeados.titulo || 'Documento sem título',
+            revisaoVigenteNumero: String(dadosMapeados.numeroRevisao || dadosMapeados.revisaoNumero || 'Rev. 00').trim(),
+          };
+          if (codigoCanonico) documentosLoteMap.set(codigoCanonico, placeholderDoc);
+          if (codNorm) documentosLoteMap.set(codNorm, placeholderDoc);
         }
       }
     } else {

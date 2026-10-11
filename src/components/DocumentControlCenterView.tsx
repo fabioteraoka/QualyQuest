@@ -12,6 +12,7 @@ import {
   UserProfile,
   OrganizationRecord,
   NCRecord,
+  ManualRecord,
 } from '../types';
 import {
   determinarRevisaoVigenteNaData,
@@ -36,10 +37,12 @@ import {
   deleteDocumentoControlado,
   deleteRevisaoDocumental,
   verificarDependenciasDocumento,
+  validarUnicidadeCodigoDocumental,
 } from '../services/firebase/documentControlFirestore';
 import {
   BookOpen,
   History,
+  Archive,
   Globe,
   Mail,
   GitCompare,
@@ -189,8 +192,10 @@ interface DocumentControlCenterViewProps {
   logsVerificacao: LogVerificacaoFonteExterna[];
   evidenciasConsulta: RegistroEvidenciaConsultaDocumento[];
   nonConformities?: NCRecord[];
+  manuals?: ManualRecord[];
+  onManualsUpdated?: () => void;
   onOpenNCFormWithDoc?: (docCodigo: string, revisao: string) => void;
-  initialSubTab?: 'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades';
+  initialSubTab?: 'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades' | 'inativos';
 }
 
 export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps> = ({
@@ -204,11 +209,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   logsVerificacao = [],
   evidenciasConsulta = [],
   nonConformities = [],
+  manuals = [],
+  onManualsUpdated,
   onOpenNCFormWithDoc,
   initialSubTab = 'acervo',
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades'
+    'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades' | 'inativos'
   >(
     initialSubTab === 'fontes' || initialSubTab === 'solicitacoes'
       ? 'verificacao'
@@ -242,13 +249,41 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   const [previewRev, setPreviewRev] = useState<RevisaoDocumental | null>(null);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
-  // Filtros do Acervo
+  // Segregação Regulamentar: Ativos vs Inativos/Consolidados
+  const docsAtivos = useMemo(() => {
+    return documentos.filter((d) => d.statusGeral !== 'INATIVO');
+  }, [documentos]);
+
+  const docsInativos = useMemo(() => {
+    return documentos.filter((d) => d.statusGeral === 'INATIVO');
+  }, [documentos]);
+
+  // Filtros do Acervo Ativo
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoria, setSelectedCategoria] = useState<string>('TODAS');
-  const [selectedStatusFilter, setSelectedStatusFilter] = useState<'TODOS' | 'ATIVO' | 'INATIVO'>('TODOS');
   const [selectedTipoVerificacao, setSelectedTipoVerificacao] = useState<'TODOS' | 'AUTOMATICO' | 'MANUAL'>('TODOS');
   const [selectedStatusVerificacao, setSelectedStatusVerificacao] = useState<'TODOS' | 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO' | 'FONTE_INDISPONIVEL' | 'VERIFICACAO_NAO_CONCLUSIVA'>('TODOS');
   const [selectedDocForDetail, setSelectedDocForDetail] = useState<DocumentoControlado | null>(null);
+
+  // Filtros da Aba de Inativos & Arquivo
+  const [searchInativos, setSearchInativos] = useState('');
+  const [selectedCategoriaInativos, setSelectedCategoriaInativos] = useState<string>('TODAS');
+
+  const filteredInativos = useMemo(() => {
+    return docsInativos.filter((doc) => {
+      const term = searchInativos.toLowerCase().trim();
+      const matchSearch =
+        !term ||
+        doc.codigo.toLowerCase().includes(term) ||
+        doc.titulo.toLowerCase().includes(term) ||
+        (doc.motivoInativacao || '').toLowerCase().includes(term) ||
+        (doc.inativadoPor || '').toLowerCase().includes(term) ||
+        (doc.consolidadoEmDocumentoId || '').toLowerCase().includes(term);
+      const matchCat =
+        selectedCategoriaInativos === 'TODAS' || doc.categoria === selectedCategoriaInativos;
+      return matchSearch && matchCat;
+    });
+  }, [docsInativos, searchInativos, selectedCategoriaInativos]);
 
   // Estados de Validação Humana de Discrepância / Nova Revisão (Princípio Fundamental SGQ)
   const [selectedDocForDiscrepancyModal, setSelectedDocForDiscrepancyModal] = useState<DocumentoControlado | null>(null);
@@ -768,14 +803,14 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
     }
   };
 
-  // Métricas do Dashboard Documental
+  // Métricas do Dashboard Documental (Exclusivo para Documentos Ativos)
   const dashboardMetrics = useMemo(() => {
-    return calcularMetricasDashboardDocumental(documentos, revisoes, fontes, solicitacoes, logsVerificacao);
-  }, [documentos, revisoes, fontes, solicitacoes, logsVerificacao]);
+    return calcularMetricasDashboardDocumental(docsAtivos, revisoes, fontes, solicitacoes, logsVerificacao);
+  }, [docsAtivos, revisoes, fontes, solicitacoes, logsVerificacao]);
 
-  // Lista Filtrada do Acervo
+  // Lista Filtrada do Acervo Ativo
   const filteredDocumentos = useMemo(() => {
-    return documentos.filter((doc) => {
+    return docsAtivos.filter((doc) => {
       const matchSearch =
         doc.codigo.toLowerCase().includes(searchTerm.toLowerCase()) ||
         doc.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -783,10 +818,6 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
         (doc.proprietarioCessor || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (doc.areaPublicacao || '').toLowerCase().includes(searchTerm.toLowerCase());
       const matchCategoria = selectedCategoria === 'TODAS' || doc.categoria === selectedCategoria;
-      const matchStatus =
-        selectedStatusFilter === 'TODOS' ||
-        (selectedStatusFilter === 'ATIVO' && (doc.statusGeral === 'ATIVO' || !doc.statusGeral)) ||
-        (selectedStatusFilter === 'INATIVO' && doc.statusGeral === 'INATIVO');
 
       const docTipo = doc.tipoVerificacao || 'MANUAL';
       const matchTipo = selectedTipoVerificacao === 'TODOS' || docTipo === selectedTipoVerificacao;
@@ -795,9 +826,9 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       const matchStatusVerif =
         selectedStatusVerificacao === 'TODOS' || docStatusVerif === selectedStatusVerificacao;
 
-      return matchSearch && matchCategoria && matchStatus && matchTipo && matchStatusVerif;
+      return matchSearch && matchCategoria && matchTipo && matchStatusVerif;
     });
-  }, [documentos, searchTerm, selectedCategoria, selectedStatusFilter, selectedTipoVerificacao, selectedStatusVerificacao]);
+  }, [docsAtivos, searchTerm, selectedCategoria, selectedTipoVerificacao, selectedStatusVerificacao]);
 
   // Revisões do documento selecionado para detalhe
   const revisoesDoDocSelecionado = useMemo(() => {
@@ -1157,14 +1188,14 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               label: '1. Acervo & Biblioteca',
               subtitle: 'Gestão de Arquivos / Repositório',
               icon: BookOpen,
-              count: documentos.length,
+              count: docsAtivos.length,
             },
             {
               id: 'verificacao',
               label: '2. Verificação & Controle',
               subtitle: 'Status de Revisão e Automações',
               icon: ShieldCheck,
-              count: documentos.length,
+              count: docsAtivos.length,
             },
             {
               id: 'historico',
@@ -1179,6 +1210,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               subtitle: 'Reconciliação e Unicidade SGQ',
               icon: ShieldAlert,
               count: undefined,
+            },
+            {
+              id: 'inativos',
+              label: '5. Inativos & Descontinuados',
+              subtitle: 'Acervo Segregado Histórico',
+              icon: Archive,
+              count: docsInativos.length,
             },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -1257,29 +1295,50 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
             {/* Métricas Rápidas do Repositório */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800/80">
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
-                <span className="text-[11px] text-slate-400 block mb-0.5">Total de Manuais:</span>
-                <span className="text-lg font-bold text-white font-mono">{documentos.length}</span>
+                <span className="text-[11px] text-slate-400 block mb-0.5">Manuais Ativos:</span>
+                <span className="text-lg font-bold text-white font-mono">{docsAtivos.length}</span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
                 <span className="text-[11px] text-slate-400 block mb-0.5">Com Arquivo Digital:</span>
                 <span className="text-lg font-bold text-emerald-400 font-mono">
-                  {documentos.filter((d) => d.arquivoNome).length}
+                  {docsAtivos.filter((d) => d.arquivoNome).length}
                 </span>
                 <span className="text-[10px] text-slate-500 ml-1">
-                  ({Math.round(((documentos.filter((d) => d.arquivoNome).length || 0) / (documentos.length || 1)) * 100)}%)
+                  ({Math.round(((docsAtivos.filter((d) => d.arquivoNome).length || 0) / (docsAtivos.length || 1)) * 100)}%)
                 </span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
                 <span className="text-[11px] text-slate-400 block mb-0.5">Revisões Vigentes:</span>
                 <span className="text-lg font-bold text-sky-400 font-mono">
-                  {documentos.filter((d) => d.statusGeral !== 'INATIVO').length}
+                  {docsAtivos.length}
                 </span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
-                <span className="text-[11px] text-slate-400 block mb-0.5">Histórico Arquivado:</span>
-                <span className="text-lg font-bold text-indigo-400 font-mono">{revisoes.length} revisões</span>
+                <span className="text-[11px] text-slate-400 block mb-0.5">Inativos Segregados:</span>
+                <span className="text-lg font-bold text-amber-400 font-mono">{docsInativos.length} docs</span>
               </div>
             </div>
+
+            {/* Aviso Regulatório de Segregação de Inativos */}
+            {docsInativos.length > 0 && (
+              <div className="mt-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Archive className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    Exibindo exclusivamente os <strong>{docsAtivos.length}</strong> manuais ativos. 
+                    Há <strong>{docsInativos.length}</strong> documentos inativos/consolidados segregados na aba própria para não poluir a tela operacional.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('inativos')}
+                  className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  Ver Inativos & Descontinuados ({docsInativos.length}) &rarr;
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Barra de Filtros e Busca */}
@@ -1385,19 +1444,18 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   </select>
                 </div>
 
-                {/* Filtro de Status Ativo/Inativo */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[11px] text-slate-400 font-medium">Ciclo:</span>
-                  <select
-                    value={selectedStatusFilter}
-                    onChange={(e) => setSelectedStatusFilter(e.target.value as any)}
-                    className="px-2 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+                {/* Acesso rápido aos Inativos segregados */}
+                {docsInativos.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveSubTab('inativos')}
+                    className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                    title="Acessar documentos inativos e descontinuados segregados"
                   >
-                    <option value="TODOS">Todos</option>
-                    <option value="ATIVO">Apenas Ativos</option>
-                    <option value="INATIVO">Inativos</option>
-                  </select>
-                </div>
+                    <Archive className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Inativos ({docsInativos.length})</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -2077,14 +2135,14 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-5 pt-4 border-t border-slate-800">
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
                 <span className="text-[11px] text-slate-400 block mb-0.5">Manuais no Acervo:</span>
-                <span className="text-lg font-bold text-white font-mono">{documentos.length}</span>
+                <span className="text-lg font-bold text-white font-mono">{docsAtivos.length}</span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-indigo-500/20">
                 <span className="text-[11px] text-indigo-300 block mb-0.5 flex items-center gap-1">
                   <Bot className="w-3.5 h-3.5" /> Automáticos (ANAC):
                 </span>
                 <span className="text-lg font-bold text-indigo-400 font-mono">
-                  {documentos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length}
+                  {docsAtivos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length}
                 </span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-amber-500/20">
@@ -2092,7 +2150,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   <UserCheck className="w-3.5 h-3.5" /> Manuais (Clientes/OEM):
                 </span>
                 <span className="text-lg font-bold text-amber-400 font-mono">
-                  {documentos.filter((d) => d.tipoVerificacao !== 'AUTOMATICO').length}
+                  {docsAtivos.filter((d) => d.tipoVerificacao !== 'AUTOMATICO').length}
                 </span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-emerald-500/20">
@@ -2100,7 +2158,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   <CheckCircle2 className="w-3.5 h-3.5" /> Conformes no Mês:
                 </span>
                 <span className="text-lg font-bold text-emerald-400 font-mono">
-                  {documentos.filter((d) => d.statusVerificacao !== 'NOVA_REVISAO_IDENTIFICADA' && d.statusVerificacao !== 'PENDENTE_VERIFICACAO').length}
+                  {docsAtivos.filter((d) => d.statusVerificacao !== 'NOVA_REVISAO_IDENTIFICADA' && d.statusVerificacao !== 'PENDENTE_VERIFICACAO').length}
                 </span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-rose-500/20">
@@ -2108,7 +2166,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   <AlertTriangle className="w-3.5 h-3.5" /> Novas Revisões Detectadas:
                 </span>
                 <span className="text-lg font-bold text-rose-400 font-mono">
-                  {documentos.filter((d) => d.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA').length}
+                  {docsAtivos.filter((d) => d.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA').length}
                 </span>
               </div>
             </div>
@@ -2124,7 +2182,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Painel de Vigência de Manuais ({documentos.length})</span>
+                <span>Painel de Vigência de Manuais ({docsAtivos.length})</span>
               </button>
               <button
                 onClick={() => setActiveVerificacaoSection('fontes')}
@@ -2177,7 +2235,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         : 'bg-slate-950 text-slate-400 border border-slate-800'
                     }`}
                   >
-                    Todas ({documentos.length})
+                    Todas ({docsAtivos.length})
                   </button>
                   <button
                     onClick={() => setSelectedTipoVerificacao('AUTOMATICO')}
@@ -2188,7 +2246,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                     }`}
                   >
                     <Bot className="w-3 h-3" />
-                    Automático ({documentos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length})
+                    Automático ({docsAtivos.filter((d) => d.tipoVerificacao === 'AUTOMATICO').length})
                   </button>
                   <button
                     onClick={() => setSelectedTipoVerificacao('MANUAL')}
@@ -2663,7 +2721,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/80 font-normal">
-                    {documentos.map((doc) => {
+                    {docsAtivos.map((doc) => {
                       const revVigente = revisoes.find((r) => r.id === doc.revisaoVigenteId);
                       const isAuto = doc.tipoVerificacao === 'AUTOMATICO';
                       return (
@@ -2725,11 +2783,22 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                     className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-sky-500"
                   >
                     <option value="TODOS">Todos os Manuais ({revisoes.length} revisões)</option>
-                    {documentos.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.codigo} — {d.titulo}
-                      </option>
-                    ))}
+                    <optgroup label="Manuais Ativos">
+                      {docsAtivos.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.codigo} — {d.titulo}
+                        </option>
+                      ))}
+                    </optgroup>
+                    {docsInativos.length > 0 && (
+                      <optgroup label="Manuais Inativos (Acervo Histórico)">
+                        {docsInativos.map((d) => (
+                          <option key={d.id} value={d.id}>
+                            [INATIVO] {d.codigo} — {d.titulo}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
               </div>
@@ -2950,11 +3019,22 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   onChange={(e) => setTemporalDocId(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-emerald-500"
                 >
-                  {documentos.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.codigo} — {d.titulo}
-                    </option>
-                  ))}
+                  <optgroup label="Manuais Ativos">
+                    {docsAtivos.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.codigo} — {d.titulo}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {docsInativos.length > 0 && (
+                    <optgroup label="Manuais Inativos (Acervo Histórico)">
+                      {docsInativos.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          [INATIVO] {d.codigo} — {d.titulo}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
 
@@ -3813,8 +3893,235 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
           currentUser={currentUser}
           documentos={documentos}
           revisoes={revisoes}
+          manuals={manuals}
+          onManualsUpdated={onManualsUpdated}
           showToast={showToast}
         />
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUB-ABA 5: DOCUMENTOS INATIVOS & ARQUIVO SEGREGADO (RBAC 145.109)          */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'inativos' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header da Sub-aba */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20 flex items-center gap-1">
+                    <Archive className="w-3.5 h-3.5" />
+                    ACERVO HISTÓRICO SEGREGADO
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">
+                    RBAC 145.109(d) • SEGREGADO DE USO OPERACIONAL
+                  </span>
+                </div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Archive className="w-6 h-6 text-amber-400" />
+                  Documentos Inativos, Obsoletos & Consolidados
+                </h2>
+                <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
+                  Publicações técnicas descontinuadas, canceladas pelo fabricante ou consolidadas em outro manual master. Segregadas do acervo operacional para evitar confusão ou uso inadvertido na oficina e nos relatórios de auditoria, preservando 100% da rastreabilidade temporal.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setActiveSubTab('acervo')}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Voltar ao Acervo Ativo</span>
+                </button>
+              </div>
+            </div>
+
+            {/* KPIs de Inativos */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5 pt-4 border-t border-slate-800">
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Total Inativos:</span>
+                <span className="text-lg font-bold text-amber-400 font-mono">{docsInativos.length}</span>
+                <span className="text-[10px] text-slate-500">Documentos segregados</span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Consolidados em Master:</span>
+                <span className="text-lg font-bold text-purple-400 font-mono">
+                  {docsInativos.filter((d) => d.consolidadoEmDocumentoId || (d.motivoInativacao || '').toLowerCase().includes('consolid')).length}
+                </span>
+                <span className="text-[10px] text-slate-500">Unificados via reconciliação</span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Com Justificativa SGQ:</span>
+                <span className="text-lg font-bold text-emerald-400 font-mono">
+                  {docsInativos.filter((d) => d.motivoInativacao).length}
+                </span>
+                <span className="text-[10px] text-slate-500">Rastreabilidade formal</span>
+              </div>
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
+                <span className="text-[11px] text-slate-400 block mb-0.5">Revisões Preservadas:</span>
+                <span className="text-lg font-bold text-indigo-400 font-mono">
+                  {revisoes.filter((r) => docsInativos.some((di) => di.id === r.documentoId)).length}
+                </span>
+                <span className="text-[10px] text-slate-500">Histórico cronológico íntegro</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Barra de Filtros e Busca de Inativos */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col md:flex-row gap-3 items-center justify-between">
+            <div className="relative w-full md:w-96">
+              <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar por código, título, motivo ou responsável..."
+                value={searchInativos}
+                onChange={(e) => setSearchInativos(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <span className="text-xs text-slate-400 font-medium whitespace-nowrap">Categoria:</span>
+              <select
+                value={selectedCategoriaInativos}
+                onChange={(e) => setSelectedCategoriaInativos(e.target.value)}
+                className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500"
+              >
+                <option value="TODAS">Todas as Categorias</option>
+                <option value="MANUAL_FABRICANTE">Manuais de Fabricante</option>
+                <option value="MANUAL_EMPRESA">Manuais da Empresa (MOMQ/MPE)</option>
+                <option value="REGULAMENTO_AUTORIDADE">Regulamentos (ANAC/FAA)</option>
+                <option value="DIRETRIZ_AERONAVEGABILIDADE">Diretrizes (DA/AD)</option>
+                <option value="BOLETIM_SERVICO">Boletins de Serviço (SB)</option>
+                <option value="PROCEDIMENTO_INTERNO">Procedimentos Internos</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Lista de Documentos Inativos */}
+          {filteredInativos.length === 0 ? (
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center space-y-3">
+              <div className="w-12 h-12 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center mx-auto">
+                <Archive className="w-6 h-6 text-slate-500" />
+              </div>
+              <h3 className="text-base font-bold text-white">Nenhum documento inativo encontrado</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                {docsInativos.length === 0
+                  ? 'Todos os manuais cadastrados na organização estão atualmente ativos e em conformidade operacional no acervo geral.'
+                  : 'Nenhum documento inativo corresponde aos filtros de pesquisa aplicados.'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4">
+              {filteredInativos.map((doc) => {
+                const revsDoc = revisoes.filter((r) => r.documentoId === doc.id);
+                const isConsolidado = Boolean(
+                  doc.consolidadoEmDocumentoId ||
+                  (doc.motivoInativacao || '').toLowerCase().includes('consolid')
+                );
+
+                return (
+                  <div
+                    key={doc.id}
+                    className="bg-slate-900 border border-slate-800 hover:border-slate-700/80 rounded-xl p-5 transition-all space-y-4"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                            {doc.codigo}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 flex items-center gap-1">
+                            <Archive className="w-3 h-3" />
+                            INATIVO / DESCONTINUADO
+                          </span>
+                          {isConsolidado && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                              <Layers className="w-3 h-3" />
+                              CONSOLIDADO EM MASTER
+                            </span>
+                          )}
+                          <span className="text-[11px] text-slate-400">
+                            {doc.categoria}
+                          </span>
+                        </div>
+                        <h4 className="text-base font-bold text-white pt-1">{doc.titulo}</h4>
+                        <p className="text-xs text-slate-400">
+                          Emissor / Cessor: <strong className="text-slate-300">{doc.emissor || doc.proprietarioCessor || '-'}</strong>
+                          {doc.areaPublicacao && <> • Área: <strong className="text-slate-300">{doc.areaPublicacao}</strong></>}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {doc.arquivoNome && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenFilePreview(doc)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                            title="Visualizar arquivo armazenado"
+                          >
+                            <FileText className="w-3.5 h-3.5 text-sky-400" />
+                            <span>Ver Arquivo</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDocForDetail(doc)}
+                          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                        >
+                          <History className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Histórico ({revsDoc.length})</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenReactivateDoc(doc)}
+                          className="px-3.5 py-1.5 rounded-lg bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                          title="Reativar documento no acervo operacional"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          <span>Reativar Manual</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Metadados de Inativação e Justificativa SGQ */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-800/80 text-xs">
+                      <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1">
+                        <span className="text-[11px] font-semibold text-slate-400 block">Registro de Inativação:</span>
+                        <div className="text-slate-300 space-y-0.5">
+                          <div>
+                            Data:{' '}
+                            <strong className="text-white">
+                              {doc.inativadoEm ? new Date(doc.inativadoEm).toLocaleString('pt-BR') : 'Não registrada'}
+                            </strong>
+                          </div>
+                          <div>
+                            Inativado por:{' '}
+                            <strong className="text-white">{doc.inativadoPor || 'Gestão SGQ'}</strong>
+                          </div>
+                          {doc.consolidadoEmDocumentoId && (
+                            <div className="text-purple-300 pt-1">
+                              Consolidado no Documento Master ID: <strong className="font-mono">{doc.consolidadoEmDocumentoId}</strong>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1">
+                        <span className="text-[11px] font-semibold text-slate-400 block">Justificativa Regulatória:</span>
+                        <p className="text-slate-200 text-xs leading-relaxed italic">
+                          "{doc.motivoInativacao || 'Documento descontinuado no acervo SGQ sem justificativa descritiva preenchida.'}"
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ========================================================================= */}
@@ -3902,54 +4209,74 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               onSubmit={async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                const codigo = formData.get('codigo') as string;
-                const titulo = formData.get('titulo') as string;
+                const codigo = (formData.get('codigo') as string)?.trim();
+                const titulo = (formData.get('titulo') as string)?.trim();
                 const categoria = formData.get('categoria') as CategoriaDocumental;
-                const emissor = formData.get('emissor') as string;
-                const revNum = formData.get('revNum') as string;
+                const emissor = (formData.get('emissor') as string)?.trim();
+                const revNum = (formData.get('revNum') as string)?.trim();
 
-                const newDocId = `doc-${Date.now()}`;
-                const newRevId = `rev-${Date.now()}`;
+                if (!codigo) {
+                  alert('Por favor, informe o código identificador do documento.');
+                  return;
+                }
 
-                const novoDoc: DocumentoControlado = {
-                  id: newDocId,
-                  organizationId,
-                  codigo,
-                  titulo,
-                  categoria,
-                  emissor,
-                  responsavelNome: currentUser?.displayName || 'Garantia da Qualidade',
-                  revisaoVigenteId: newRevId,
-                  revisaoVigenteNumero: revNum,
-                  exigeEvidenciaLeitura: true,
-                  aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
-                  statusGeral: 'ATIVO',
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
+                try {
+                  // Pré-validação de unicidade para evitar exceção transacional
+                  const preCheck = await validarUnicidadeCodigoDocumental(organizationId, codigo);
+                  if (!preCheck.disponivel) {
+                    alert(
+                      preCheck.mensagem ||
+                        `O código "${codigo}" já está em uso por outro documento no acervo. Para inserir uma nova revisão ou atualizar, selecione o documento existente no acervo.`
+                    );
+                    return;
+                  }
 
-                const novaRev: RevisaoDocumental = {
-                  id: newRevId,
-                  organizationId,
-                  documentoId: newDocId,
-                  codigoDocumento: codigo,
-                  tituloDocumento: titulo,
-                  numeroRevisao: revNum,
-                  dataEmissao: new Date().toISOString().split('T')[0],
-                  dataEntradaVigor: new Date().toISOString().split('T')[0],
-                  statusCicloVida: 'VIGENTE',
-                  aprovadoPorNome: currentUser?.displayName || 'Eng. Paulo Okubo',
-                  origemRevisao: 'INTERNA',
-                  ehImutavel: true,
-                  createdAt: new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
+                  const newDocId = `doc-${Date.now()}`;
+                  const newRevId = `rev-${Date.now()}`;
 
-                await saveDocumentoControlado(organizationId, novoDoc, currentUser);
-                await saveRevisaoDocumental(organizationId, novaRev, currentUser);
+                  const novoDoc: DocumentoControlado = {
+                    id: newDocId,
+                    organizationId,
+                    codigo,
+                    titulo,
+                    categoria,
+                    emissor,
+                    responsavelNome: currentUser?.displayName || 'Garantia da Qualidade',
+                    revisaoVigenteId: newRevId,
+                    revisaoVigenteNumero: revNum,
+                    exigeEvidenciaLeitura: true,
+                    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+                    statusGeral: 'ATIVO',
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  };
 
-                setIsNewDocModalOpen(false);
-                showToast(`Documento ${codigo} e revisão ${revNum} cadastrados com sucesso!`);
+                  const novaRev: RevisaoDocumental = {
+                    id: newRevId,
+                    organizationId,
+                    documentoId: newDocId,
+                    codigoDocumento: codigo,
+                    tituloDocumento: titulo,
+                    numeroRevisao: revNum,
+                    dataEmissao: new Date().toISOString().split('T')[0],
+                    dataEntradaVigor: new Date().toISOString().split('T')[0],
+                    statusCicloVida: 'VIGENTE',
+                    aprovadoPorNome: currentUser?.displayName || 'Eng. Paulo Okubo',
+                    origemRevisao: 'INTERNA',
+                    ehImutavel: true,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  };
+
+                  await saveDocumentoControlado(organizationId, novoDoc, currentUser);
+                  await saveRevisaoDocumental(organizationId, novaRev, currentUser);
+
+                  setIsNewDocModalOpen(false);
+                  showToast(`Documento ${codigo} e revisão ${revNum} cadastrados com sucesso!`);
+                } catch (err: any) {
+                  console.error('Erro ao cadastrar novo documento manual:', err);
+                  alert(`Não foi possível cadastrar o documento: ${err.message}`);
+                }
               }}
               className="space-y-3 text-xs"
             >
@@ -4869,7 +5196,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       <ComplianceReportModal
         isOpen={isComplianceReportOpen}
         onClose={() => setIsComplianceReportOpen(false)}
-        documentos={documentos}
+        documentos={docsAtivos}
         organizationName={activeOrganization?.name || 'Impacto Aviation MRO'}
       />
 

@@ -2080,6 +2080,8 @@ export interface DocumentoControlado {
   inativadoEm?: string;
   inativadoPor?: string;
   motivoInativacao?: string;
+  consolidadoEmDocumentoId?: string;
+  consolidadoEmMasterId?: string;
   reativadoEm?: string;
   reativadoPor?: string;
   motivoReativacao?: string;

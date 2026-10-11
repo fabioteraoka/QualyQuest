@@ -30,7 +30,8 @@ import {
   UploadCloud,
   ChevronDown,
   ChevronRight,
-  FolderTree
+  FolderTree,
+  Archive,
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
@@ -249,6 +250,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'historico-relatorios',
           label: 'Histórico & Relatórios',
           icon: <History className="w-4 h-4 text-emerald-400" />,
+        },
+        {
+          id: 'documentos-inativos',
+          label: 'Manuais Inativos & Arquivo',
+          icon: <Archive className="w-4 h-4 text-slate-400" />,
         },
       ],
     },
