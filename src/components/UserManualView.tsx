@@ -1032,6 +1032,127 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
         </div>
       ),
     },
+    {
+      id: 36,
+      title: '36. Alinhamento do Banco de Manuais (IA) com o Acervo & Revisões (SGQ)',
+      category: 'Manuais',
+      summary: 'Como verificar correspondência, identificar referências oficiais vigentes, interpretar alertas e atualizar o Banco IA de forma controlada.',
+      content: (
+        <div className="space-y-4">
+          <p className="text-slate-700 leading-relaxed">
+            O <strong>QualyQuest</strong> integra de forma inteligente o módulo <strong>Acervo & Revisões</strong> (Controle Documental do SGQ) ao módulo <strong>Banco de Manuais (IA)</strong>. O objetivo essencial é manter os dois módulos alinhados, garantindo que as rotinas de Inteligência Artificial consultem sempre a versão oficial mais recente nas análises e fundamentações de <strong>Não Conformidades (NCs / RNCs)</strong>.
+          </p>
+
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-purple-700" />
+              Por que esta integração é mandatória para a Governança SGQ?
+            </h4>
+            <ul className="text-xs text-purple-900 space-y-1.5 list-disc list-inside">
+              <li>
+                <strong>Fundamentação de NCs:</strong> A IA utiliza o conteúdo do Banco de Manuais para apontar requisitos violados em itens de inspeção. Se um manual na IA estiver defasado (ex: Rev. 10 vs Rev. 12 oficial), a análise técnica se torna vulnerável em auditorias regulatórias (RBAC 145 / EASA).
+              </li>
+              <li>
+                <strong>Verificação Automatizada e em Lote:</strong> O sistema checa automaticamente fontes públicas (robô ANAC/FAA) e, em paralelo, afere a sincronicidade dos manuais da IA contra o acervo com um único clique.
+              </li>
+              <li>
+                <strong>Atualização Controlada:</strong> A detecção de nova revisão oficial <em>jamais substitui automaticamente</em> o manual na IA de forma cega. A atualização segue um fluxo assistido, no qual o responsável técnico revisa os dados e registra formalmente a justificativa no log de auditoria.
+              </li>
+            </ul>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Como Interpretar os Alertas no Acervo & Revisões
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                <span className="font-bold text-emerald-900 block flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Sincronizado (IA Alinhado)
+                </span>
+                <p className="text-emerald-800 text-[11px] mt-0.5">
+                  A revisão no Banco IA corresponde exatamente à referência oficial mais recente. A IA está apta para fundamentar NCs com total conformidade.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-rose-50 border border-rose-200">
+                <span className="font-bold text-rose-900 block flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                  Alerta: Banco IA Desatualizado
+                </span>
+                <p className="text-rose-800 text-[11px] mt-0.5">
+                  O acervo ou fonte oficial indica revisão superior (ex: Rev. 12), mas a IA possui versão anterior (ex: Rev. 10). Requer atualização controlada.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-sky-50 border border-sky-200">
+                <span className="font-bold text-sky-900 block flex items-center gap-1">
+                  <Info className="w-3.5 h-3.5 text-sky-600" />
+                  Acervo SGQ Desatualizado
+                </span>
+                <p className="text-sky-800 text-[11px] mt-0.5">
+                  O repositório de IA possui revisão mais recente que o registro controlado no acervo. Requer atualização do controle documental do SGQ.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200">
+                <span className="font-bold text-amber-900 block flex items-center gap-1">
+                  <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
+                  Sem Correspondência / Não Confirmada
+                </span>
+                <p className="text-amber-800 text-[11px] mt-0.5">
+                  O documento não possui vínculo confiável ou não há evidência suficiente. O sistema impede falsas declarações de conformidade e solicita vinculação manual.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-white border border-slate-200 rounded-lg space-y-2">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Passo a Passo: Como Realizar a Verificação e Atualização Controlada
+            </h4>
+            <ol className="text-xs text-slate-700 space-y-2 list-decimal list-inside">
+              <li>
+                <strong>Acessar o Acervo & Revisões:</strong> No menu lateral, clique em <em>Acervo & Revisões (SGQ)</em>.
+              </li>
+              <li>
+                <strong>Disparar a Verificação:</strong> Clique no botão <em>"Verificar Banco IA (NCs)"</em> ou <em>"Verificar Atualizações"</em> no cabeçalho para varrer as fontes públicas e aferir o alinhamento com a IA simultaneamente.
+              </li>
+              <li>
+                <strong>Identificar Divergências:</strong> Localize os cartões com o selo vermelho <em>"IA Desatualizado"</em> ou o banner de aviso no topo.
+              </li>
+              <li>
+                <strong>Abrir o Modal de Alinhamento:</strong> Clique no botão <em>"Banco IA"</em> ou <em>"Checar IA"</em> no cartão do documento para abrir o comparativo detalhado.
+              </li>
+              <li>
+                <strong>Confirmar Atualização Controlada:</strong> Clique em <em>"Atualizar Banco IA (Controlado)"</em>, confira a nova revisão e data oficial, insira a justificativa técnica obrigatória e clique em <em>"Confirmar e Atualizar Banco IA"</em>.
+              </li>
+              <li>
+                <strong>Rastreabilidade Preservada:</strong> A ação registra o log em <em>LogVerificacaoFonteExterna</em> e adiciona a evidência no histórico de alterações do manual, sem comprometer registros históricos anteriores.
+              </li>
+            </ol>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('controle-documental')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Acervo & Revisões (SGQ)</span>
+              </button>
+              <button
+                onClick={() => onNavigateToTab('manuais')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-600 text-white font-bold text-xs hover:bg-purple-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Banco de Manuais (IA)</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
   ], [organization, orgName, orgSigla]);
 
   // Filtro de capítulos por busca

@@ -17,6 +17,9 @@ import {
 import {
   compararRevisoesDocumentais,
   executarComparativoAcervoComBancoManuaisIA,
+  verificarAlinhamentoManualIA,
+  identificarCorrespondenciaManualIA,
+  determinarReferenciaOficialDocumento,
 } from '../src/services/manualsCrossCheckService';
 
 async function runAuditTests() {
@@ -987,6 +990,234 @@ async function runAuditTests() {
     resultadoTemporalInativo.revisaoVigenteNaData?.numeroRevisao === 'Rev. 10' &&
       docInativo.statusGeral === 'INATIVO',
     '37. Conhecimento temporal de manual inativo resolve vigência no evento sem reativar documento indevidamente'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 38: Manual com revisão inferior à referência oficial gera alerta de desatualização do Banco IA
+  // Exemplo da solicitação: Acervo indica Rev. 12 como referência atual e Banco IA possui Rev. 10
+  // -------------------------------------------------------------
+  const docAcervoRev12: DocumentoControlado = {
+    id: 'doc-amm-rev12',
+    organizationId: 'org-test',
+    codigo: 'AMM-B737',
+    titulo: 'Boeing 737 Maintenance Manual',
+    emissor: 'Boeing',
+    numeroRevisao: 'Rev. 12',
+    dataRevisao: '2026-03-01',
+    statusGeral: 'ATIVO',
+    statusVerificacao: 'CONFORME',
+    categoria: 'DOCUMENTO_FABRICANTE',
+    responsavelNome: 'Qualidade SGQ',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-03-01T00:00:00Z',
+  };
+
+  const manualIARev10: ManualRecord = {
+    id: 'manual-b737-rev10',
+    codigo: 'AMM-B737',
+    titulo: 'Boeing 737 Maintenance Manual',
+    revisao: 'Rev. 10',
+    dataVigencia: '2025-01-01',
+    status: 'Vigente',
+    setoresAplicaveis: ['Manutenção'],
+    descricaoResumo: 'Manual de Manutenção B737 utilizado para fundamentar NCs',
+    conteudoTexto: 'Requisitos do manual Rev. 10...',
+    fonte: 'SGQ',
+    criadoEm: '2025-01-01T00:00:00Z',
+    atualizadoEm: '2025-01-01T00:00:00Z',
+  };
+
+  const diagDesatualizado = verificarAlinhamentoManualIA(docAcervoRev12, [manualIARev10]);
+
+  assert(
+    diagDesatualizado.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO' &&
+      diagDesatualizado.revisaoOficialReferencia === 'Rev. 12' &&
+      diagDesatualizado.revisaoNoBancoIA === 'Rev. 10' &&
+      diagDesatualizado.mensagemAlerta.includes('Possível desatualização identificada no Banco de Manuais (IA)') &&
+      diagDesatualizado.acaoRecomendada === 'ATUALIZAR_BANCO_IA',
+    '38. Manual com revisão inferior à referência oficial (IA: 10 vs Acervo: 12) gera alerta claro de possível desatualização'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 39: Manual atualizado e alinhado é identificado corretamente com conformidade
+  // -------------------------------------------------------------
+  const manualIARev12: ManualRecord = {
+    ...manualIARev10,
+    id: 'manual-b737-rev12',
+    revisao: 'Rev. 12',
+    dataVigencia: '2026-03-01',
+  };
+
+  const diagSincronizado = verificarAlinhamentoManualIA(docAcervoRev12, [manualIARev12]);
+
+  assert(
+    diagSincronizado.statusSincroniaIA === 'SINCRONIZADO' &&
+      diagSincronizado.revisaoOficialReferencia === 'Rev. 12' &&
+      diagSincronizado.revisaoNoBancoIA === 'Rev. 12' &&
+      diagSincronizado.acaoRecomendada === 'NENHUMA',
+    '39. Manual atualizado e alinhado na mesma revisão (Rev. 12) é categorizado como SINCRONIZADO com conformidade garantida'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 40: Ausência de evidência suficiente não resulta em declaração indevida de conformidade
+  // Regra: Se o acervo não possui revisão confirmada, o sistema informa que a atualização não pôde ser confirmada
+  // -------------------------------------------------------------
+  const docSemRevisaoValida: DocumentoControlado = {
+    id: 'doc-sem-evidencia',
+    organizationId: 'org-test',
+    codigo: 'MOMQ-INDEF',
+    titulo: 'Manual Sem Revisão Definida',
+    emissor: 'SGQ',
+    numeroRevisao: '',
+    dataRevisao: '',
+    statusGeral: 'ATIVO',
+    statusVerificacao: 'PENDENTE_VERIFICACAO',
+    categoria: 'DOCUMENTO_INTERNO',
+    responsavelNome: 'Qualidade',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+
+  const manualIAMOMQ: ManualRecord = {
+    ...manualIARev10,
+    id: 'manual-momq-indef',
+    codigo: 'MOMQ-INDEF',
+    titulo: 'Manual Sem Revisão Definida',
+  };
+
+  const diagSemEvidencia = verificarAlinhamentoManualIA(docSemRevisaoValida, [manualIAMOMQ]);
+
+  assert(
+    diagSemEvidencia.statusSincroniaIA === 'REVISAO_NAO_CONFIRMADA' &&
+      diagSemEvidencia.mensagemAlerta.includes('A atualização não pôde ser confirmada'),
+    '40. Ausência de evidência suficiente resulta em REVISAO_NAO_CONFIRMADA e nunca declara conformidade indevida'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 41: Documentos sem correspondência confiável não são associados automaticamente de forma incorreta
+  // Regra: Exige código confiável ou similaridade mínima (>= 0.88), sem vincular documentos arbitrários
+  // -------------------------------------------------------------
+  const docDistinto: DocumentoControlado = {
+    id: 'doc-c310-distinto',
+    organizationId: 'org-test',
+    codigo: 'AMM-C310',
+    titulo: 'Cessna 310 Maintenance Manual',
+    emissor: 'Cessna',
+    numeroRevisao: 'Rev. 05',
+    dataRevisao: '2025-06-01',
+    statusGeral: 'ATIVO',
+    statusVerificacao: 'CONFORME',
+    categoria: 'DOCUMENTO_FABRICANTE',
+    responsavelNome: 'Qualidade',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2025-01-01T00:00:00Z',
+  };
+
+  const correspondencia = identificarCorrespondenciaManualIA(docDistinto, [manualIARev10]); // manualIARev10 é AMM-B737
+  const diagSemMatch = verificarAlinhamentoManualIA(docDistinto, [manualIARev10]);
+
+  assert(
+    correspondencia.manual === null &&
+      correspondencia.confianca === 'NENHUMA' &&
+      diagSemMatch.statusSincroniaIA === 'SEM_CORRESPONDENCIA' &&
+      diagSemMatch.acaoRecomendada === 'VINCULAR_MANUAL_IA',
+    '41. Documentos sem correspondência confiável não são associados incorretamente e sinalizam necessidade de vínculo manual'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 42: Verificação NÃO altera nem substitui automaticamente o conteúdo do Banco IA (Diagnóstico Read-Only)
+  // -------------------------------------------------------------
+  const copiaManualOriginal = JSON.parse(JSON.stringify(manualIARev10));
+  verificarAlinhamentoManualIA(docAcervoRev12, [manualIARev10]);
+
+  assert(
+    manualIARev10.revisao === copiaManualOriginal.revisao &&
+      manualIARev10.dataVigencia === copiaManualOriginal.dataVigencia &&
+      manualIARev10.conteudoTexto === copiaManualOriginal.conteudoTexto,
+    '42. A verificação diagnóstica preserva 100% dos dados originais sem substituição automática ou cega no Banco IA'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 43: Verificação funciona perfeitamente mesmo quando o arquivo completo NÃO está no Acervo (apenas controle)
+  // -------------------------------------------------------------
+  const docApenasControleSemArquivo: DocumentoControlado = {
+    id: 'doc-controle-sem-arquivo',
+    organizationId: 'org-test',
+    codigo: 'AMM-B737',
+    titulo: 'Boeing 737 Maintenance Manual',
+    emissor: 'Boeing',
+    numeroRevisao: 'Rev. 12',
+    dataRevisao: '2026-03-01',
+    statusGeral: 'ATIVO',
+    statusVerificacao: 'CONFORME',
+    categoria: 'DOCUMENTO_FABRICANTE',
+    responsavelNome: 'Qualidade SGQ',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    arquivoNome: undefined,
+    arquivoUrl: undefined,
+    arquivoBase64: undefined,
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-03-01T00:00:00Z',
+  };
+
+  const diagSemArquivoNoAcervo = verificarAlinhamentoManualIA(docApenasControleSemArquivo, [manualIARev10]);
+
+  assert(
+    diagSemArquivoNoAcervo.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO' &&
+      diagSemArquivoNoAcervo.temCorrespondencia === true &&
+      diagSemArquivoNoAcervo.revisaoOficialReferencia === 'Rev. 12',
+    '43. Mecanismo de verificação opera com sucesso mesmo quando o arquivo completo não está armazenado no Acervo (apenas controle)'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 44: Referência aproveita validação de fonte pública oficial (robô ANAC/FAA)
+  // -------------------------------------------------------------
+  const docComFontePublicaValidada: DocumentoControlado = {
+    id: 'doc-rbac-145',
+    organizationId: 'org-test',
+    codigo: 'RBAC 145',
+    titulo: 'Organizações de Manutenção de Aeronaves',
+    emissor: 'ANAC',
+    numeroRevisao: 'Emenda 08',
+    revisaoNaFonteIdentificada: 'Emenda 09',
+    statusVerificacao: 'NOVA_REVISAO_IDENTIFICADA',
+    dataPublicacaoNaFonte: '2026-04-10',
+    urlFonteVerificacao: 'https://www.anac.gov.br/rbac145',
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_AUTORIDADE',
+    responsavelNome: 'SGQ',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-04-10T00:00:00Z',
+  };
+
+  const refOficialPublica = determinarReferenciaOficialDocumento(docComFontePublicaValidada);
+
+  assert(
+    refOficialPublica.confiavel === true &&
+      refOficialPublica.revisaoOficial === 'Emenda 09' &&
+      refOficialPublica.fonteReferencia.includes('Fonte Pública'),
+    '44. Referência de atualização aproveita mecanismo de fonte pública oficial validada sem duplicar lógica'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 45: Comparação semântica e alfanumérica de revisões (ex: "Rev. 12" vs "Rev. 10", "Emenda 09" vs "Emenda 08")
+  // -------------------------------------------------------------
+  const comp12vs10 = compararRevisoesDocumentais('Rev. 12', '2026-03-01', 'Rev. 10', '2025-01-01');
+  const comp10vs12 = compararRevisoesDocumentais('Rev. 10', '2025-01-01', 'Rev. 12', '2026-03-01');
+  const compIguais = compararRevisoesDocumentais('Rev. 12', '2026-03-01', 'Rev. 12', '2026-03-01');
+
+  assert(
+    comp12vs10 > 0 && comp10vs12 < 0 && compIguais === 0,
+    '45. Comparação precisa de revisões: Rev. 12 > Rev. 10, Rev. 10 < Rev. 12 e Rev. 12 == Rev. 12'
   );
 
   console.log(`\n=== RESUMO: ${passed} PASS, ${failed} FAIL ===`);

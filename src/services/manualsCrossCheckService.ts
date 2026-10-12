@@ -3,6 +3,7 @@ import {
   RevisaoDocumental,
   ManualRecord,
   UserProfile,
+  LogVerificacaoFonteExterna,
 } from '../types';
 import { db } from './firebase/config';
 import { doc, runTransaction } from 'firebase/firestore';
@@ -10,6 +11,7 @@ import { sanitizeForFirestore, recordOrganizationAudit, saveManual } from './fir
 import {
   saveDocumentoControlado,
   saveRevisaoDocumental,
+  saveLogVerificacao,
 } from './firebase/documentControlFirestore';
 import {
   normalizeDocumentCode,
@@ -630,3 +632,603 @@ export async function sincronizarTodasPendenciasBancoManuaisIA(
     mensagens,
   };
 }
+
+// =============================================================================
+// VERIFICAÇÃO DE ALINHAMENTO COM BANCO DE MANUAIS (IA) — REFERÊNCIA PARA NCS
+// =============================================================================
+
+export interface DiagnosticoAlinhamentoManualIA {
+  documentoId: string;
+  codigoDocumento: string;
+  tituloDocumento: string;
+  temCorrespondencia: boolean;
+  manualIA: ManualRecord | null;
+  metodoCorrespondencia:
+    | 'VINCULO_DIRETO'
+    | 'CODIGO_EXATO'
+    | 'CODIGO_NORMALIZADO'
+    | 'CHAVE_ALFANUMERICA'
+    | 'TITULO_SIMILAR'
+    | 'NENHUM';
+  confiancaCorrespondencia: 'ALTA' | 'MEDIA' | 'BAIXA' | 'NENHUMA';
+  revisaoOficialReferencia: string;
+  dataOficialReferencia: string;
+  origemReferenciaOficial: string;
+  revisaoNoBancoIA: string;
+  dataNoBancoIA: string;
+  statusSincroniaIA:
+    | 'SINCRONIZADO'
+    | 'BANCO_IA_DESATUALIZADO'
+    | 'ACERVO_DESATUALIZADO'
+    | 'SEM_CORRESPONDENCIA'
+    | 'REVISAO_NAO_CONFIRMADA';
+  mensagemAlerta: string;
+  acaoRecomendada:
+    | 'ATUALIZAR_BANCO_IA'
+    | 'ATUALIZAR_ACERVO_SGQ'
+    | 'VINCULAR_MANUAL_IA'
+    | 'CADASTRAR_NO_BANCO_IA'
+    | 'CONFIRMAR_REVISAO_OFICIAL'
+    | 'NENHUMA';
+  dataVerificacao: string;
+}
+
+export interface RelatorioVerificacaoLoteIA {
+  geradoEm: string;
+  totalVerificados: number;
+  totalSincronizados: number;
+  totalBancoIADesatualizado: number;
+  totalAcervoDesatualizado: number;
+  totalSemCorrespondencia: number;
+  totalRevisaoNaoConfirmada: number;
+  diagnosticos: DiagnosticoAlinhamentoManualIA[];
+}
+
+/**
+ * 1. IDENTIFICAR CORRESPONDÊNCIA:
+ * Verifica se o documento controlado no acervo possui um manual correspondente no Banco de Manuais (IA),
+ * utilizando identificadores confiáveis: código normalizado, chave canônica, vínculo direto ou título oficial.
+ * Regra estrita: Se não houver correspondência confiável, sinaliza necessidade de identificação/associação
+ * manual em vez de relacionar documentos incorretamente.
+ */
+export function identificarCorrespondenciaManualIA(
+  doc: DocumentoControlado,
+  manualsIA: ManualRecord[]
+): {
+  manual: ManualRecord | null;
+  metodo:
+    | 'VINCULO_DIRETO'
+    | 'CODIGO_EXATO'
+    | 'CODIGO_NORMALIZADO'
+    | 'CHAVE_ALFANUMERICA'
+    | 'TITULO_SIMILAR'
+    | 'NENHUM';
+  confianca: 'ALTA' | 'MEDIA' | 'BAIXA' | 'NENHUMA';
+} {
+  if (!manualsIA || manualsIA.length === 0) {
+    return { manual: null, metodo: 'NENHUM', confianca: 'NENHUMA' };
+  }
+
+  // 1.1 Vínculo direto explícito se o usuário já associou previamente
+  if (doc.manualIAId) {
+    const manualDir = manualsIA.find((m) => m.id === doc.manualIAId);
+    if (manualDir) {
+      return { manual: manualDir, metodo: 'VINCULO_DIRETO', confianca: 'ALTA' };
+    }
+  }
+
+  const codDoc = (doc.codigo || '').trim().toUpperCase();
+  const codNormDoc = normalizeDocumentCode(doc.codigo);
+  const alphaDoc = canonicalAlphanumericKey(doc.codigo);
+
+  // 1.2 Correspondência exata de código
+  if (codDoc) {
+    const matchExato = manualsIA.find((m) => (m.codigo || '').trim().toUpperCase() === codDoc);
+    if (matchExato) {
+      return { manual: matchExato, metodo: 'CODIGO_EXATO', confianca: 'ALTA' };
+    }
+  }
+
+  // 1.3 Correspondência por código normalizado (unifica caixa, espaços e pontuações)
+  if (codNormDoc) {
+    const matchNorm = manualsIA.find((m) => normalizeDocumentCode(m.codigo) === codNormDoc);
+    if (matchNorm) {
+      return { manual: matchNorm, metodo: 'CODIGO_NORMALIZADO', confianca: 'ALTA' };
+    }
+  }
+
+  // 1.4 Correspondência por chave alfanumérica canônica (ex: "AMM C208" vs "AMM-C208B")
+  if (alphaDoc && alphaDoc.length >= 3) {
+    const matchAlpha = manualsIA.find((m) => canonicalAlphanumericKey(m.codigo) === alphaDoc);
+    if (matchAlpha) {
+      return { manual: matchAlpha, metodo: 'CHAVE_ALFANUMERICA', confianca: 'ALTA' };
+    }
+  }
+
+  // 1.5 Correspondência por similaridade de título oficial com alta exigência (threshold >= 0.88)
+  const tituloDoc = (doc.titulo || '').trim();
+  if (tituloDoc.length >= 6) {
+    let melhorManual: ManualRecord | null = null;
+    let maiorSim = 0;
+
+    for (const m of manualsIA) {
+      const sim = calculateTitleSimilarity(tituloDoc, m.titulo || '');
+      if (sim > maiorSim) {
+        maiorSim = sim;
+        melhorManual = m;
+      }
+    }
+
+    if (melhorManual && maiorSim >= 0.88) {
+      return { manual: melhorManual, metodo: 'TITULO_SIMILAR', confianca: 'MEDIA' };
+    }
+  }
+
+  // Sem correspondência confiável (não relaciona documentos incorretamente)
+  return { manual: null, metodo: 'NENHUM', confianca: 'NENHUMA' };
+}
+
+/**
+ * 2. DETERMINAR REFERÊNCIA DE ATUALIZAÇÃO:
+ * Consulta as informações disponíveis para determinar qual é a revisão oficial mais recente conhecida do documento.
+ * Aproveita o mecanismo de fontes públicas se validado (ex: ANAC/FAA), ou o controle de revisões vigente do acervo.
+ * Regra: Se não for possível confirmar a revisão oficial, informa que a atualização não pôde ser confirmada,
+ * sem declarar conformidade sem evidências suficientes.
+ */
+export function determinarReferenciaOficialDocumento(
+  doc: DocumentoControlado
+): {
+  revisaoOficial: string;
+  dataOficial: string;
+  fonteReferencia: string;
+  confiavel: boolean;
+} {
+  // 2.1 Se a fonte oficial pública (robô ANAC/FAA) confirmou conformidade
+  if (
+    doc.statusVerificacao === 'CONFORME' &&
+    doc.revisaoNaFonteIdentificada &&
+    doc.revisaoNaFonteIdentificada.trim()
+  ) {
+    return {
+      revisaoOficial: doc.revisaoNaFonteIdentificada.trim(),
+      dataOficial: doc.dataPublicacaoNaFonte || doc.dataRevisao || doc.dataUltimaVerificacao || '',
+      fonteReferencia: `Fonte Pública Oficial Validada (${doc.urlFonteVerificacao || 'ANAC/FAA'})`,
+      confiavel: true,
+    };
+  }
+
+  // 2.2 Se a fonte oficial pública detectou uma nova revisão oficial identificada
+  if (
+    doc.statusVerificacao === 'NOVA_REVISAO_IDENTIFICADA' &&
+    doc.revisaoNaFonteIdentificada &&
+    doc.revisaoNaFonteIdentificada.trim()
+  ) {
+    return {
+      revisaoOficial: doc.revisaoNaFonteIdentificada.trim(),
+      dataOficial: doc.dataPublicacaoNaFonte || doc.dataUltimaVerificacao || '',
+      fonteReferencia: 'Nova Revisão Identificada na Fonte Pública Oficial',
+      confiavel: true,
+    };
+  }
+
+  // 2.3 Revisão controlada formalmente no Acervo SGQ
+  const revAcervo = (doc.numeroRevisao || doc.revisaoVigenteNumero || '').trim();
+  if (revAcervo && revAcervo !== '-' && revAcervo.toLowerCase() !== 'pendente') {
+    return {
+      revisaoOficial: revAcervo,
+      dataOficial: doc.dataRevisao || doc.updatedAt || '',
+      fonteReferencia: 'Controle de Revisões Vigente do Acervo SGQ',
+      confiavel: true,
+    };
+  }
+
+  // 2.4 Não foi possível confirmar a revisão oficial
+  return {
+    revisaoOficial: '',
+    dataOficial: '',
+    fonteReferencia: 'Não foi possível confirmar a revisão oficial (evidências insuficientes)',
+    confiavel: false,
+  };
+}
+
+/**
+ * 3 & 4 & 5. VERIFICAR ALINHAMENTO COM BANCO DE MANUAIS (IA):
+ * Compara a versão identificada como referência atual com a versão do manual disponível no Banco de Manuais (IA).
+ * Se o Banco IA estiver desatualizado, gera alerta claro orientando a ação necessária para evitar que a IA
+ * fundamente análises de NCs em conteúdo obsoleto.
+ */
+export function verificarAlinhamentoManualIA(
+  doc: DocumentoControlado,
+  manualsIA: ManualRecord[]
+): DiagnosticoAlinhamentoManualIA {
+  const agora = new Date().toISOString();
+  const correspondencia = identificarCorrespondenciaManualIA(doc, manualsIA);
+  const referencia = determinarReferenciaOficialDocumento(doc);
+
+  const base: Omit<
+    DiagnosticoAlinhamentoManualIA,
+    'statusSincroniaIA' | 'mensagemAlerta' | 'acaoRecomendada'
+  > = {
+    documentoId: doc.id,
+    codigoDocumento: doc.codigo,
+    tituloDocumento: doc.titulo,
+    temCorrespondencia: !!correspondencia.manual,
+    manualIA: correspondencia.manual,
+    metodoCorrespondencia: correspondencia.metodo,
+    confiancaCorrespondencia: correspondencia.confianca,
+    revisaoOficialReferencia: referencia.revisaoOficial,
+    dataOficialReferencia: referencia.dataOficial,
+    origemReferenciaOficial: referencia.fonteReferencia,
+    revisaoNoBancoIA: correspondencia.manual?.revisao || '',
+    dataNoBancoIA:
+      correspondencia.manual?.dataVigencia || correspondencia.manual?.atualizadoEm || '',
+    dataVerificacao: agora,
+  };
+
+  // CASO 1: Documento não localizado no Banco IA
+  if (!correspondencia.manual) {
+    return {
+      ...base,
+      statusSincroniaIA: 'SEM_CORRESPONDENCIA',
+      mensagemAlerta: `Documento controlado "${doc.codigo}" não possui manual correspondente localizado no Banco de Manuais (IA). Sinalizada a necessidade de identificação ou vinculação manual para que a IA possa utilizá-lo como referência oficial nas análises de NCs.`,
+      acaoRecomendada: 'VINCULAR_MANUAL_IA',
+    };
+  }
+
+  const manualIA = correspondencia.manual;
+
+  // CASO 2: Revisão oficial não pôde ser confirmada com evidência suficiente
+  if (!referencia.confiavel || !referencia.revisaoOficial) {
+    return {
+      ...base,
+      statusSincroniaIA: 'REVISAO_NAO_CONFIRMADA',
+      mensagemAlerta: `A atualização não pôde ser confirmada para "${doc.codigo}". O documento do acervo não possui revisão oficial válida registrada para atestar conformidade com o Banco de Manuais (IA).`,
+      acaoRecomendada: 'CONFIRMAR_REVISAO_OFICIAL',
+    };
+  }
+
+  // CASO 3: Manual no Banco IA não possui revisão declarada
+  if (!manualIA.revisao || !manualIA.revisao.trim()) {
+    return {
+      ...base,
+      statusSincroniaIA: 'REVISAO_NAO_CONFIRMADA',
+      mensagemAlerta: `A atualização não pôde ser confirmada para "${doc.codigo}". O manual correspondente no Banco de Manuais (IA) não possui o número de revisão preenchido para comparação com a referência oficial (${referencia.revisaoOficial}).`,
+      acaoRecomendada: 'ATUALIZAR_BANCO_IA',
+    };
+  }
+
+  // CASO 4: Comparação semântica e cronológica de revisões
+  // compararRevisoesDocumentais retorna > 0 se revA for maior que revB
+  const comp = compararRevisoesDocumentais(
+    referencia.revisaoOficial,
+    referencia.dataOficial,
+    manualIA.revisao,
+    manualIA.dataVigencia
+  );
+
+  // Se comp > 0: referencia.revisaoOficial é mais recente que manualIA.revisao -> BANCO IA DESATUALIZADO!
+  if (comp > 0) {
+    return {
+      ...base,
+      statusSincroniaIA: 'BANCO_IA_DESATUALIZADO',
+      mensagemAlerta: `Possível desatualização identificada no Banco de Manuais (IA). O acervo indica a revisão ${referencia.revisaoOficial} como referência atual, mas o conteúdo disponível para consulta pela IA corresponde à revisão ${manualIA.revisao}. Verifique o documento e atualize o banco de manuais, se necessário.`,
+      acaoRecomendada: 'ATUALIZAR_BANCO_IA',
+    };
+  }
+
+  // Se comp < 0: manualIA.revisao é mais recente que referencia.revisaoOficial -> ACERVO DESATUALIZADO!
+  if (comp < 0) {
+    return {
+      ...base,
+      statusSincroniaIA: 'ACERVO_DESATUALIZADO',
+      mensagemAlerta: `O conteúdo disponível no Banco de Manuais (IA) corresponde à revisão ${manualIA.revisao}, superior à referência registrada no acervo (${referencia.revisaoOficial}). Verifique o documento e atualize o controle de revisões do acervo se necessário.`,
+      acaoRecomendada: 'ATUALIZAR_ACERVO_SGQ',
+    };
+  }
+
+  // Se comp === 0: Perfeitamente alinhados
+  return {
+    ...base,
+    statusSincroniaIA: 'SINCRONIZADO',
+    mensagemAlerta: `Banco de Manuais (IA) alinhado com a revisão oficial vigente (${referencia.revisaoOficial}). Conteúdo consistente para fundamentação e análise de Não Conformidades (NCs).`,
+    acaoRecomendada: 'NENHUMA',
+  };
+}
+
+/**
+ * 6. EXECUTAR VERIFICAÇÃO INDIVIDUAL COM REGISTRO DE AUDITORIA:
+ * Executa a verificação, atualiza o documento controlado no Firestore com os metadados de sincronia
+ * e registra formalmente o log de auditoria em LogVerificacaoFonteExterna.
+ */
+export async function executarVerificacaoAlinhamentoBancoIA(
+  organizationId: string,
+  doc: DocumentoControlado,
+  manualsIA: ManualRecord[],
+  currentUser?: UserProfile | null
+): Promise<DiagnosticoAlinhamentoManualIA> {
+  const diag = verificarAlinhamentoManualIA(doc, manualsIA);
+  const agora = new Date().toISOString();
+
+  // 6.1 Atualiza metadados no DocumentoControlado
+  const docAtualizado: DocumentoControlado = {
+    ...doc,
+    manualIAId: diag.manualIA?.id || doc.manualIAId,
+    statusSincroniaIA: diag.statusSincroniaIA,
+    revisaoNoBancoIA: diag.revisaoNoBancoIA || undefined,
+    dataUltimaVerificacaoIA: agora,
+    detalhesSincroniaIA: diag.mensagemAlerta,
+    updatedAt: agora,
+  };
+
+  try {
+    await saveDocumentoControlado(organizationId, docAtualizado, currentUser, doc);
+  } catch (err) {
+    console.warn('Aviso ao persistir statusSincroniaIA no documento controlado:', err);
+  }
+
+  // 6.2 Registra a evidência de log de verificação oficial no Firestore
+  try {
+    let statusLog: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'FONTE_INDISPONIVEL' | 'VERIFICACAO_NAO_CONCLUSIVA' =
+      'CONFORME';
+
+    if (diag.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO' || diag.statusSincroniaIA === 'ACERVO_DESATUALIZADO') {
+      statusLog = 'NOVA_REVISAO_IDENTIFICADA';
+    } else if (diag.statusSincroniaIA === 'REVISAO_NAO_CONFIRMADA') {
+      statusLog = 'VERIFICACAO_NAO_CONCLUSIVA';
+    } else if (diag.statusSincroniaIA === 'SEM_CORRESPONDENCIA') {
+      statusLog = 'VERIFICACAO_NAO_CONCLUSIVA';
+    }
+
+    const logEntry: LogVerificacaoFonteExterna = {
+      id: `log-ia-sync-${Date.now()}-${doc.id}`,
+      organizationId,
+      fonteId: 'banco-manuais-ia',
+      fonteNome: 'Banco de Manuais (IA)',
+      documentoId: doc.id,
+      codigoDocumento: doc.codigo,
+      revisaoAtualControlada: diag.revisaoOficialReferencia || doc.numeroRevisao || 'N/A',
+      revisaoIdentificadaNaFonte: diag.revisaoNoBancoIA || 'Não localizada',
+      statusVerificacao: statusLog,
+      mensagem: diag.mensagemAlerta,
+      requerValidacaoHumana: diag.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO',
+      validacaoHumanaStatus:
+        diag.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO' ? 'PENDENTE' : 'VALIDADA_NOVA_REVISAO_ACEITA',
+      dataVerificacao: agora,
+      executadoPor: currentUser?.displayName || currentUser?.email || 'Verificação Automática SGQ / IA',
+      evidenciaUrlOuTexto: diag.manualIA?.id ? `manual_id:${diag.manualIA.id}` : undefined,
+    };
+
+    await saveLogVerificacao(organizationId, logEntry, currentUser);
+  } catch (logErr) {
+    console.warn('Aviso ao registrar log de verificação do Banco IA:', logErr);
+  }
+
+  return diag;
+}
+
+/**
+ * EXECUTAR VERIFICAÇÃO EM LOTE DE TODOS OS MANUAIS ATIVOS CONTRA O BANCO IA:
+ */
+export async function executarVerificacaoEmLoteBancoIA(
+  organizationId: string,
+  documentos: DocumentoControlado[],
+  manualsIA: ManualRecord[],
+  currentUser?: UserProfile | null
+): Promise<RelatorioVerificacaoLoteIA> {
+  const agora = new Date().toISOString();
+  const docsAtivos = documentos.filter(
+    (d) => d.organizationId === organizationId && d.statusGeral !== 'INATIVO'
+  );
+
+  const diagnosticos: DiagnosticoAlinhamentoManualIA[] = [];
+
+  for (const doc of docsAtivos) {
+    const diag = await executarVerificacaoAlinhamentoBancoIA(
+      organizationId,
+      doc,
+      manualsIA,
+      currentUser
+    );
+    diagnosticos.push(diag);
+  }
+
+  const totalSincronizados = diagnosticos.filter((d) => d.statusSincroniaIA === 'SINCRONIZADO').length;
+  const totalBancoIADesatualizado = diagnosticos.filter(
+    (d) => d.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO'
+  ).length;
+  const totalAcervoDesatualizado = diagnosticos.filter(
+    (d) => d.statusSincroniaIA === 'ACERVO_DESATUALIZADO'
+  ).length;
+  const totalSemCorrespondencia = diagnosticos.filter(
+    (d) => d.statusSincroniaIA === 'SEM_CORRESPONDENCIA'
+  ).length;
+  const totalRevisaoNaoConfirmada = diagnosticos.filter(
+    (d) => d.statusSincroniaIA === 'REVISAO_NAO_CONFIRMADA'
+  ).length;
+
+  return {
+    geradoEm: agora,
+    totalVerificados: docsAtivos.length,
+    totalSincronizados,
+    totalBancoIADesatualizado,
+    totalAcervoDesatualizado,
+    totalSemCorrespondencia,
+    totalRevisaoNaoConfirmada,
+    diagnosticos,
+  };
+}
+
+/**
+ * ATUALIZAÇÃO CONTROLADA DO BANCO DE MANUAIS (IA):
+ * Regra fundamental: A detecção de uma revisão mais recente NÃO provoca a substituição automática.
+ * A atualização segue um fluxo controlado, onde o usuário revisa os dados e confirma formalmente a ação.
+ */
+export async function atualizarManualNoBancoIAControlado(params: {
+  organizationId: string;
+  manualId: string;
+  docId: string;
+  novaRevisao: string;
+  novaDataVigencia: string;
+  novoConteudoTexto?: string;
+  novoArquivoNome?: string;
+  justificativaAtualizacao?: string;
+  currentUser?: UserProfile | null;
+  manualExistente?: ManualRecord;
+  docControlado?: DocumentoControlado;
+}): Promise<{ sucesso: boolean; mensagem: string }> {
+  const {
+    organizationId,
+    manualId,
+    docId,
+    novaRevisao,
+    novaDataVigencia,
+    novoConteudoTexto,
+    novoArquivoNome,
+    justificativaAtualizacao,
+    currentUser,
+    manualExistente,
+    docControlado,
+  } = params;
+
+  const agora = new Date().toISOString();
+  const user = currentUser || {
+    displayName: 'Gestor SGQ',
+    email: 'qualidade@impacto.aero',
+    uid: 'system-sgq',
+    role: 'ADMIN',
+  };
+
+  try {
+    if (!manualExistente) {
+      throw new Error('Manual do Banco IA não localizado para atualização.');
+    }
+
+    const revisaoAnterior = manualExistente.revisao;
+
+    const manualAtualizado: ManualRecord = {
+      ...manualExistente,
+      revisao: novaRevisao.trim(),
+      dataVigencia: novaDataVigencia || agora.split('T')[0],
+      conteudoTexto: novoConteudoTexto || manualExistente.conteudoTexto,
+      arquivoNome: novoArquivoNome || manualExistente.arquivoNome,
+      status: 'Vigente',
+      atualizadoEm: agora,
+      historicoAlteracoes: [
+        ...(manualExistente.historicoAlteracoes || []),
+        {
+          versao: novaRevisao.trim(),
+          data: agora,
+          autor: user.displayName || 'Gestor SGQ',
+          descricao:
+            justificativaAtualizacao ||
+            `Atualização controlada para alinhamento com a revisão oficial vigente do Acervo SGQ (${novaRevisao}).`,
+        },
+      ],
+    };
+
+    await saveManual(organizationId, manualAtualizado, currentUser);
+
+    // Atualiza o documento controlado para SINCRONIZADO
+    if (docControlado) {
+      const docAtualizado: DocumentoControlado = {
+        ...docControlado,
+        manualIAId: manualId,
+        statusSincroniaIA: 'SINCRONIZADO',
+        revisaoNoBancoIA: novaRevisao.trim(),
+        dataUltimaVerificacaoIA: agora,
+        detalhesSincroniaIA: `Banco de Manuais (IA) alinhado com a revisão oficial vigente (${novaRevisao.trim()}) após atualização controlada.`,
+        updatedAt: agora,
+      };
+
+      await saveDocumentoControlado(organizationId, docAtualizado, currentUser, docControlado);
+
+      // Registra Log Oficial
+      const logEntry: LogVerificacaoFonteExterna = {
+        id: `log-ia-update-${Date.now()}-${docControlado.id}`,
+        organizationId,
+        fonteId: 'banco-manuais-ia',
+        fonteNome: 'Banco de Manuais (IA)',
+        documentoId: docControlado.id,
+        codigoDocumento: docControlado.codigo,
+        revisaoAtualControlada: docControlado.numeroRevisao || 'N/A',
+        revisaoIdentificadaNaFonte: novaRevisao.trim(),
+        statusVerificacao: 'CONFORME',
+        mensagem: `Manual no Banco de Manuais (IA) atualizado de forma controlada da revisão "${revisaoAnterior}" para "${novaRevisao.trim()}". Conteúdo alinhado para análises de NCs.`,
+        requerValidacaoHumana: false,
+        validacaoHumanaStatus: 'VALIDADA_NOVA_REVISAO_ACEITA',
+        dataVerificacao: agora,
+        executadoPor: user.displayName || 'Gestor SGQ',
+      };
+
+      await saveLogVerificacao(organizationId, logEntry, currentUser);
+    }
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'MANUAL',
+      entityId: manualId,
+      action: 'UPDATE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `Atualização controlada no Banco de Manuais (IA): ${manualExistente.codigo} atualizado para ${novaRevisao}`,
+      details: JSON.stringify({
+        manualId,
+        documentoControladoId: docId,
+        revisaoAnterior,
+        novaRevisao,
+      }),
+      reason: 'Alinhamento controlado do Banco de Manuais IA com a referência oficial do Acervo SGQ',
+      origin: 'BANCO_MANUAIS_IA',
+    });
+
+    return {
+      sucesso: true,
+      mensagem: `Manual "${manualExistente.codigo}" atualizado com sucesso no Banco de Manuais (IA) para a revisão ${novaRevisao}. A IA agora utilizará este conteúdo oficial como referência nas NCs.`,
+    };
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      mensagem: `Erro na atualização do manual no Banco IA: ${err.message || 'Erro inesperado'}`,
+    };
+  }
+}
+
+/**
+ * VINCULAR DOCUMENTO CONTROLADO A MANUAL DO BANCO IA MANUALMENTE:
+ * Utilizado quando não há correspondência automática confiável.
+ */
+export async function vincularDocumentoAoManualIA(
+  organizationId: string,
+  doc: DocumentoControlado,
+  manualIA: ManualRecord,
+  currentUser?: UserProfile | null
+): Promise<{ sucesso: boolean; mensagem: string }> {
+  const agora = new Date().toISOString();
+
+  const docAtualizado: DocumentoControlado = {
+    ...doc,
+    manualIAId: manualIA.id,
+    updatedAt: agora,
+  };
+
+  try {
+    await saveDocumentoControlado(organizationId, docAtualizado, currentUser, doc);
+    // Executa a verificação imediatamente com o novo vínculo
+    await executarVerificacaoAlinhamentoBancoIA(
+      organizationId,
+      docAtualizado,
+      [manualIA],
+      currentUser
+    );
+
+    return {
+      sucesso: true,
+      mensagem: `Documento "${doc.codigo}" vinculado com sucesso ao manual "${manualIA.codigo}" no Banco de Manuais (IA).`,
+    };
+  } catch (err: any) {
+    return {
+      sucesso: false,
+      mensagem: `Erro ao vincular documento: ${err.message}`,
+    };
+  }
+}
+

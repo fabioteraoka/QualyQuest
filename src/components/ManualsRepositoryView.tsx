@@ -27,28 +27,39 @@ import {
   HelpCircle,
   MessageSquare
 } from 'lucide-react';
-import { ManualRecord, StatusManual, ManualCapitulo } from '../types';
+import { ManualRecord, StatusManual, ManualCapitulo, DocumentoControlado } from '../types';
 import { ManualsConsultModal } from './ManualsConsultModal';
 import { downloadOriginalManualFile, saveManualToDB } from '../utils/manualsStorage';
 import { parseManualLocally } from '../utils/sgqExtractor';
 import { extractTextFromWordFile, isWordDocument } from '../utils/wordExtractor';
-import { UploadCloud } from 'lucide-react';
+import { UploadCloud, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  compararRevisoesDocumentais,
+} from '../services/manualsCrossCheckService';
+import {
+  normalizeDocumentCode,
+  canonicalAlphanumericKey,
+} from '../services/documentControlAuditReconciliation';
 
 interface ManualsRepositoryViewProps {
   manuals: ManualRecord[];
+  documentosControlados?: DocumentoControlado[];
   onSaveManual: (manual: ManualRecord) => void;
   onDeleteManual: (id: string) => void;
   onSelectForAudit?: (manual: ManualRecord) => void;
   onOpenMigrationModal?: () => void;
+  onNavigateToAcervo?: () => void;
 }
 
 export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
   manuals = [],
+  documentosControlados = [],
   onSaveManual,
   onDeleteManual,
   onSelectForAudit,
   onOpenMigrationModal,
+  onNavigateToAcervo,
 }) => {
   const { userProfile } = useAuth();
   const [search, setSearch] = useState('');
@@ -598,6 +609,66 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                           {manual.descricaoResumo}
                         </p>
                       </div>
+
+                      {/* Status de Alinhamento com Acervo & Revisões SGQ — Referência de NCs */}
+                      {(() => {
+                        const codNorm = normalizeDocumentCode(manual.codigo);
+                        const alpha = canonicalAlphanumericKey(manual.codigo);
+                        const docAcervo = documentosControlados.find(
+                          (d) =>
+                            d.manualIAId === manual.id ||
+                            normalizeDocumentCode(d.codigo) === codNorm ||
+                            canonicalAlphanumericKey(d.codigo) === alpha
+                        );
+
+                        if (!docAcervo) {
+                          return null;
+                        }
+
+                        const comp = compararRevisoesDocumentais(
+                          docAcervo.numeroRevisao || '',
+                          docAcervo.dataRevisao || '',
+                          manual.revisao || '',
+                          manual.dataVigencia || ''
+                        );
+
+                        if (comp > 0) {
+                          return (
+                            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-1">
+                              <div className="flex items-center gap-1.5 font-bold text-rose-900">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <span>Alerta: Banco IA Desatualizado!</span>
+                              </div>
+                              <p className="text-[11px] leading-tight text-rose-700">
+                                O Acervo SGQ indica <strong>{docAcervo.numeroRevisao}</strong> como referência atual, mas este manual na IA possui <strong>{manual.revisao}</strong>.
+                              </p>
+                              {onNavigateToAcervo && (
+                                <button
+                                  type="button"
+                                  onClick={onNavigateToAcervo}
+                                  className="text-[11px] font-bold text-rose-900 hover:underline pt-0.5 inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>Verificar no Acervo & Revisões &rarr;</span>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (comp === 0) {
+                          return (
+                            <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center justify-between">
+                              <span className="flex items-center gap-1 font-semibold">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Alinhado ao Acervo SGQ ({docAcervo.numeroRevisao})</span>
+                              </span>
+                              <span className="text-[10px] text-emerald-600 font-mono">Vigência OK</span>
+                            </div>
+                          );
+                        }
+
+                        return null;
+                      })()}
 
                       {/* Tags & Metadata */}
                       <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">

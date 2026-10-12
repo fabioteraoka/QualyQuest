@@ -98,6 +98,13 @@ import { UploadManualModal } from './UploadManualModal';
 import { DocumentFilePreviewModal } from './DocumentFilePreviewModal';
 import { DocumentDuplicityAuditView } from './DocumentDuplicityAuditView';
 import { formatFileSize, downloadOrViewDocumentFile } from '../utils/documentFilesStorage';
+import { ManualIAAlignmentModal } from './ManualIAAlignmentModal';
+import { BatchIAReportModal } from './BatchIAReportModal';
+import {
+  executarVerificacaoAlinhamentoBancoIA,
+  executarVerificacaoEmLoteBancoIA,
+  RelatorioVerificacaoLoteIA,
+} from '../services/manualsCrossCheckService';
 
 /**
  * FORMATAÇÃO OBRIGATÓRIA DA ÚLTIMA VERIFICAÇÃO CONFORME DIRETRIZ SGQ
@@ -178,6 +185,98 @@ export const renderResultadoVerificacaoBadge = (
       <CheckCircle2 className="w-3 h-3 text-emerald-400" />
       Conforme
     </span>
+  );
+};
+
+/**
+ * RENDERIZAÇÃO DO STATUS DE ALINHAMENTO COM BANCO DE MANUAIS (IA)
+ * Alerta explicitamente quando o Banco IA estiver desatualizado em relação à referência oficial.
+ */
+export const renderStatusSincroniaIABadge = (
+  doc: DocumentoControlado,
+  onOpenIAModal?: (doc: DocumentoControlado) => void
+) => {
+  const status = doc.statusSincroniaIA;
+  if (!status) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenIAModal && onOpenIAModal(doc)}
+        className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700 flex items-center gap-1 cursor-pointer transition-colors"
+        title="Verificar alinhamento do manual no Banco de Manuais (IA)"
+      >
+        <Sparkles className="w-3 h-3 text-purple-400" />
+        <span>Checar Banco IA</span>
+      </button>
+    );
+  }
+
+  if (status === 'BANCO_IA_DESATUALIZADO') {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenIAModal && onOpenIAModal(doc)}
+        className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 flex items-center gap-1 cursor-pointer transition-colors animate-pulse"
+        title={`Possível desatualização no Banco IA: IA (${doc.revisaoNoBancoIA || '?'}) vs Ref (${doc.numeroRevisao}). Clique para verificar e atualizar.`}
+      >
+        <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
+        <span>IA Desatualizado (IA: {doc.revisaoNoBancoIA || '?'})</span>
+      </button>
+    );
+  }
+
+  if (status === 'SINCRONIZADO') {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenIAModal && onOpenIAModal(doc)}
+        className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 hover:bg-purple-500/25 flex items-center gap-1 cursor-pointer transition-colors"
+        title="Banco de Manuais (IA) alinhado com a revisão oficial vigente"
+      >
+        <Sparkles className="w-3 h-3 text-purple-400" />
+        <span>IA Alinhado ({doc.revisaoNoBancoIA || doc.numeroRevisao})</span>
+      </button>
+    );
+  }
+
+  if (status === 'ACERVO_DESATUALIZADO') {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenIAModal && onOpenIAModal(doc)}
+        className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25 flex items-center gap-1 cursor-pointer transition-colors"
+        title="Banco IA possui versão mais recente que a registrada no acervo"
+      >
+        <Info className="w-3 h-3 text-sky-400" />
+        <span>IA mais recente ({doc.revisaoNoBancoIA})</span>
+      </button>
+    );
+  }
+
+  if (status === 'SEM_CORRESPONDENCIA') {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpenIAModal && onOpenIAModal(doc)}
+        className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800/80 text-slate-400 border border-slate-700 hover:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
+        title="Documento sem correspondência automática confiável no Banco IA. Clique para vincular."
+      >
+        <Bot className="w-3 h-3 text-slate-400" />
+        <span>Sem Vínculo IA</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpenIAModal && onOpenIAModal(doc)}
+      className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 hover:text-slate-200 flex items-center gap-1 cursor-pointer transition-colors"
+      title="Atualização não pôde ser confirmada por evidência insuficiente"
+    >
+      <HelpCircle className="w-3 h-3 text-slate-400" />
+      <span>IA Não Confirmado</span>
+    </button>
   );
 };
 
@@ -298,6 +397,47 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   const [isCustomerNotificationModalOpen, setIsCustomerNotificationModalOpen] = useState(false);
   const [isManufacturerAlertModalOpen, setIsManufacturerAlertModalOpen] = useState(false);
   const [isConfigureSourceModalOpen, setIsConfigureSourceModalOpen] = useState(false);
+
+  // Estados de Alinhamento com Banco de Manuais (IA) — Referência para NCs
+  const [selectedDocForIAModal, setSelectedDocForIAModal] = useState<DocumentoControlado | null>(null);
+  const [isIAModalOpen, setIsIAModalOpen] = useState(false);
+  const [isBatchVerifyingIA, setIsBatchVerifyingIA] = useState(false);
+  const [isBatchIAModalOpen, setIsBatchIAModalOpen] = useState(false);
+  const [lastBatchIAReport, setLastBatchIAReport] = useState<RelatorioVerificacaoLoteIA | null>(null);
+
+  // Métricas de Sincronia IA calculadas a partir dos documentos ativos
+  const metricasSincroniaIA = useMemo(() => {
+    let sincronizados = 0;
+    let desatualizados = 0;
+    let acervoDesatualizado = 0;
+    let semCorrespondencia = 0;
+    let revisaoNaoConfirmada = 0;
+    let pendentes = 0;
+
+    docsAtivos.forEach((d) => {
+      if (d.statusSincroniaIA === 'SINCRONIZADO') sincronizados++;
+      else if (d.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO') desatualizados++;
+      else if (d.statusSincroniaIA === 'ACERVO_DESATUALIZADO') acervoDesatualizado++;
+      else if (d.statusSincroniaIA === 'SEM_CORRESPONDENCIA') semCorrespondencia++;
+      else if (d.statusSincroniaIA === 'REVISAO_NAO_CONFIRMADA') revisaoNaoConfirmada++;
+      else pendentes++;
+    });
+
+    return {
+      sincronizados,
+      desatualizados,
+      acervoDesatualizado,
+      semCorrespondencia,
+      revisaoNaoConfirmada,
+      pendentes,
+      totalAnalisados: docsAtivos.length,
+    };
+  }, [docsAtivos]);
+
+  const handleOpenIAModal = (doc: DocumentoControlado) => {
+    setSelectedDocForIAModal(doc);
+    setIsIAModalOpen(true);
+  };
 
   // Estados de Governança Documental (Edição, Inativação, Reativação, Exclusão Segura)
   const [docToEdit, setDocToEdit] = useState<DocumentoControlado | null>(null);
@@ -629,13 +769,60 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
         }
       }
 
+      // Após checagem das fontes públicas, executa automaticamente a verificação de alinhamento com o Banco de Manuais (IA)
+      // para garantir que o acervo controlado e o repositório de IA estejam perfeitamente alinhados para as análises de NCs
+      let totalIADesatualizado = 0;
+      if (manuals && manuals.length > 0) {
+        for (const docAtivo of docsAtivos) {
+          try {
+            const diag = await executarVerificacaoAlinhamentoBancoIA(
+              organizationId,
+              docAtivo,
+              manuals,
+              currentUser
+            );
+            if (diag.statusSincroniaIA === 'BANCO_IA_DESATUALIZADO') {
+              totalIADesatualizado++;
+            }
+          } catch (e) {
+            console.warn('Erro ao verificar alinhamento com Banco IA no lote:', e);
+          }
+        }
+      }
+
       showToast(
-        `Verificação Automática Concluída: ${data.totalVerificados} manuais verificados (${data.totalDiscrepancias} com nova revisão detectada).`
+        `Verificação Automática Concluída: ${data.totalVerificados} manuais verificados (${data.totalDiscrepancias} com nova revisão detectada).` +
+          (totalIADesatualizado > 0
+            ? ` ⚠️ Atenção: ${totalIADesatualizado} manual(is) no Banco IA com possível desatualização detectada!`
+            : ` Banco de Manuais (IA) alinhado para fundamentação de NCs.`)
       );
     } catch (err: any) {
       alert(`Erro na verificação de fontes públicas: ${err.message}`);
     } finally {
       setIsVerifyingUpdates(false);
+    }
+  };
+
+  // Handler para Executar Verificação em Lote de Alinhamento com Banco de Manuais (IA)
+  const handleVerificarAlinhamentoBancoIAEmLote = async () => {
+    try {
+      setIsBatchVerifyingIA(true);
+      const relatorio = await executarVerificacaoEmLoteBancoIA(
+        organizationId,
+        docsAtivos,
+        manuals,
+        currentUser
+      );
+      setLastBatchIAReport(relatorio);
+      setIsBatchIAModalOpen(true);
+      showToast(
+        `Auditoria Banco IA Concluída: ${relatorio.totalVerificados} manuais analisados (${relatorio.totalBancoIADesatualizado} com alerta de desatualização).`
+      );
+    } catch (err: any) {
+      console.error('Erro na verificação em lote do Banco IA:', err);
+      alert(`Falha na verificação com Banco IA: ${err.message || 'Erro inesperado'}`);
+    } finally {
+      setIsBatchVerifyingIA(false);
     }
   };
 
@@ -1160,6 +1347,15 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               <span>{isVerifyingUpdates ? 'Verificando Fontes...' : 'Verificar Atualizações'}</span>
             </button>
             <button
+              onClick={handleVerificarAlinhamentoBancoIAEmLote}
+              disabled={isBatchVerifyingIA}
+              className="px-3.5 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+              title="Verificar alinhamento do Banco de Manuais (IA) com as revisões vigentes do acervo para garantir integridade das NCs"
+            >
+              <Sparkles className={`w-4 h-4 ${isBatchVerifyingIA ? 'animate-spin' : ''}`} />
+              <span>{isBatchVerifyingIA ? 'Verificando IA...' : 'Verificar Banco IA (NCs)'}</span>
+            </button>
+            <button
               onClick={() => setActiveSubTab('duplicidades')}
               className="px-3.5 py-2 rounded-lg bg-amber-600/90 hover:bg-amber-600 text-white text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm cursor-pointer"
               title="Auditoria de duplicidades e reconciliação de manuais no acervo"
@@ -1293,7 +1489,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
             </div>
 
             {/* Métricas Rápidas do Repositório */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-slate-800/80">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4 pt-4 border-t border-slate-800/80">
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
                 <span className="text-[11px] text-slate-400 block mb-0.5">Manuais Ativos:</span>
                 <span className="text-lg font-bold text-white font-mono">{docsAtivos.length}</span>
@@ -1307,10 +1503,24 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   ({Math.round(((docsAtivos.filter((d) => d.arquivoNome).length || 0) / (docsAtivos.length || 1)) * 100)}%)
                 </span>
               </div>
-              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
-                <span className="text-[11px] text-slate-400 block mb-0.5">Revisões Vigentes:</span>
-                <span className="text-lg font-bold text-sky-400 font-mono">
-                  {docsAtivos.length}
+              <div className="bg-slate-950/60 p-3 rounded-lg border border-purple-500/20">
+                <span className="text-[11px] text-purple-300 block mb-0.5 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Alinhados Banco IA:
+                </span>
+                <span className="text-lg font-bold text-purple-400 font-mono">
+                  {metricasSincroniaIA.sincronizados}
+                </span>
+                <span className="text-[10px] text-slate-500 ml-1">
+                  ({Math.round((metricasSincroniaIA.sincronizados / (docsAtivos.length || 1)) * 100)}%)
+                </span>
+              </div>
+              <div className={`p-3 rounded-lg border ${metricasSincroniaIA.desatualizados > 0 ? 'bg-rose-950/40 border-rose-500/40' : 'bg-slate-950/60 border-slate-800'}`}>
+                <span className={`text-[11px] block mb-0.5 flex items-center gap-1 ${metricasSincroniaIA.desatualizados > 0 ? 'text-rose-300 font-bold' : 'text-slate-400'}`}>
+                  {metricasSincroniaIA.desatualizados > 0 ? <AlertTriangle className="w-3 h-3 text-rose-400" /> : <Bot className="w-3 h-3" />}
+                  Banco IA Desatualizado:
+                </span>
+                <span className={`text-lg font-bold font-mono ${metricasSincroniaIA.desatualizados > 0 ? 'text-rose-400' : 'text-slate-400'}`}>
+                  {metricasSincroniaIA.desatualizados}
                 </span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800">
@@ -1318,6 +1528,31 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 <span className="text-lg font-bold text-amber-400 font-mono">{docsInativos.length} docs</span>
               </div>
             </div>
+
+            {/* Alerta de Desatualização no Banco de Manuais (IA) — Referência de NCs */}
+            {metricasSincroniaIA.desatualizados > 0 && (
+              <div className="mt-4 p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-pulse">
+                <div className="flex items-start gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-white block">
+                      Alerta: Possível desatualização identificada no Banco de Manuais (IA) ({metricasSincroniaIA.desatualizados} manual(is))
+                    </span>
+                    <span className="text-[11px] text-rose-200">
+                      O controle do acervo possui revisões mais recentes do que o conteúdo disponível para a IA consultar nas análises de NCs. Verifique e execute a atualização controlada.
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleVerificarAlinhamentoBancoIAEmLote}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-md"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Verificar e Atualizar Banco IA &rarr;</span>
+                </button>
+              </div>
+            )}
 
             {/* Aviso Regulatório de Segregação de Inativos */}
             {docsInativos.length > 0 && (
@@ -1628,6 +1863,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         <span className="text-slate-400 font-medium">Resultado da Verificação:</span>
                         {renderResultadoVerificacaoBadge(doc, handleOpenDiscrepancyValidation)}
                       </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+                        <span className="text-slate-400 font-medium flex items-center gap-1">
+                          <Bot className="w-3 h-3 text-purple-400" />
+                          <span>Banco IA (NCs):</span>
+                        </span>
+                        {renderStatusSincroniaIABadge(doc, handleOpenIAModal)}
+                      </div>
                     </div>
 
                     {/* Mapeamento de Fonte & Detalhes */}
@@ -1723,6 +1965,15 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         >
                           <Eye className="w-3.5 h-3.5 text-sky-400" />
                           <span>Consultar</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleOpenIAModal(doc)}
+                          className="text-xs text-purple-300 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Verificar alinhamento da referência no Banco de Manuais (IA) para análises de NCs"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Banco IA</span>
                         </button>
 
                         <button
@@ -2122,6 +2373,15 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   <span>{isVerifyingUpdates ? 'Varrendo Fontes Oficiais...' : 'Verificar Atualizações de Fontes Públicas'}</span>
                 </button>
                 <button
+                  onClick={handleVerificarAlinhamentoBancoIAEmLote}
+                  disabled={isBatchVerifyingIA}
+                  className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-lg shadow-purple-600/20 disabled:opacity-50 cursor-pointer"
+                  title="Verificar alinhamento do Banco de Manuais (IA) com as revisões vigentes do acervo para garantir integridade das NCs"
+                >
+                  <Sparkles className={`w-4 h-4 ${isBatchVerifyingIA ? 'animate-spin' : ''}`} />
+                  <span>{isBatchVerifyingIA ? 'Verificando IA...' : 'Verificar com Banco de Manuais (IA)'}</span>
+                </button>
+                <button
                   onClick={() => setIsNewSourceModalOpen(true)}
                   className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
@@ -2368,6 +2628,13 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                             <span className="text-slate-500">Resultado da Verificação:</span>
                             {renderResultadoVerificacaoBadge(doc, handleOpenDiscrepancyValidation)}
                           </div>
+                          <div className="flex justify-between pt-1 border-t border-slate-800/60 text-[11px]">
+                            <span className="text-slate-500 flex items-center gap-1">
+                              <Bot className="w-3 h-3 text-purple-400" />
+                              <span>Alinhamento Banco IA:</span>
+                            </span>
+                            {renderStatusSincroniaIABadge(doc, handleOpenIAModal)}
+                          </div>
                         </div>
 
                         {doc.detalhesUltimaVerificacao && (
@@ -2475,14 +2742,22 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         <div className="flex items-center justify-between text-xs pt-1">
                           <button
                             onClick={() => handleOpenFilePreview(doc)}
-                            className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1"
+                            className="text-xs text-sky-400 hover:text-sky-300 flex items-center gap-1 cursor-pointer"
                           >
                             <Eye className="w-3.5 h-3.5" />
                             <span>Ver Arquivo</span>
                           </button>
                           <button
+                            onClick={() => handleOpenIAModal(doc)}
+                            className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 cursor-pointer"
+                            title="Verificar alinhamento da referência no Banco de Manuais (IA)"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Checar IA</span>
+                          </button>
+                          <button
                             onClick={() => setSelectedDocForDetail(doc)}
-                            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                            className="text-xs text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
                           >
                             <span>Linha do Tempo</span>
                             <ChevronRight className="w-3.5 h-3.5" />
@@ -5457,6 +5732,38 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: VERIFICAÇÃO E ALINHAMENTO COM BANCO DE MANUAIS (IA) — NCS         */}
+      {/* ========================================================================= */}
+      <ManualIAAlignmentModal
+        isOpen={isIAModalOpen}
+        onClose={() => {
+          setIsIAModalOpen(false);
+          setSelectedDocForIAModal(null);
+        }}
+        documento={selectedDocForIAModal}
+        organizationId={organizationId}
+        manuals={manuals}
+        currentUser={currentUser}
+        logsVerificacao={logsVerificacao}
+        onManualsUpdated={onManualsUpdated}
+        showToast={showToast}
+      />
+
+      {/* ========================================================================= */}
+      {/* MODAL: RELATÓRIO DE VERIFICAÇÃO EM LOTE DO BANCO DE MANUAIS (IA)          */}
+      {/* ========================================================================= */}
+      <BatchIAReportModal
+        isOpen={isBatchIAModalOpen}
+        onClose={() => setIsBatchIAModalOpen(false)}
+        report={lastBatchIAReport}
+        documentos={docsAtivos}
+        onSelectDocForDetail={(doc) => {
+          setSelectedDocForIAModal(doc);
+          setIsIAModalOpen(true);
+        }}
+      />
     </div>
   );
 };

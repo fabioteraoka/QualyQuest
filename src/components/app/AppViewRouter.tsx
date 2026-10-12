@@ -317,9 +317,11 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       return (
         <ManualsRepositoryView
           manuals={props.manuals}
+          documentosControlados={props.documentosControlados}
           onSaveManual={props.handleSaveManual}
           onDeleteManual={props.handleDeleteManual}
           onOpenMigrationModal={() => props.setIsMigrationModalOpen(true)}
+          onNavigateToAcervo={() => props.setActiveTab('controle-documental')}
         />
       );
 

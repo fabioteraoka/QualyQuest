@@ -2111,6 +2111,13 @@ export interface DocumentoControlado {
   ultimaNotificacaoClienteEm?: string; // Data ISO da última notificação enviada ao cliente
   ultimoAlertaFabricanteEm?: string; // Data ISO do último alerta / verificação do fabricante
 
+  // INTEGRAÇÃO & ALINHAMENTO COM BANCO DE MANUAIS (IA) — REFERÊNCIA PARA NCS
+  manualIAId?: string; // ID do manual associado no Banco de Manuais (IA)
+  statusSincroniaIA?: 'SINCRONIZADO' | 'BANCO_IA_DESATUALIZADO' | 'ACERVO_DESATUALIZADO' | 'SEM_CORRESPONDENCIA' | 'REVISAO_NAO_CONFIRMADA';
+  revisaoNoBancoIA?: string; // Revisão do manual no Banco de Manuais (IA)
+  dataUltimaVerificacaoIA?: string; // Data ISO da última verificação cruzada com o Banco IA
+  detalhesSincroniaIA?: string; // Mensagem explicativa ou alerta formal de desatualização
+
   // ARMAZENAMENTO DE ARQUIVOS / REPOSITÓRIO (ACERVO & BIBLIOTECA)
   arquivoUrl?: string; // URL pública ou link de acesso do arquivo vigente
   arquivoCaminho?: string; // Caminho no storage/repositório (ex: '/acervo/manuais/{docId}/{fileName}')
