@@ -1063,6 +1063,60 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
 
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
             <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Classificação e Confiabilidade das Revisões e Datas (Critérios SGQ)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              <div className="p-2.5 rounded-lg bg-emerald-50 border border-emerald-200 space-y-1">
+                <span className="font-bold text-emerald-900 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Revisão Oficial Confirmada
+                </span>
+                <p className="text-emerald-800 text-[11px] leading-relaxed">
+                  Atestada diretamente por fonte pública oficial (robô ANAC/FAA), catálogo oficial do fabricante ou portal regulador com data de vigência comprovada.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 space-y-1">
+                <span className="font-bold text-blue-900 flex items-center gap-1">
+                  <Info className="w-3.5 h-3.5 text-blue-600" />
+                  Revisão Registrada no Acervo
+                </span>
+                <p className="text-blue-800 text-[11px] leading-relaxed">
+                  Cadastrada formalmente pelo setor de controle documental no SGQ, mas ainda pendente de confirmação por robô ou fonte pública externa.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-purple-50 border border-purple-200 space-y-1">
+                <span className="font-bold text-purple-900 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  Revisão do Banco de Manuais (IA)
+                </span>
+                <p className="text-purple-800 text-[11px] leading-relaxed">
+                  Versão atualmente indexada para o motor de inteligência artificial gerar fundamentações e requisitos em análises de NCs.
+                </p>
+              </div>
+
+              <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 space-y-1">
+                <span className="font-bold text-amber-900 flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                  Segregação Rigorosa da Data de Upload
+                </span>
+                <p className="text-amber-800 text-[11px] leading-relaxed">
+                  A data de envio/upload de arquivos é puramente administrativa e <strong>nunca é aceita como evidência de vigência</strong> ou atualização documental.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-2 p-2.5 rounded-lg bg-slate-100 border border-slate-300 text-[11px] text-slate-700 space-y-1">
+              <span className="font-bold text-slate-900 block">Tratamento de Incertezas Cronológicas e Alfanuméricas:</span>
+              <p>
+                Revisões com formatos alfanuméricos com sufixos (ex: <em>Rev. 12B vs 12A</em>), formatos heterogêneos sem padrão numérico ou sem ordem cronológica demonstrável sinalizam obrigatoriamente <strong>Necessidade de Análise Manual</strong>. O sistema proíbe categoricamente declarações automáticas de conformidade nesses cenários.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
               Como Interpretar os Alertas no Acervo & Revisões
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
@@ -1099,10 +1153,10 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
               <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200">
                 <span className="font-bold text-amber-900 block flex items-center gap-1">
                   <HelpCircle className="w-3.5 h-3.5 text-amber-600" />
-                  Sem Correspondência / Não Confirmada
+                  Sem Correspondência / Análise Manual
                 </span>
                 <p className="text-amber-800 text-[11px] mt-0.5">
-                  O documento não possui vínculo confiável ou não há evidência suficiente. O sistema impede falsas declarações de conformidade e solicita vinculação manual.
+                  O documento não possui vínculo confiável ou apresenta dúvida cronológica/técnica. O sistema impede falsas declarações de conformidade e solicita vinculação manual.
                 </p>
               </div>
             </div>
@@ -1126,10 +1180,16 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 <strong>Abrir o Modal de Alinhamento:</strong> Clique no botão <em>"Banco IA"</em> ou <em>"Checar IA"</em> no cartão do documento para abrir o comparativo detalhado.
               </li>
               <li>
-                <strong>Confirmar Atualização Controlada:</strong> Clique em <em>"Atualizar Banco IA (Controlado)"</em>, confira a nova revisão e data oficial, insira a justificativa técnica obrigatória e clique em <em>"Confirmar e Atualizar Banco IA"</em>.
+                <strong>Conferir e Validar Dados:</strong> Confira a revisão oficial confirmada, a revisão do acervo, a fonte utilizada e a data de vigência oficial (segregada da data de upload).
               </li>
               <li>
-                <strong>Rastreabilidade Preservada:</strong> A ação registra o log em <em>LogVerificacaoFonteExterna</em> e adiciona a evidência no histórico de alterações do manual, sem comprometer registros históricos anteriores.
+                <strong>Confirmar Atualização Controlada:</strong> Clique em <em>"Atualizar Banco IA (Controlado)"</em>, insira a <strong>justificativa técnica formal</strong> (mínimo de 15 caracteres) e confirme. Usuários apenas visualizadores (Viewer) são bloqueados.
+              </li>
+              <li>
+                <strong>Rastreabilidade e Prevenção de Conflitos:</strong> O sistema realiza verificação otimista de concorrência, atualiza o manual na IA, registra o log em <em>LogVerificacaoFonteExterna</em> e audita formalmente a transação, mantendo intactos todos os registros anteriores.
+              </li>
+              <li>
+                <strong>Impacto nas NCs:</strong> As rotinas de auditoria e fundamentação de NCs passam a adotar imediatamente o manual atualizado e a nova revisão vigente.
               </li>
             </ol>
           </div>

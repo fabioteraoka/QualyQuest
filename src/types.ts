@@ -525,6 +525,7 @@ export interface ManualCapitulo {
 
 export interface ManualRecord {
   id: string;
+  organizationId?: string;
   codigo: string; // Ex: 'MOMQ', 'MGQ', 'MOE', 'SGSO', 'RBAC 145', 'ISO 9001'
   titulo: string; // Ex: 'Manual da Organização de Manutenção da Qualidade'
   revisao: string; // Ex: 'Rev. 14' ou 'Emenda 07'

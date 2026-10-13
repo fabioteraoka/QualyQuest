@@ -134,6 +134,10 @@ export const ManualIAAlignmentModal: React.FC<ManualIAAlignmentModalProps> = ({
   // Handler para submeter a atualização controlada do manual no Banco IA
   const handleConfirmarAtualizacaoControlada = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentUser && (currentUser.role === 'CONSULTA' || (currentUser.role as string) === 'VIEWER')) {
+      alert('Permissão insuficiente: usuários apenas com perfil de consulta não podem atualizar o Banco de Manuais.');
+      return;
+    }
     if (!diagnostico?.manualIA) {
       alert('Manual correspondente no Banco IA não encontrado.');
       return;
@@ -332,15 +336,35 @@ export const ManualIAAlignmentModal: React.FC<ManualIAAlignmentModalProps> = ({
                   </div>
 
                   <div className="space-y-1">
-                    <div className="text-xl font-bold font-mono text-white">
-                      {diagnostico.revisaoOficialReferencia || 'Revisão Não Confirmada'}
+                    <div className="text-xl font-bold font-mono text-white flex items-center gap-2">
+                      <span>{diagnostico.revisaoOficialReferencia || 'Revisão Não Confirmada'}</span>
+                      {diagnostico.tipoOrigemReferencia === 'OFICIAL_CONFIRMADA_FONTE_PUBLICA' && (
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-sans font-semibold">
+                          Oficial Confirmada
+                        </span>
+                      )}
+                      {diagnostico.tipoOrigemReferencia === 'REGISTRADA_ACERVO_NAO_CONFIRMADA' && (
+                        <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded font-sans font-semibold">
+                          Registrada no Acervo
+                        </span>
+                      )}
+                      {diagnostico.requerAnaliseManual && (
+                        <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-sans font-semibold">
+                          Análise Manual Necessária
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-slate-400">
-                      Data da Referência:{' '}
+                      Data Oficial de Vigência:{' '}
                       <span className="font-mono text-slate-300">
-                        {diagnostico.dataOficialReferencia || 'Sem data'}
+                        {diagnostico.dataOficialReferencia || 'Data formal não informada'}
                       </span>
                     </div>
+                    {diagnostico.dataUploadArquivo && (
+                      <div className="text-[10px] text-slate-400 italic">
+                        Upload do arquivo em: {diagnostico.dataUploadArquivo.split('T')[0]} (não constitui evidência de vigência)
+                      </div>
+                    )}
                     <div className="text-[11px] text-slate-400 pt-1">
                       Fonte de Determinação:{' '}
                       <span className="text-sky-300 font-medium">

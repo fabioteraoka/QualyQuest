@@ -66,9 +66,12 @@ export function canonicalAlphanumericKey(rawCode: string): string {
 export function normalizeRevisionNumber(rawRev: string): string {
   if (!rawRev) return '';
   const trimmed = rawRev.trim().toUpperCase();
-  const matchNum = trimmed.match(/\d+/);
-  if (matchNum) {
-    return `REV_${matchNum[0].padStart(2, '0')}`;
+  const match = trimmed.match(/(?:REV(?:IS[AÃ]O)?|EMENDA|ED(?:I[CÇ][AÃ]O)?|VER(?:S[AÃ]O)?)?\.?\s*(\d+)([-_\s]*([A-Z0-9]+))?/i);
+  if (match) {
+    const numPart = match[1].padStart(2, '0');
+    const rawSuffix = match[3] ? match[3].replace(/[^A-Z0-9]/g, '') : '';
+    const suffixPart = (rawSuffix && rawSuffix.length <= 4) ? rawSuffix : '';
+    return `REV_${numPart}${suffixPart}`;
   }
   return trimmed.replace(/[^A-Z0-9]/g, '_');
 }

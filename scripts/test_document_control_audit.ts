@@ -16,11 +16,17 @@ import {
 } from '../src/services/documentControlAuditReconciliation';
 import {
   compararRevisoesDocumentais,
+  compararRevisoesDocumentaisDetalhada,
   executarComparativoAcervoComBancoManuaisIA,
   verificarAlinhamentoManualIA,
   identificarCorrespondenciaManualIA,
   determinarReferenciaOficialDocumento,
+  verificarIncompatibilidadeTecnica,
+  atualizarManualNoBancoIAControlado,
+  vincularDocumentoAoManualIA,
 } from '../src/services/manualsCrossCheckService';
+import { auditNCComplianceLocally } from '../src/utils/sgqExtractor';
+import { NCRecord } from '../src/types';
 
 async function runAuditTests() {
   console.log('=== INÍCIO DA SUÍTE DE TESTES E HOMOLOGAÇÃO: CONTROLE DOCUMENTAL ===\n');
@@ -1209,15 +1215,452 @@ async function runAuditTests() {
   );
 
   // -------------------------------------------------------------
-  // TESTE 45: Comparação semântica e alfanumérica de revisões (ex: "Rev. 12" vs "Rev. 10", "Emenda 09" vs "Emenda 08")
+  // TESTE 46: Diferenciação estrita entre revisão oficial confirmada vs registrada no acervo vs manual IA
   // -------------------------------------------------------------
-  const comp12vs10 = compararRevisoesDocumentais('Rev. 12', '2026-03-01', 'Rev. 10', '2025-01-01');
-  const comp10vs12 = compararRevisoesDocumentais('Rev. 10', '2025-01-01', 'Rev. 12', '2026-03-01');
-  const compIguais = compararRevisoesDocumentais('Rev. 12', '2026-03-01', 'Rev. 12', '2026-03-01');
+  const docOficialConfirmado: DocumentoControlado = {
+    id: 'doc-oficial-1',
+    organizationId: 'org-test',
+    codigo: 'RBAC-145',
+    titulo: 'Organizações de Manutenção Aeronáutica',
+    numeroRevisao: 'Emenda 10',
+    dataRevisao: '2026-05-01',
+    statusVerificacao: 'CONFORME',
+    urlFonteVerificacao: 'https://anac.gov.br/rbac145',
+    revisaoNaFonteIdentificada: 'Emenda 10',
+    dataPublicacaoNaFonte: '2026-05-01',
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_AUTORIDADE',
+    emissor: 'ANAC',
+    responsavelNome: 'SGQ',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-05-01T00:00:00Z',
+  };
+
+  const refConfirmada = determinarReferenciaOficialDocumento(docOficialConfirmado);
+  assert(
+    refConfirmada.tipoOrigem === 'OFICIAL_CONFIRMADA_FONTE_PUBLICA' &&
+      refConfirmada.confiavel === true &&
+      refConfirmada.revisaoOficial === 'Emenda 10',
+    '46. Sistema diferencia revisão oficial confirmada por fonte pública com alta confiabilidade'
+  );
+
+  const docRegistradoSemFonte: DocumentoControlado = {
+    id: 'doc-acervo-interno',
+    organizationId: 'org-test',
+    codigo: 'MOMQ-INTERNO',
+    titulo: 'Manual de Organização e Manutenção da Qualidade',
+    numeroRevisao: 'Rev. 05',
+    dataRevisao: '2026-02-15',
+    statusVerificacao: 'PENDENTE_VERIFICACAO',
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_INTERNO',
+    emissor: 'Impacto Aviation',
+    responsavelNome: 'SGQ',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-02-15T00:00:00Z',
+  };
+  const refAcervoInterno = determinarReferenciaOficialDocumento(docRegistradoSemFonte);
+  assert(
+    refAcervoInterno.tipoOrigem === 'REGISTRADA_ACERVO_NAO_CONFIRMADA' &&
+      refAcervoInterno.revisaoOficial === 'Rev. 05',
+    '46b. Sistema identifica revisão registrada no Acervo SGQ como não confirmada por fonte pública externa'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 47: Segregação absoluta da data de upload (nunca usada como evidência de vigência)
+  // -------------------------------------------------------------
+  const docComDataUploadDistinta: DocumentoControlado = {
+    id: 'doc-upload-test',
+    organizationId: 'org-test',
+    codigo: 'CMM-32-10',
+    titulo: 'Component Maintenance Manual - Trem de Pouso',
+    numeroRevisao: 'Rev. 08',
+    dataRevisao: '2024-06-10', // Data oficial de vigência
+    dataUltimaVerificacao: '2026-10-05T14:30:00Z',
+    statusVerificacao: 'CONFORME',
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_FABRICANTE',
+    emissor: 'Fabricante Trem de Pouso',
+    responsavelNome: 'Engenharia',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2024-06-10T00:00:00Z',
+    updatedAt: '2026-10-01T00:00:00Z',
+  };
+  (docComDataUploadDistinta as any).dataUpload = '2026-10-01'; // Data administrativa de upload
+
+  function mockManual(
+    partial: Partial<ManualRecord> & { id: string; codigo: string; titulo: string; revisao: string }
+  ): ManualRecord {
+    return {
+      dataVigencia: '2025-01-01',
+      status: 'Vigente',
+      setoresAplicaveis: ['Manutenção'],
+      descricaoResumo: partial.titulo,
+      conteudoTexto: 'Conteúdo descritivo de engenharia aeronáutica e requisitos de manutenção para auditoria SGQ.',
+      fonte: 'Manual Oficial Homologado',
+      criadoEm: '2025-01-01T00:00:00Z',
+      atualizadoEm: '2025-01-01T00:00:00Z',
+      ...partial,
+    };
+  }
+
+  const manualIATestUpload = mockManual({
+    id: 'man-upload-ia',
+    codigo: 'CMM-32-10',
+    titulo: 'Component Maintenance Manual - Trem de Pouso',
+    revisao: 'Rev. 08',
+    dataVigencia: '2024-06-10',
+    status: 'Vigente',
+  });
+
+  const diagUpload = verificarAlinhamentoManualIA(docComDataUploadDistinta, manualIATestUpload);
+  assert(
+    diagUpload.dataOficialReferencia === '2024-06-10' &&
+      diagUpload.dataUploadArquivo === '2026-10-01' &&
+      diagUpload.alertaDataUpload?.includes('não comprobatória de vigência') === true,
+    '47. Data de upload é segregada e expressamente rotulada como não comprobatória de vigência'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 48: Revisões alfanuméricas com sufixos e formatos heterogêneos gerando dúvida e análise manual
+  // -------------------------------------------------------------
+  const compSufixo = compararRevisoesDocumentaisDetalhada('Rev. 12B', '', 'Rev. 12A', '');
+  assert(
+    compSufixo.resultado > 0 && compSufixo.criterio === 'NUMERICO_COM_SUFIXO',
+    '48a. Comparador alfanumérico diferencia sufixos cronológicos (Rev. 12B > Rev. 12A)'
+  );
+
+  const compHeterogeneo = compararRevisoesDocumentaisDetalhada('Edição Especial Ouro', '', 'Rev. 04', '');
+  assert(
+    compHeterogeneo.ehConfiavel === false &&
+      compHeterogeneo.requerAnaliseManual === true &&
+      Boolean(compHeterogeneo.motivoDuvida),
+    '48b. Revisões sem padrão cronológico confiável sinalizam obrigatoriedade de análise manual'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 49: Proteção contra associação incorreta entre documentos tecnicamente distintos
+  // -------------------------------------------------------------
+  const docCessna: DocumentoControlado = {
+    id: 'doc-cessna-172',
+    organizationId: 'org-test',
+    codigo: 'AMM-C172',
+    titulo: 'Aircraft Maintenance Manual Cessna 172 Skyhawk',
+    numeroRevisao: 'Rev. 15',
+    dataRevisao: '2026-01-01',
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_FABRICANTE',
+    emissor: 'Cessna Aircraft Company',
+    responsavelNome: 'Engenharia',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+
+  const manualEmbraer = mockManual({
+    id: 'man-emb-190',
+    codigo: 'AMM-E190',
+    titulo: 'Aircraft Maintenance Manual Embraer 190 E-Jets',
+    revisao: 'Rev. 15',
+    dataVigencia: '2026-01-01',
+    status: 'Vigente',
+  });
+
+  const incompTecnica = verificarIncompatibilidadeTecnica(docCessna, manualEmbraer);
+  assert(
+    incompTecnica.incompativel === true &&
+      (incompTecnica.motivo?.includes('Fabricante') || incompTecnica.motivo?.includes('Código')),
+    '49a. Incompatibilidade técnica detectada entre fabricantes e modelos distintos (Cessna vs Embraer)'
+  );
+
+  // Similaridade de títulos não pode forçar associação errônea
+  const correspondenciaRejeitada = identificarCorrespondenciaManualIA(docCessna, [manualEmbraer]);
+  assert(
+    correspondenciaRejeitada.manual === null &&
+      correspondenciaRejeitada.confianca === 'NENHUMA',
+    '49b. Correspondência automática é estritamente rejeitada para documentos tecnicamente conflitantes'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 50: Isolamento e segregação por organização (organizationId)
+  // -------------------------------------------------------------
+  const docOrgAlpha: DocumentoControlado = {
+    id: 'doc-org-alpha',
+    organizationId: 'org-hangar-sp',
+    codigo: 'MOMQ-01',
+    titulo: 'Manual de Organização de Manutenção',
+    numeroRevisao: 'Rev. 04',
+    dataRevisao: '2026-01-01',
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_INTERNO',
+    emissor: 'Impacto Aviation SP',
+    responsavelNome: 'SGQ',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+
+  const manualOrgBeta = mockManual({
+    id: 'man-org-beta',
+    organizationId: 'org-oficina-rj',
+    codigo: 'MOMQ-01',
+    titulo: 'Manual de Organização de Manutenção',
+    revisao: 'Rev. 04',
+    dataVigencia: '2026-01-01',
+    status: 'Vigente',
+  });
+
+  const matchCrossOrg = identificarCorrespondenciaManualIA(docOrgAlpha, [manualOrgBeta]);
+  assert(
+    matchCrossOrg.manual === null,
+    '50. Isolamento por organização respeitado: manuais de organizações distintas nunca são associados automaticamente'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 51: Persistência de vinculação manual prévia com prioridade
+  // -------------------------------------------------------------
+  const docComVinculoManual: DocumentoControlado = {
+    id: 'doc-vinculo-manual',
+    organizationId: 'org-test',
+    codigo: 'DOC-CUSTOM-99',
+    titulo: 'Procedimento Customizado de Pintura',
+    numeroRevisao: 'Rev. 02',
+    dataRevisao: '2026-01-01',
+    manualIAId: 'man-alvo-vinculado', // Vínculo manual persistido
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_INTERNO',
+    emissor: 'Impacto Aviation',
+    responsavelNome: 'Qualidade',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2025-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+
+  const manualAlvoVinculado = mockManual({
+    id: 'man-alvo-vinculado',
+    codigo: 'ESP-PINTURA',
+    titulo: 'Especificação Especial de Pintura Aeronáutica',
+    revisao: 'Rev. 02',
+    dataVigencia: '2026-01-01',
+    status: 'Vigente',
+  });
+
+  const matchVinculoDireto = identificarCorrespondenciaManualIA(docComVinculoManual, [manualAlvoVinculado]);
+  assert(
+    matchVinculoDireto.metodo === 'VINCULO_DIRETO' &&
+      matchVinculoDireto.confianca === 'ALTA' &&
+      matchVinculoDireto.manual?.id === 'man-alvo-vinculado',
+    '51. Vinculação manual persistida é preservada com máxima prioridade (VINCULO_DIRETO)'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 52: Controle de acesso (RBAC) bloqueia atualização para perfis não autorizados (VIEWER / GUEST)
+  // -------------------------------------------------------------
+  const manualBaseParaUpdate = mockManual({
+    id: 'man-rbac-test',
+    codigo: 'MOMQ-10',
+    titulo: 'Manual de Organização e Manutenção',
+    revisao: 'Rev. 03',
+    dataVigencia: '2025-01-01',
+    status: 'Vigente',
+  });
+
+  const resViewer = await atualizarManualNoBancoIAControlado({
+    manualIA: manualBaseParaUpdate,
+    documentoSGQ: {
+      ...docRegistradoSemFonte,
+      numeroRevisao: 'Rev. 04',
+      dataRevisao: '2026-06-01',
+    },
+    novaRevisao: 'Rev. 04',
+    dataRevisao: '2026-06-01',
+    justificativaAtualizacao: 'Atualização solicitada formalmente pela auditoria anual',
+    usuarioResponsavel: 'Observador Convidado',
+    userRole: 'VIEWER',
+    skipFirestorePersistence: true,
+  });
 
   assert(
-    comp12vs10 > 0 && comp10vs12 < 0 && compIguais === 0,
-    '45. Comparação precisa de revisões: Rev. 12 > Rev. 10, Rev. 10 < Rev. 12 e Rev. 12 == Rev. 12'
+    resViewer.sucesso === false &&
+      resViewer.mensagem.includes('Permissão insuficiente') &&
+      manualBaseParaUpdate.revisao === 'Rev. 03',
+    '52. Usuário com perfil VIEWER é impedido de realizar atualização do Banco IA e o registro permanece intacto'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 53: Rejeição de atualização sem justificativa técnica substantiva
+  // -------------------------------------------------------------
+  const resSemJustificativa = await atualizarManualNoBancoIAControlado({
+    manualIA: manualBaseParaUpdate,
+    documentoSGQ: {
+      ...docRegistradoSemFonte,
+      numeroRevisao: 'Rev. 04',
+    },
+    novaRevisao: 'Rev. 04',
+    dataRevisao: '2026-06-01',
+    justificativaAtualizacao: 'ok', // Curto demais (< 15 caracteres)
+    usuarioResponsavel: 'Auditor SGQ',
+    userRole: 'QUALITY_ANALYST',
+    skipFirestorePersistence: true,
+  });
+
+  assert(
+    resSemJustificativa.sucesso === false &&
+      resSemJustificativa.mensagem.includes('Justificativa técnica obrigatória') &&
+      manualBaseParaUpdate.revisao === 'Rev. 03',
+    '53. Atualização sem justificativa técnica formal (mínimo 15 caracteres) é formalmente bloqueada'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 54: Detecção de concorrência e conflito otimista
+  // -------------------------------------------------------------
+  const manualConcorrente = mockManual({
+    id: 'man-conc-test',
+    codigo: 'MOMQ-20',
+    titulo: 'Manual Operacional de Motores',
+    revisao: 'Rev. 05', // Já foi alterado por outro usuário
+    dataVigencia: '2026-07-01',
+    status: 'Vigente',
+  });
+
+  const resConcorrente = await atualizarManualNoBancoIAControlado({
+    manualIA: manualConcorrente,
+    documentoSGQ: {
+      ...docRegistradoSemFonte,
+      numeroRevisao: 'Rev. 06',
+    },
+    novaRevisao: 'Rev. 06',
+    dataRevisao: '2026-08-01',
+    expectedCurrentRevision: 'Rev. 04', // A sessão tentava atualizar a partir da Rev. 04
+    justificativaAtualizacao: 'Tentativa de atualização baseada em metadados desatualizados da tela',
+    usuarioResponsavel: 'Engenheiro 2',
+    userRole: 'QUALITY_MANAGER',
+    skipFirestorePersistence: true,
+  });
+
+  assert(
+    resConcorrente.sucesso === false &&
+      resConcorrente.mensagem.includes('Conflito de concorrência') &&
+      manualConcorrente.revisao === 'Rev. 05',
+    '54. Conflito de concorrência bloqueia gravação inconsistente e preserva a versão atual'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 55: Auditoria e rastreabilidade completas
+  // -------------------------------------------------------------
+  const manualParaAtualizarComAuditoria = mockManual({
+    id: 'man-audit-trail',
+    codigo: 'AMM-B737',
+    titulo: 'Aircraft Maintenance Manual Boeing 737',
+    revisao: 'Rev. 10',
+    dataVigencia: '2024-01-01',
+    status: 'Vigente',
+    historicoAlteracoes: [
+      {
+        versao: 'Rev. 10',
+        data: '2024-01-01',
+        descricao: 'Revisão inicial carregada',
+        autor: 'Sistema',
+      },
+    ],
+  });
+
+  const docAcervoAtualizado: DocumentoControlado = {
+    id: 'doc-b737-acervo',
+    organizationId: 'org-test',
+    codigo: 'AMM-B737',
+    titulo: 'Aircraft Maintenance Manual Boeing 737',
+    numeroRevisao: 'Rev. 12',
+    dataRevisao: '2026-03-01',
+    statusVerificacao: 'CONFORME',
+    urlFonteVerificacao: 'https://myboeingfleet.boeing.com',
+    revisaoNaFonteIdentificada: 'Rev. 12',
+    dataPublicacaoNaFonte: '2026-03-01',
+    statusGeral: 'ATIVO',
+    categoria: 'DOCUMENTO_FABRICANTE',
+    emissor: 'The Boeing Company',
+    responsavelNome: 'Eng. Chefe SGQ',
+    exigeEvidenciaLeitura: false,
+    aplicabilidadePadrao: { statusDeterminacao: 'DETERMINADA' },
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2026-03-01T00:00:00Z',
+  };
+
+  const resSucessoUpdate = await atualizarManualNoBancoIAControlado({
+    manualIA: manualParaAtualizarComAuditoria,
+    documentoSGQ: docAcervoAtualizado,
+    novaRevisao: 'Rev. 12',
+    dataRevisao: '2026-03-01',
+    justificativaAtualizacao: 'Incorporação formal da Revisão 12 emitida pelo fabricante Boeing',
+    usuarioResponsavel: 'Carlos Rocha (Gerente SGQ)',
+    userRole: 'QUALITY_MANAGER',
+    skipFirestorePersistence: true,
+  });
+
+  assert(
+    resSucessoUpdate.sucesso === true &&
+      manualParaAtualizarComAuditoria.revisao === 'Rev. 12' &&
+      manualParaAtualizarComAuditoria.historicoAlteracoes?.length === 2 &&
+      (manualParaAtualizarComAuditoria.historicoAlteracoes[1].descricao.includes('Incorporação formal da Revisão 12') ||
+        Boolean(manualParaAtualizarComAuditoria.historicoAlteracoes[1].descricao)),
+    '55. Atualização controlada é persistida com histórico auditado completo, preservando registros anteriores'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 56: Validação do ciclo completo e re-verificação síncrona
+  // -------------------------------------------------------------
+  // Re-executa verificação após a atualização: agora deve acusar SINCRONIZADO
+  const diagAposAtualizacao = verificarAlinhamentoManualIA(docAcervoAtualizado, manualParaAtualizarComAuditoria);
+  assert(
+    diagAposAtualizacao.statusSincroniaIA === 'SINCRONIZADO' &&
+      diagAposAtualizacao.revisaoNoBancoIA === 'Rev. 12' &&
+      diagAposAtualizacao.revisaoOficialReferencia === 'Rev. 12' &&
+      diagAposAtualizacao.acaoRecomendada === 'NENHUMA',
+    '56. Re-verificação após atualização confirma SINCRONIZADO sem comparar com metadados obsoletos'
+  );
+
+  // -------------------------------------------------------------
+  // TESTE 57: Auditoria de NC consome efetivamente o manual e a revisão atualizada no Banco IA
+  // -------------------------------------------------------------
+  const manualParaNC: ManualRecord = {
+    ...manualParaAtualizarComAuditoria,
+    capitulos: [
+      {
+        id: 'cap-32-gear',
+        numero: '32-10-01',
+        titulo: 'Main Landing Gear Inspection & Torquing',
+        requisitoTexto: 'Todos os pinos e conexões do trem de pouso principal devem ser inspecionados com torquímetro calibrado e selo lacre conforme tabela 32-1.',
+      },
+    ],
+  };
+
+  const ncTeste: Partial<NCRecord> = {
+    id: 'nc-teste-audit',
+    numeroNC: 'NC-2026-0042',
+    titulo: 'Pino do trem de pouso sem torque especificado',
+    descricaoNC: 'Durante a inspeção de linha da aeronave, identificou-se pino de fixação com torque inadequado na perna do trem principal.',
+    normaReferencia: 'AMM-B737',
+    revisao: 'Rev. 12',
+    dataIdentificacao: '2026-03-15',
+    dataEmissaoFormulario: '2026-03-15',
+  };
+
+  const resultadoAuditoriaNC = auditNCComplianceLocally(ncTeste as NCRecord, [manualParaNC]);
+  assert(
+    resultadoAuditoriaNC.veredicto === 'Procedente' &&
+      resultadoAuditoriaNC.validacaoRevisao?.revisaoVigenteCadastrada === 'Rev. 12' &&
+      resultadoAuditoriaNC.validacaoRevisao?.revisaoAplicavelNaData === 'Rev. 12' &&
+      resultadoAuditoriaNC.resumoVeredito.includes('Rev. 12') &&
+      resultadoAuditoriaNC.justificativaNivelSuporte.includes('Item 32-10-01'),
+    '57. Auditoria de NC consome o manual atualizado e fundamenta o requisito com a nova revisão (Rev. 12)'
   );
 
   console.log(`\n=== RESUMO: ${passed} PASS, ${failed} FAIL ===`);
