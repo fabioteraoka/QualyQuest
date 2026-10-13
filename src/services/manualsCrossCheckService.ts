@@ -19,6 +19,7 @@ import {
   normalizeRevisionNumber,
   calculateTitleSimilarity,
 } from './documentControlAuditReconciliation';
+import { geminiClientCache } from '../utils/geminiClientCache';
 
 export type StatusComparativoManualIA =
   | 'SINCRONIZADO'
@@ -1574,6 +1575,15 @@ export async function atualizarManualNoBancoIAControlado(params: {
           updatedAt: agora,
         }
       : undefined;
+
+    // Invalida cache de análises e consultas de IA para a organização, garantindo que o motor de NCs não consuma respostas antigas
+    try {
+      if (orgId) {
+        geminiClientCache.invalidateByOrganization(orgId);
+      }
+    } catch {
+      // Silencia se indisponível em runtime sem cache
+    }
 
     // Se estiver em ambiente sem persistência direta (ex: testes automatizados sem auth), pula as chamadas do Firestore
     if (!params.skipFirestorePersistence) {
