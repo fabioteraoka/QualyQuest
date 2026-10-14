@@ -623,6 +623,8 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
     case 'documentos-solicitacoes':
     case 'documentos-comparador':
     case 'documentos-inativos':
+    case 'empresas-frotas':
+    case 'documentos-empresas-frotas':
       return (
         <DocumentControlCenterView
           organizationId={props.activeOrgId}
@@ -637,8 +639,11 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           logsVerificacao={props.logsVerificacaoFontes}
           evidenciasConsulta={props.evidenciasConsultaDoc}
           nonConformities={props.records}
+          clientesExternos={props.clientesExternos}
           initialSubTab={
-            activeTab === 'documentos-inativos'
+            activeTab === 'empresas-frotas' || activeTab === 'documentos-empresas-frotas'
+              ? 'empresas-frotas'
+              : activeTab === 'documentos-inativos'
               ? 'inativos'
               : activeTab === 'verificacao-controle' ||
                 activeTab === 'fontes-externas' ||

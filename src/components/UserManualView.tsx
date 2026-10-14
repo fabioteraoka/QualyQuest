@@ -1213,6 +1213,89 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
         </div>
       ),
     },
+    {
+      id: 37,
+      title: '37. Controle Documental de Empresas e Frotas (MEL, AMM, IPC & Cobranças)',
+      category: 'Controle Documental & Acervo Técnico',
+      summary: 'Centralização de manuais de operadores clientes (MEL, AMM, IPC), suporte a múltiplas MELs coexistentes por frota, segregação estrita entre revisão e recebimento, histórico rastreável de cobranças e relatórios executivos.',
+      content: (
+        <div className="space-y-4">
+          <p className="text-slate-700 leading-relaxed">
+            O <strong>QualyQuest</strong> dispõe de um módulo dedicado para <strong>Controle Documental de Empresas e Frotas</strong>, permitindo que a <strong>IMPACTO Aviation</strong> controle de ponta a ponta as publicações técnicas dos operadores e clientes atendidos (como <em>Atlas Air, Kalitta Air, SWISS</em>, entre outros).
+          </p>
+
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-sky-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-sky-700" />
+              Diretrizes de Governança por Empresa & Frota (RBAC 145.109 / FAA Part 145)
+            </h4>
+            <ul className="text-xs text-sky-900 space-y-1.5 list-disc list-inside">
+              <li>
+                <strong>Múltiplas MELs Coexistentes:</strong> Uma mesma empresa cliente pode possuir várias frotas e mais de uma MEL (ex: <em>MEL Boeing 737-800</em> e <em>MEL Airbus A320</em>). Cada MEL possui chave e controle próprios, associados à respectiva frota ou aplicação. A atualização da MEL de uma frota jamais sobrescreve ou altera os demais registros.
+              </li>
+              <li>
+                <strong>Segregação Estrita (Revisão vs Recebimento):</strong> A situação da revisão documental (vigência oficial) é rigorosamente separada da situação de recebimento do arquivo. Um manual pode estar vigente oficialmente e pendente de recebimento; da mesma forma, um arquivo recebido pode estar desatualizado ou com pendência apontada na conferência.
+              </li>
+              <li>
+                <strong>Histórico Imutável de Cobranças:</strong> Todas as interações com a empresa são registradas com data, canal (e-mail, portal, telefone, WhatsApp, reunião), responsável e resultado, preservando integralmente o histórico anterior.
+              </li>
+              <li>
+                <strong>Mensagens Prontas para Envio Manual:</strong> O sistema prepara a minuta da mensagem de cobrança em Português ou Inglês com um clique para cópia, sem simular envios automáticos inexistentes.
+              </li>
+            </ul>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Procedimento Passo a Passo: Operação do Controle de Empresas e Frotas
+            </h4>
+            <ol className="text-xs text-slate-700 space-y-2.5 list-decimal list-inside">
+              <li>
+                <strong>1. Acessar a Sub-Aba "Empresas & Frotas":</strong> No menu lateral, acesse <em>Acervo & Revisões (SGQ)</em> e clique na sub-aba <strong>3. Empresas & Frotas</strong>.
+              </li>
+              <li>
+                <strong>2. Selecionar ou Filtrar a Empresa Atendida:</strong> Na visão por empresa, selecione o cliente contratante (ex: <em>Atlas Air, Inc.</em>) para carregar todos os manuais técnicos vinculados ao operador.
+              </li>
+              <li>
+                <strong>3. Cadastrar Novo Documento / MEL por Frota:</strong> Clique no botão <em>"Nova MEL / Manual de Frota"</em>. Selecione a empresa, defina o tipo (MEL, AMM, IPC, etc.), informe obrigatoriamente a <strong>Frota Aplicável</strong> (ex: <em>Boeing 737-800</em>), o código do manual e a revisão inicial de referência.
+              </li>
+              <li>
+                <strong>4. Cadastrar Múltiplas MELs para a Mesma Empresa:</strong> Para cadastrar uma segunda MEL da mesma empresa, repita o processo informando a nova frota (ex: <em>Airbus A320</em>). O QualyQuest registrará a nova MEL mantendo a primeira intacta.
+              </li>
+              <li>
+                <strong>5. Consultar a Situação Documental:</strong> No painel, verifique a comparação entre a <em>Revisão Oficial Vigente</em> e a <em>Revisão Recebida</em>. Divergências são destacadas em vermelho (Desatualizado) ou amarelo (Análise Manual Obrigatória).
+              </li>
+              <li>
+                <strong>6. Registrar Solicitação e Cobrança:</strong> Clique no botão <em>"Cobrar / Interagir"</em> no cartão do documento. Selecione o canal utilizado, registre o resultado da ação, defina o novo prazo acordado para retorno e clique em <em>"Copiar Texto"</em> para enviar a minuta formalizada pelo canal oficial da sua empresa.
+              </li>
+              <li>
+                <strong>7. Acompanhar Prazos e Vencimentos:</strong> No painel de cobranças, consulte as solicitações com prazo ultrapassado e o histórico de cada tentativa de contato realizada.
+              </li>
+              <li>
+                <strong>8. Registrar Recebimento do Arquivo:</strong> Quando o operador fornecer o manual atualizado, clique em <em>"Registrar Recebimento"</em>, informe a revisão declarada no documento e a data efetiva de recebimento. O status avançará para <em>"Aguardando Conferência"</em>.
+              </li>
+              <li>
+                <strong>9. Realizar a Conferência Técnica SGQ:</strong> Clique no botão <em>"Conferir Técnico"</em>. Verifique a lista de páginas efetivas (LEP) e a aplicabilidade da frota. Registre o parecer formal e homologue como <em>"Conferido e Aceito"</em> ou <em>"Recebido com Pendência"</em>.
+              </li>
+              <li>
+                <strong>10. Consultar Relatórios Executivos da Qualidade:</strong> Na sub-aba <em>"Relatório Executivo"</em>, acompanhe a tabela consolidada por empresa, verifique a taxa de pendências e exporte os dados em formato CSV para apresentações gerenciais e auditorias regulatórias.
+              </li>
+            </ol>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('controle-documental')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-sky-600 text-white font-bold text-xs hover:bg-sky-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Controle de Empresas & Frotas</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
   ], [organization, orgName, orgSigla]);
 
   // Filtro de capítulos por busca
@@ -1285,7 +1368,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
             }`}
           >
-            Manual de Utilização (28 Capítulos)
+            Manual de Utilização ({chapters.length} Capítulos)
           </button>
           <button
             onClick={() => setActiveSection('manual-admin')}
@@ -1385,7 +1468,7 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                     {selectedChapter.category}
                   </span>
                   <span className="text-xs text-slate-400">•</span>
-                  <span className="text-xs text-slate-400">Capítulo {selectedChapter.id} de 27</span>
+                  <span className="text-xs text-slate-400">Capítulo {selectedChapter.id} de {chapters.length}</span>
                 </div>
                 <h2 className="text-xl font-bold text-slate-900">
                   {selectedChapter.title}

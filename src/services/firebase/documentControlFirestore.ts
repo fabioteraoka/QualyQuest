@@ -42,6 +42,7 @@ import {
   normalizeDocumentCode,
   canonicalAlphanumericKey,
   normalizeRevisionNumber,
+  buildDocumentIndexKey,
 } from '../documentControlAuditReconciliation';
 
 // ============================================================================
@@ -218,6 +219,7 @@ export async function saveDocumentoControlado(
   const isNew = !previousDocument && !documento.createdAt;
   const now = new Date().toISOString();
   const codigoNorm = normalizeDocumentCode(documento.codigo);
+  const indexKey = buildDocumentIndexKey(documento);
   const chaveAlpha = canonicalAlphanumericKey(documento.codigo);
 
   if (!codigoNorm) {
@@ -234,7 +236,7 @@ export async function saveDocumentoControlado(
   };
 
   const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', documento.id);
-  const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', codigoNorm);
+  const codeIndexRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', indexKey);
 
   try {
     // PROTEÇÃO TRANSACIONAL CONTRA CONCORRÊNCIA E DUPLICIDADE NO FIRESTORE
@@ -245,18 +247,18 @@ export async function saveDocumentoControlado(
         const codeData = codeIndexSnap.data();
         if (codeData.documentoId !== documento.id && codeData.statusGeral !== 'INATIVO') {
           throw new Error(
-            `Validação de Persistência: O código documental "${documento.codigo}" (normalizado: "${codigoNorm}") já está em uso pelo documento ID ${codeData.documentoId} ("${codeData.titulo || ''}"). Duplicidade cadastral bloqueada concorrencialmente.`
+            `Validação de Persistência: O código documental "${documento.codigo}"${documento.frota ? ` para a frota "${documento.frota}"` : ''} (normalizado: "${indexKey}") já está em uso pelo documento ID ${codeData.documentoId} ("${codeData.titulo || ''}"). Duplicidade cadastral bloqueada concorrencialmente.`
           );
         }
       }
 
-      // 2. Se o documento já existia e o código foi alterado, limpar índice anterior
+      // 2. Se o documento já existia e a chave de identificação foi alterada, limpar índice anterior
       const docSnap = await transaction.get(docRef);
       if (docSnap.exists()) {
-        const oldCodigo = docSnap.data()?.codigo || '';
-        const oldCodigoNorm = normalizeDocumentCode(oldCodigo);
-        if (oldCodigoNorm && oldCodigoNorm !== codigoNorm) {
-          const oldCodeRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', oldCodigoNorm);
+        const oldDoc = docSnap.data();
+        const oldIndexKey = buildDocumentIndexKey(oldDoc as any);
+        if (oldIndexKey && oldIndexKey !== indexKey) {
+          const oldCodeRef = doc(db, 'organizations', organizationId, 'controlled_documents_codes', oldIndexKey);
           transaction.delete(oldCodeRef);
         }
       }
@@ -269,7 +271,10 @@ export async function saveDocumentoControlado(
           documentoId: documento.id,
           codigo: documento.codigo.trim(),
           codigoNormalizado: codigoNorm,
+          indexKey,
           chaveAlfanumerica: chaveAlpha,
+          clienteId: documento.clienteId || null,
+          frota: documento.frota || null,
           titulo: documento.titulo,
           statusGeral: payload.statusGeral,
           updatedAt: now,
@@ -1386,6 +1391,262 @@ export async function registrarEvidenciaConsulta(
     handleFirestoreError(err, OperationType.WRITE, 'document_consult_evidences');
     throw err;
   }
+}
+
+// ============================================================================
+// 7. GOVERNANÇA DE SOLICITAÇÕES, COBRANÇAS E RECEBIMENTOS DE EMPRESAS & FROTAS
+// ============================================================================
+
+/**
+ * REGISTRAR INTERAÇÃO DE COBRANÇA:
+ * Adiciona um registro detalhado ao histórico de cobranças da solicitação sem apagar os anteriores.
+ */
+export async function registrarInteracaoCobranca(
+  organizationId: string,
+  solicitacao: SolicitacaoRevisaoCliente,
+  interacao: import('../../types').InteracaoCobrancaItem,
+  novoStatus?: StatusSolicitacaoCliente,
+  currentUser?: UserProfile | null
+): Promise<void> {
+  const user = currentUser || {
+    displayName: auth.currentUser?.displayName || 'Sistema SGQ',
+    email: auth.currentUser?.email || 'sgq@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+  };
+
+  const agora = new Date().toISOString();
+  const statusAtualizado = novoStatus || solicitacao.status;
+
+  const novoHistoricoCobrancas = [
+    ...(solicitacao.historicoCobrancas || []),
+    {
+      ...interacao,
+      data: interacao.data || agora,
+      responsavelNome: interacao.responsavelNome || user.displayName || user.email,
+      responsavelUid: interacao.responsavelUid || user.uid,
+    },
+  ];
+
+  const novoHistoricoStatus = [
+    ...(solicitacao.historicoStatus || []),
+    {
+      status: statusAtualizado,
+      data: agora,
+      usuario: user.displayName || user.email,
+      observacao: `Cobrança registrada via ${interacao.contatoCanal}: ${interacao.resultadoAcao}. ${interacao.observacao || ''}`.trim(),
+    },
+  ];
+
+  const payload: Partial<SolicitacaoRevisaoCliente> = {
+    status: statusAtualizado,
+    dataUltimaInteracao: agora,
+    prazoRetornoData: interacao.novaDataCombinada || solicitacao.prazoRetornoData,
+    historicoCobrancas: novoHistoricoCobrancas,
+    historicoStatus: novoHistoricoStatus,
+  };
+
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'client_revision_requests', solicitacao.id);
+    await updateDoc(docRef, sanitizeForFirestore(payload));
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'DOCUMENT_CONTROL',
+      entityId: solicitacao.id,
+      action: 'UPDATE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `COBRANÇA DE DOCUMENTO: Interação com ${solicitacao.clienteNome} [${solicitacao.documentoCodigo}] registrada via ${interacao.contatoCanal}`,
+      details: JSON.stringify({
+        solicitacaoId: solicitacao.id,
+        documentoCodigo: solicitacao.documentoCodigo,
+        canal: interacao.contatoCanal,
+        resultado: interacao.resultadoAcao,
+        status: statusAtualizado,
+      }),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'client_revision_requests');
+    throw err;
+  }
+}
+
+/**
+ * REGISTRAR RECEBIMENTO DE DOCUMENTO:
+ * Atualiza o documento controlado para AGUARDANDO_CONFERENCIA com data de recebimento e revisão declarada.
+ */
+export async function registrarRecebimentoDocumento(
+  organizationId: string,
+  docAlvo: DocumentoControlado,
+  dadosRecebimento: {
+    revisaoRecebida: string;
+    dataRecebimento?: string;
+    arquivoNome?: string;
+    arquivoUrl?: string;
+    observacoes?: string;
+  },
+  currentUser?: UserProfile | null
+): Promise<void> {
+  const user = currentUser || {
+    displayName: auth.currentUser?.displayName || 'Sistema SGQ',
+    email: auth.currentUser?.email || 'sgq@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+  };
+
+  const agora = new Date().toISOString();
+  const dataReceb = dadosRecebimento.dataRecebimento || agora.split('T')[0];
+
+  const payload: Partial<DocumentoControlado> = {
+    situacaoRecebimento: 'AGUARDANDO_CONFERENCIA',
+    revisaoRecebida: dadosRecebimento.revisaoRecebida.trim(),
+    dataRecebimento: dataReceb,
+    arquivoNome: dadosRecebimento.arquivoNome || docAlvo.arquivoNome,
+    arquivoUrl: dadosRecebimento.arquivoUrl || docAlvo.arquivoUrl,
+    updatedAt: agora,
+  };
+
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', docAlvo.id);
+    await updateDoc(docRef, sanitizeForFirestore(payload));
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'DOCUMENT_CONTROL',
+      entityId: docAlvo.id,
+      action: 'UPDATE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `RECEBIMENTO REGISTRADO: Documento ${docAlvo.codigo} recebido na revisão ${dadosRecebimento.revisaoRecebida.trim()} (Aguardando Conferência)`,
+      details: JSON.stringify({
+        documentoId: docAlvo.id,
+        revisaoRecebida: dadosRecebimento.revisaoRecebida,
+        dataRecebimento: dataReceb,
+      }),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'controlled_documents');
+    throw err;
+  }
+}
+
+/**
+ * REGISTRAR CONFERÊNCIA TÉCNICA DO DOCUMENTO RECEBIDO:
+ * Conclui a conferência técnica com parecer formal (CONFERIDO_ACEITO ou RECEBIDO_COM_PENDENCIA).
+ */
+export async function registrarConferenciaDocumento(
+  organizationId: string,
+  docAlvo: DocumentoControlado,
+  resultado: {
+    aprovado: boolean;
+    parecerTecnico: string;
+    revisaoConfirmada?: string;
+  },
+  currentUser?: UserProfile | null
+): Promise<void> {
+  const user = currentUser || {
+    displayName: auth.currentUser?.displayName || 'Sistema SGQ',
+    email: auth.currentUser?.email || 'sgq@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+  };
+
+  const agora = new Date().toISOString();
+  const situacao = resultado.aprovado ? 'CONFERIDO_ACEITO' : 'RECEBIDO_COM_PENDENCIA';
+
+  const payload: Partial<DocumentoControlado> = {
+    situacaoRecebimento: situacao,
+    dataConferencia: agora,
+    conferidoPorNome: user.displayName || user.email,
+    conferidoPorUid: user.uid,
+    parecerConferencia: resultado.parecerTecnico.trim(),
+    updatedAt: agora,
+  };
+
+  if (resultado.aprovado && resultado.revisaoConfirmada) {
+    payload.numeroRevisao = resultado.revisaoConfirmada.trim();
+  }
+
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', docAlvo.id);
+    await updateDoc(docRef, sanitizeForFirestore(payload));
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'DOCUMENT_CONTROL',
+      entityId: docAlvo.id,
+      action: 'UPDATE',
+      changedByUid: user.uid,
+      changedByEmail: user.email,
+      summary: `CONFERÊNCIA TÉCNICA: Documento ${docAlvo.codigo} ${resultado.aprovado ? 'Aprovado e Aceito' : 'com Pendência Apontada'}`,
+      details: JSON.stringify({
+        documentoId: docAlvo.id,
+        resultado: situacao,
+        parecer: resultado.parecerTecnico,
+      }),
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'controlled_documents');
+    throw err;
+  }
+}
+
+/**
+ * ENCERRAMENTO CONTROLADO DE SOLICITAÇÃO COM VALIDAÇÃO DOCUMENTAL:
+ * Bloqueia encerramento automático se o documento recebido não corresponder à revisão esperada ou apresentar pendência.
+ */
+export async function encerrarSolicitacaoDocumentoControlado(
+  organizationId: string,
+  solicitacao: SolicitacaoRevisaoCliente,
+  docAlvo: DocumentoControlado,
+  justificativaEncerramento: string,
+  forcarEncerramento = false,
+  currentUser?: UserProfile | null
+): Promise<{ sucesso: boolean; mensagem: string }> {
+  const user: UserProfile = currentUser || {
+    displayName: auth.currentUser?.displayName || 'Sistema SGQ',
+    email: auth.currentUser?.email || 'sgq@impacto.aero',
+    uid: auth.currentUser?.uid || 'system',
+    role: 'ADMIN',
+    organizationId,
+    status: 'ATIVO',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Se o documento estiver pendente ou recebido com divergência, impede encerramento sem justificativa explícita de exceção
+  if (docAlvo.situacaoRecebimento === 'RECEBIDO_COM_PENDENCIA' && !forcarEncerramento) {
+    return {
+      sucesso: false,
+      mensagem: `Bloqueio de Encerramento: O documento "${docAlvo.codigo}" encontra-se em status "RECEBIDO_COM_PENDENCIA" na conferência técnica. É necessária a regularização do arquivo pela empresa ou justificativa formal de exceção.`,
+    };
+  }
+
+  if (docAlvo.situacaoRecebimento !== 'CONFERIDO_ACEITO' && !forcarEncerramento) {
+    return {
+      sucesso: false,
+      mensagem: `Bloqueio de Encerramento: O documento "${docAlvo.codigo}" ainda não foi conferido e aceito pela equipe técnica (situação atual: ${docAlvo.situacaoRecebimento || 'PENDENTE'}). Realize a conferência antes de encerrar a solicitação.`,
+    };
+  }
+
+  if (!justificativaEncerramento || justificativaEncerramento.trim().length < 10) {
+    return {
+      sucesso: false,
+      mensagem: 'Justificativa de encerramento obrigatória com no mínimo 10 caracteres para trilha de auditoria SGQ.',
+    };
+  }
+
+  await atualizarStatusSolicitacaoCliente(
+    organizationId,
+    solicitacao,
+    'SOLICITACAO_ENCERRADA',
+    `Solicitação encerrada formalmente por ${user.displayName || user.email}. Justificativa: ${justificativaEncerramento.trim()}`,
+    docAlvo.revisaoRecebida || docAlvo.numeroRevisao,
+    user
+  );
+
+  return {
+    sucesso: true,
+    mensagem: `Solicitação do documento "${docAlvo.codigo}" para ${solicitacao.clienteNome} encerrada com sucesso no SGQ.`,
+  };
 }
 
 export const subscribeToLogsVerificacaoFontes = subscribeToLogsVerificacao;

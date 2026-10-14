@@ -2130,6 +2130,36 @@ export interface DocumentoControlado {
 
   createdAt: string;
   updatedAt: string;
+
+  // =========================================================================
+  // GOVERNANÇA DE EMPRESAS E FROTAS (CLIENTES, FROTAS, MELS, AMMS, IPCS)
+  // =========================================================================
+  tipoOrigemDocumental?: 'INTERNO' | 'CLIENTE' | 'COMPARTILHADO';
+  tipoDocumentalTecnico?: 'MEL' | 'AMM' | 'IPC' | 'CMM' | 'WDM' | 'FCOM' | 'QRH' | 'SB' | 'AD' | 'OUTRO';
+  clienteId?: string; // ID do ClienteExterno atendido
+  frota?: string; // Frota principal associada (ex: 'Boeing 737-800', 'Airbus A320neo', 'B747-400F')
+  frotas?: string[]; // Conjunto de frotas se aplicável a mais de uma
+  modeloAeronave?: string; // Modelo do equipamento/aeronave (ex: 'B737-800', 'A320-200', 'C208B')
+  configuracao?: string; // Configuração específica de frota ou grupo (ex: 'Configuração VIP', 'Cargueiro ETOPS 180')
+  matriculas?: string[]; // Matrículas cobertas (opcional)
+  numerosSerie?: string[]; // Números de série específicos (opcional)
+  contatoFornecedorNome?: string; // Ponto focal técnico da empresa para envio de manuais
+  contatoFornecedorEmail?: string; // E-mail do contato
+  contatoFornecedorTelefone?: string; // Telefone do contato
+  observacoesAplicabilidade?: string; // Observações técnicas sobre o escopo de uso
+
+  // SITUAÇÃO DOCUMENTAL & RECEBIMENTO (SEGREGAÇÃO DE ESTADOS)
+  revisaoOficialReferencia?: string; // Revisão oficial identificada ou cadastrada como vigente
+  revisaoRecebida?: string; // Revisão do arquivo efetivamente recebido pela IMPACTO
+  dataRecebimento?: string; // Data ISO de recebimento do documento pela IMPACTO
+  situacaoRecebimento?: 'PENDENTE_SOLICITACAO' | 'SOLICITADO' | 'AGUARDANDO_RETORNO' | 'RECEBIDO' | 'AGUARDANDO_CONFERENCIA' | 'CONFERIDO_ACEITO' | 'RECEBIDO_COM_PENDENCIA';
+  dataConferencia?: string; // Data da conferência técnica realizada pela equipe SGQ
+  conferidoPorNome?: string; // Responsável técnico que conferiu o recebimento
+  conferidoPorUid?: string;
+  parecerConferencia?: string; // Parecer detalhado da conferência técnica
+  statusComparacaoRevisao?: 'CONFORME_VIGENTE' | 'RECEBIDO_DESATUALIZADO' | 'RECEBIDO_POSTERIOR' | 'REVISAO_NAO_CONFIRMADA' | 'ANALISE_MANUAL_OBRIGATORIA';
+  requerAnaliseManual?: boolean; // Flag estrita quando há ambiguidade cronológica ou formatos heterogêneos
+  motivoAnaliseManual?: string;
 }
 
 export interface RevisaoDocumental {
@@ -2209,6 +2239,13 @@ export interface LogVerificacaoFonteExterna {
 }
 
 export type StatusSolicitacaoCliente =
+  | 'PENDENTE_SOLICITACAO'
+  | 'SOLICITACAO_ENVIADA'
+  | 'AGUARDANDO_RETORNO'
+  | 'COBRANCA_NECESSARIA'
+  | 'PRAZO_ULTRAPASSADO'
+  | 'DOCUMENTO_RECEBIDO'
+  | 'SOLICITACAO_ENCERRADA'
   | 'SOLICITACAO_GERADA'
   | 'ENVIADA_PELO_USUARIO'
   | 'AGUARDANDO_CLIENTE'
@@ -2222,19 +2259,53 @@ export type StatusSolicitacaoCliente =
 
 export type IdiomaSolicitacao = 'EN' | 'PT' | 'ES';
 
+export type CanalCobrancaDocumental = 'EMAIL' | 'PORTAL' | 'TELEFONE' | 'WHATSAPP' | 'REUNIAO' | 'OUTRO';
+
+export type ResultadoAcaoCobranca =
+  | 'MENSAGEM_ENVIADA'
+  | 'CONTATO_REALIZADO'
+  | 'PROMESSA_ENVIO'
+  | 'ARQUIVO_RECEBIDO'
+  | 'SEM_RESPOSTA'
+  | 'OUTRO';
+
+export interface InteracaoCobrancaItem {
+  id: string;
+  data: string; // ISO string
+  responsavelNome: string;
+  responsavelUid?: string;
+  contatoNome?: string;
+  contatoCanal: CanalCobrancaDocumental;
+  resultadoAcao: ResultadoAcaoCobranca;
+  observacao?: string;
+  novaDataCombinada?: string;
+}
+
 export interface SolicitacaoRevisaoCliente {
   id: string;
   organizationId: string;
+  clienteId?: string; // ID da empresa/cliente atendida
   clienteNome: string;
+  frota?: string; // Frota ou aplicação correspondente (ex: 'B737', 'A320')
+  modeloAeronave?: string;
   destinatarioNome?: string;
   destinatarioEmail?: string;
+  contatoNome?: string;
+  contatoEmail?: string;
+  contatoTelefone?: string;
+  canalContato?: CanalCobrancaDocumental;
   documentoId: string;
   documentoCodigo: string;
   documentoTitulo: string;
   revisaoAtualArmazenada: string;
+  revisaoRecebidaEsperada?: string;
   motivoSolicitacao: string;
   prazoDesejadoDias?: number;
   dataLimiteResposta?: string;
+  prazoRetornoData?: string; // Data ISO acordada para retorno
+  dataUltimaInteracao?: string; // Data ISO da última interação realizada
+  responsavelCobrancaNome?: string;
+  responsavelCobrancaUid?: string;
   idioma: IdiomaSolicitacao;
   assuntoGerado: string;
   corpoEmailGerado: string;
@@ -2246,7 +2317,11 @@ export interface SolicitacaoRevisaoCliente {
   respostaRecebidaEm?: string;
   novaRevisaoRecebidaNumero?: string;
   observacoes?: string;
+  observacoesResposta?: string;
+  dataRecebimentoDocumento?: string;
+  conferidoEValido?: boolean;
   historicoStatus: Array<{ status: StatusSolicitacaoCliente; data: string; usuario: string; observacao?: string }>;
+  historicoCobrancas?: InteracaoCobrancaItem[];
 }
 
 export interface ResultadoComparacaoRevisoes {

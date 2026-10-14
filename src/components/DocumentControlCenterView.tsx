@@ -13,6 +13,7 @@ import {
   OrganizationRecord,
   NCRecord,
   ManualRecord,
+  ClienteExterno,
 } from '../types';
 import {
   determinarRevisaoVigenteNaData,
@@ -105,6 +106,8 @@ import {
   executarVerificacaoEmLoteBancoIA,
   RelatorioVerificacaoLoteIA,
 } from '../services/manualsCrossCheckService';
+import { ClientFleetDocumentControlView } from './ClientFleetDocumentControlView';
+import { INITIAL_CLIENTS } from '../data/initialClientRequirements';
 
 /**
  * FORMATAÇÃO OBRIGATÓRIA DA ÚLTIMA VERIFICAÇÃO CONFORME DIRETRIZ SGQ
@@ -294,7 +297,8 @@ interface DocumentControlCenterViewProps {
   manuals?: ManualRecord[];
   onManualsUpdated?: () => void;
   onOpenNCFormWithDoc?: (docCodigo: string, revisao: string) => void;
-  initialSubTab?: 'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades' | 'inativos';
+  clientesExternos?: ClienteExterno[];
+  initialSubTab?: 'acervo' | 'verificacao' | 'empresas-frotas' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades' | 'inativos';
 }
 
 export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps> = ({
@@ -311,21 +315,26 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   manuals = [],
   onManualsUpdated,
   onOpenNCFormWithDoc,
+  clientesExternos = INITIAL_CLIENTS,
   initialSubTab = 'acervo',
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'acervo' | 'verificacao' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades' | 'inativos'
+    'acervo' | 'verificacao' | 'empresas-frotas' | 'historico' | 'temporal' | 'fontes' | 'solicitacoes' | 'comparador' | 'rag' | 'dashboard' | 'duplicidades' | 'inativos'
   >(
-    initialSubTab === 'fontes' || initialSubTab === 'solicitacoes'
+    initialSubTab === 'empresas-frotas'
+      ? 'empresas-frotas'
+      : initialSubTab === 'fontes' || initialSubTab === 'solicitacoes'
       ? 'verificacao'
       : initialSubTab === 'temporal' || initialSubTab === 'comparador' || initialSubTab === 'dashboard'
       ? 'historico'
-      : initialSubTab || 'acervo'
+      : (initialSubTab as any) || 'acervo'
   );
 
   useEffect(() => {
     if (initialSubTab) {
-      if (initialSubTab === 'fontes' || initialSubTab === 'solicitacoes') {
+      if (initialSubTab === 'empresas-frotas') {
+        setActiveSubTab('empresas-frotas');
+      } else if (initialSubTab === 'fontes' || initialSubTab === 'solicitacoes') {
         setActiveSubTab('verificacao');
       } else if (initialSubTab === 'temporal' || initialSubTab === 'comparador' || initialSubTab === 'dashboard') {
         setActiveSubTab('historico');
@@ -355,6 +364,17 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
 
   const docsInativos = useMemo(() => {
     return documentos.filter((d) => d.statusGeral === 'INATIVO');
+  }, [documentos]);
+
+  const docsClientesCount = useMemo(() => {
+    return documentos.filter(
+      (d) =>
+        d.statusGeral !== 'INATIVO' &&
+        (d.categoria === 'DOCUMENTO_CLIENTE' ||
+          d.tipoOrigemDocumental === 'CLIENTE' ||
+          Boolean(d.clienteId) ||
+          Boolean(d.proprietarioCessor && d.proprietarioCessor !== 'IMPACTO'))
+    ).length;
   }, [documentos]);
 
   // Filtros do Acervo Ativo
@@ -1394,22 +1414,29 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               count: docsAtivos.length,
             },
             {
+              id: 'empresas-frotas',
+              label: '3. Empresas & Frotas',
+              subtitle: 'MELs, AMMs, IPCs e Cobranças',
+              icon: Building2,
+              count: docsClientesCount,
+            },
+            {
               id: 'historico',
-              label: '3. Histórico & Relatórios',
+              label: '4. Histórico & Relatórios',
               subtitle: 'Auditoria / Comunicação à Autoridade',
               icon: History,
               count: revisoes.length,
             },
             {
               id: 'duplicidades',
-              label: '4. Auditoria & Duplicidades',
+              label: '5. Auditoria & Duplicidades',
               subtitle: 'Reconciliação e Unicidade SGQ',
               icon: ShieldAlert,
               count: undefined,
             },
             {
               id: 'inativos',
-              label: '5. Inativos & Descontinuados',
+              label: '6. Inativos & Descontinuados',
               subtitle: 'Acervo Segregado Histórico',
               icon: Archive,
               count: docsInativos.length,
@@ -2868,7 +2895,23 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       )}
 
       {/* ========================================================================= */}
-      {/* SUB-ABA 3: HISTÓRICO & RELATÓRIOS (AUDITORIA / AUTORIDADE REGULADORA)     */}
+      {/* SUB-ABA 3: EMPRESAS & FROTAS (MELS, AMMS, IPCS, COBRANÇAS E RECEBIMENTOS) */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'empresas-frotas' && (
+        <ClientFleetDocumentControlView
+          organizationId={organizationId}
+          documentos={documentos}
+          solicitacoes={solicitacoes}
+          clientes={clientesExternos && clientesExternos.length > 0 ? clientesExternos : INITIAL_CLIENTS}
+          currentUser={currentUser}
+          onRefresh={() => {}}
+          showToast={showToast}
+          onOpenFilePreview={(doc) => handleOpenFilePreview(doc)}
+        />
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUB-ABA 4: HISTÓRICO & RELATÓRIOS (AUDITORIA / AUTORIDADE REGULADORA)     */}
       {/* ========================================================================= */}
       {activeSubTab === 'historico' && (
         <div className="space-y-6">

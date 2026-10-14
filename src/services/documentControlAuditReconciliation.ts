@@ -60,6 +60,34 @@ export function canonicalAlphanumericKey(rawCode: string): string {
 }
 
 /**
+ * Chave única de indexação considerando a entidade documental e sua aplicabilidade (empresa e frota).
+ * Permite que a mesma empresa possua múltiplas MELs (ex: MEL B737 vs MEL A320) e documentos distintos.
+ */
+export function buildDocumentIndexKey(docItem: {
+  codigo: string;
+  clienteId?: string;
+  clienteNome?: string;
+  frota?: string;
+  modeloAeronave?: string;
+}): string {
+  const normCode = normalizeDocumentCode(docItem.codigo);
+  if (!normCode) return '';
+
+  const clientKey = docItem.clienteId ? normalizeDocumentCode(docItem.clienteId) : '';
+  const fleetKey = docItem.frota ? normalizeDocumentCode(docItem.frota) : '';
+
+  if (!clientKey && !fleetKey) {
+    return normCode;
+  }
+
+  const parts = [normCode];
+  if (clientKey) parts.push(clientKey);
+  if (fleetKey) parts.push(fleetKey);
+
+  return parts.join('__');
+}
+
+/**
  * Normalização de número de revisão para comparação
  * (ex: "Rev. 08", "Rev.8", "REV 08", "rev 8" produzem "08")
  */
@@ -191,6 +219,16 @@ export function executarAuditoriaDuplicidades(
 
       const normB = normalizeDocumentCode(docB.codigo);
       const alphaB = canonicalAlphanumericKey(docB.codigo);
+
+      // Se possuem frotas distintas ou clientes distintos, são documentos legítimos de aplicações diferentes
+      const frotasDiferentes =
+        docA.frota && docB.frota && docA.frota.trim().toLowerCase() !== docB.frota.trim().toLowerCase();
+      const clientesDiferentes =
+        docA.clienteId && docB.clienteId && docA.clienteId.trim() !== docB.clienteId.trim();
+
+      if (frotasDiferentes || clientesDiferentes) {
+        continue;
+      }
 
       if (docA.codigo.trim() === docB.codigo.trim()) {
         // Códigos exatamente iguais
