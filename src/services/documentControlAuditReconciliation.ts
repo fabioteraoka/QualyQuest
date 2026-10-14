@@ -223,13 +223,15 @@ export function executarAuditoriaDuplicidades(
       const normB = normalizeDocumentCode(docB.codigo);
       const alphaB = canonicalAlphanumericKey(docB.codigo);
 
-      // Se possuem frotas distintas ou clientes distintos, são documentos legítimos de aplicações diferentes
+      // Se possuem frotas distintas, clientes distintos ou configurações distintas, são documentos legítimos de aplicações diferentes
       const frotasDiferentes =
         docA.frota && docB.frota && docA.frota.trim().toLowerCase() !== docB.frota.trim().toLowerCase();
       const clientesDiferentes =
         docA.clienteId && docB.clienteId && docA.clienteId.trim() !== docB.clienteId.trim();
+      const configuracoesDiferentes =
+        docA.configuracao && docB.configuracao && docA.configuracao.trim().toLowerCase() !== docB.configuracao.trim().toLowerCase();
 
-      if (frotasDiferentes || clientesDiferentes) {
+      if (frotasDiferentes || clientesDiferentes || configuracoesDiferentes) {
         continue;
       }
 

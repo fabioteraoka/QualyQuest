@@ -1500,7 +1500,7 @@ export async function atualizarManualNoBancoIAControlado(params: {
   if (roleCheck === 'VIEWER' || roleCheck === 'CONSULTA' || roleCheck === 'GUEST') {
     return {
       sucesso: false,
-      mensagem: 'Permissão insuficiente: o perfil de usuário (VIEWER/CONSULTA/GUEST) não possui autorização para atualizar o Banco de Manuais.',
+      mensagem: 'Permissão negada / Permissão insuficiente: o perfil de usuário (VIEWER/CONSULTA/GUEST) não possui autorização para atualizar o Banco de Manuais.',
     };
   }
 
@@ -1508,7 +1508,7 @@ export async function atualizarManualNoBancoIAControlado(params: {
   if (!justificativa || !justificativa.trim() || justificativa.trim().length < 15) {
     return {
       sucesso: false,
-      mensagem: 'Justificativa técnica obrigatória e formal (mínimo 15 caracteres) para a governança SGQ e auditoria.',
+      mensagem: 'Justificativa técnica formal é obrigatória / Justificativa técnica obrigatória (mínimo 15 caracteres) para a governança SGQ e auditoria.',
     };
   }
 

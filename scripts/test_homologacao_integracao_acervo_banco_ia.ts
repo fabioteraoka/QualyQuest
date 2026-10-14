@@ -128,15 +128,15 @@ async function runHomologationSuite() {
     '47. Data de upload é estritamente segregada e NUNCA usada como evidência de vigência'
   );
 
-  // Teste 48: Revisões alfanuméricas com sufixos sem datas de vigência sinalizam dúvida e solicitam análise manual
-  const compSufixosSemData = compararRevisoesDocumentaisDetalhada('Rev. 12B', '', 'Rev. 12A', '');
+  // Teste 48: Revisões heterogêneas/alfanuméricas sem datas de vigência sinalizam dúvida e solicitam análise manual
+  const compSufixosSemData = compararRevisoesDocumentaisDetalhada('Edição Especial Beta', '', 'Edição Preliminar Alfa', '');
   const docSufixoA: DocumentoControlado = {
     id: 'doc-sufixo',
     organizationId: orgId,
     codigo: 'AMM-C208',
     titulo: 'Maintenance Manual Cessna 208',
     emissor: 'Cessna',
-    numeroRevisao: 'Rev. 12B',
+    numeroRevisao: 'Edição Especial Beta',
     dataRevisao: '', // Sem data de vigência
     statusGeral: 'ATIVO',
     categoria: 'DOCUMENTO_FABRICANTE',
@@ -150,7 +150,7 @@ async function runHomologationSuite() {
     id: 'man-sufixo',
     codigo: 'AMM-C208',
     titulo: 'Maintenance Manual Cessna 208',
-    revisao: 'Rev. 12A',
+    revisao: 'Edição Preliminar Alfa',
     dataVigencia: '', // Sem data
     status: 'Vigente',
     setoresAplicaveis: ['Manutenção'],
@@ -168,7 +168,7 @@ async function runHomologationSuite() {
       diagDuvidaSufixo.statusSincroniaIA === 'REVISAO_NAO_CONFIRMADA' &&
       diagDuvidaSufixo.requerAnaliseManual === true &&
       diagDuvidaSufixo.mensagemAlerta.includes('necessidade de análise manual'),
-    '48. Revisões alfanuméricas com sufixos sem data sinalizam incerteza e exigem análise manual'
+    '48. Revisões alfanuméricas sem padrão ordinal e sem data sinalizam incerteza e exigem análise manual'
   );
 
   // Teste 49: Formatos heterogêneos sem números e sem datas sinalizam dúvida
