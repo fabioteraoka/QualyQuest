@@ -1,4 +1,4 @@
-import { geminiMetrics } from './metrics';
+import { geminiMetrics } from './metrics.ts';
 
 export class GeminiRequestDeduplicator {
   private inFlightMap = new Map<string, Promise<any>>();

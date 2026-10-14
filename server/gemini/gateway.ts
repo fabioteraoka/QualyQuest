@@ -1,8 +1,9 @@
 import { GoogleGenAI } from '@google/genai';
-import { getGeminiClient } from './client';
-import { geminiCache, CacheKeyOptions } from './cache';
-import { geminiDedup } from './dedup';
-import { geminiMetrics } from './metrics';
+import { getGeminiClient } from './client.ts';
+import { geminiCache } from './cache.ts';
+import type { CacheKeyOptions } from './cache.ts';
+import { geminiDedup } from './dedup.ts';
+import { geminiMetrics } from './metrics.ts';
 
 export interface ExecuteGeminiOptions {
   operation: string;

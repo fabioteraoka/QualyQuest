@@ -1,4 +1,4 @@
-import { geminiMetrics } from './metrics';
+import { geminiMetrics } from './metrics.ts';
 
 export interface BatchProcessingOptions<T, R> {
   items: T[];

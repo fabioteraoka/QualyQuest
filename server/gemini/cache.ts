@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { geminiMetrics } from './metrics';
+import { geminiMetrics } from './metrics.ts';
 
 export interface CacheEntry<T> {
   key: string;
