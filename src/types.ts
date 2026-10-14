@@ -251,6 +251,43 @@ export interface VerificacaoEficacia {
   criterioAprovacao?: string;
 }
 
+// ----------------------------------------------------
+// ANÁLISE DE NÃO EFICÁCIA E HISTÓRICO DE CICLOS (SEÇÕES 7 E 8)
+// ----------------------------------------------------
+export interface AnaliseNaoEficacia {
+  id: string;
+  dataAnalise: string; // YYYY-MM-DD
+  responsavelAnalise: string;
+  resultadoEsperado: string;
+  resultadoObservado: string;
+  evidenciasNaoEficacia: string;
+  justificativaInsucesso: string;
+  causaRaizContinuaValida: 'SIM' | 'NAO' | 'REQUER_REVISAO';
+  justificativaCausaRaiz?: string;
+  fatoresContribuintes?: string;
+  mudancasAdotadasNovaTentativa: string;
+  cicloOrigemNumero: number;
+}
+
+export interface CicloAcaoCorretiva {
+  id: string;
+  numeroCiclo: number; // 1, 2, 3...
+  dataAbertura: string; // YYYY-MM-DD
+  dataEncerramentoCiclo?: string;
+  motivoAbertura: string;
+  statusCiclo: 'EM_ANDAMENTO' | 'AGUARDANDO_EFICACIA' | 'CONCLUIDO_EFICAZ' | 'INEFICAZ_REABERTO' | 'CANCELADO';
+  analiseNaoEficaciaAnterior?: AnaliseNaoEficacia;
+  preAnaliseContencao?: PreAnaliseContencao;
+  analiseCausaRaiz: AnaliseCausaRaiz;
+  acaoCorretiva: AcaoCorretiva;
+  verificacaoEficacia: VerificacaoEficacia;
+  historicoPrazos?: HistoricoPrazo[];
+  observacoes?: string;
+  registradoPor: string;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
 export interface HistoricoPrazo {
   id: string;
   dataAnterior: string;
@@ -333,6 +370,11 @@ export interface NCRecord {
 
   // 6. Verificação da Eficácia
   verificacaoEficacia: VerificacaoEficacia;
+
+  // 7. Ciclos de Ação Corretiva e Análises de Não Eficácia (Histórico Completo)
+  ciclosAcaoCorretiva?: CicloAcaoCorretiva[];
+  cicloAtualNumero?: number; // 1 para primeira ação, 2 para 1ª reabertura, etc.
+  analisesNaoEficacia?: AnaliseNaoEficacia[];
 
   // Metadados do Sistema e Rastreabilidade
   statusGeral: StatusGeralNC;

@@ -28,7 +28,11 @@ import {
   ArrowRight,
   CheckCircle,
   XCircle,
-  Link
+  Link,
+  History,
+  Layers,
+  CornerDownRight,
+  ListRestart,
 } from 'lucide-react';
 import { 
   NCRecord, 
@@ -45,7 +49,15 @@ import {
   AnaliseSetorResponsavel,
   EvidenciaItem,
   VinculoImpactoMro,
+  CicloAcaoCorretiva,
+  AnaliseNaoEficacia,
 } from '../types';
+import {
+  garantirCiclosInicializados,
+  obterCicloAtual,
+  registrarAnaliseNaoEficaciaECriarNovoCiclo,
+  validarEncerramentoNC,
+} from '../services/ncCyclesService';
 import { ImpactoQualityContextModal } from './ImpactoQualityContextModal';
 import { ImpactoOsSelectorModal } from './ImpactoOsSelectorModal';
 import { Wrench, ExternalLink, Plane } from 'lucide-react';
@@ -112,15 +124,16 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
   // Form State
   const [formData, setFormData] = useState<NCRecord>(() => {
     if (initialData) {
+      const ncComCiclos = garantirCiclosInicializados(initialData);
       return {
-        ...initialData,
-        responsavel: initialData.responsavel || initialData.acaoCorretiva?.responsavel || initialData.preAnaliseContencao?.responsavel || '',
-        decisoesSugestoes: initialData.decisoesSugestoes || [],
-        trilhaAuditoria: initialData.trilhaAuditoria || [],
-        analiseSetor: initialData.analiseSetor || undefined,
+        ...ncComCiclos,
+        responsavel: ncComCiclos.responsavel || ncComCiclos.acaoCorretiva?.responsavel || ncComCiclos.preAnaliseContencao?.responsavel || '',
+        decisoesSugestoes: ncComCiclos.decisoesSugestoes || [],
+        trilhaAuditoria: ncComCiclos.trilhaAuditoria || [],
+        analiseSetor: ncComCiclos.analiseSetor || undefined,
       };
     }
-    return {
+    const freshNC: NCRecord = {
       id: `nc-${Date.now()}`,
       codigoFormulario: 'F 001-29',
       revisao: '00',
@@ -191,11 +204,31 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
       decisoesSugestoes: [],
       trilhaAuditoria: [],
     };
+    return garantirCiclosInicializados(freshNC);
   });
 
   const [activeTab, setActiveTab] = useState<'dados' | 'risco' | 'contencao' | 'causa' | 'acao' | 'eficacia'>(initialTab);
   const [aiLoading, setAiLoading] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Estados de Governança de Ciclos de Ação e Análise de Não Eficácia
+  const [isHistoricoCiclosOpen, setIsHistoricoCiclosOpen] = useState(false);
+  const [analiseSuccessMessage, setAnaliseSuccessMessage] = useState<string | null>(null);
+  const [analiseForm, setAnaliseForm] = useState({
+    resultadoEsperado: '',
+    resultadoObservado: '',
+    evidenciasNaoEficacia: '',
+    justificativaInsucesso: '',
+    causaRaizContinuaValida: 'SIM' as 'SIM' | 'NAO' | 'REQUER_REVISAO',
+    justificativaCausaRaiz: '',
+    fatoresContribuintes: '',
+    mudancasAdotadasNovaTentativa: '',
+    novaDescricao: '',
+    novoComoSeraFeito: '',
+    novoResponsavel: '',
+    novoPrazo: '',
+    novoPrazoEficacia: '',
+  });
 
   useEffect(() => {
     if (initialTab) {
@@ -1011,6 +1044,59 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
     showToast('Decisão registrada: mantido o setor informado com justificativa.');
   };
 
+  // Handler para Instaurar Novo Ciclo por Não Eficácia
+  const handleInstaurarNovoCiclo = () => {
+    try {
+      setValidationError(null);
+      const { ncAtualizada, novoCiclo } = registrarAnaliseNaoEficaciaECriarNovoCiclo(
+        formData,
+        {
+          resultadoEsperado: analiseForm.resultadoEsperado,
+          resultadoObservado: analiseForm.resultadoObservado,
+          evidenciasNaoEficacia: analiseForm.evidenciasNaoEficacia,
+          justificativaInsucesso: analiseForm.justificativaInsucesso,
+          causaRaizContinuaValida: analiseForm.causaRaizContinuaValida,
+          justificativaCausaRaiz: analiseForm.justificativaCausaRaiz,
+          fatoresContribuintes: analiseForm.fatoresContribuintes,
+          mudancasAdotadasNovaTentativa: analiseForm.mudancasAdotadasNovaTentativa,
+          responsavelAnalise: userProfile?.displayName || userProfile?.email || formData.auditor || 'Auditor SGQ',
+        },
+        {
+          descricao: analiseForm.novaDescricao,
+          comoSeraFeito: analiseForm.novoComoSeraFeito,
+          responsavel: analiseForm.novoResponsavel || formData.acaoCorretiva.responsavel,
+          dataPrazo: analiseForm.novoPrazo,
+          dataPrevistaEficacia: analiseForm.novoPrazoEficacia,
+        },
+        userProfile
+      );
+
+      setFormData(ncAtualizada);
+      setAnaliseSuccessMessage(
+        `Ciclo ${novoCiclo.numeroCiclo} instaurado com sucesso! A ação anterior (Ciclo ${novoCiclo.numeroCiclo - 1}) foi arquivada e preservada integralmente no histórico.`
+      );
+      setAnaliseForm({
+        resultadoEsperado: '',
+        resultadoObservado: '',
+        evidenciasNaoEficacia: '',
+        justificativaInsucesso: '',
+        causaRaizContinuaValida: 'SIM',
+        justificativaCausaRaiz: '',
+        fatoresContribuintes: '',
+        mudancasAdotadasNovaTentativa: '',
+        novaDescricao: '',
+        novoComoSeraFeito: '',
+        novoResponsavel: '',
+        novoPrazo: '',
+        novoPrazoEficacia: '',
+      });
+      setActiveTab('acao');
+      showToast(`Ciclo ${novoCiclo.numeroCiclo} criado! Nova ação corretiva instaurada.`);
+    } catch (err: any) {
+      setValidationError(err.message || 'Erro ao registrar novo ciclo de ação corretiva.');
+    }
+  };
+
   // Submit Handler
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1069,6 +1155,15 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
       calculatedStatus = 'Aberta';
     }
 
+    if (calculatedStatus === 'Encerrada' || formData.verificacaoEficacia.encerrado === 'SIM') {
+      const validacao = validarEncerramentoNC(formData);
+      if (!validacao.permitido) {
+        setValidationError(`Encerramento formal impedido: ${validacao.pendencias.join(' ')}`);
+        setActiveTab('eficacia');
+        return;
+      }
+    }
+
     // Resolve persistent normative version ID and linkage
     const matchingVersaoConfig = matchingManual?.versoesConfiguracao?.find(
       v => v.revisaoOuEmenda.trim().toLowerCase() === applicableVersionInfo.revisaoAplicavelNaData.trim().toLowerCase()
@@ -1089,8 +1184,37 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
       localizadoNaBase: Boolean(matchingManual),
     };
 
+    // Sincroniza o ciclo ativo na coleção de ciclos da NC
+    const ncNormalizada = garantirCiclosInicializados(formData);
+    const ciclosAtualizados = [...(ncNormalizada.ciclosAcaoCorretiva || [])];
+    const cicloAtivoNum = ncNormalizada.cicloAtualNumero || ciclosAtualizados.length || 1;
+    const idxCicloAtivo = ciclosAtualizados.findIndex((c) => c.numeroCiclo === cicloAtivoNum);
+    if (idxCicloAtivo >= 0) {
+      ciclosAtualizados[idxCicloAtivo] = {
+        ...ciclosAtualizados[idxCicloAtivo],
+        acaoCorretiva: { ...formData.acaoCorretiva },
+        verificacaoEficacia: {
+          ...formData.verificacaoEficacia,
+          prazoEficacia: prazoEficaciaFinal,
+          dataPrevista: prazoEficaciaFinal,
+        },
+        analiseCausaRaiz: { ...formData.analiseCausaRaiz },
+        statusCiclo:
+          calculatedStatus === 'Encerrada'
+            ? 'CONCLUIDO_EFICAZ'
+            : formData.verificacaoEficacia.encerrado === 'NÃO'
+            ? 'INEFICAZ_REABERTO'
+            : formData.acaoCorretiva.status === 'Concluída'
+            ? 'AGUARDANDO_EFICACIA'
+            : 'EM_ANDAMENTO',
+        atualizadoEm: new Date().toISOString(),
+      };
+    }
+
     onSave({
       ...formData,
+      ciclosAcaoCorretiva: ciclosAtualizados,
+      cicloAtualNumero: cicloAtivoNum,
       versaoDocumentoId: resolvedVersaoId,
       documentoNormativoAplicavel: docNormativo,
       statusGeral: calculatedStatus,
@@ -2423,6 +2547,89 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
                 </button>
               </div>
 
+              {/* Banner de Ciclo Ativo e Histórico de Ciclos */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-indigo-50/80 border border-indigo-200 rounded-lg text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white flex items-center gap-1">
+                    <Layers className="w-3 h-3" />
+                    Ciclo {formData.cicloAtualNumero || 1} de {formData.ciclosAcaoCorretiva?.length || 1}
+                  </span>
+                  <span className="font-semibold text-indigo-950">
+                    {formData.statusGeral === 'Reaberta'
+                      ? 'Reabertura por Ineficácia — Nova Tentativa de Bloqueio da Falha'
+                      : 'Tratativa Ativa da Não Conformidade'}
+                  </span>
+                </div>
+                {(formData.ciclosAcaoCorretiva?.length || 0) > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsHistoricoCiclosOpen(!isHistoricoCiclosOpen)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold text-[11px] cursor-pointer transition-colors"
+                  >
+                    <History className="w-3.5 h-3.5 text-indigo-700" />
+                    <span>{isHistoricoCiclosOpen ? 'Ocultar Histórico de Ciclos' : `Ver Ciclos Anteriores (${(formData.ciclosAcaoCorretiva?.length || 1) - 1})`}</span>
+                  </button>
+                )}
+              </div>
+
+              {analiseSuccessMessage && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800 flex items-center justify-between gap-2">
+                  <span>✓ {analiseSuccessMessage}</span>
+                  <button type="button" onClick={() => setAnaliseSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-900 font-bold">×</button>
+                </div>
+              )}
+
+              {/* Painel Expansível de Ciclos Anteriores */}
+              {isHistoricoCiclosOpen && (formData.ciclosAcaoCorretiva?.length || 0) > 1 && (
+                <div className="p-4 bg-white border border-indigo-200 rounded-lg space-y-3">
+                  <div className="flex items-center gap-2 pb-2 border-b border-indigo-100">
+                    <History className="w-4 h-4 text-indigo-600" />
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                      Histórico Cronológico de Ciclos de Ação Corretiva
+                    </h4>
+                  </div>
+                  <div className="space-y-3">
+                    {formData.ciclosAcaoCorretiva
+                      ?.filter((c) => c.numeroCiclo !== formData.cicloAtualNumero)
+                      .map((ciclo) => (
+                        <div key={ciclo.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[10px] font-bold">
+                                Ciclo {ciclo.numeroCiclo}
+                              </span>
+                              {ciclo.motivoAbertura}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              ciclo.statusCiclo === 'CONCLUIDO_EFICAZ'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : ciclo.statusCiclo === 'INEFICAZ_REABERTO'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {ciclo.statusCiclo === 'CONCLUIDO_EFICAZ' ? 'Concluído Eficaz' : ciclo.statusCiclo === 'INEFICAZ_REABERTO' ? 'Não Eficaz (Reaberto)' : ciclo.statusCiclo}
+                            </span>
+                          </div>
+                          <div className="text-slate-700">
+                            <strong>Ação do Ciclo {ciclo.numeroCiclo}:</strong> {ciclo.acaoCorretiva?.descricao}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-500">
+                            <span>Responsável: <strong>{ciclo.acaoCorretiva?.responsavel}</strong></span>
+                            <span>Prazo: <strong>{ciclo.acaoCorretiva?.dataPrazo}</strong></span>
+                            <span>Encerramento: <strong>{ciclo.dataEncerramentoCiclo || 'Reaberto'}</strong></span>
+                          </div>
+                          {ciclo.analiseNaoEficaciaAnterior && (
+                            <div className="p-2.5 bg-rose-50/80 border border-rose-200 rounded text-[11px] text-rose-900 space-y-1">
+                              <div><strong>Parecer de Não Eficácia:</strong> {ciclo.analiseNaoEficaciaAnterior.justificativaInsucesso}</div>
+                              <div><strong>Mudanças Adotadas no Ciclo Seguinte:</strong> {ciclo.analiseNaoEficaciaAnterior.mudancasAdotadasNovaTentativa}</div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   O Que Será Feito (Descrição da Ação Corretiva) *
@@ -2707,6 +2914,83 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
                 </div>
               </div>
 
+              {/* Banner de Ciclo Ativo de Eficácia */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-indigo-50/80 border border-indigo-200 rounded-lg text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-600 text-white flex items-center gap-1">
+                    <Layers className="w-3 h-3" />
+                    Ciclo {formData.cicloAtualNumero || 1} de {formData.ciclosAcaoCorretiva?.length || 1}
+                  </span>
+                  <span className="font-semibold text-indigo-950">
+                    {formData.statusGeral === 'Reaberta'
+                      ? 'Ciclo Reaberto — Monitoramento de Nova Ação Corretiva'
+                      : 'Auditoria de Comprovação da Eficácia do Ciclo Atual'}
+                  </span>
+                </div>
+                {(formData.ciclosAcaoCorretiva?.length || 0) > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsHistoricoCiclosOpen(!isHistoricoCiclosOpen)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-300 font-bold text-[11px] cursor-pointer transition-colors"
+                  >
+                    <History className="w-3.5 h-3.5 text-indigo-700" />
+                    <span>{isHistoricoCiclosOpen ? 'Ocultar Histórico' : `Ver Ciclos Anteriores (${(formData.ciclosAcaoCorretiva?.length || 1) - 1})`}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Histórico Expansível de Ciclos Anteriores em Eficácia */}
+              {isHistoricoCiclosOpen && (formData.ciclosAcaoCorretiva?.length || 0) > 1 && (
+                <div className="p-4 bg-white border border-indigo-200 rounded-lg space-y-3">
+                  <div className="flex items-center gap-2 pb-2 border-b border-indigo-100">
+                    <History className="w-4 h-4 text-indigo-600" />
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                      Histórico Cronológico de Ciclos e Avaliações de Eficácia
+                    </h4>
+                  </div>
+                  <div className="space-y-3">
+                    {formData.ciclosAcaoCorretiva
+                      ?.filter((c) => c.numeroCiclo !== formData.cicloAtualNumero)
+                      .map((ciclo) => (
+                        <div key={ciclo.id} className="p-3 bg-slate-50 border border-slate-200 rounded-lg space-y-2 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 text-[10px] font-bold">
+                                Ciclo {ciclo.numeroCiclo}
+                              </span>
+                              {ciclo.motivoAbertura}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              ciclo.statusCiclo === 'CONCLUIDO_EFICAZ'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : ciclo.statusCiclo === 'INEFICAZ_REABERTO'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {ciclo.statusCiclo === 'CONCLUIDO_EFICAZ' ? 'Concluído Eficaz' : ciclo.statusCiclo === 'INEFICAZ_REABERTO' ? 'Não Eficaz (Reaberto)' : ciclo.statusCiclo}
+                            </span>
+                          </div>
+                          <div className="text-slate-700">
+                            <strong>Ação Realizada:</strong> {ciclo.acaoCorretiva?.descricao}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-500">
+                            <span>Auditor: <strong>{ciclo.verificacaoEficacia?.auditorVerificador || 'Não informado'}</strong></span>
+                            <span>Data Auditoria: <strong>{ciclo.verificacaoEficacia?.dataVerificacao || 'Pendente'}</strong></span>
+                            <span>Resultado: <strong>{ciclo.verificacaoEficacia?.resultado || (ciclo.verificacaoEficacia?.encerrado === 'SIM' ? 'EFICAZ' : 'INEFICAZ')}</strong></span>
+                          </div>
+                          {ciclo.analiseNaoEficaciaAnterior && (
+                            <div className="p-2.5 bg-rose-50/80 border border-rose-200 rounded text-[11px] text-rose-900 space-y-1">
+                              <div><strong>Parecer de Não Eficácia:</strong> {ciclo.analiseNaoEficaciaAnterior.justificativaInsucesso}</div>
+                              <div><strong>Evidências Apuradas:</strong> {ciclo.analiseNaoEficaciaAnterior.evidenciasNaoEficacia}</div>
+                              <div><strong>Mudanças Adotadas no Ciclo Seguinte:</strong> {ciclo.analiseNaoEficaciaAnterior.mudancasAdotadasNovaTentativa}</div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Motivo / Evidências Objetivas da Eficácia
@@ -2719,6 +3003,195 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
                   placeholder="Ex: Auditoria documental realizada em 100% das bases confirmou ausência de calibradores vencidos e adoção do software único."
                 />
               </div>
+
+              {/* BLOCO ESPECÍFICO DE ANÁLISE DE NÃO EFICÁCIA (QUANDO AÇÃO NÃO É EFICAZ) */}
+              {formData.verificacaoEficacia.encerrado === 'NÃO' && (
+                <div className="p-4 bg-rose-50/80 border border-rose-200 rounded-xl space-y-4 text-xs">
+                  <div className="flex items-center gap-2 pb-2 border-b border-rose-200">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                    <div>
+                      <h4 className="font-bold text-rose-950 uppercase tracking-wide">
+                        Registro Obrigatório da Análise de Não Eficácia (RBAC 145 / MOMQ)
+                      </h4>
+                      <p className="text-[11px] text-rose-800">
+                        A ação anterior foi considerada não eficaz. Registre a análise detalhada das evidências para instaurar o <strong>Ciclo {(formData.cicloAtualNumero || 1) + 1}</strong> sem sobrescrever a primeira tentativa.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-rose-950 mb-1">
+                        1. Qual resultado era esperado? *
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={analiseForm.resultadoEsperado}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, resultadoEsperado: e.target.value })}
+                        placeholder="Ex: Eliminação total de ferramentas com calibração vencida nos postos de trabalho."
+                        className="w-full text-xs p-2.5 rounded-lg border border-rose-300 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-rose-950 mb-1">
+                        2. Qual resultado foi efetivamente observado? *
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={analiseForm.resultadoObservado}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, resultadoObservado: e.target.value })}
+                        placeholder="Ex: Auditoria amostral identificou 2 torquímetros vencidos na Base Curitiba."
+                        className="w-full text-xs p-2.5 rounded-lg border border-rose-300 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-rose-950 mb-1">
+                        3. Quais evidências demonstram a não eficácia? *
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={analiseForm.evidenciasNaoEficacia}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, evidenciasNaoEficacia: e.target.value })}
+                        placeholder="Ex: Relatório de Inspeção R-042/2026, fotos dos certificados e lista de ferramentas."
+                        className="w-full text-xs p-2.5 rounded-lg border border-rose-300 bg-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-rose-950 mb-1">
+                        4. Por que a ação anterior não atingiu o resultado esperado? *
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={analiseForm.justificativaInsucesso}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, justificativaInsucesso: e.target.value })}
+                        placeholder="Ex: O procedimento foi atualizado, porém os técnicos de base não receberam o treinamento formal."
+                        className="w-full text-xs p-2.5 rounded-lg border border-rose-300 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block font-semibold text-rose-950 mb-1">
+                        5. A causa raiz identificada continua válida? *
+                      </label>
+                      <select
+                        value={analiseForm.causaRaizContinuaValida}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, causaRaizContinuaValida: e.target.value as any })}
+                        className="w-full text-xs p-2.5 rounded-lg border border-rose-300 bg-white font-medium"
+                      >
+                        <option value="SIM">Sim — Causa raiz permanece a mesma (falha na implementação da ação)</option>
+                        <option value="NAO">Não — Causa raiz incorreta/insuficiente (requer reanálise completa)</option>
+                        <option value="REQUER_REVISAO">Requer Revisão / Investigação Adicional</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={analiseForm.justificativaCausaRaiz}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, justificativaCausaRaiz: e.target.value })}
+                        placeholder="Observações complementares sobre a causa raiz..."
+                        className="w-full text-xs p-2 rounded-lg border border-rose-200 bg-white mt-1.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-rose-950 mb-1">
+                        6. Fatores contribuintes para o insucesso
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={analiseForm.fatoresContribuintes}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, fatoresContribuintes: e.target.value })}
+                        placeholder="Ex: Alta rotatividade de pessoal na base remota e falha na notificação de expiração."
+                        className="w-full text-xs p-2 rounded-lg border border-rose-300 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-rose-950 mb-1">
+                      7. Quais mudanças serão adotadas na nova tentativa? *
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={analiseForm.mudancasAdotadasNovaTentativa}
+                      onChange={(e) => setAnaliseForm({ ...analiseForm, mudancasAdotadasNovaTentativa: e.target.value })}
+                      placeholder="Ex: Implementação de trava automática em software que impede a liberação de OS se houver ferramenta vencida, além de reciclagem com teste prático."
+                      className="w-full text-xs p-2.5 rounded-lg border border-rose-300 bg-white"
+                    />
+                  </div>
+
+                  {/* PROPOSTA DA NOVA AÇÃO CORRETIVA (NOVO CICLO) */}
+                  <div className="p-3 bg-white border border-rose-300 rounded-lg space-y-3">
+                    <h5 className="font-bold text-slate-900 uppercase tracking-wide text-[11px] flex items-center gap-1.5">
+                      <ListRestart className="w-3.5 h-3.5 text-rose-600" />
+                      Proposta de Ação Corretiva para o Ciclo {(formData.cicloAtualNumero || 1) + 1}
+                    </h5>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">
+                        Descrição da Nova Ação Corretiva *
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={analiseForm.novaDescricao}
+                        onChange={(e) => setAnaliseForm({ ...analiseForm, novaDescricao: e.target.value })}
+                        placeholder="Ex: 1) Trava de software no sistema ERP de ferramentaria; 2) Auditoria 100% presencial em CWB; 3) Reciclagem dos técnicos."
+                        className="w-full text-xs p-2 rounded-lg border border-slate-300 bg-slate-50"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Responsável *
+                        </label>
+                        <input
+                          type="text"
+                          value={analiseForm.novoResponsavel}
+                          onChange={(e) => setAnaliseForm({ ...analiseForm, novoResponsavel: e.target.value })}
+                          placeholder={formData.acaoCorretiva.responsavel || 'Nome do Responsável'}
+                          className="w-full text-xs p-2 rounded-lg border border-slate-300 bg-slate-50 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Prazo da Nova Ação *
+                        </label>
+                        <input
+                          type="date"
+                          value={analiseForm.novoPrazo}
+                          onChange={(e) => setAnaliseForm({ ...analiseForm, novoPrazo: e.target.value })}
+                          className="w-full text-xs p-2 rounded-lg border border-slate-300 bg-slate-50 font-medium"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Prazo Nova Auditoria Eficácia
+                        </label>
+                        <input
+                          type="date"
+                          value={analiseForm.novoPrazoEficacia}
+                          onChange={(e) => setAnaliseForm({ ...analiseForm, novoPrazoEficacia: e.target.value })}
+                          className="w-full text-xs p-2 rounded-lg border border-slate-300 bg-slate-50 font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleInstaurarNovoCiclo}
+                        className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-colors cursor-pointer"
+                      >
+                        <ListRestart className="w-4 h-4" />
+                        <span>Formalizar Análise & Instaurar Ciclo {(formData.cicloAtualNumero || 1) + 1}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

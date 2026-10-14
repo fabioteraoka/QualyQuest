@@ -1585,6 +1585,9 @@ export async function saveNonConformity(
     trilhaAuditoria: Array.isArray(nc.trilhaAuditoria) ? nc.trilhaAuditoria : [],
     decisoesSugestoes: Array.isArray(nc.decisoesSugestoes) ? nc.decisoesSugestoes : [],
     tags: Array.isArray(nc.tags) ? nc.tags : [],
+    ciclosAcaoCorretiva: Array.isArray(nc.ciclosAcaoCorretiva) ? nc.ciclosAcaoCorretiva : [],
+    analisesNaoEficacia: Array.isArray(nc.analisesNaoEficacia) ? nc.analisesNaoEficacia : [],
+    cicloAtualNumero: nc.cicloAtualNumero || (nc.ciclosAcaoCorretiva?.length || 1),
   };
 
   try {

@@ -69,20 +69,23 @@ export function buildDocumentIndexKey(docItem: {
   clienteNome?: string;
   frota?: string;
   modeloAeronave?: string;
+  configuracao?: string;
 }): string {
   const normCode = normalizeDocumentCode(docItem.codigo);
   if (!normCode) return '';
 
   const clientKey = docItem.clienteId ? normalizeDocumentCode(docItem.clienteId) : '';
   const fleetKey = docItem.frota ? normalizeDocumentCode(docItem.frota) : '';
+  const configKey = docItem.configuracao ? normalizeDocumentCode(docItem.configuracao) : '';
 
-  if (!clientKey && !fleetKey) {
+  if (!clientKey && !fleetKey && !configKey) {
     return normCode;
   }
 
   const parts = [normCode];
   if (clientKey) parts.push(clientKey);
   if (fleetKey) parts.push(fleetKey);
+  if (configKey) parts.push(configKey);
 
   return parts.join('__');
 }

@@ -395,18 +395,69 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
     },
     {
       id: 15,
-      title: '15. Bloco 10 — Verificação de Eficácia e Reabertura',
+      title: '15. Bloco 10 — Verificação de Eficácia, Não Eficácia e Ciclos de Ação Corretiva',
       category: 'RNC',
-      summary: 'Métodos de verificação: Auditoria, Amostragem e Reinspeção.',
+      summary: 'Avaliação de eficácia, registro estruturado de não eficácia, governança de ciclos sucessivos e preservação integral do histórico.',
       content: (
-        <div className="space-y-3 text-xs text-slate-700">
-          <p>
-            Não basta implementar a ação; a Garantia da Qualidade deve testar a sua <strong>eficácia</strong> após transcorrido o período de observação:
+        <div className="space-y-4 text-xs text-slate-700">
+          <p className="leading-relaxed">
+            Não basta implementar a ação corretiva; a Garantia da Qualidade (SGQ) deve testar e comprovar a sua <strong>eficácia</strong> após o período de observação pré-estabelecido (30, 60 ou 90 dias), conforme preconizado pelo <strong>RBAC 145</strong> e manuais de procedimentos da qualidade (MOMQ).
           </p>
-          <ul className="list-disc list-inside space-y-1 text-slate-600">
-            <li><strong>Ação Eficaz:</strong> O processo operou pelo período estipulado sem qualquer reincidência do desvio.</li>
-            <li><strong>Ação Ineficaz:</strong> O desvio voltou a ocorrer. A RNC deve ser reaberta, o risco reavaliado e um novo plano de ação instaurado.</li>
-          </ul>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg space-y-1">
+              <strong className="text-emerald-900 block font-bold">1. Ação Eficaz (Conclusão com Sucesso)</strong>
+              <p className="text-emerald-800 text-[11px]">
+                O processo operou pelo período estipulado sem qualquer reincidência do desvio fático. As evidências documentais confirmam a eliminação da causa raiz e o encerramento formal pode prosseguir para aprovação do GESTOR_SGQ.
+              </p>
+            </div>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg space-y-1">
+              <strong className="text-rose-900 block font-bold">2. Ação Não Eficaz (Reabertura & Novo Ciclo)</strong>
+              <p className="text-rose-800 text-[11px]">
+                O desvio voltou a ocorrer ou o resultado esperado não foi atingido. A RNC <strong>não pode ser encerrada</strong>. É obrigatório registrar a Análise de Não Eficácia e instaurar um novo ciclo de ação corretiva, preservando 100% dos dados da primeira tentativa.
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Passo a Passo: Como Tratar uma Ação Não Eficaz e Instaurar Novo Ciclo
+            </h4>
+            <ol className="text-xs text-slate-700 space-y-2.5 list-decimal list-inside">
+              <li>
+                <strong>1. Acessar a RNC em Monitoramento:</strong> Abra o formulário da RNC na aba <em>"6. Eficácia"</em>.
+              </li>
+              <li>
+                <strong>2. Registrar Decisão de Não Eficácia:</strong> No campo <em>"Decisão de Encerramento"</em>, selecione <em>"NÃO - Ação Ineficaz (Reabrir NC)"</em>. O status da RNC será automaticamente reclassificado para <strong>Reaberta</strong>.
+              </li>
+              <li>
+                <strong>3. Preencher a Análise de Não Eficácia:</strong> O sistema exibirá o bloco específico de análise. Documente:
+                <ul className="list-disc list-inside pl-4 text-slate-600 space-y-1 mt-1 text-[11px]">
+                  <li><strong>Resultado Esperado:</strong> o padrão ou meta estabelecido para a ação original.</li>
+                  <li><strong>Resultado Observado:</strong> o fato real verificado na auditoria/inspeção.</li>
+                  <li><strong>Evidências Objetivas:</strong> fotos, relatórios, ordens de serviço ou registros auditados.</li>
+                  <li><strong>Justificativa do Insucesso:</strong> por que o método adotado anteriormente falhou.</li>
+                  <li><strong>Validade da Causa Raiz:</strong> confirme se a causa raiz anterior continua válida ou se requer revisão.</li>
+                  <li><strong>Mudanças na Nova Tentativa:</strong> o que será feito de diferente para garantir o bloqueio definitivo.</li>
+                </ul>
+              </li>
+              <li>
+                <strong>4. Definir a Nova Ação do Próximo Ciclo:</strong> Informe a descrição da nova ação corretiva, responsável nominal, novo prazo de conclusão e o novo período previsto para verificação da eficácia.
+              </li>
+              <li>
+                <strong>5. Formalizar e Criar o Novo Ciclo:</strong> Clique no botão <em>"Registrar Análise & Instaurar Ciclo 2"</em>. O sistema arquivará o Ciclo 1 como <em>"INEFICAZ_REABERTO"</em> com todos os seus dados preservados, ativará o Ciclo 2 e atualizará a trilha de auditoria.
+              </li>
+              <li>
+                <strong>6. Consultar o Histórico de Ciclos Anteriores:</strong> Na aba <em>"4. Ação"</em> ou <em>"6. Eficácia"</em>, expanda o painel <em>"Histórico de Ciclos de Ação Corretiva"</em> para consultar detalhadamente qualquer tentativa passada, seus prazos, pareceres e evidências.
+              </li>
+              <li>
+                <strong>7. Acompanhar Prazos e SLAs:</strong> O novo ciclo passa a ser monitorado pela Central de Alertas e pelos indicadores executivos de eficácia do SGQ.
+              </li>
+              <li>
+                <strong>8. Nova Verificação de Eficácia:</strong> Ao término do novo período de teste, realize nova auditoria. Se novamente ineficaz, um Ciclo 3 poderá ser instaurado sem sobrescrever os anteriores; se eficaz, a RNC poderá ser encerrada formalmente.
+              </li>
+            </ol>
+          </div>
         </div>
       ),
     },
