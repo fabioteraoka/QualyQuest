@@ -1347,6 +1347,247 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
         </div>
       ),
     },
+    {
+      id: 38,
+      title: '38. Histórico de Treinamentos & Correções Rastreáveis (Edição e Auditoria)',
+      category: 'Pessoas & Competências',
+      summary: 'Procedimento para consultar, editar e corrigir registros de treinamento (incluindo importações automáticas), com validação de datas, recálculo de validades e trilha de auditoria com justificativa obrigatória.',
+      content: (
+        <div className="space-y-4">
+          <p className="text-slate-700 leading-relaxed">
+            O <strong>QualyQuest SGQ</strong> fornece recursos completos para a gestão transparente e rastreável do histórico de capacitação técnica, atendendo às exigências do <strong>RBAC 145.163</strong> e aos padrões de auditoria da <strong>IMPACTO Aviation</strong>.
+          </p>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-amber-900 uppercase tracking-wide flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4 text-amber-700" />
+              Diretrizes de Auditoria e Imutabilidade Histórica
+            </h4>
+            <ul className="text-xs text-amber-900 space-y-1.5 list-disc list-inside">
+              <li>
+                <strong>Edição Responsável:</strong> A correção de registros de treinamento (especialmente aqueles provenientes de importação automática) é permitida para perfis com permissão operacional (ADMIN, GESTOR_SGQ e AUDITOR). Perfis com perfil somente de consulta (CONSULTA) estão estritamente bloqueados.
+              </li>
+              <li>
+                <strong>Trilha de Auditoria Obrigatória:</strong> Ao alterar datas, validades ou dados críticos, o sistema solicita obrigatoriamente a <em>Justificativa da Correção</em>. O valor anterior, o valor corrigido, o usuário logado e o carimbo de data/hora são preservados em <code>historicoCorrecoes</code>.
+              </li>
+              <li>
+                <strong>Atualização Automática de Prazos e Alertas:</strong> Ao salvar a alteração de data de realização ou validade, o motor de qualificação recalcula imediatamente a situação de vencimento (Válido, A Vencer, Vencido), sincronizando o Dossiê 360°, a Central de Alertas e os relatórios executivos.
+              </li>
+              <li>
+                <strong>Identificação de Origem:</strong> Registros carregados por rotinas automáticas exibem o selo identificador <em>"Importado Automaticamente"</em> para transparência em auditorias.
+              </li>
+            </ul>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Passo a Passo: Como Corrigir um Treinamento no Histórico
+            </h4>
+            <ol className="text-xs text-slate-700 space-y-2.5 list-decimal list-inside">
+              <li>
+                <strong>1. Acessar a Tela de Treinamentos:</strong> No menu lateral, selecione <em>Treinamentos & Qualificações</em> ou acesse a aba <em>Treinamentos</em> dentro do Dossiê 360° do colaborador.
+              </li>
+              <li>
+                <strong>2. Localizar o Registro do Funcionário:</strong> Utilize os filtros por funcionário, curso ou situação de validade para encontrar o registro desejado.
+              </li>
+              <li>
+                <strong>3. Acionar a Edição:</strong> Clique no botão com ícone de lápis <em>"Editar"</em> na linha do registro correspondente.
+              </li>
+              <li>
+                <strong>4. Ajustar os Campos Pertinentes:</strong> Modifique a <em>Data de Realização</em>, <em>Data de Validade/Reciclagem</em>, <em>Carga Horária</em>, <em>Instituição Ministrante</em> ou <em>Resultado/Nota</em> conforme o certificado comprobatório.
+              </li>
+              <li>
+                <strong>5. Registrar o Motivo da Correção:</strong> No campo de justificativa, descreva sucintamente a razão da alteração (ex: <em>"Ajuste da data de realização conforme Certificado nº 2024-884 anexado ao dossiê físico"</em>).
+              </li>
+              <li>
+                <strong>6. Confirmar e Salvar:</strong> Clique em <em>"Salvar Registro"</em> e confirme a operação no modal de confirmação. As alterações passam a vigorar imediatamente.
+              </li>
+            </ol>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('treinamentos')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Painel de Treinamentos</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 39,
+      title: '39. Gestão Integrada de Bases Operacionais (Estações e Desativação Lógica)',
+      category: 'Estrutura & Bases Operacionais',
+      summary: 'Cadastro, edição e desativação lógica de bases e estações operacionais da IMPACTO, garantindo integridade referencial com funcionários e registros históricos sem exclusão física destrutiva.',
+      content: (
+        <div className="space-y-4">
+          <p className="text-slate-700 leading-relaxed">
+            As operações de manutenção da <strong>IMPACTO Aviation</strong> ocorrem em diferentes aeródromos e estações operacionais (como VCP, GRU, GIG, BSB, MAO, CNF, entre outros). A correta gestão das bases garante a alocação precisa do efetivo técnico e o controle de auditorias por localidade.
+          </p>
+
+          <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Building2 className="w-4 h-4 text-emerald-700" />
+              Princípios de Governança de Bases Operacionais
+            </h4>
+            <ul className="text-xs text-emerald-900 space-y-1.5 list-disc list-inside">
+              <li>
+                <strong>Desativação Lógica vs Exclusão Física:</strong> Para preservar o histórico regulatório de funcionários, ordens de serviço e inspeções, o sistema <em>não exclui fisicamente</em> bases operacionais que possuam vínculos históricos. Em caso de encerramento de operações em uma localidade, a base é marcada como <code>Inativa</code>.
+              </li>
+              <li>
+                <strong>Unicidade de Código/Sigla IATA/ICAO:</strong> Cada base deve possuir um código exclusivo no tenant, prevenindo cadastros em duplicidade.
+              </li>
+              <li>
+                <strong>Seleção Inteligente nos Cadastros:</strong> Bases inativas deixam de ser sugeridas para novas alocações de colaboradores, mas continuam visíveis em consultas e relatórios retroativos de conformidade.
+              </li>
+              <li>
+                <strong>Isolamento Multi-Tenant:</strong> As bases operacionais são estritamente particionadas por organização (<code>organizationId</code>).
+              </li>
+            </ul>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Como Gerenciar Bases Operacionais no QualyQuest
+            </h4>
+            <ol className="text-xs text-slate-700 space-y-2.5 list-decimal list-inside">
+              <li>
+                <strong>1. Acessar a Aba de Bases:</strong> Na tela <em>Pessoas & Competências</em>, clique na sub-aba <strong>Bases Operacionais</strong>.
+              </li>
+              <li>
+                <strong>2. Cadastrar Nova Base:</strong> Clique em <em>"Nova Base Operacional"</em>. Preencha o Nome da Base (ex: <em>Base Viracopos - Hangar 1</em>), Código/Sigla (ex: <em>VCP</em>), Responsável Técnico, Endereço e Observações operacionais.
+              </li>
+              <li>
+                <strong>3. Editar Informações de uma Base:</strong> Na listagem de bases, clique em <em>"Editar"</em> para atualizar o responsável, contatos ou observações sem alterar a chave primária da base.
+              </li>
+              <li>
+                <strong>4. Desativar uma Base Encerrada:</strong> Utilize o botão <em>"Desativar"</em>. O sistema exibirá o aviso de proteção e manterá todos os técnicos previamente vinculados àquela estação intactos para efeito de auditoria ANAC.
+              </li>
+              <li>
+                <strong>5. Vínculo no Cadastro do Colaborador:</strong> Na ficha de cadastro do funcionário, selecione a base ativa na lista suspensa correspondente.
+              </li>
+            </ol>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('pessoas-competencias')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Gestão de Bases</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 40,
+      title: '40. Matriz de Competências, Níveis Técnicos e Autorizações da IMPACTO',
+      category: 'Pessoas & Competências',
+      summary: 'Estrutura da Matriz de Competências, distinção formal entre Treinamento x Competência x Autorização Técnica, níveis 1 a 5, processo de concessão, comitê de avaliação e periodicidade de reavaliação.',
+      content: (
+        <div className="space-y-4">
+          <p className="text-slate-700 leading-relaxed">
+            A <strong>Matriz de Competências Técnicas</strong> é o instrumento oficial que define com precisão quais atividades, inspeções e manutenções cada colaborador está formalmente qualificado e autorizado a executar na <strong>IMPACTO Aviation</strong>.
+          </p>
+
+          <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-indigo-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Award className="w-4 h-4 text-indigo-700" />
+              Distinção Fundamental: Treinamento vs Competência vs Autorização
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs pt-1">
+              <div className="p-3 bg-white rounded-lg border border-indigo-100 shadow-2xs space-y-1">
+                <span className="font-bold text-indigo-950 block">1. Treinamento Realizado</span>
+                <p className="text-slate-600 leading-relaxed">
+                  Evidência de que o técnico completou a instrução teórica ou prática (ex: curso de Familiarização Boeing 737NG). <em>O treinamento por si só NÃO constitui autorização para liberação de serviço.</em>
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-indigo-100 shadow-2xs space-y-1">
+                <span className="font-bold text-indigo-950 block">2. Competência Avaliada</span>
+                <p className="text-slate-600 leading-relaxed">
+                  Demonstração prática de habilidade e proficiência técnica em determinada tarefa, inspecionada e avaliada por um examinador/instrutor credenciado.
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-indigo-100 shadow-2xs space-y-1">
+                <span className="font-bold text-indigo-950 block">3. Autorização Técnica (APRS)</span>
+                <p className="text-slate-600 leading-relaxed">
+                  Concessão formal emitida pelo Diretor de Manutenção / Gestor SGQ autorizando o mecânico a assinar a liberação de aeronave ou componente sob escopo específico.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Níveis de Competência Padronizados (Escala 1 a 5)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-xs">
+              <div className="p-2.5 bg-white border border-slate-200 rounded-md">
+                <span className="font-bold text-slate-900 block">Nível 1 — Básico</span>
+                <p className="text-slate-600 mt-1">Conhecimento teórico elementar; atua sob supervisão direta contínua.</p>
+              </div>
+              <div className="p-2.5 bg-white border border-slate-200 rounded-md">
+                <span className="font-bold text-slate-900 block">Nível 2 — Prático</span>
+                <p className="text-slate-600 mt-1">Executa rotinas padronizadas sob acompanhamento de técnico sênior.</p>
+              </div>
+              <div className="p-2.5 bg-white border border-blue-200 rounded-md">
+                <span className="font-bold text-blue-900 block">Nível 3 — Autônomo</span>
+                <p className="text-slate-600 mt-1">Executa manutenções preventivas e corretivas com plena autonomia técnica.</p>
+              </div>
+              <div className="p-2.5 bg-white border border-indigo-200 rounded-md">
+                <span className="font-bold text-indigo-900 block">Nível 4 — Inspetor</span>
+                <p className="text-slate-600 mt-1">Habilitado a realizar inspeções RII e aprovação de liberação de serviço (APRS).</p>
+              </div>
+              <div className="p-2.5 bg-white border border-purple-200 rounded-md">
+                <span className="font-bold text-purple-900 block">Nível 5 — Especialista</span>
+                <p className="text-slate-600 mt-1">Instrutor técnico, avaliador de bancada e solucionador de panes complexas (troubleshooting).</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Fluxo Operacional de Atribuição e Reavaliação
+            </h4>
+            <ol className="text-xs text-slate-700 space-y-2 list-decimal list-inside">
+              <li>
+                <strong>1. Catálogo Central de Competências:</strong> As competências são cadastradas por Categoria (Célula, Motores, Aviônicos, END/NDT, Qualidade, Apoio de Rampa), Tipo de Atividade (Inspeção, Manutenção, Calibração) e Modelo/Família de Aeronave.
+              </li>
+              <li>
+                <strong>2. Atribuição ao Colaborador:</strong> Na aba <em>Matriz de Competências</em> ou no Dossiê 360°, selecione o colaborador e a competência correspondente.
+              </li>
+              <li>
+                <strong>3. Parâmetros de Concessão:</strong> Defina o Nível (1 a 5), a Data de Avaliação/Concessão, o Responsável Técnico Avaliador, a Periodicidade de Reavaliação (ex: 12 ou 24 meses) e o Número da Portaria / Documento de Autorização.
+              </li>
+              <li>
+                <strong>4. Situações Possíveis:</strong> As competências transitam entre <code>Ativa</code>, <code>Em Treinamento</code>, <code>Exige Reavaliação</code>, <code>Suspensa</code> ou <code>Revogada</code>.
+              </li>
+              <li>
+                <strong>5. Relatórios e Matriz Cruzada:</strong> Visualize a grade cruzada (Colaboradores x Competências) para rápido planejamento de escalas operacionais e atendimento a auditorias de clientes.
+              </li>
+            </ol>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('pessoas-competencias')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Matriz de Competências</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
   ], [organization, orgName, orgSigla]);
 
   // Filtro de capítulos por busca

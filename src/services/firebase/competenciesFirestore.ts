@@ -18,6 +18,8 @@ import {
   AtividadeCompetenciaRequerida,
   SugestaoIACompetencia,
   UserProfile,
+  HistoricoCorrecaoTreinamento,
+  HistoricoConcessaoCompetencia,
 } from '../../types';
 import {
   DEFAULT_ORGANIZATION_ID,
@@ -568,6 +570,51 @@ export async function savePersonCompetency(
   }
 }
 
+export async function concederOuAtualizarCompetenciaColaborador(
+  organizationId: string,
+  competencia: CompetenciaColaborador,
+  motivoAcao: string,
+  userProfile?: UserProfile | null
+): Promise<void> {
+  const role = (userProfile?.role || '') as string;
+  if (role === 'CONSULTA' || role === 'VIEWER' || role === 'GUEST') {
+    throw new Error('Permissão negada: Perfil de consulta não possui autorização para conceder ou alterar competências.');
+  }
+
+  const now = new Date().toISOString();
+  const histItem: HistoricoConcessaoCompetencia = {
+    id: `hist-comp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    dataHora: now,
+    usuarioUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
+    usuarioNome: userProfile?.displayName || 'Avaliador SGQ',
+    tipoAcao:
+      competencia.status === 'REVOGADA'
+        ? 'REVOGACAO'
+        : competencia.status === 'SUSPENSA'
+        ? 'SUSPENSAO'
+        : 'CONCESSAO',
+    nivelNovo: competencia.nivelAtual,
+    motivoOuJustificativa: motivoAcao || 'Concessão/Atualização de Habilitação Técnica SGQ',
+    documentoReferencia: competencia.documentoPortariaOS,
+  };
+
+  const payload: CompetenciaColaborador = {
+    ...competencia,
+    organizationId,
+    historicoConcessoes: [
+      ...(competencia.historicoConcessoes || []),
+      histItem,
+    ],
+    updatedAt: now,
+    createdAt: competencia.createdAt || now,
+    responsavelValidacaoNome: userProfile?.displayName || competencia.responsavelValidacaoNome || 'SGQ',
+    responsavelValidacaoUid: userProfile?.uid || auth.currentUser?.uid || competencia.responsavelValidacaoUid || 'sgq',
+    dataValidacao: now,
+  };
+
+  await savePersonCompetency(organizationId, payload, userProfile);
+}
+
 export async function deletePersonCompetency(
   organizationId: string,
   itemId: string,
@@ -804,6 +851,110 @@ export async function saveTrainingRecord(
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
+}
+
+export async function corrigirRegistroTreinamento(
+  organizationId: string,
+  registroId: string,
+  registroAnterior: RegistroTreinamentoColaborador,
+  dadosAtualizados: Partial<RegistroTreinamentoColaborador>,
+  motivoCorrecao: string,
+  userProfile?: UserProfile | null
+): Promise<RegistroTreinamentoColaborador> {
+  const role = (userProfile?.role || '') as string;
+  if (role === 'CONSULTA' || role === 'VIEWER' || role === 'GUEST') {
+    throw new Error('Permissão negada: Perfil de consulta não possui permissão para editar registros de treinamento.');
+  }
+
+  if (!motivoCorrecao || motivoCorrecao.trim().length < 5) {
+    throw new Error('Justificativa técnica obrigatória: Informe o motivo da correção (mínimo 5 caracteres) para rastreabilidade de auditoria.');
+  }
+
+  // Validação de datas
+  const dataRealizacao = dadosAtualizados.dataRealizacao || registroAnterior.dataRealizacao;
+  if (!dataRealizacao) {
+    throw new Error('Data de realização obrigatória.');
+  }
+  const dataValidade = dadosAtualizados.dataValidade !== undefined ? dadosAtualizados.dataValidade : registroAnterior.dataValidade;
+  if (dataValidade && dataRealizacao && dataValidade < dataRealizacao) {
+    throw new Error('Inconsistência de datas: A data de validade/reciclagem não pode ser anterior à data de realização do treinamento.');
+  }
+
+  // Mapear campos alterados e valores anteriores vs novos
+  const camposAlterados: string[] = [];
+  const valoresAnteriores: Partial<RegistroTreinamentoColaborador> = {};
+  const valoresNovos: Partial<RegistroTreinamentoColaborador> = {};
+
+  const camposParaVerificar: (keyof RegistroTreinamentoColaborador)[] = [
+    'dataRealizacao',
+    'dataValidade',
+    'treinamentoTitulo',
+    'treinamentoCodigo',
+    'instrutor',
+    'entidadeInstrutora',
+    'cargaHoraria',
+    'resultado',
+    'aproveitamentoPercentual',
+    'numeroCertificado',
+    'observacoes',
+  ];
+
+  for (const campo of camposParaVerificar) {
+    if (dadosAtualizados[campo] !== undefined && dadosAtualizados[campo] !== (registroAnterior as any)[campo]) {
+      camposAlterados.push(campo);
+      (valoresAnteriores as any)[campo] = (registroAnterior as any)[campo];
+      (valoresNovos as any)[campo] = dadosAtualizados[campo];
+    }
+  }
+
+  const now = new Date().toISOString();
+  const correcaoItem: HistoricoCorrecaoTreinamento = {
+    id: `corr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    dataHora: now,
+    usuarioUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
+    usuarioNome: userProfile?.displayName || 'Auditor SGQ',
+    usuarioEmail: userProfile?.email || auth.currentUser?.email || undefined,
+    motivoCorrecao: motivoCorrecao.trim(),
+    camposAlterados,
+    valoresAnteriores,
+    valoresNovos,
+  };
+
+  const historicoAtualizado: HistoricoCorrecaoTreinamento[] = [
+    ...(registroAnterior.historicoCorrecoes || []),
+    correcaoItem,
+  ];
+
+  const payload: RegistroTreinamentoColaborador = {
+    ...registroAnterior,
+    ...dadosAtualizados,
+    id: registroId,
+    organizationId,
+    historicoCorrecoes: historicoAtualizado,
+    updatedAt: now,
+    validadoPorSGQNome: userProfile?.displayName || registroAnterior.validadoPorSGQNome || 'SGQ',
+    validadoPorSGQUid: userProfile?.uid || auth.currentUser?.uid || registroAnterior.validadoPorSGQUid || 'sgq',
+    dataValidacaoSGQ: now,
+  };
+
+  const path = `organizations/${organizationId}/trainingRecords/${registroId}`;
+  try {
+    const docRef = doc(db, 'organizations', organizationId, 'trainingRecords', registroId);
+    await setDoc(docRef, sanitizeForFirestore(payload), { merge: true });
+
+    await recordOrganizationAudit(organizationId, {
+      entity: 'ORGANIZATION' as any,
+      entityId: registroId,
+      action: 'UPDATE',
+      changedByUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
+      changedByEmail: userProfile?.email || auth.currentUser?.email || 'anon@qualigest',
+      summary: `Correção de Treinamento (${registroAnterior.treinamentoTitulo} - ${registroAnterior.colaboradorNome}): ${motivoCorrecao.trim()}`,
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+
+  return payload;
 }
 
 export async function deleteTrainingRecord(

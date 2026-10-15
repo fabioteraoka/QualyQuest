@@ -18,6 +18,7 @@ import {
   MatrizCoberturaItem,
   RequisitoSemControleLacuna,
   UserProfile,
+  ColaboradorPessoa,
 } from '../../types';
 import {
   DEFAULT_ORGANIZATION_ID,
@@ -86,23 +87,76 @@ export function subscribeToBasesOperacionais(
   );
 }
 
+export function verificarDependenciasBaseOperacional(
+  base: BaseEstacaoOperacao,
+  persons: ColaboradorPessoa[] = []
+): { temDependencias: boolean; totalColaboradores: number; nomesColaboradores: string[] } {
+  const codigoOuNome = (base.codigo || '').toUpperCase();
+  const nomeCompleto = (base.nome || '').toLowerCase();
+  const baseId = base.id;
+
+  const vinculados = persons.filter((p) => {
+    if (p.baseOperacionalId && p.baseOperacionalId === baseId) return true;
+    if (p.baseOperacional) {
+      const bOp = p.baseOperacional.toLowerCase();
+      if (codigoOuNome && bOp.includes(codigoOuNome.toLowerCase())) return true;
+      if (nomeCompleto && (bOp.includes(nomeCompleto) || nomeCompleto.includes(bOp))) return true;
+    }
+    return false;
+  });
+
+  return {
+    temDependencias: vinculados.length > 0,
+    totalColaboradores: vinculados.length,
+    nomesColaboradores: vinculados.slice(0, 5).map((p) => p.nome),
+  };
+}
+
 export async function saveBaseOperacional(
   organizationId: string,
   base: Partial<BaseEstacaoOperacao>,
-  currentUser?: UserProfile | null
+  currentUser?: UserProfile | null,
+  basesExistentes: BaseEstacaoOperacao[] = []
 ): Promise<string> {
-  const baseId = base.id || `BASE-${base.codigo || Date.now()}`;
+  const role = (currentUser?.role || '') as string;
+  if (role === 'CONSULTA' || role === 'VIEWER' || role === 'GUEST') {
+    throw new Error('Permissão negada: Perfil de consulta não possui permissão para cadastrar ou editar bases operacionais.');
+  }
+
+  const codigo = (base.codigo || '').trim().toUpperCase();
+  const nome = (base.nome || '').trim();
+
+  if (!codigo) {
+    throw new Error('Código/Sigla da base operacional é obrigatório (ex: SOD, GRU, REC).');
+  }
+  if (!nome) {
+    throw new Error('Nome da base operacional é obrigatório.');
+  }
+
+  // Prevenção de duplicidade indevida de código na mesma organização
+  const baseId = base.id || `BASE-${codigo}`;
+  const codigoDuplicado = basesExistentes.find(
+    (b) => b.organizationId === organizationId && b.id !== baseId && (b.codigo || '').trim().toUpperCase() === codigo
+  );
+  if (codigoDuplicado) {
+    throw new Error(`Conflito de código: Já existe uma base operacional cadastrada com a sigla/código "${codigo}" (${codigoDuplicado.nome}).`);
+  }
+
   const now = new Date().toISOString();
 
   const record: BaseEstacaoOperacao = {
     id: baseId,
     organizationId,
-    codigo: base.codigo || 'BASE',
-    nome: base.nome || 'Estação de Linha',
+    codigo,
+    nome,
     tipo: base.tipo || 'ESTACAO_LINHA',
-    cidade: base.cidade || 'São Paulo',
-    estado: base.estado || 'SP',
+    cidade: base.cidade || '',
+    estado: base.estado || '',
     pais: base.pais || 'Brasil',
+    endereco: base.endereco || '',
+    responsavel: base.responsavel || '',
+    observacoes: base.observacoes || '',
+    contatoTelefoneEmail: base.contatoTelefoneEmail || '',
     clientesAtendidosIds: base.clientesAtendidosIds || [],
     ativo: base.ativo !== undefined ? base.ativo : true,
     createdAt: base.createdAt || now,
@@ -115,13 +169,106 @@ export async function saveBaseOperacional(
   await recordOrganizationAudit(organizationId, {
     entity: 'EXTERNAL_CLIENT',
     entityId: baseId,
-    action: 'UPDATE',
-    summary: `Base/Estação salva: ${record.codigo} - ${record.nome}`,
+    action: base.id ? 'UPDATE' : 'CREATE',
+    summary: `Base/Estação Operacional ${base.id ? 'atualizada' : 'cadastrada'}: ${record.codigo} - ${record.nome} (${record.ativo ? 'ATIVA' : 'INATIVA'})`,
     changedByUid: currentUser?.uid || auth.currentUser?.uid || 'system',
     changedByEmail: currentUser?.displayName || auth.currentUser?.email || 'SGQ Auditor',
   });
 
   return baseId;
+}
+
+export async function inativarBaseOperacional(
+  organizationId: string,
+  baseId: string,
+  currentUser?: UserProfile | null,
+  motivo: string = 'Desativação operacional preventiva'
+): Promise<void> {
+  const role = (currentUser?.role || '') as string;
+  if (role === 'CONSULTA' || role === 'VIEWER' || role === 'GUEST') {
+    throw new Error('Permissão negada: Perfil de consulta não possui permissão para desativar bases operacionais.');
+  }
+
+  const docRef = doc(db, 'organizations', organizationId, 'operational_bases', baseId);
+  await setDoc(
+    docRef,
+    {
+      ativo: false,
+      updatedAt: new Date().toISOString(),
+      observacoesInativacao: motivo,
+    },
+    { merge: true }
+  );
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'EXTERNAL_CLIENT',
+    entityId: baseId,
+    action: 'UPDATE',
+    summary: `Base Operacional inativada logicamente (ativo: false): ${baseId}. Motivo: ${motivo}`,
+    changedByUid: currentUser?.uid || auth.currentUser?.uid || 'system',
+    changedByEmail: currentUser?.displayName || auth.currentUser?.email || 'SGQ Auditor',
+  });
+}
+
+export async function reativarBaseOperacional(
+  organizationId: string,
+  baseId: string,
+  currentUser?: UserProfile | null
+): Promise<void> {
+  const role = (currentUser?.role || '') as string;
+  if (role === 'CONSULTA' || role === 'VIEWER' || role === 'GUEST') {
+    throw new Error('Permissão negada: Perfil de consulta não possui permissão para reativar bases operacionais.');
+  }
+
+  const docRef = doc(db, 'organizations', organizationId, 'operational_bases', baseId);
+  await setDoc(
+    docRef,
+    {
+      ativo: true,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'EXTERNAL_CLIENT',
+    entityId: baseId,
+    action: 'UPDATE',
+    summary: `Base Operacional reativada com sucesso: ${baseId}`,
+    changedByUid: currentUser?.uid || auth.currentUser?.uid || 'system',
+    changedByEmail: currentUser?.displayName || auth.currentUser?.email || 'SGQ Auditor',
+  });
+}
+
+export async function deleteBaseOperacional(
+  organizationId: string,
+  base: BaseEstacaoOperacao,
+  persons: ColaboradorPessoa[] = [],
+  currentUser?: UserProfile | null
+): Promise<void> {
+  const role = (currentUser?.role || '') as string;
+  if (role !== 'ADMIN' && role !== 'GESTOR_SGQ') {
+    throw new Error('Permissão negada: Exclusão de base operacional restrita a Administrador ou Gestor SGQ.');
+  }
+
+  const dep = verificarDependenciasBaseOperacional(base, persons);
+  if (dep.temDependencias) {
+    throw new Error(
+      `Exclusão física bloqueada: A base "${base.nome}" possui ${dep.totalColaboradores} colaborador(es) vinculado(s) (${dep.nomesColaboradores.join(', ')}). Utilize a desativação da base para preservar a rastreabilidade histórica.`
+    );
+  }
+
+  const docRef = doc(db, 'organizations', organizationId, 'operational_bases', base.id);
+  await deleteDoc(docRef);
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'EXTERNAL_CLIENT',
+    entityId: base.id,
+    action: 'DELETE',
+    summary: `Base Operacional excluída fisicamente: ${base.codigo} - ${base.nome}`,
+    changedByUid: currentUser?.uid || auth.currentUser?.uid || 'system',
+    changedByEmail: currentUser?.displayName || auth.currentUser?.email || 'SGQ Auditor',
+  });
 }
 
 // ============================================================================

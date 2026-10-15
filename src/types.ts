@@ -1742,7 +1742,21 @@ export type StatusCompetenciaColaborador =
   | 'VENCENDO'
   | 'VENCIDO'
   | 'SUSPENSO'
+  | 'SUSPENSA'
+  | 'REVOGADA'
   | 'BLOQUEADO';
+
+export interface HistoricoConcessaoCompetencia {
+  id: string;
+  dataHora: string;
+  usuarioUid: string;
+  usuarioNome: string;
+  tipoAcao: 'CONCESSAO' | 'REAVALIACAO' | 'SUSPENSAO' | 'REVOGACAO' | 'ATUALIZACAO_NIVEL';
+  nivelAnterior?: number;
+  nivelNovo: number;
+  motivoOuJustificativa: string;
+  documentoReferencia?: string;
+}
 
 export interface CompetenciaColaborador {
   id: string;
@@ -1765,6 +1779,14 @@ export interface CompetenciaColaborador {
   dataValidacao?: string;
   observacoes?: string;
   restricoesEspecificas?: string;
+  // Campos avançados da Matriz de Competências MRO (IMPACTO)
+  baseOperacional?: string;
+  baseOperacionalId?: string;
+  categoria?: string; // ex: Célula, Motores, Aviônica, Estruturas, NDT, etc.
+  equipamentoOuModelo?: string; // ex: Boeing 737, B747, B777, A320, CFM56
+  tipoAtividade?: 'INSPECAO' | 'MANUTENCAO' | 'RII' | 'TESTE' | 'LIBERACAO_CRS' | 'OUTRA';
+  documentoPortariaOS?: string; // Portaria interna, OS, Ordem de Serviço
+  historicoConcessoes?: HistoricoConcessaoCompetencia[];
   createdAt: string;
   updatedAt: string;
 }
@@ -1813,6 +1835,18 @@ export interface CursoTreinamento {
 
 export type ResultadoTreinamento = 'APROVADO' | 'REPROVADO' | 'PARTICIPOU' | 'EM_ANDAMENTO';
 
+export interface HistoricoCorrecaoTreinamento {
+  id: string;
+  dataHora: string;
+  usuarioUid: string;
+  usuarioNome: string;
+  usuarioEmail?: string;
+  motivoCorrecao: string;
+  camposAlterados: string[];
+  valoresAnteriores: Partial<RegistroTreinamentoColaborador>;
+  valoresNovos: Partial<RegistroTreinamentoColaborador>;
+}
+
 export interface RegistroTreinamentoColaborador {
   id: string;
   organizationId: string;
@@ -1837,6 +1871,10 @@ export interface RegistroTreinamentoColaborador {
   validadoPorSGQUid?: string;
   validadoPorSGQNome?: string;
   dataValidacaoSGQ?: string;
+  // Auditoria e rastreabilidade de correções
+  importadoAutomaticamente?: boolean;
+  origemImportacao?: string;
+  historicoCorrecoes?: HistoricoCorrecaoTreinamento[];
   createdAt: string;
   updatedAt: string;
 }
@@ -2476,6 +2514,10 @@ export interface BaseEstacaoOperacao {
   pais: string;
   clientesAtendidosIds: string[];
   ativo: boolean;
+  endereco?: string;
+  responsavel?: string;
+  observacoes?: string;
+  contatoTelefoneEmail?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -16,6 +16,15 @@ import {
   KALITTA_QA14_ITEMS,
   KALITTA_QA14_METADATA,
 } from "./src/data/sampleKalittaQA14Checklist.ts";
+import {
+  getGeminiClient,
+  executeGeminiRequest,
+  geminiMetrics,
+  geminiCache,
+  processInBatches,
+  CHECKLIST_PARSE_SCHEMA,
+  AUDIT_DOCUMENT_PARSE_SCHEMA,
+} from "./server/gemini/index.ts";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -56,16 +65,6 @@ async function extractTextFromBase64Docx(base64: string): Promise<string> {
     return "";
   }
 }
-
-import {
-  getGeminiClient,
-  executeGeminiRequest,
-  geminiMetrics,
-  geminiCache,
-  processInBatches,
-  CHECKLIST_PARSE_SCHEMA,
-  AUDIT_DOCUMENT_PARSE_SCHEMA,
-} from "./server/gemini/index.ts";
 
 const DEFAULT_ORGANIZATION_ID = "org_impacto_aviation";
 
