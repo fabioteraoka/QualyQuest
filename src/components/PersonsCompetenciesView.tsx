@@ -32,6 +32,7 @@ import {
   Power,
   UploadCloud,
   MapPin,
+  Plane,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -70,6 +71,8 @@ import {
   ResultadoAnaliseLote,
 } from '../services/bulkManagementService';
 import { BulkActionModal } from './common/BulkActionModal';
+import { FleetCompetencyMatrixView } from './FleetCompetencyMatrixView';
+import { OperationalBasesView } from './OperationalBasesView';
 
 interface PersonsCompetenciesViewProps {
   organizationId: string;
@@ -106,7 +109,8 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   onNavigateToExpirations,
   onNavigateToImport,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'COLABORADORES' | 'MATRIZ' | 'CATALOGO'>('COLABORADORES');
+  const [activeSubTab, setActiveSubTab] = useState<'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES'>('COLABORADORES');
+  const [modoMatriz, setModoMatriz] = useState<'FROTA_NIVEIS' | 'GRADE_GERAL'>('FROTA_NIVEIS');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSetor, setSelectedSetor] = useState('TODOS');
   const [selectedBase, setSelectedBase] = useState('TODAS');
@@ -732,6 +736,16 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
           }`}
         >
           <Award className="w-4 h-4 text-purple-600" /> Catálogo de Competências ({competencies.length})
+        </button>
+        <button
+          onClick={() => setActiveSubTab('BASES')}
+          className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
+            activeSubTab === 'BASES'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <MapPin className="w-4 h-4 text-sky-600" /> Bases Operacionais ({bases.length})
         </button>
       </div>
 
@@ -2037,17 +2051,63 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       )}
 
       {/* ========================================================================= */}
-      {/* ABA 2: MATRIZ DE COMPETÊNCIAS GERAL (PESSOAS x COMPETÊNCIAS)               */}
+      {/* ABA 2: MATRIZ DE COMPETÊNCIAS & QUALIFICAÇÃO TÉCNICA POR FROTA            */}
       {/* ========================================================================= */}
       {activeSubTab === 'MATRIZ' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">Matriz de Competências & Habilitação Técnica</h2>
-              <p className="text-sm text-slate-600">
-                Visualização cruzada dos níveis de proficiência (1 a 5) atribuídos por colaborador ativo.
-              </p>
-            </div>
+        <div className="space-y-4">
+          {/* Seletor de Modo da Matriz */}
+          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl w-fit border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setModoMatriz('FROTA_NIVEIS')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                modoMatriz === 'FROTA_NIVEIS'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Plane className="w-4 h-4" />
+              <span>Matriz por Frota & Níveis Técnicos (IMPACTO)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setModoMatriz('GRADE_GERAL')}
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                modoMatriz === 'GRADE_GERAL'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Activity className="w-4 h-4" />
+              <span>Grade Geral de Proficiência (1 a 5)</span>
+            </button>
+          </div>
+
+          {modoMatriz === 'FROTA_NIVEIS' ? (
+            <FleetCompetencyMatrixView
+              organizationId={organizationId}
+              userProfile={userProfile}
+              persons={persons}
+              competencies={competencies}
+              personCompetencies={personCompetencies}
+              qualifications={qualifications}
+              trainingRecords={trainingRecords}
+              documents={documents}
+              bases={bases}
+              onSelectColaborador={(c) => {
+                setSelectedColaborador(c);
+                setModalColaboradorOpen(true);
+              }}
+            />
+          ) : (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Grade Geral de Competências & Habilitação Técnica</h2>
+                  <p className="text-sm text-slate-600">
+                    Visualização cruzada dos níveis de proficiência (1 a 5) atribuídos por colaborador ativo.
+                  </p>
+                </div>
 
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -2186,6 +2246,8 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
           </div>
         </div>
       )}
+    </div>
+  )}
 
       {/* ========================================================================= */}
       {/* ABA 3: CATÁLOGO DE COMPETÊNCIAS DEFINIDAS                                  */}
@@ -2282,6 +2344,20 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ABA 4: BASES & ESTAÇÕES OPERACIONAIS                                      */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'BASES' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <OperationalBasesView
+            organizationId={organizationId}
+            userProfile={userProfile}
+            bases={bases}
+            persons={persons}
+          />
         </div>
       )}
 

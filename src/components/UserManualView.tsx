@@ -25,7 +25,10 @@ import {
   Info,
   Flame,
   ArrowRight,
-  UserCheck
+  UserCheck,
+  Plane,
+  Trash2,
+  History,
 } from 'lucide-react';
 import { OrganizationRecord } from '../types';
 
@@ -1582,6 +1585,163 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-500 cursor-pointer shadow-xs"
               >
                 <span>Acessar Matriz de Competências</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 41,
+      title: '41. Controle de Cursos por Frota, Níveis Técnicos e Reciclagens Vinculadas',
+      category: 'Pessoas & Competências',
+      summary: 'Gestão de cursos estruturados por família de aeronaves (Airbus A320, Boeing 737, ATR, Embraer), níveis técnicos modulares (Familiarização, Ramp & Transit, Motor, etc.), variantes de motor, reciclagens vinculadas e matriz por funcionário e frota.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <p className="leading-relaxed">
+            No setor aeronáutico, um treinamento não pode ser tratado apenas pelo nome genérico de uma aeronave. Para a frota <strong>Airbus A320</strong>, por exemplo, coexistem diferentes níveis e cursos com escopos distintos (como <em>Familiarização / Nível 1</em>, <em>Ramp & Transit / Nível 2</em>, <em>Line & Base Maintenance / Nível 3</em>, cursos específicos de motorização <em>CFM56</em> ou <em>LEAP-1A</em> e reciclagens periódicas).
+          </p>
+
+          <div className="bg-sky-50 border border-sky-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-sky-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Plane className="w-4 h-4 text-sky-700" />
+              Princípios Operacionais de Frotas e Níveis Técnicos
+            </h4>
+            <ul className="space-y-1.5 list-disc list-inside text-sky-950">
+              <li>
+                <strong>Cursos por Família/Frota:</strong> Cada curso do catálogo pode ser associado formalmente a uma frota (ex: <em>Airbus A320, Boeing 737, ATR 42/72, Embraer 190/195</em> ou <em>Geral</em>).
+              </li>
+              <li>
+                <strong>Múltiplos Níveis Não-Cumulativos:</strong> A conclusão de um nível básico (ex: Familiarização) <em>não concede automaticamente</em> os níveis superiores (Ramp & Transit ou Line Maintenance). Cada nível deve ser comprovado individualmente.
+              </li>
+              <li>
+                <strong>Múltiplas Frotas por Colaborador:</strong> O mesmo técnico pode possuir níveis distintos em diferentes frotas (ex: Nível 3 em A320 e Nível 1 em B737).
+              </li>
+              <li>
+                <strong>Reciclagens com Preservação do Curso Inicial:</strong> Uma reciclagem operacional renova a validade do requisito, mas <em>não apaga nem sobrescreve o treinamento inicial</em> do mecânico, mantendo o histórico de instrução completo.
+              </li>
+              <li>
+                <strong>Variantes e Motorização:</strong> Permite especificar variantes de aeronave e motor (ex: <em>CFM56, LEAP-1A, PW1100G</em>) quando exigido por contrato ou manual.
+              </li>
+            </ul>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Matriz por Funcionário e Frota: Como Interpretar os Indicadores
+            </h4>
+            <p className="text-slate-600 leading-relaxed">
+              Na aba <strong>Matriz por Frota & Níveis</strong>, o SGQ consulta a qualificação consolidada de cada mecânico por família de aeronave:
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+              <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+                <span className="font-bold text-blue-900 block flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                  1. Treinamento Realizado
+                </span>
+                <p className="text-slate-600 leading-relaxed">
+                  Indica que o mecânico concluiu a carga horária do curso/nível e obteve aprovação teórica e prática.
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+                <span className="font-bold text-indigo-900 block flex items-center gap-1">
+                  <Award className="w-3.5 h-3.5 text-indigo-600" />
+                  2. Competência Avaliada
+                </span>
+                <p className="text-slate-600 leading-relaxed">
+                  Avaliação prática e OJT com examinador credenciado conforme a matriz de proficiência operacional.
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
+                <span className="font-bold text-emerald-900 block flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                  3. Autorização Formal (APRS)
+                </span>
+                <p className="text-slate-600 leading-relaxed">
+                  Portaria, OS técnica ou credencial formal expedida pela Gestão da Qualidade da IMPACTO.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('pessoas-competencias')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-sky-600 text-white font-bold text-xs hover:bg-sky-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Matriz por Frota</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 42,
+      title: '42. Exclusão em Lote do Histórico de Treinamentos (Calibração e Auditoria SGQ)',
+      category: 'Pessoas & Competências',
+      summary: 'Funcionalidade administrativa para expurgo em massa de registros de cursos importados durante a calibração de modelos documentais, com seleção múltipla, confirmação segura e justificativa obrigatória no log de auditoria.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <p className="leading-relaxed">
+            Durante a calibração de modelos de importação documental ou integração de planilhas legadas, lotes de cursos podem necessitar de reprocessamento integral. Para evitar a remoção manual individual de dezenas de registros, o <strong>QualyQuest SGQ</strong> disponibiliza a <strong>Exclusão em Lote</strong> com estrita rastreabilidade regulatória.
+          </p>
+
+          <div className="bg-rose-50 border border-rose-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-rose-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Trash2 className="w-4 h-4 text-rose-700" />
+              Salvaguardas de Auditoria e Segurança RBAC
+            </h4>
+            <ul className="space-y-1.5 list-disc list-inside text-rose-950">
+              <li>
+                <strong>Acesso Restrito:</strong> Operação restrita a usuários com perfil <code>ADMIN</code> e <code>GESTOR_SGQ</code>. Perfis de consulta (<code>CONSULTA</code> / <code>VIEWER</code>) estão tecnicamente bloqueados.
+              </li>
+              <li>
+                <strong>Justificativa Técnica Obrigatória:</strong> É mandatório registrar a justificativa formal (mínimo 5 caracteres) descrevendo a razão do expurgo (ex: <em>"Calibração do modelo de importação de cursos; remoção do lote importado com divergência de datas"</em>).
+              </li>
+              <li>
+                <strong>Log Permanente no Firestore:</strong> A operação é gravada na coleção de auditoria com o UID, e-mail do executor, data/hora e identificadores de todos os registros removidos.
+              </li>
+              <li>
+                <strong>Atualização Instantânea dos Motores SGQ:</strong> Ao concluir o expurgo, os indicadores de vencimento, a matriz de frota e o Dossiê 360° são imediatamente recalculados.
+              </li>
+            </ul>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+              Passo a Passo: Como Executar a Exclusão em Lote
+            </h4>
+            <ol className="text-xs text-slate-700 space-y-2.5 list-decimal list-inside">
+              <li>
+                <strong>1. Acessar o Histórico de Treinamentos:</strong> Na tela <em>Treinamentos & Qualificações</em>, abra a sub-aba <strong>Treinamentos (Histórico)</strong>.
+              </li>
+              <li>
+                <strong>2. Filtrar os Registros Desejados:</strong> Utilize os filtros por <em>Origem</em> (ex: <em>"Apenas Importados Automaticamente"</em>), <em>Frota</em>, <em>Nível Técnico</em> ou <em>Colaborador</em> para isolar os registros importados incorretamente.
+              </li>
+              <li>
+                <strong>3. Seleção em Massa:</strong> Marque a caixa de seleção no cabeçalho da tabela para marcar todos os registros visíveis daquela página ou lote, ou selecione registros específicos linha a linha.
+              </li>
+              <li>
+                <strong>4. Barra de Ações Flutuante:</strong> Observe a barra azul suspensa indicando a quantidade de itens selecionados e clique em <em>"Excluir Selecionados em Lote"</em>.
+              </li>
+              <li>
+                <strong>5. Modal de Conferência e Justificativa:</strong> No modal de confirmação, revise a lista prévia dos treinamentos que serão expurgados e digite obrigatoriamente a justificativa técnica.
+              </li>
+              <li>
+                <strong>6. Confirmar Exclusão:</strong> Clique em <em>"Confirmar Exclusão"</em>. Acompanhe a barra de progresso em tempo real até a conclusão bem-sucedida.
+              </li>
+            </ol>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('treinamentos')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 text-white font-bold text-xs hover:bg-rose-500 cursor-pointer shadow-xs"
+              >
+                <span>Ir para Histórico de Treinamentos</span>
               </button>
             </div>
           )}

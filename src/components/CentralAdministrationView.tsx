@@ -35,7 +35,8 @@ import {
   Shield,
   Layers,
   Save,
-  Ban
+  Ban,
+  MapPin
 } from 'lucide-react';
 import { 
   OrganizationRecord, 
@@ -45,7 +46,9 @@ import {
   UserInvitation, 
   OrganizationAuditEntry, 
   ModuloSistema, 
-  AcaoPermissao 
+  AcaoPermissao,
+  BaseEstacaoOperacao,
+  ColaboradorPessoa
 } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { 
@@ -70,14 +73,17 @@ import {
   normalizeUserRole,
   isUserActiveStatus 
 } from '../services/security/authorization';
+import { subscribeToBasesOperacionais } from '../services/firebase/clientRequirementsFirestore';
+import { subscribeToPersons } from '../services/firebase/competenciesFirestore';
 import { OrganizationBrandLogo } from './OrganizationBrandLogo';
+import { OperationalBasesView } from './OperationalBasesView';
 import { collection, query, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '../services/firebase/config';
 
 interface CentralAdministrationViewProps {
   organization: OrganizationRecord | null;
   onOrganizationUpdated?: (updatedOrg: OrganizationRecord) => void;
-  initialSubTab?: 'visao-geral' | 'usuarios' | 'perfis-permissoes' | 'organizacao' | 'setores' | 'configuracoes-slas' | 'audit-trail';
+  initialSubTab?: 'visao-geral' | 'usuarios' | 'perfis-permissoes' | 'organizacao' | 'setores' | 'bases-operacionais' | 'configuracoes-slas' | 'audit-trail';
 }
 
 export const CentralAdministrationView: React.FC<CentralAdministrationViewProps> = ({
@@ -92,13 +98,15 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
 
   // Active Submenu
   const [activeSubTab, setActiveSubTab] = useState<
-    'visao-geral' | 'usuarios' | 'perfis-permissoes' | 'organizacao' | 'setores' | 'configuracoes-slas' | 'audit-trail'
+    'visao-geral' | 'usuarios' | 'perfis-permissoes' | 'organizacao' | 'setores' | 'bases-operacionais' | 'configuracoes-slas' | 'audit-trail'
   >(initialSubTab);
 
   // Users and Invitations state
   const [usersList, setUsersList] = useState<UserProfile[]>([]);
   const [invitationsList, setInvitationsList] = useState<UserInvitation[]>([]);
   const [auditLogs, setAuditLogs] = useState<OrganizationAuditEntry[]>([]);
+  const [basesList, setBasesList] = useState<BaseEstacaoOperacao[]>([]);
+  const [personsList, setPersonsList] = useState<ColaboradorPessoa[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
   // Feedback notifications
@@ -146,10 +154,20 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
       setAuditLogs(logs);
     });
 
+    const unsubBases = subscribeToBasesOperacionais(currentOrgId, (bases) => {
+      setBasesList(bases);
+    });
+
+    const unsubPersons = subscribeToPersons(currentOrgId, (persons) => {
+      setPersonsList(persons);
+    });
+
     return () => {
       unsubUsers();
       unsubInvites();
       unsubAudit();
+      unsubBases();
+      unsubPersons();
     };
   }, [currentOrgId]);
 
@@ -567,6 +585,12 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
           { id: 'perfis-permissoes', label: 'Perfis & Permissões', icon: <Shield className="w-4 h-4" /> },
           { id: 'organizacao', label: 'Minha Organização', icon: <Building2 className="w-4 h-4" /> },
           { id: 'setores', label: 'Setores Técnicos', icon: <FolderTree className="w-4 h-4" /> },
+          { 
+            id: 'bases-operacionais', 
+            label: 'Bases Operacionais', 
+            icon: <MapPin className="w-4 h-4" />,
+            badge: basesList.length > 0 ? basesList.filter((b) => b.ativo).length : undefined
+          },
           { id: 'configuracoes-slas', label: 'Configurações & SLAs', icon: <Sliders className="w-4 h-4" /> },
           { id: 'audit-trail', label: 'Trilha de Auditoria (Audit)', icon: <History className="w-4 h-4" /> },
         ].map((tab) => {
@@ -1476,6 +1500,22 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
                 )}
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* SUB-VIEW 5.1: BASES & ESTAÇÕES OPERACIONAIS */}
+      {/* ---------------------------------------------------- */}
+      {activeSubTab === 'bases-operacionais' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6">
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
+            <OperationalBasesView
+              organizationId={currentOrgId}
+              userProfile={userProfile}
+              bases={basesList}
+              persons={personsList}
+            />
           </div>
         </div>
       )}

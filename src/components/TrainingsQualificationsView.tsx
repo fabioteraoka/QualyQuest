@@ -23,6 +23,11 @@ import {
   AlertCircle,
   UploadCloud,
   Sparkles,
+  Plane,
+  CheckSquare,
+  Square,
+  History,
+  Layers,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -42,6 +47,7 @@ import {
   saveTrainingRecord,
   deleteTrainingRecord,
   corrigirRegistroTreinamento,
+  batchDeleteTrainingRecords,
   saveQualification,
   deleteQualification,
   savePersonDocument,
@@ -52,6 +58,7 @@ import {
   calcularDataValidadeComTolerancia,
 } from '../services/competenciesEngine';
 import { TrainingDeduplicationModal } from './TrainingDeduplicationModal';
+import { FROTAS_PADRAO, NIVEIS_CURSO_PADRAO } from './FleetCompetencyMatrixView';
 
 interface TrainingsQualificationsViewProps {
   organizationId: string;
@@ -96,14 +103,27 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTipo, setFilterTipo] = useState('TODOS');
   const [filterStatus, setFilterStatus] = useState('TODOS');
+  const [filterFrota, setFilterFrota] = useState('TODAS');
+  const [filterNivel, setFilterNivel] = useState('TODOS');
+  const [filterOrigem, setFilterOrigem] = useState<'TODOS' | 'IMPORTADO' | 'MANUAL'>('TODOS');
+  const [filterColaborador, setFilterColaborador] = useState('TODOS');
+
+  // Seleção e Exclusão em Lote
+  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
+  const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false);
+  const [batchDeleteJustificativa, setBatchDeleteJustificativa] = useState('');
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [batchDeleteProgress, setBatchDeleteProgress] = useState<{ removidos: number; total: number } | null>(null);
 
   // Modal Curso
   const [modalCursoOpen, setModalCursoOpen] = useState(false);
   const [cursoParaEditar, setCursoParaEditar] = useState<CursoTreinamento | null>(null);
 
-  // Modal Registro Treinamento
+  // Modal Registro Treinamento (Lançamento e Correção Rastreável)
   const [modalTreinoOpen, setModalTreinoOpen] = useState(false);
   const [treinoParaEditar, setTreinoParaEditar] = useState<RegistroTreinamentoColaborador | null>(null);
+  const [motivoCorrecao, setMotivoCorrecao] = useState('');
+  const [isCorrigindoTreino, setIsCorrigindoTreino] = useState(false);
 
   // Modal Qualificação / CHT
   const [modalQualifOpen, setModalQualifOpen] = useState(false);
@@ -148,7 +168,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
     });
   }, [qualifications, searchTerm, filterTipo, filterStatus]);
 
-  // Treinamentos realizados filtrados
+  // Treinamentos realizados filtrados com frotas, níveis, lotes e colaboradores
   const treinosFiltrados = useMemo(() => {
     return trainingRecords.filter((t) => {
       const matchSearch =
@@ -160,9 +180,104 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
 
       const matchResultado = filterStatus === 'TODOS' || t.resultado === filterStatus;
 
-      return matchSearch && matchResultado;
+      const matchFrota =
+        filterFrota === 'TODAS' ||
+        (t.frotaOuFamilia && t.frotaOuFamilia.toLowerCase() === filterFrota.toLowerCase()) ||
+        t.treinamentoTitulo.toLowerCase().includes(filterFrota.toLowerCase());
+
+      const matchNivel =
+        filterNivel === 'TODOS' ||
+        (t.nivelOuModulo && t.nivelOuModulo.toLowerCase().includes(filterNivel.toLowerCase()));
+
+      const matchOrigem =
+        filterOrigem === 'TODOS' ||
+        (filterOrigem === 'IMPORTADO' && Boolean(t.importadoAutomaticamente)) ||
+        (filterOrigem === 'MANUAL' && !t.importadoAutomaticamente);
+
+      const matchColaborador =
+        filterColaborador === 'TODOS' || t.colaboradorId === filterColaborador;
+
+      return matchSearch && matchResultado && matchFrota && matchNivel && matchOrigem && matchColaborador;
     });
-  }, [trainingRecords, searchTerm, filterStatus]);
+  }, [
+    trainingRecords,
+    searchTerm,
+    filterStatus,
+    filterFrota,
+    filterNivel,
+    filterOrigem,
+    filterColaborador,
+  ]);
+
+  // Seleção Múltipla
+  const isAllSelected = useMemo(() => {
+    return (
+      treinosFiltrados.length > 0 &&
+      treinosFiltrados.every((t) => selectedRecordIds.includes(t.id))
+    );
+  }, [treinosFiltrados, selectedRecordIds]);
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      const idsFiltrados = new Set(treinosFiltrados.map((t) => t.id));
+      setSelectedRecordIds((prev) => prev.filter((id) => !idsFiltrados.has(id)));
+    } else {
+      const novos = Array.from(new Set([...selectedRecordIds, ...treinosFiltrados.map((t) => t.id)]));
+      setSelectedRecordIds(novos);
+    }
+  };
+
+  const handleToggleSelectOne = (id: string) => {
+    setSelectedRecordIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Exclusão em Lote
+  const handleConfirmBatchDelete = async () => {
+    if (selectedRecordIds.length === 0) return;
+    if (userProfile?.role === 'CONSULTA' || userProfile?.role === 'VIEWER') {
+      alert('Usuário com perfil de consulta não possui permissão para excluir registros de treinamento.');
+      return;
+    }
+
+    if (!batchDeleteJustificativa.trim() || batchDeleteJustificativa.trim().length < 5) {
+      alert('Justificativa técnica obrigatória: Informe o motivo da exclusão em lote (mínimo 5 caracteres) para rastreabilidade de auditoria SGQ.');
+      return;
+    }
+
+    setIsBatchDeleting(true);
+    setBatchDeleteProgress({ removidos: 0, total: selectedRecordIds.length });
+
+    try {
+      const idsParaExcluir = [...selectedRecordIds];
+      await batchDeleteTrainingRecords(
+        organizationId,
+        idsParaExcluir,
+        userProfile,
+        (removidos, total) => {
+          setBatchDeleteProgress({ removidos, total });
+        },
+        batchDeleteJustificativa
+      );
+
+      if (onRegistrosRemovidos) {
+        onRegistrosRemovidos(idsParaExcluir);
+      }
+
+      alert(
+        `Exclusão em lote realizada com sucesso!\n\n${idsParaExcluir.length} registro(s) de treinamento foram removidos do histórico com registro permanente na trilha de auditoria SGQ.`
+      );
+      setSelectedRecordIds([]);
+      setIsBatchDeleteModalOpen(false);
+      setBatchDeleteJustificativa('');
+    } catch (err: any) {
+      alert(`Erro durante a exclusão em lote: ${err?.message || 'Erro desconhecido'}`);
+    } finally {
+      setIsBatchDeleting(false);
+      setBatchDeleteProgress(null);
+    }
+  };
 
   // Handlers para Cursos
   const handleSaveCurso = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -171,6 +286,11 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
     const formData = new FormData(form);
 
     const recorrente = formData.get('recorrente') === 'on';
+    const exigeReciclagem = formData.get('exigeReciclagem') === 'on' || recorrente;
+    const cursoOrigemReciclagemId = String(formData.get('cursoOrigemReciclagemId') || '').trim() || undefined;
+    const cursoOrigem = cursoOrigemReciclagemId
+      ? trainingCourses.find((c) => c.id === cursoOrigemReciclagemId)
+      : undefined;
 
     const curso: CursoTreinamento = {
       id: cursoParaEditar?.id || `curso-${Date.now()}`,
@@ -185,6 +305,17 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       periodicidadeMeses: recorrente ? Number(formData.get('periodicidadeMeses') || 24) : undefined,
       toleranciaDias: Number(formData.get('toleranciaDias') || 0),
       origemPrazo: (formData.get('origemPrazo') as any) || 'REGULAMENTO',
+      frotaOuFamilia: String(formData.get('frotaOuFamilia') || '').trim() || undefined,
+      nivelOuModulo: String(formData.get('nivelOuModulo') || '').trim() || undefined,
+      variantesAplicabilidade: String(formData.get('variantesAplicabilidade') || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      exigeReciclagem,
+      cursoOrigemReciclagemId,
+      cursoOrigemReciclagemTitulo: cursoOrigem?.titulo,
+      evidenciaExigida: String(formData.get('evidenciaExigida') || 'Certificado de Conclusão').trim(),
+      exigeAvaliacaoOuAprovacaoAdicional: formData.get('exigeAvaliacaoOuAprovacaoAdicional') === 'on',
       competenciasDesenvolvidasIds: [],
       status: 'ATIVO',
       createdAt: cursoParaEditar?.createdAt || new Date().toISOString(),
@@ -210,7 +341,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
     }
   };
 
-  // Handlers para Treinamentos Realizados
+  // Handlers para Treinamentos Realizados (Novo e Correção Rastreável)
   const handleSaveTreino = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
@@ -238,8 +369,77 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       );
     }
 
+    // Validação de datas
+    if (dataValidade && dataRealizacao && dataValidade < dataRealizacao) {
+      alert('Data inválida: A data de validade/reciclagem não pode ser anterior à data de realização do treinamento.');
+      return;
+    }
+
+    const frotaOuFamilia = String(formData.get('frotaOuFamilia') || curso.frotaOuFamilia || '').trim() || undefined;
+    const nivelOuModulo = String(formData.get('nivelOuModulo') || curso.nivelOuModulo || '').trim() || undefined;
+    const varianteAplicabilidade = String(formData.get('varianteAplicabilidade') || '').trim() || undefined;
+    const ehReciclagem = formData.get('ehReciclagem') === 'on' || curso.tipo === 'RECICLAGEM';
+    const registroTreinamentoOrigemId = String(formData.get('registroTreinamentoOrigemId') || '').trim() || undefined;
+
+    // Se estamos editando um registro existente -> Correção Rastreável com Auditoria SGQ
+    if (treinoParaEditar) {
+      if (userProfile?.role === 'CONSULTA' || userProfile?.role === 'VIEWER') {
+        alert('Perfil de consulta não possui permissão para editar registros de treinamento.');
+        return;
+      }
+
+      if (!motivoCorrecao.trim() || motivoCorrecao.trim().length < 5) {
+        alert('Justificativa técnica obrigatória: Informe o motivo da correção (mínimo 5 caracteres) para rastreabilidade de auditoria SGQ.');
+        return;
+      }
+
+      const confirmacao = window.confirm(
+        `Confirma a gravação da correção deste treinamento no histórico com auditoria SGQ?\n\nColaborador: ${treinoParaEditar.colaboradorNome}\nCurso: ${treinoParaEditar.treinamentoTitulo}\nMotivo: ${motivoCorrecao}`
+      );
+      if (!confirmacao) return;
+
+      setIsCorrigindoTreino(true);
+      try {
+        const dadosAtualizados: Partial<RegistroTreinamentoColaborador> = {
+          dataRealizacao,
+          dataValidade: dataValidade || undefined,
+          cargaHoraria: Number(formData.get('cargaHoraria') || curso.cargaHorariaHoras),
+          entidadeInstrutora: String(formData.get('entidadeInstrutora') || '').trim(),
+          instrutor: String(formData.get('instrutor') || '').trim(),
+          resultado: (formData.get('resultado') as any) || 'APROVADO',
+          aproveitamentoPercentual: Number(formData.get('aproveitamentoPercentual') || 100),
+          numeroCertificado: String(formData.get('numeroCertificado') || '').trim() || undefined,
+          observacoes: String(formData.get('observacoes') || '').trim() || undefined,
+          frotaOuFamilia,
+          nivelOuModulo,
+          varianteAplicabilidade,
+          ehReciclagem,
+          registroTreinamentoOrigemId,
+        };
+
+        await corrigirRegistroTreinamento(
+          organizationId,
+          treinoParaEditar.id,
+          treinoParaEditar,
+          dadosAtualizados,
+          motivoCorrecao,
+          userProfile
+        );
+
+        setModalTreinoOpen(false);
+        setTreinoParaEditar(null);
+        setMotivoCorrecao('');
+      } catch (err: any) {
+        alert(`Erro ao corrigir treinamento: ${err.message}`);
+      } finally {
+        setIsCorrigindoTreino(false);
+      }
+      return;
+    }
+
+    // Caso seja novo registro
     const rec: RegistroTreinamentoColaborador = {
-      id: treinoParaEditar?.id || `tr-${Date.now()}`,
+      id: `tr-${Date.now()}`,
       organizationId,
       colaboradorId: colab.id,
       colaboradorNome: colab.nome,
@@ -256,10 +456,15 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       aproveitamentoPercentual: Number(formData.get('aproveitamentoPercentual') || 100),
       numeroCertificado: String(formData.get('numeroCertificado') || '').trim() || undefined,
       observacoes: String(formData.get('observacoes') || '').trim() || undefined,
+      frotaOuFamilia,
+      nivelOuModulo,
+      varianteAplicabilidade,
+      ehReciclagem,
+      registroTreinamentoOrigemId,
       validadoPorSGQNome: userProfile?.displayName || 'SGQ',
       validadoPorSGQUid: userProfile?.uid || 'sgq',
       dataValidacaoSGQ: new Date().toISOString(),
-      createdAt: treinoParaEditar?.createdAt || new Date().toISOString(),
+      createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
@@ -656,40 +861,170 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       )}
 
       {/* ========================================================================= */}
-      {/* ABA 2: HISTÓRICO DE TREINAMENTOS REALIZADOS                               */}
+      {/* ABA 2: HISTÓRICO DE TREINAMENTOS REALIZADOS (COM EXCLUSÃO EM LOTE E EDIÇÃO) */}
       {/* ========================================================================= */}
       {activeTab === 'TREINAMENTOS_HISTORICO' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="relative flex-1 min-w-[240px]">
+          {/* Barra Flutuante de Ações em Lote */}
+          {selectedRecordIds.length > 0 && (
+            <div className="bg-slate-900 border border-slate-800 text-white p-3.5 rounded-xl shadow-lg flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
+              <div className="flex items-center gap-2.5">
+                <span className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-xs">
+                  {selectedRecordIds.length}
+                </span>
+                <span className="text-xs font-semibold">
+                  {selectedRecordIds.length} registro(s) de treinamento selecionado(s)
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  (Selecione para purgar em lote após calibração de importação)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedRecordIds([])}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                >
+                  Desmarcar Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBatchDeleteJustificativa('');
+                    setIsBatchDeleteModalOpen(true);
+                  }}
+                  className="px-4 py-1.5 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Selecionados em Lote ({selectedRecordIds.length})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Filtros Avançados: Busca, Resultado, Frota, Nível, Origem, Colaborador */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="relative col-span-1 md:col-span-2">
               <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
               <input
                 type="text"
-                placeholder="Buscar por colaborador, treinamento ou certificado..."
+                placeholder="Buscar por colaborador, treinamento, certificado ou instrutor..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
+            {/* Filtro por Frota */}
+            <select
+              value={filterFrota}
+              onChange={(e) => setFilterFrota(e.target.value)}
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-2 bg-slate-50 text-slate-800 font-medium"
+            >
+              <option value="TODAS">Todas as Frotas ({FROTAS_PADRAO.length})</option>
+              {FROTAS_PADRAO.map((f) => (
+                <option key={f} value={f}>
+                  ✈️ {f}
+                </option>
+              ))}
+            </select>
+
+            {/* Filtro por Nível / Módulo */}
+            <select
+              value={filterNivel}
+              onChange={(e) => setFilterNivel(e.target.value)}
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-2 bg-slate-50 text-slate-800 font-medium"
+            >
+              <option value="TODOS">Todos os Níveis / Módulos</option>
+              <option value="Familiarização">Familiarização (Nível 1)</option>
+              <option value="Ramp">Ramp & Transit (Nível 2)</option>
+              <option value="Maintenance">Line & Base Maintenance (Nível 3)</option>
+              <option value="Motor">Curso Específico de Motor</option>
+              <option value="Reciclagem">Apenas Reciclagens</option>
+            </select>
+
+            {/* Filtro por Origem (Importado vs Manual) */}
+            <select
+              value={filterOrigem}
+              onChange={(e) => setFilterOrigem(e.target.value as any)}
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-2 bg-slate-50 text-slate-800 font-medium"
+            >
+              <option value="TODOS">Todas as Origens de Cadastro</option>
+              <option value="IMPORTADO">📥 Apenas Importados Automaticamente</option>
+              <option value="MANUAL">✍️ Apenas Cadastros Manuais / SGQ</option>
+            </select>
+
+            {/* Filtro por Resultado */}
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="text-xs border border-slate-300 rounded-md px-3 py-2 bg-slate-50 text-slate-700"
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-2 bg-slate-50 text-slate-800 font-medium"
             >
               <option value="TODOS">Todos os Resultados</option>
               <option value="APROVADO">Aprovado</option>
               <option value="REPROVADO">Reprovado</option>
               <option value="EM_ANDAMENTO">Em Andamento</option>
             </select>
+
+            {/* Filtro por Colaborador */}
+            <select
+              value={filterColaborador}
+              onChange={(e) => setFilterColaborador(e.target.value)}
+              className="text-xs border border-slate-300 rounded-lg px-2.5 py-2 bg-slate-50 text-slate-800 font-medium col-span-1 md:col-span-2"
+            >
+              <option value="TODOS">Todos os Colaboradores ({persons.length})</option>
+              {persons.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome} ({p.matricula}) — {p.funcao}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-slate-500 pt-1">
+            <span>
+              Exibindo <strong>{treinosFiltrados.length}</strong> de <strong>{trainingRecords.length}</strong> registros de treinamento.
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleToggleSelectAll}
+                className="text-blue-700 hover:text-blue-900 font-semibold flex items-center gap-1 cursor-pointer"
+              >
+                {isAllSelected ? (
+                  <>
+                    <CheckSquare className="w-3.5 h-3.5 text-blue-600" /> Desmarcar todos exibidos
+                  </>
+                ) : (
+                  <>
+                    <Square className="w-3.5 h-3.5" /> Selecionar todos exibidos ({treinosFiltrados.length})
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-slate-200 rounded-lg">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
                 <tr>
+                  <th className="p-3 w-8 text-center">
+                    <button
+                      type="button"
+                      onClick={handleToggleSelectAll}
+                      title="Selecionar todos os registros filtrados"
+                      className="cursor-pointer text-slate-600 hover:text-blue-600"
+                    >
+                      {isAllSelected ? (
+                        <CheckSquare className="w-4 h-4 text-blue-600" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                    </button>
+                  </th>
                   <th className="p-3">Colaborador</th>
-                  <th className="p-3">Treinamento Realizado</th>
+                  <th className="p-3">Treinamento / Frota & Nível</th>
                   <th className="p-3">Data Realização</th>
                   <th className="p-3">Reciclagem / Validade</th>
                   <th className="p-3">Instrutor / Entidade</th>
@@ -700,7 +1035,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
               <tbody className="divide-y divide-slate-200">
                 {treinosFiltrados.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-6 text-center text-slate-500 italic">
+                    <td colSpan={8} className="p-6 text-center text-slate-500 italic">
                       Nenhum treinamento encontrado com os filtros selecionados.
                     </td>
                   </tr>
@@ -708,33 +1043,110 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   treinosFiltrados.map((tr) => {
                     const dias = calcularDiasParaVencimento(tr.dataValidade);
                     const isVencido = dias !== null && dias < 0;
+                    const isSelected = selectedRecordIds.includes(tr.id);
 
                     return (
-                      <tr key={tr.id} className="hover:bg-slate-50 transition">
+                      <tr
+                        key={tr.id}
+                        className={`transition ${isSelected ? 'bg-blue-50/80' : 'hover:bg-slate-50'}`}
+                      >
+                        {/* Checkbox individual */}
+                        <td className="p-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSelectOne(tr.id)}
+                            className="cursor-pointer text-slate-500 hover:text-blue-600"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-blue-600" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        </td>
+
+                        {/* Colaborador */}
                         <td className="p-3 font-medium text-slate-900">
                           <div>{tr.colaboradorNome}</div>
                           <div className="text-[11px] text-slate-500">{tr.colaboradorMatricula}</div>
                         </td>
+
+                        {/* Treinamento / Frota / Nível */}
                         <td className="p-3">
-                          <div className="font-semibold text-slate-900">{tr.treinamentoTitulo}</div>
-                          <div className="text-[11px] text-slate-500 font-mono">
-                            {tr.treinamentoCodigo} • {tr.cargaHoraria}h
+                          <div className="font-semibold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                            <span>{tr.treinamentoTitulo}</span>
+                            {tr.ehReciclagem && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                🔄 Reciclagem
+                              </span>
+                            )}
+                            {tr.importadoAutomaticamente && (
+                              <span
+                                className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-sky-100 text-sky-800 border border-sky-200"
+                                title={`Importado automaticamente. Origem: ${tr.origemImportacao || 'Lote SGQ'}${tr.loteImportacaoId ? ` | Lote: ${tr.loteImportacaoId}` : ''}`}
+                              >
+                                📥 Auto
+                              </span>
+                            )}
+                            {tr.historicoCorrecoes && tr.historicoCorrecoes.length > 0 && (
+                              <span
+                                className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                title={`${tr.historicoCorrecoes.length} correção(ões) auditada(s)`}
+                              >
+                                ✍️ Auditado ({tr.historicoCorrecoes.length})
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>{tr.treinamentoCodigo}</span>
+                            <span>•</span>
+                            <span>{tr.cargaHoraria}h</span>
+                            {tr.frotaOuFamilia && (
+                              <>
+                                <span>•</span>
+                                <span className="font-sans font-semibold text-blue-800">
+                                  ✈️ {tr.frotaOuFamilia}
+                                </span>
+                              </>
+                            )}
+                            {tr.nivelOuModulo && (
+                              <>
+                                <span>•</span>
+                                <span className="font-sans text-indigo-700">
+                                  {tr.nivelOuModulo}
+                                </span>
+                              </>
+                            )}
+                            {tr.varianteAplicabilidade && (
+                              <span className="font-sans text-slate-600 font-mono">
+                                ({tr.varianteAplicabilidade})
+                              </span>
+                            )}
                           </div>
                         </td>
-                        <td className="p-3 text-slate-700">{tr.dataRealizacao}</td>
+
+                        {/* Data Realização */}
+                        <td className="p-3 text-slate-700 font-mono">{tr.dataRealizacao}</td>
+
+                        {/* Validade / Reciclagem */}
                         <td className="p-3">
                           {tr.dataValidade ? (
-                            <span className={isVencido ? 'text-rose-700 font-bold' : 'text-slate-700'}>
+                            <span className={isVencido ? 'text-rose-700 font-bold font-mono' : 'text-slate-700 font-mono'}>
                               {tr.dataValidade} ({dias !== null ? `${dias}d` : 'N/A'})
                             </span>
                           ) : (
                             <span className="text-slate-400">Não expira</span>
                           )}
                         </td>
+
+                        {/* Instrutor / Entidade */}
                         <td className="p-3 text-slate-600">
                           <div>{tr.instrutor}</div>
                           <div className="text-[11px] text-slate-400">{tr.entidadeInstrutora}</div>
                         </td>
+
+                        {/* Resultado */}
                         <td className="p-3 text-center">
                           <span
                             className={`px-2 py-0.5 rounded-full font-bold ${
@@ -746,14 +1158,32 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                             {tr.resultado} {tr.aproveitamentoPercentual ? `(${tr.aproveitamentoPercentual}%)` : ''}
                           </span>
                         </td>
-                        <td className="p-3 text-right">
-                          <button
-                            onClick={() => handleDeleteTreino(tr.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                            title="Excluir"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 inline" />
-                          </button>
+
+                        {/* Ações */}
+                        <td className="p-3 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            {/* Botão de Edição Rastreável */}
+                            <button
+                              onClick={() => {
+                                setTreinoParaEditar(tr);
+                                setMotivoCorrecao('');
+                                setModalTreinoOpen(true);
+                              }}
+                              className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                              title="Editar / Corrigir Registro com Auditoria SGQ"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Botão de Exclusão Individual */}
+                            <button
+                              onClick={() => handleDeleteTreino(tr.id)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                              title="Excluir Registro Individual"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1094,38 +1524,74 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: LANÇAR TREINAMENTO REALIZADO                                       */}
+      {/* MODAL: LANÇAR / EDITAR / CORRIGIR TREINAMENTO (AUDITORIA SGQ)              */}
       {/* ========================================================================= */}
       {modalTreinoOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">Lançamento de Treinamento Realizado</h3>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <GraduationCap className="w-5 h-5 text-blue-600" />
+                  {treinoParaEditar ? 'Editar / Corrigir Registro de Treinamento (Auditoria SGQ)' : 'Lançamento de Treinamento Realizado'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {treinoParaEditar
+                    ? 'A correção atualiza as datas e dados sem apagar silenciosamente o histórico anterior.'
+                    : 'Registre a conclusão de treinamentos iniciais ou reciclagens operacionais.'}
+                </p>
+              </div>
               <button
-                onClick={() => setModalTreinoOpen(false)}
+                onClick={() => {
+                  setModalTreinoOpen(false);
+                  setTreinoParaEditar(null);
+                  setMotivoCorrecao('');
+                }}
                 className="text-slate-400 hover:text-slate-600 p-1"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveTreino} className="space-y-3 text-xs">
+            {/* Aviso de Origem de Importação Automática */}
+            {treinoParaEditar?.importadoAutomaticamente && (
+              <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-900 flex items-center gap-2">
+                <UploadCloud className="w-4 h-4 text-sky-600 shrink-0" />
+                <span>
+                  <strong>Registro de Importação Automática:</strong> Origem: {treinoParaEditar.origemImportacao || 'Lote Documental SGQ'}{' '}
+                  {treinoParaEditar.loteImportacaoId ? `(Lote: ${treinoParaEditar.loteImportacaoId})` : ''}.
+                  As correções manuais de datas e dados serão registradas com trilha de auditoria formal.
+                </span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveTreino} className="space-y-3.5 text-xs">
+              {/* Colaborador */}
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Colaborador *</label>
-                <select
-                  name="colaboradorId"
-                  required
-                  defaultValue={treinoParaEditar?.colaboradorId || persons[0]?.id}
-                  className="w-full p-2 border border-slate-300 rounded-lg bg-white"
-                >
-                  {persons.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome} ({p.matricula}) — {p.funcao}
-                    </option>
-                  ))}
-                </select>
+                <label className="font-semibold text-slate-700 block mb-1">Colaborador / Mecânico *</label>
+                {treinoParaEditar ? (
+                  <div className="p-2.5 bg-slate-100 rounded-lg border border-slate-200 text-slate-900 font-semibold flex justify-between items-center">
+                    <span>{treinoParaEditar.colaboradorNome} ({treinoParaEditar.colaboradorMatricula})</span>
+                    <span className="text-[10px] text-slate-500 uppercase font-mono">Vínculo Seguro</span>
+                    <input type="hidden" name="colaboradorId" value={treinoParaEditar.colaboradorId} />
+                  </div>
+                ) : (
+                  <select
+                    name="colaboradorId"
+                    required
+                    defaultValue={persons[0]?.id}
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                  >
+                    {persons.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome} ({p.matricula}) — {p.funcao}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
+              {/* Treinamento / Curso */}
               <div>
                 <label className="font-semibold text-slate-700 block mb-1">Treinamento / Curso *</label>
                 <select
@@ -1136,12 +1602,97 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                 >
                   {trainingCourses.map((c) => (
                     <option key={c.id} value={c.id}>
-                      {c.codigo} — {c.titulo} ({c.cargaHorariaHoras}h)
+                      {c.codigo} — {c.titulo} ({c.cargaHorariaHoras}h){c.frotaOuFamilia ? ` [✈️ ${c.frotaOuFamilia}]` : ''}
                     </option>
                   ))}
                 </select>
               </div>
 
+              {/* Frota, Nível e Variante */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Frota / Família</label>
+                  <input
+                    type="text"
+                    name="frotaOuFamilia"
+                    list="frotas-list"
+                    defaultValue={treinoParaEditar?.frotaOuFamilia || ''}
+                    placeholder="Ex: Airbus A320"
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                  />
+                  <datalist id="frotas-list">
+                    {FROTAS_PADRAO.map((f) => (
+                      <option key={f} value={f} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Nível ou Módulo Técnico</label>
+                  <input
+                    type="text"
+                    name="nivelOuModulo"
+                    list="niveis-list"
+                    defaultValue={treinoParaEditar?.nivelOuModulo || ''}
+                    placeholder="Ex: Ramp & Transit"
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                  />
+                  <datalist id="niveis-list">
+                    {NIVEIS_CURSO_PADRAO.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Variante / Motor</label>
+                  <input
+                    type="text"
+                    name="varianteAplicabilidade"
+                    defaultValue={treinoParaEditar?.varianteAplicabilidade || ''}
+                    placeholder="Ex: CFM56, LEAP-1A, CEO"
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white font-mono uppercase"
+                  />
+                </div>
+              </div>
+
+              {/* Reciclagem & Treinamento Inicial Vinculado */}
+              <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="ehReciclagem"
+                    name="ehReciclagem"
+                    defaultChecked={treinoParaEditar?.ehReciclagem ?? false}
+                    className="rounded text-amber-600 focus:ring-amber-500"
+                  />
+                  <label htmlFor="ehReciclagem" className="font-bold text-amber-900 cursor-pointer">
+                    Este treinamento é uma Reciclagem / Recorrente (atualiza validade sem apagar o curso inicial)
+                  </label>
+                </div>
+
+                <div>
+                  <label className="font-medium text-amber-800 text-[11px] block mb-0.5">
+                    Vínculo com Treinamento Inicial de Referência (Opcional)
+                  </label>
+                  <select
+                    name="registroTreinamentoOrigemId"
+                    defaultValue={treinoParaEditar?.registroTreinamentoOrigemId || ''}
+                    className="w-full p-1.5 border border-amber-200 rounded-lg bg-white text-xs"
+                  >
+                    <option value="">Nenhum / Curso Autônomo</option>
+                    {trainingRecords
+                      .filter((tr) => !tr.ehReciclagem && tr.id !== treinoParaEditar?.id)
+                      .map((tr) => (
+                        <option key={tr.id} value={tr.id}>
+                          {tr.colaboradorNome} — {tr.treinamentoTitulo} ({tr.dataRealizacao})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Datas de Realização e Validade */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">Data de Realização *</label>
@@ -1150,24 +1701,35 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                     name="dataRealizacao"
                     required
                     defaultValue={treinoParaEditar?.dataRealizacao || new Date().toISOString().split('T')[0]}
-                    className="w-full p-2 border border-slate-300 rounded-lg"
+                    className="w-full p-2 border border-slate-300 rounded-lg font-mono font-medium text-slate-900"
                   />
                 </div>
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Data de Reciclagem (Opcional)</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Data de Reciclagem / Validade</label>
                   <input
                     type="date"
                     name="dataValidade"
                     defaultValue={treinoParaEditar?.dataValidade || ''}
-                    placeholder="Deixe em branco para calcular automaticamente"
-                    className="w-full p-2 border border-slate-300 rounded-lg"
+                    placeholder="Calculada automaticamente se vazio"
+                    className="w-full p-2 border border-slate-300 rounded-lg font-mono"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Carga Horária, Instrutor e Entidade */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Instrutor Responsável *</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Carga Horária (h) *</label>
+                  <input
+                    type="number"
+                    name="cargaHoraria"
+                    required
+                    defaultValue={treinoParaEditar?.cargaHoraria || 8}
+                    className="w-full p-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Instrutor *</label>
                   <input
                     type="text"
                     name="instrutor"
@@ -1178,7 +1740,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   />
                 </div>
                 <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Entidade / Organização</label>
+                  <label className="font-semibold text-slate-700 block mb-1">Entidade Instrutora</label>
                   <input
                     type="text"
                     name="entidadeInstrutora"
@@ -1188,7 +1750,8 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              {/* Resultado, Aproveitamento e Certificado */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">Resultado *</label>
                   <select
@@ -1213,32 +1776,94 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                     className="w-full p-2 border border-slate-300 rounded-lg"
                   />
                 </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Nº do Certificado</label>
+                  <input
+                    type="text"
+                    name="numeroCertificado"
+                    defaultValue={treinoParaEditar?.numeroCertificado || ''}
+                    placeholder="Ex: CERT-2025-084"
+                    className="w-full p-2 border border-slate-300 rounded-lg font-mono"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Número do Certificado</label>
+                <label className="font-semibold text-slate-700 block mb-1">Observações Técnicas</label>
                 <input
                   type="text"
-                  name="numeroCertificado"
-                  defaultValue={treinoParaEditar?.numeroCertificado || ''}
-                  placeholder="Ex: CERT-2025-HF-084"
-                  className="w-full p-2 border border-slate-300 rounded-lg font-mono"
+                  name="observacoes"
+                  defaultValue={treinoParaEditar?.observacoes || ''}
+                  placeholder="Ex: Documentação comprobatória verificada conforme Manual de Treinamento."
+                  className="w-full p-2 border border-slate-300 rounded-lg"
                 />
               </div>
+
+              {/* Campo Obrigatório de Motivo/Justificativa da Correção (quando em modo de edição) */}
+              {treinoParaEditar && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5">
+                  <label className="font-bold text-amber-900 block text-xs">
+                    Motivo / Justificativa da Correção do Treinamento * (Auditoria SGQ)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={motivoCorrecao}
+                    onChange={(e) => setMotivoCorrecao(e.target.value)}
+                    placeholder="Ex: Correção da data de realização importada incorretamente pela planilha; alinhado com o Certificado original nº CERT-8493."
+                    className="w-full p-2 border border-amber-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-amber-500"
+                    required
+                  />
+                  <span className="text-[10px] text-amber-800">
+                    Obrigatório (mínimo 5 caracteres). Ficará gravado permanentemente no histórico com seu usuário, data e valores anteriores.
+                  </span>
+                </div>
+              )}
+
+              {/* Histórico de Correções Anteriores */}
+              {treinoParaEditar?.historicoCorrecoes && treinoParaEditar.historicoCorrecoes.length > 0 && (
+                <div className="pt-2 border-t border-slate-200 space-y-2">
+                  <h4 className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                    <History className="w-4 h-4 text-slate-500" />
+                    Trilha de Correções Anteriores ({treinoParaEditar.historicoCorrecoes.length})
+                  </h4>
+                  <div className="max-h-32 overflow-y-auto space-y-1.5 divide-y divide-slate-100 pr-1">
+                    {treinoParaEditar.historicoCorrecoes.map((hc) => (
+                      <div key={hc.id} className="pt-1 text-[11px] text-slate-600">
+                        <div className="flex justify-between font-semibold text-slate-700">
+                          <span>{hc.usuarioNome}</span>
+                          <span className="font-mono text-slate-400">{new Date(hc.dataHora).toLocaleString('pt-BR')}</span>
+                        </div>
+                        <p className="text-slate-800 italic">"{hc.motivoCorrecao}"</p>
+                        <p className="text-[10px] text-slate-500">
+                          Campos alterados: {hc.camposAlterados.join(', ')}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setModalTreinoOpen(false)}
+                  onClick={() => {
+                    setModalTreinoOpen(false);
+                    setTreinoParaEditar(null);
+                    setMotivoCorrecao('');
+                  }}
                   className="px-4 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm"
+                  disabled={isCorrigindoTreino}
+                  className={`px-5 py-2 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer ${
+                    treinoParaEditar ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
                 >
-                  Confirmar Lançamento
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isCorrigindoTreino ? 'Gravando...' : treinoParaEditar ? 'Confirmar Correção Rastreável' : 'Confirmar Lançamento'}</span>
                 </button>
               </div>
             </form>
@@ -1247,15 +1872,130 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: NOVO CURSO NO CATÁLOGO                                             */}
+      {/* MODAL: EXCLUSÃO EM LOTE DO HISTÓRICO DE TREINAMENTOS                       */}
+      {/* ========================================================================= */}
+      {isBatchDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-rose-800 flex items-center gap-2">
+                <Trash2 className="w-5 h-5 text-rose-600" />
+                Exclusão em Lote do Histórico ({selectedRecordIds.length} Registros)
+              </h3>
+              <button
+                onClick={() => setIsBatchDeleteModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-900 space-y-1.5">
+              <p className="font-bold flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                Atenção: Ação Administrativa Irreversível!
+              </p>
+              <p>
+                Você selecionou <strong>{selectedRecordIds.length}</strong> registro(s) de treinamento para expurgo.
+                Esta operação é utilizada durante a calibração de importações e removerá definitivamente os registros selecionados do Firestore.
+              </p>
+            </div>
+
+            {/* Resumo dos registros a excluir */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1 max-h-36 overflow-y-auto">
+              <span className="font-bold text-slate-700 block text-[11px] uppercase tracking-wider mb-1">
+                Prévia dos Registros Selecionados:
+              </span>
+              {trainingRecords
+                .filter((tr) => selectedRecordIds.includes(tr.id))
+                .slice(0, 6)
+                .map((tr) => (
+                  <div key={tr.id} className="text-[11px] text-slate-600 flex justify-between py-0.5 border-b border-slate-100 last:border-0">
+                    <span className="font-medium text-slate-800">{tr.colaboradorNome}</span>
+                    <span className="text-slate-500 truncate max-w-[200px]">{tr.treinamentoTitulo}</span>
+                  </div>
+                ))}
+              {selectedRecordIds.length > 6 && (
+                <p className="text-[10px] text-slate-500 italic pt-1">
+                  ...e mais {selectedRecordIds.length - 6} outro(s) registro(s).
+                </p>
+              )}
+            </div>
+
+            {/* Justificativa Obrigatória */}
+            <div>
+              <label className="font-bold text-slate-800 text-xs block mb-1">
+                Motivo / Justificativa da Exclusão em Lote * (Auditoria SGQ)
+              </label>
+              <textarea
+                rows={3}
+                value={batchDeleteJustificativa}
+                onChange={(e) => setBatchDeleteJustificativa(e.target.value)}
+                placeholder="Ex: Calibração do modelo de importação de cursos; remoção do lote redundante importado com erro de data."
+                className="w-full p-2.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-rose-500"
+                required
+              />
+              <span className="text-[10px] text-slate-400">
+                Esta justificativa será registrada no log permanente de auditoria SGQ.
+              </span>
+            </div>
+
+            {/* Barra de Progresso */}
+            {isBatchDeleting && batchDeleteProgress && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs font-semibold text-slate-700">
+                  <span>Excluindo registros...</span>
+                  <span>{batchDeleteProgress.removidos} / {batchDeleteProgress.total}</span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-rose-600 h-2 transition-all duration-200"
+                    style={{
+                      width: `${(batchDeleteProgress.removidos / batchDeleteProgress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200 text-xs">
+              <button
+                type="button"
+                onClick={() => setIsBatchDeleteModalOpen(false)}
+                disabled={isBatchDeleting}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 font-semibold"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmBatchDelete}
+                disabled={isBatchDeleting || !batchDeleteJustificativa.trim()}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isBatchDeleting ? 'Excluindo...' : `Confirmar Exclusão (${selectedRecordIds.length})`}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: NOVO / EDITAR CURSO NO CATÁLOGO (COM FROTAS E NÍVEIS)               */}
       {/* ========================================================================= */}
       {modalCursoOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">
-                {cursoParaEditar ? 'Editar Curso' : 'Cadastrar Curso no Catálogo'}
-              </h3>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {cursoParaEditar ? 'Editar Curso' : 'Cadastrar Curso no Catálogo'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Configure requisitos, frotas atendidas, níveis e regras de reciclagem.
+                </p>
+              </div>
               <button
                 onClick={() => setModalCursoOpen(false)}
                 className="text-slate-400 hover:text-slate-600 p-1"
@@ -1282,13 +2022,15 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   <select
                     name="tipo"
                     required
-                    defaultValue={cursoParaEditar?.tipo || 'REGULAMENTAR'}
+                    defaultValue={cursoParaEditar?.tipo || 'REGULATORIO'}
                     className="w-full p-2 border border-slate-300 rounded-lg bg-white"
                   >
-                    <option value="REGULAMENTAR">Regulamentar (ANAC)</option>
-                    <option value="TECNICO">Técnico Operacional</option>
-                    <option value="QUALIDADE_SGQ">Qualidade / SGQ</option>
-                    <option value="SEGURANCA_OPERACIONAL">Segurança Operacional</option>
+                    <option value="REGULATORIO">Regulatório (RBAC 145/ANAC)</option>
+                    <option value="AERONAUTICO">Técnico Aeronáutico</option>
+                    <option value="FABRICANTE">Fabricante (Airbus/Boeing/etc.)</option>
+                    <option value="QUALIDADE">Qualidade / SGQ</option>
+                    <option value="SEGURANCA">Segurança Operacional (SGSO)</option>
+                    <option value="RECICLAGEM">Reciclagem Periódica</option>
                   </select>
                 </div>
               </div>
@@ -1301,21 +2043,69 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   required
                   defaultValue={cursoParaEditar?.titulo || ''}
                   placeholder="Ex: Fatores Humanos na Manutenção Aeronáutica"
-                  className="w-full p-2 border border-slate-300 rounded-lg"
+                  className="w-full p-2 border border-slate-300 rounded-lg font-medium text-slate-900"
+                />
+              </div>
+
+              {/* Frota e Nível */}
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Frota / Família</label>
+                  <input
+                    type="text"
+                    name="frotaOuFamilia"
+                    list="frotas-curso-list"
+                    defaultValue={cursoParaEditar?.frotaOuFamilia || ''}
+                    placeholder="Ex: Airbus A320"
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                  />
+                  <datalist id="frotas-curso-list">
+                    {FROTAS_PADRAO.map((f) => (
+                      <option key={f} value={f} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Nível ou Módulo</label>
+                  <input
+                    type="text"
+                    name="nivelOuModulo"
+                    list="niveis-curso-list"
+                    defaultValue={cursoParaEditar?.nivelOuModulo || ''}
+                    placeholder="Ex: Ramp & Transit"
+                    className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                  />
+                  <datalist id="niveis-curso-list">
+                    {NIVEIS_CURSO_PADRAO.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">Variantes / Motores (separar por vírgula)</label>
+                <input
+                  type="text"
+                  name="variantesAplicabilidade"
+                  defaultValue={(cursoParaEditar?.variantesAplicabilidade || []).join(', ')}
+                  placeholder="Ex: CFM56, LEAP-1A, V2500, CEO, NEO"
+                  className="w-full p-2 border border-slate-300 rounded-lg font-mono uppercase"
                 />
               </div>
 
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Descrição</label>
+                <label className="font-semibold text-slate-700 block mb-1">Ementa / Descrição</label>
                 <textarea
                   name="descricao"
                   rows={2}
-                  defaultValue={cursoParaEditar?.descricao || ''}
+                  defaultValue={cursoParaEditar?.ementa || ''}
+                  placeholder="Conteúdo programático e escopo da capacitação..."
                   className="w-full p-2 border border-slate-300 rounded-lg"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">Carga Horária (h) *</label>
                   <input
@@ -1335,19 +2125,76 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                     className="w-full p-2 border border-slate-300 rounded-lg"
                   />
                 </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Tolerância (Dias)</label>
+                  <input
+                    type="number"
+                    name="toleranciaDias"
+                    defaultValue={cursoParaEditar?.toleranciaDias || 0}
+                    className="w-full p-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="recorrente"
-                  name="recorrente"
-                  defaultChecked={cursoParaEditar?.recorrente ?? true}
-                  className="rounded text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="recorrente" className="font-semibold text-slate-700 cursor-pointer">
-                  Treinamento Recorrente (exige reciclagem periódica)
-                </label>
+              {/* Configurações de Reciclagem e Origem */}
+              <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="recorrente"
+                    name="recorrente"
+                    defaultChecked={cursoParaEditar?.recorrente ?? true}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <label htmlFor="recorrente" className="font-semibold text-slate-700 cursor-pointer">
+                    Treinamento Recorrente (exige reciclagem periódica)
+                  </label>
+                </div>
+
+                <div>
+                  <label className="font-medium text-amber-900 text-[11px] block mb-0.5">
+                    Curso de Origem que esta Reciclagem Revalida (se aplicável)
+                  </label>
+                  <select
+                    name="cursoOrigemReciclagemId"
+                    defaultValue={cursoParaEditar?.cursoOrigemReciclagemId || ''}
+                    className="w-full p-1.5 border border-amber-200 rounded-lg bg-white text-xs"
+                  >
+                    <option value="">Nenhum / Curso Base Independente</option>
+                    {trainingCourses
+                      .filter((c) => c.id !== cursoParaEditar?.id)
+                      .map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.codigo} — {c.titulo}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Evidência Exigida</label>
+                  <input
+                    type="text"
+                    name="evidenciaExigida"
+                    defaultValue={cursoParaEditar?.evidenciaExigida || 'Certificado de Conclusão'}
+                    placeholder="Ex: Certificado, Avaliação Teórica/Prática"
+                    className="w-full p-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+                <div className="flex items-center gap-2 pt-5">
+                  <input
+                    type="checkbox"
+                    id="exigeAvaliacaoOuAprovacaoAdicional"
+                    name="exigeAvaliacaoOuAprovacaoAdicional"
+                    defaultChecked={cursoParaEditar?.exigeAvaliacaoOuAprovacaoAdicional ?? false}
+                    className="rounded text-purple-600 focus:ring-purple-500"
+                  />
+                  <label htmlFor="exigeAvaliacaoOuAprovacaoAdicional" className="font-semibold text-slate-700 cursor-pointer text-[11px]">
+                    Exige Avaliação Formal / Portaria SGQ
+                  </label>
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">

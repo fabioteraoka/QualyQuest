@@ -240,6 +240,10 @@ export async function reativarBaseOperacional(
   });
 }
 
+// Aliases para compatibilidade de nomenclatura
+export const inactivateBaseOperacional = inativarBaseOperacional;
+export const reactivateBaseOperacional = reativarBaseOperacional;
+
 export async function deleteBaseOperacional(
   organizationId: string,
   base: BaseEstacaoOperacao,

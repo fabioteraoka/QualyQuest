@@ -897,6 +897,11 @@ export async function corrigirRegistroTreinamento(
     'aproveitamentoPercentual',
     'numeroCertificado',
     'observacoes',
+    'frotaOuFamilia',
+    'varianteAplicabilidade',
+    'nivelOuModulo',
+    'ehReciclagem',
+    'registroTreinamentoOrigemId',
   ];
 
   for (const campo of camposParaVerificar) {
@@ -988,9 +993,15 @@ export async function batchDeleteTrainingRecords(
   organizationId: string,
   recordIds: string[],
   userProfile?: UserProfile | null,
-  onProgress?: (removidos: number, total: number) => void
+  onProgress?: (removidos: number, total: number) => void,
+  justificativa?: string
 ): Promise<{ totalRemovidos: number }> {
   if (!organizationId || !recordIds.length) return { totalRemovidos: 0 };
+
+  const role = (userProfile?.role || '') as string;
+  if (role === 'CONSULTA' || role === 'VIEWER' || role === 'GUEST') {
+    throw new Error('Permissão negada: Perfil de consulta não possui autorização para excluir registros de treinamento.');
+  }
 
   const CHUNK_SIZE = 400;
   let removidos = 0;
@@ -1011,11 +1022,11 @@ export async function batchDeleteTrainingRecords(
 
   await recordOrganizationAudit(organizationId, {
     entity: 'ORGANIZATION' as any,
-    entityId: `dedup-${Date.now()}`,
+    entityId: `batch-del-${Date.now()}`,
     action: 'DELETE',
     changedByUid: userProfile?.uid || auth.currentUser?.uid || 'anon',
     changedByEmail: userProfile?.email || auth.currentUser?.email || 'admin@qualigest.aero',
-    summary: `Deduplicação de base de dados: ${removidos} registros de treinamento redundantes removidos em lote`,
+    summary: `Exclusão em lote do histórico de cursos: ${removidos} registros removidos. Motivo: ${justificativa || 'Calibração / Expurgo de dados'}`,
   });
 
   return { totalRemovidos: removidos };

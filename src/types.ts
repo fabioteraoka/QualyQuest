@@ -1828,6 +1828,16 @@ export interface CursoTreinamento {
   toleranciaDias?: number; // Janela de tolerância operacional
   competenciasDesenvolvidasIds: string[];
   status: 'ATIVO' | 'INATIVO';
+  // Gestão por Frota, Níveis e Reciclagens Configuráveis (IMPACTO SGQ)
+  frotaOuFamilia?: string; // Ex: 'Airbus A320', 'Boeing 737', 'ATR 42/72', 'Geral'
+  variantesAplicabilidade?: string[]; // Ex: ['CFM56', 'LEAP-1A', 'V2500', 'PW1100G']
+  nivelOuModulo?: string; // Ex: 'Familiarização', 'Ramp & Transit', 'Line & Base Maintenance', 'Motor Específico'
+  niveisDisponiveis?: string[]; // Níveis configuráveis para este curso
+  exigeReciclagem?: boolean; // Se exige reciclagem periódica
+  cursoOrigemReciclagemId?: string; // Id do curso base que esta reciclagem revalida
+  cursoOrigemReciclagemTitulo?: string;
+  evidenciaExigida?: string; // Ex: 'Certificado de Conclusão', 'Avaliação Teórica/Prática', 'Portaria SGQ'
+  exigeAvaliacaoOuAprovacaoAdicional?: boolean;
   createdAt: string;
   updatedAt: string;
   criadoPorUid?: string;
@@ -1871,9 +1881,17 @@ export interface RegistroTreinamentoColaborador {
   validadoPorSGQUid?: string;
   validadoPorSGQNome?: string;
   dataValidacaoSGQ?: string;
+  // Detalhamento por Frota, Nível e Reciclagem
+  frotaOuFamilia?: string; // Ex: 'Airbus A320'
+  varianteAplicabilidade?: string; // Ex: 'CFM56'
+  nivelOuModulo?: string; // Ex: 'Ramp & Transit'
+  ehReciclagem?: boolean;
+  registroTreinamentoOrigemId?: string; // Vínculo ao treinamento inicial correspondente
   // Auditoria e rastreabilidade de correções
   importadoAutomaticamente?: boolean;
   origemImportacao?: string;
+  loteImportacaoId?: string;
+  dataImportacao?: string;
   historicoCorrecoes?: HistoricoCorrecaoTreinamento[];
   createdAt: string;
   updatedAt: string;
