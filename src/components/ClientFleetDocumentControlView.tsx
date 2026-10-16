@@ -26,7 +26,13 @@ import {
   RefreshCw,
   Eye,
   Info,
+  Table,
+  Layers,
+  Printer,
+  Sparkles,
+  Check,
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import {
   DocumentoControlado,
   SolicitacaoRevisaoCliente,
@@ -50,6 +56,10 @@ import {
   saveDocumentoControlado,
   saveSolicitacaoCliente,
 } from '../services/firebase/documentControlFirestore';
+import {
+  obterCatalogoF001Estruturado,
+  PublicacaoControladaF001,
+} from '../data/f001021ControlledPublications';
 
 interface ClientFleetDocumentControlViewProps {
   organizationId: string;
@@ -73,14 +83,27 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
   onOpenFilePreview,
 }) => {
   // Navegação Interna da Visão
-  const [activeTab, setActiveTab] = useState<'geral' | 'empresas' | 'cobrancas' | 'relatorio'>('geral');
+  const [activeTab, setActiveTab] = useState<'geral' | 'empresas' | 'planilha-f001' | 'matriz-multi-cessor' | 'cobrancas' | 'relatorio'>('geral');
   const [selectedClienteId, setSelectedClienteId] = useState<string>('TODAS');
 
-  // Filtros
+  // Filtros Visão Geral
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTipoDoc, setSelectedTipoDoc] = useState<string>('TODOS');
   const [selectedFrota, setSelectedFrota] = useState<string>('TODAS');
   const [selectedSituacaoRecebimento, setSelectedSituacaoRecebimento] = useState<string>('TODAS');
+
+  // Filtros Planilha Oficial F 001-02-1
+  const [f001SearchTerm, setF001SearchTerm] = useState('');
+  const [f001SelectedCessor, setF001SelectedCessor] = useState<string>('TODOS');
+  const [f001SelectedProprietario, setF001SelectedProprietario] = useState<string>('TODOS');
+  const [f001SelectedFrota, setF001SelectedFrota] = useState<string>('TODAS');
+  const [f001SelectedTipoPub, setF001SelectedTipoPub] = useState<string>('TODOS');
+  const [f001ExportSuccess, setF001ExportSuccess] = useState(false);
+
+  // Filtros Matriz Multi-Cessor (Mesmo Manual em Diferentes Cessores e Frotas)
+  const [matrizSearchTerm, setMatrizSearchTerm] = useState('');
+  const [matrizSelectedCessor, setMatrizSelectedCessor] = useState<string>('TODOS');
+  const [expandedManualGroup, setExpandedManualGroup] = useState<string | null>(null);
 
   // Modais
   const [isCobrancaModalOpen, setIsCobrancaModalOpen] = useState(false);
@@ -177,6 +200,164 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
       return true;
     });
   }, [docsClientes, selectedClienteId, selectedTipoDoc, selectedFrota, selectedSituacaoRecebimento, searchTerm]);
+
+  // =========================================================================
+  // CATÁLOGO ESTRUTURADO F 001-02-1 & MATRIZ MULTI-CESSOR
+  // =========================================================================
+  const catalogoF001 = useMemo(() => {
+    return obterCatalogoF001Estruturado();
+  }, []);
+
+  // Lista de Cessores únicos presentes na planilha
+  const f001Cessores = useMemo(() => {
+    const set = new Set<string>();
+    catalogoF001.forEach((i) => {
+      if (i.cessor) set.add(i.cessor);
+    });
+    return Array.from(set).sort();
+  }, [catalogoF001]);
+
+  // Lista de Proprietários únicos
+  const f001Proprietarios = useMemo(() => {
+    const set = new Set<string>();
+    catalogoF001.forEach((i) => {
+      if (i.proprietario) set.add(i.proprietario);
+    });
+    return Array.from(set).sort();
+  }, [catalogoF001]);
+
+  // Lista de Frotas únicas
+  const f001Frotas = useMemo(() => {
+    const set = new Set<string>();
+    catalogoF001.forEach((i) => {
+      if (i.frota) set.add(i.frota);
+    });
+    return Array.from(set).sort();
+  }, [catalogoF001]);
+
+  // Catálogo Filtrado da Planilha F 001-02-1
+  const catalogoF001Filtrado = useMemo(() => {
+    return catalogoF001.filter((item) => {
+      if (f001SelectedCessor !== 'TODOS' && item.cessor !== f001SelectedCessor) {
+        return false;
+      }
+      if (f001SelectedProprietario !== 'TODOS' && item.proprietario !== f001SelectedProprietario) {
+        return false;
+      }
+      if (f001SelectedFrota !== 'TODAS' && item.frota !== f001SelectedFrota) {
+        return false;
+      }
+      if (f001SelectedTipoPub !== 'TODOS') {
+        if (
+          f001SelectedTipoPub === 'MANUAIS' &&
+          !['AMM', 'AIPC', 'SRM', 'FIM', 'WDM', 'MPD', 'NDT', 'SSM', 'SWPM', 'CDL', 'DDG', 'DTR', 'SOPM', 'TC', 'WBM', 'SDS', 'TM', 'MGCA', 'MGM', 'AMTM', 'GMM', 'OPSPECS'].includes(item.publicacao)
+        ) {
+          return false;
+        }
+        if (f001SelectedTipoPub === 'FORMULARIOS' && !item.publicacao.startsWith('F 001')) {
+          return false;
+        }
+        if (f001SelectedTipoPub === 'PROCEDIMENTOS' && !item.publicacao.startsWith('P 001')) {
+          return false;
+        }
+        if (f001SelectedTipoPub === 'INSTRUCOES' && !item.publicacao.startsWith('I 001')) {
+          return false;
+        }
+        if (f001SelectedTipoPub === 'REGULAMENTACAO' && !(item.publicacao.startsWith('RBAC') || item.publicacao.startsWith('IS'))) {
+          return false;
+        }
+      }
+      if (f001SearchTerm.trim()) {
+        const q = f001SearchTerm.toLowerCase();
+        const matches =
+          item.publicacao.toLowerCase().includes(q) ||
+          item.titulo.toLowerCase().includes(q) ||
+          item.proprietario.toLowerCase().includes(q) ||
+          item.cessor.toLowerCase().includes(q) ||
+          (item.frota && item.frota.toLowerCase().includes(q)) ||
+          item.revisao.toLowerCase().includes(q) ||
+          item.dataRevisao.toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [catalogoF001, f001SelectedCessor, f001SelectedProprietario, f001SelectedFrota, f001SelectedTipoPub, f001SearchTerm]);
+
+  // Matriz Multi-Cessor (Mesmo Manual em Diferentes Cessores e Frotas)
+  const matrizMultiCessor = useMemo(() => {
+    const grupos: Record<string, PublicacaoControladaF001[]> = {};
+    catalogoF001.forEach((item) => {
+      const pub = item.publicacao.trim().toUpperCase();
+      if (!grupos[pub]) grupos[pub] = [];
+      grupos[pub].push(item);
+    });
+
+    return Object.entries(grupos)
+      .map(([publicacao, itens]) => {
+        const cessoresUnicos = Array.from(new Set(itens.map((i) => i.cessor)));
+        const frotasUnicas = Array.from(new Set(itens.map((i) => i.frota || 'Geral')));
+        return {
+          publicacao,
+          totalInstancias: itens.length,
+          cessoresUnicos,
+          frotasUnicas,
+          itens,
+        };
+      })
+      .filter((g) => ['AMM', 'AIPC', 'SRM', 'FIM', 'WDM', 'MPD', 'NDT', 'SSM', 'SWPM', 'CDL', 'DDG', 'DTR', 'WBM', 'MGM', 'MEL'].includes(g.publicacao) || g.cessoresUnicos.length > 1)
+      .sort((a, b) => b.cessoresUnicos.length - a.cessoresUnicos.length || a.publicacao.localeCompare(b.publicacao));
+  }, [catalogoF001]);
+
+  // Matriz Multi-Cessor Filtrada
+  const matrizMultiCessorFiltrada = useMemo(() => {
+    return matrizMultiCessor.filter((grupo) => {
+      if (matrizSelectedCessor !== 'TODOS') {
+        const temCessor = grupo.cessoresUnicos.includes(matrizSelectedCessor);
+        if (!temCessor) return false;
+      }
+      if (matrizSearchTerm.trim()) {
+        const q = matrizSearchTerm.toLowerCase();
+        const matchesPub = grupo.publicacao.toLowerCase().includes(q);
+        const matchesCessor = grupo.cessoresUnicos.some((c) => c && c.toLowerCase().includes(q));
+        const matchesFrota = grupo.frotasUnicas.some((f) => f && f.toLowerCase().includes(q));
+        const matchesItem = grupo.itens.some(
+          (it) =>
+            it.titulo.toLowerCase().includes(q) ||
+            (it.revisao && it.revisao.toLowerCase().includes(q)) ||
+            (it.frota && it.frota.toLowerCase().includes(q))
+        );
+        if (!matchesPub && !matchesCessor && !matchesFrota && !matchesItem) return false;
+      }
+      return true;
+    });
+  }, [matrizMultiCessor, matrizSelectedCessor, matrizSearchTerm]);
+
+  // Exportação Oficial F 001-02-1 (6 Colunas) para Excel
+  const handleExportarPlanilhaF001 = () => {
+    try {
+      const dadosExport = catalogoF001Filtrado.map((p, idx) => ({
+        'Item #': idx + 1,
+        'Publicação': p.publicacao,
+        'Título': p.titulo,
+        'Proprietário': p.proprietario,
+        'Cessor': p.cessor,
+        'Revisão': p.revisao,
+        'Data da revisão': p.dataRevisao,
+        'Frota / Aplicação': p.frota || 'Geral',
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(dadosExport);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'F 001-02-1 Publicações');
+      XLSX.writeFile(wb, `F001_02_1_Publicacoes_Controladas_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      setF001ExportSuccess(true);
+      setTimeout(() => setF001ExportSuccess(false), 3000);
+      showToast?.('Planilha F 001-02-1 exportada com sucesso em formato Excel (.xlsx)!');
+    } catch (err: any) {
+      alert(`Erro ao exportar planilha: ${err.message}`);
+    }
+  };
 
   // Helper para Encontrar Solicitação do Documento
   const getSolicitacaoDoc = (docId: string): SolicitacaoRevisaoCliente | undefined => {
@@ -529,6 +710,28 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
             2. Visão por Empresa & Múltiplas MELs
           </button>
           <button
+            onClick={() => setActiveTab('planilha-f001')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'planilha-f001'
+                ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-500/50 shadow-xs font-bold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
+            }`}
+          >
+            <Table className="w-3.5 h-3.5 text-emerald-400" />
+            <span>3. Planilha Oficial F 001-02-1 (6 Colunas)</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('matriz-multi-cessor')}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeTab === 'matriz-multi-cessor'
+                ? 'bg-purple-500/25 text-purple-300 border border-purple-500/50 shadow-xs font-bold'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-purple-400" />
+            <span>4. Matriz Multi-Cessor & Frotas</span>
+          </button>
+          <button
             onClick={() => setActiveTab('cobrancas')}
             className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'cobrancas'
@@ -536,7 +739,7 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
             }`}
           >
-            3. Solicitações & Histórico de Cobranças
+            5. Solicitações & Histórico de Cobranças
           </button>
           <button
             onClick={() => setActiveTab('relatorio')}
@@ -546,7 +749,7 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-transparent'
             }`}
           >
-            4. Relatório Executivo da Qualidade
+            6. Relatório Executivo da Qualidade
           </button>
         </div>
       </div>
@@ -1041,7 +1244,553 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
       )}
 
       {/* ========================================================================= */}
-      {/* 5. ABA 3: SOLICITAÇÕES & HISTÓRICO DE COBRANÇAS                           */}
+      {/* 3. ABA 3: PLANILHA OFICIAL F 001-02-1 (6 COLUNAS)                         */}
+      {/* ========================================================================= */}
+      {activeTab === 'planilha-f001' && (
+        <div className="space-y-6">
+          {/* Header e Métricas da Planilha */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    FORMULÁRIO F 001-02-1
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    Controle de Documentações Normativas / Manuais Técnicos Controlados
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-white mt-1 flex items-center gap-2">
+                  <Table className="w-5 h-5 text-emerald-400" />
+                  Planilha Oficial de Publicações Técnicas (Estrutura de 6 Colunas)
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-3xl leading-relaxed">
+                  Espelho fiel do formulário oficial com desdobramento inteligente: <strong>Publicação</strong>, <strong>Título</strong>, <strong>Proprietário</strong> (Fabricante/Autoridade), <strong>Cessor</strong> (Operador da frota), <strong>Revisão</strong> e <strong>Data da revisão</strong>, com mapeamento automático de <strong>Frota/Aplicação</strong>.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleExportarPlanilhaF001}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-2 shadow-lg shadow-emerald-950/40 transition-all cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>{f001ExportSuccess ? 'Exportado com Sucesso!' : 'Exportar Planilha (.xlsx)'}</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('matriz-multi-cessor')}
+                  className="px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <Layers className="w-4 h-4 text-purple-400" />
+                  <span>Ver Matriz Multi-Cessor</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Badges de Resumo Técnico */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Total de Itens</span>
+                <span className="text-xl font-bold text-white">{catalogoF001.length}</span>
+                <span className="text-[10px] text-slate-500 block">publicações catalogadas</span>
+              </div>
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Filtrados</span>
+                <span className="text-xl font-bold text-emerald-400">{catalogoF001Filtrado.length}</span>
+                <span className="text-[10px] text-slate-500 block">em exibição na grade</span>
+              </div>
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Cessores Distintos</span>
+                <span className="text-xl font-bold text-purple-400">{f001Cessores.length}</span>
+                <span className="text-[10px] text-slate-500 block truncate" title={f001Cessores.join(', ')}>
+                  {f001Cessores.slice(0, 5).join(', ')}...
+                </span>
+              </div>
+              <div className="p-3 bg-slate-950/70 border border-slate-800 rounded-xl">
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Frotas / Aplicações</span>
+                <span className="text-xl font-bold text-sky-400">{f001Frotas.length}</span>
+                <span className="text-[10px] text-slate-500 block">modelos aeronáuticos</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros da Planilha F 001 */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[240px]">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+                <input
+                  type="text"
+                  value={f001SearchTerm}
+                  onChange={(e) => setF001SearchTerm(e.target.value)}
+                  placeholder="Filtrar por publicação (ex: AMM, AIPC), título, cessor (ex: EUR, KAT, MWM), frota..."
+                  className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={f001SelectedCessor}
+                  onChange={(e) => setF001SelectedCessor(e.target.value)}
+                  className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-hidden"
+                >
+                  <option value="TODOS">Todos os Cessores</option>
+                  {f001Cessores.map((cess) => (
+                    <option key={cess} value={cess}>
+                      Cessor: {cess}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={f001SelectedProprietario}
+                  onChange={(e) => setF001SelectedProprietario(e.target.value)}
+                  className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-hidden"
+                >
+                  <option value="TODOS">Todos os Proprietários (OEM)</option>
+                  {f001Proprietarios.map((prop) => (
+                    <option key={prop} value={prop}>
+                      Proprietário: {prop}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={f001SelectedFrota}
+                  onChange={(e) => setF001SelectedFrota(e.target.value)}
+                  className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-hidden"
+                >
+                  <option value="TODAS">Todas as Frotas</option>
+                  {f001Frotas.map((frota) => (
+                    <option key={frota} value={frota}>
+                      Frota: {frota}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={f001SelectedTipoPub}
+                  onChange={(e) => setF001SelectedTipoPub(e.target.value)}
+                  className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-hidden"
+                >
+                  <option value="TODOS">Todos os Tipos de Documento</option>
+                  <option value="MANUAIS">Manuais Técnicos (AMM, AIPC, SRM, etc.)</option>
+                  <option value="FORMULARIOS">Formulários SGQ (F 001)</option>
+                  <option value="PROCEDIMENTOS">Procedimentos Operacionais (P 001)</option>
+                  <option value="INSTRUCOES">Instruções de Trabalho (I 001)</option>
+                  <option value="REGULAMENTACAO">Regulamentação (RBAC / IS ANAC)</option>
+                </select>
+
+                {(f001SearchTerm || f001SelectedCessor !== 'TODOS' || f001SelectedProprietario !== 'TODOS' || f001SelectedFrota !== 'TODAS' || f001SelectedTipoPub !== 'TODOS') && (
+                  <button
+                    onClick={() => {
+                      setF001SearchTerm('');
+                      setF001SelectedCessor('TODOS');
+                      setF001SelectedProprietario('TODOS');
+                      setF001SelectedFrota('TODAS');
+                      setF001SelectedTipoPub('TODOS');
+                    }}
+                    className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs text-slate-300 font-semibold"
+                  >
+                    Limpar Filtros
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Tabela Tabular das 6 Colunas Oficiais */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="p-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-300">
+                Grade de Publicações Técnicas ({catalogoF001Filtrado.length} registros)
+              </span>
+              <span className="text-[11px] text-slate-400">
+                Colunas oficiais do Formulário F 001-02-1 aprovado pela Diretoria Técnica
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-950/60 uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-3 w-12 text-center">#</th>
+                    <th className="py-3 px-3 w-28">1. Publicação</th>
+                    <th className="py-3 px-4 min-w-[280px]">2. Título da Publicação</th>
+                    <th className="py-3 px-3 w-32">3. Proprietário</th>
+                    <th className="py-3 px-3 w-28">4. Cessor</th>
+                    <th className="py-3 px-3 w-32 text-center">5. Revisão</th>
+                    <th className="py-3 px-3 w-32 text-center">6. Data da Revisão</th>
+                    <th className="py-3 px-4 w-44">Frota / Aplicação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60">
+                  {catalogoF001Filtrado.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-500 text-xs">
+                        Nenhuma publicação localizada com os filtros informados.
+                      </td>
+                    </tr>
+                  ) : (
+                    catalogoF001Filtrado.map((item, idx) => {
+                      const isMultiCessorPub = ['AMM', 'AIPC', 'SRM', 'FIM', 'WDM', 'MPD', 'NDT', 'SSM', 'SWPM', 'CDL', 'DDG', 'DTR', 'WBM', 'MGM', 'MEL'].includes(item.publicacao);
+                      const isImpacto = item.cessor === 'IMPACTO';
+                      const isAnac = item.cessor === 'ANAC';
+
+                      return (
+                        <tr key={item.id || idx} className="hover:bg-slate-800/40 transition-colors">
+                          <td className="py-3 px-3 text-center text-slate-500 font-mono text-[11px]">
+                            {idx + 1}
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className="font-mono font-bold text-white bg-slate-800 px-2 py-0.5 rounded border border-slate-700 inline-block">
+                              {item.publicacao}
+                            </span>
+                            {isMultiCessorPub && (
+                              <span className="block mt-1 text-[9px] text-purple-400 font-semibold" title="Esta publicação possui versões em diferentes cessores">
+                                Multi-Cessor
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-slate-200 font-medium">
+                            <div>{item.titulo}</div>
+                            {item.proprietarioCessor && item.proprietarioCessor !== item.cessor && (
+                              <span className="text-[10px] text-slate-500 block mt-0.5">
+                                Ref. Formulário: {item.proprietarioCessor}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              item.proprietario === 'BOEING'
+                                ? 'bg-blue-500/15 text-blue-300 border-blue-500/30'
+                                : item.proprietario === 'AIRBUS'
+                                ? 'bg-sky-500/15 text-sky-300 border-sky-500/30'
+                                : item.proprietario === 'ANAC'
+                                ? 'bg-teal-500/15 text-teal-300 border-teal-500/30'
+                                : 'bg-slate-800 text-slate-300 border-slate-700'
+                            }`}>
+                              {item.proprietario}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-mono font-bold border ${
+                              item.cessor === 'EUR'
+                                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                : item.cessor === 'KAT'
+                                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                : item.cessor === 'BAC'
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                : item.cessor === 'MWM'
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : item.cessor === 'CMA'
+                                ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                : isAnac
+                                ? 'bg-teal-500/20 text-teal-300 border-teal-500/40'
+                                : 'bg-slate-800 text-slate-300 border-slate-700'
+                            }`}>
+                              {item.cessor}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-0.5 rounded border border-emerald-500/30 inline-block">
+                              {item.revisao || 'Rev. 00'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center font-mono text-slate-300">
+                            {item.dataRevisao || '—'}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800/80 text-slate-300 border border-slate-700/80 inline-block">
+                              {item.frota || 'Geral'}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. ABA 4: MATRIZ MULTI-CESSOR & FROTAS                                    */}
+      {/* ========================================================================= */}
+      {activeTab === 'matriz-multi-cessor' && (
+        <div className="space-y-6">
+          {/* Banner Conceitual Aeronáutico */}
+          <div className="bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-purple-500/30 rounded-2xl p-6 space-y-4 shadow-xl">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-md text-[11px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1">
+                    <Layers className="w-3.5 h-3.5" />
+                    CONTROLE COMPARATIVO DE ACERVO
+                  </span>
+                  <span className="text-xs text-purple-200">
+                    Mapeamento de Publicações Técnicas Compartilhadas entre Frotas
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-white mt-1 flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-purple-400" />
+                  Matriz Multi-Cessor: O Mesmo Manual em Cessores e Frotas Distintas
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 max-w-3xl leading-relaxed">
+                  Na manutenção aeronáutica (RBAC 145), publicações de fabricante com a mesma sigla (ex: <strong>AMM</strong>, <strong>AIPC</strong>, <strong>SRM</strong>, <strong>FIM</strong>) possuem revisões, datas e números de peça específicos para cada <strong>Cessor (Operador da Frota)</strong>. O QualyQuest SGQ garante que a revisão de uma operadora nunca contamine ou sobrescreva os registros de outra.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setActiveTab('planilha-f001')}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer"
+                >
+                  <Table className="w-4 h-4 text-emerald-400" />
+                  <span>Ver Planilha F 001-02-1</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Dicionário Visual dos Cessores Ativos */}
+            <div className="p-4 bg-slate-950/70 border border-purple-500/20 rounded-xl space-y-2">
+              <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                Operadoras & Cessores Homologados na Frota Impacto MRO:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+                <div className="p-2.5 rounded-lg bg-emerald-950/20 border border-emerald-500/30">
+                  <div className="font-mono font-bold text-emerald-300">MWM</div>
+                  <div className="text-[11px] text-white font-medium">Modern Logistics</div>
+                  <div className="text-[10px] text-slate-400">Boeing 737-800BCF</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-blue-950/20 border border-blue-500/30">
+                  <div className="font-mono font-bold text-blue-300">EUR</div>
+                  <div className="text-[11px] text-white font-medium">EuroAtlantic Airways</div>
+                  <div className="text-[10px] text-slate-400">B767-300 / B777-200 / A330</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/30">
+                  <div className="font-mono font-bold text-amber-300">BAC</div>
+                  <div className="text-[11px] text-white font-medium">Braspress Transportes</div>
+                  <div className="text-[10px] text-slate-400">Boeing 737-400</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-purple-950/20 border border-purple-500/30">
+                  <div className="font-mono font-bold text-purple-300">KAT</div>
+                  <div className="text-[11px] text-white font-medium">Kalitta Air</div>
+                  <div className="text-[10px] text-slate-400">Boeing 747-400 / B777</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-indigo-950/20 border border-indigo-500/30">
+                  <div className="font-mono font-bold text-indigo-300">CMA</div>
+                  <div className="text-[11px] text-white font-medium">CMA CGM Air Cargo</div>
+                  <div className="text-[10px] text-slate-400">Boeing 777F</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Filtros da Matriz Multi-Cessor */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
+              <input
+                type="text"
+                value={matrizSearchTerm}
+                onChange={(e) => setMatrizSearchTerm(e.target.value)}
+                placeholder="Buscar manual na matriz (ex: AMM, AIPC, SRM, B777, EUR, KAT)..."
+                className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-purple-500"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={matrizSelectedCessor}
+                onChange={(e) => setMatrizSelectedCessor(e.target.value)}
+                className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-300 focus:outline-hidden"
+              >
+                <option value="TODOS">Todos os Cessores da Matriz</option>
+                {f001Cessores.filter((c) => ['MWM', 'EUR', 'BAC', 'KAT', 'CMA', 'MODERN'].includes(c)).map((cess) => (
+                  <option key={cess} value={cess}>
+                    Cessor: {cess}
+                  </option>
+                ))}
+              </select>
+
+              {(matrizSearchTerm || matrizSelectedCessor !== 'TODOS') && (
+                <button
+                  onClick={() => {
+                    setMatrizSearchTerm('');
+                    setMatrizSelectedCessor('TODOS');
+                  }}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs text-slate-300 font-semibold"
+                >
+                  Limpar
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Lista de Manuais Multi-Cessor Agrupados */}
+          <div className="space-y-4">
+            {matrizMultiCessorFiltrada.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-12 text-center text-slate-500 text-xs">
+                Nenhum grupo de manual localizado com os filtros selecionados.
+              </div>
+            ) : (
+              matrizMultiCessorFiltrada.map((grupo) => {
+                const isExpanded = expandedManualGroup === grupo.publicacao || expandedManualGroup === null;
+
+                return (
+                  <div
+                    key={grupo.publicacao}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-5 hover:border-purple-500/40 transition-all space-y-4 shadow-md"
+                  >
+                    {/* Header do Grupo de Publicação */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-base font-bold text-white bg-purple-950/70 px-3 py-1 rounded-xl border border-purple-500/40">
+                          {grupo.publicacao}
+                        </span>
+                        <div>
+                          <h4 className="text-sm font-bold text-white">
+                            {grupo.publicacao === 'AMM'
+                              ? 'Aircraft Maintenance Manual (Manual de Manutenção de Aeronaves)'
+                              : grupo.publicacao === 'AIPC'
+                              ? 'Aircraft Illustrated Parts Catalog (Catálogo Ilustrado de Peças)'
+                              : grupo.publicacao === 'SRM'
+                              ? 'Structural Repair Manual (Manual de Reparos Estruturais)'
+                              : grupo.publicacao === 'FIM'
+                              ? 'Fault Isolation Manual (Manual de Isolamento de Falhas)'
+                              : grupo.publicacao === 'SSM'
+                              ? 'System Schematic Manual (Esquemáticos de Sistemas)'
+                              : grupo.publicacao === 'WDM'
+                              ? 'Wiring Diagram Manual (Diagramas de Fiação Elétrica)'
+                              : grupo.publicacao === 'MPD'
+                              ? 'Maintenance Planning Document (Documento de Planejamento da Manutenção)'
+                              : grupo.publicacao === 'NDT'
+                              ? 'Non-Destructive Test Manual (Ensaios Não-Destrutivos)'
+                              : grupo.publicacao === 'SWPM'
+                              ? 'Standard Wiring Practices Manual'
+                              : grupo.itens[0]?.titulo || grupo.publicacao}
+                          </h4>
+                          <span className="text-[11px] text-slate-400">
+                            Manual presente em <strong>{grupo.cessoresUnicos.length}</strong> operadoras/cessores diferentes com frotas distintas
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          {grupo.cessoresUnicos.map((cess) => (
+                            <span
+                              key={cess}
+                              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                                cess === 'EUR'
+                                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                                  : cess === 'KAT'
+                                  ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                                  : cess === 'BAC'
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
+                                  : cess === 'MWM'
+                                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                                  : cess === 'CMA'
+                                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'
+                                  : 'bg-slate-800 text-slate-300 border-slate-700'
+                              }`}
+                            >
+                              {cess}
+                            </span>
+                          ))}
+                        </div>
+
+                        <button
+                          onClick={() =>
+                            setExpandedManualGroup(expandedManualGroup === grupo.publicacao ? '' : grupo.publicacao)
+                          }
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold cursor-pointer"
+                        >
+                          {isExpanded ? 'Recolher' : 'Expandir'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Grade Comparativa das Instâncias deste Manual */}
+                    {isExpanded && (
+                      <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/60">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/80 text-[10px] uppercase tracking-wider">
+                              <th className="py-2.5 px-3 w-28">Cessor (Operador)</th>
+                              <th className="py-2.5 px-3 w-40">Frota da Empresa</th>
+                              <th className="py-2.5 px-4">Título Específico & Código do Fabricante (P/N)</th>
+                              <th className="py-2.5 px-3 w-28 text-center">Revisão Vigente</th>
+                              <th className="py-2.5 px-3 w-32 text-center">Data da Revisão</th>
+                              <th className="py-2.5 px-3 w-28">Proprietário OEM</th>
+                              <th className="py-2.5 px-3 w-32 text-center">Status no SGQ</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/50">
+                            {grupo.itens.map((instancia, instIdx) => (
+                              <tr key={instancia.id || instIdx} className="hover:bg-slate-800/30">
+                                <td className="py-3 px-3">
+                                  <span className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold border inline-block ${
+                                    instancia.cessor === 'EUR'
+                                      ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                      : instancia.cessor === 'KAT'
+                                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                      : instancia.cessor === 'BAC'
+                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                      : instancia.cessor === 'MWM'
+                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                      : instancia.cessor === 'CMA'
+                                      ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                      : 'bg-slate-800 text-slate-300 border-slate-700'
+                                  }`}>
+                                    {instancia.cessor}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 font-semibold text-white">
+                                  {instancia.frota || 'Geral'}
+                                </td>
+                                <td className="py-3 px-4 text-slate-300">
+                                  <div>{instancia.titulo}</div>
+                                  <span className="text-[10px] text-slate-500 block font-mono mt-0.5">
+                                    Ref: {instancia.proprietarioCessor || `${instancia.proprietario} (${instancia.cessor})`}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-0.5 rounded border border-emerald-500/30 inline-block">
+                                    {instancia.revisao || 'Rev. 00'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-3 text-center font-mono text-slate-300">
+                                  {instancia.dataRevisao || '—'}
+                                </td>
+                                <td className="py-3 px-3 font-medium text-slate-400">
+                                  {instancia.proprietario || 'OEM'}
+                                </td>
+                                <td className="py-3 px-3 text-center">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1">
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    Homologado
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5. ABA 5: SOLICITAÇÕES & HISTÓRICO DE COBRANÇAS                           */}
       {/* ========================================================================= */}
       {activeTab === 'cobrancas' && (
         <div className="space-y-4">

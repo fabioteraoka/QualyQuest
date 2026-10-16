@@ -2193,7 +2193,9 @@ export interface DocumentoControlado {
 
   // NOVOS CAMPOS: MÓDULO DE VERIFICAÇÃO AUTOMÁTICA VS. MANUAL & RELATÓRIO DE CONFORMIDADE
   areaPublicacao?: string; // Área temática da publicação (ex: 'Regulamentação Aeronáutica', 'Manuais de Voo & Linha', 'SGQ & Procedimentos')
-  proprietarioCessor?: string; // Proprietário ou Cessor do manual (ex: 'IMPACTO', 'ANAC', 'BOEING', 'KALITTA')
+  proprietario?: string; // Fabricante ou Autoridade OEM (ex: 'BOEING', 'AIRBUS', 'IMPACTO', 'ANAC')
+  cessor?: string; // Operador ou Empresa Cedente da frota (ex: 'EUR', 'MWM', 'BAC', 'KAT', 'CMA', 'IMPACTO', 'ANAC')
+  proprietarioCessor?: string; // Proprietário ou Cessor legado do manual (ex: 'IMPACTO', 'ANAC', 'BOEING', 'KALITTA')
   numeroRevisao?: string; // Sinônimo direto para Número da Revisão (ex: 'Rev. 08', 'Emenda 09', 'Rev. 107')
   dataRevisao?: string; // Sinônimo direto para Data da Revisão
   tipoVerificacao?: 'AUTOMATICO' | 'MANUAL'; // Classificação de Automação

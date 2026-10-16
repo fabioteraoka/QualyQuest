@@ -29,6 +29,8 @@ import {
   Plane,
   Trash2,
   History,
+  Table,
+  Download,
 } from 'lucide-react';
 import { OrganizationRecord } from '../types';
 
@@ -1742,6 +1744,103 @@ export const UserManualView: React.FC<UserManualViewProps> = ({
                 className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-rose-600 text-white font-bold text-xs hover:bg-rose-500 cursor-pointer shadow-xs"
               >
                 <span>Ir para Histórico de Treinamentos</span>
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      id: 43,
+      title: '43. Controle de Manuais Técnicos por Cessor e Frota (Formulário F 001-02-1 e Matriz Multi-Cessor)',
+      category: 'Controle Documental & Manuais',
+      summary: 'Gestão rigorosa de publicações técnicas homologadas onde o mesmo manual (ex: AMM, AIPC, SRM) possui versões, revisões e datas específicas para cada operadora aérea (Cessor) e frota de aeronaves, com isolamento total de registros e exportação oficial em 6 colunas.',
+      content: (
+        <div className="space-y-4 text-xs text-slate-700">
+          <p className="leading-relaxed">
+            Na manutenção de aeronaves segundo o <strong>RBAC 145</strong>, um manual técnico não pode ser controlado apenas por sua sigla genérica (ex: <em>AMM</em> ou <em>IPC</em>). Cada operadora aérea cedente (<strong>Cessor</strong>) possui frotas e configurações próprias (ex: motores CFM56 vs. LEAP-1A, modificações de cargueiro BCF, boletins de serviço e suplementos homologados).
+          </p>
+
+          <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-2">
+            <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-purple-700" />
+              Conceito Fundamental: O Mesmo Manual em Cessores Diferentes
+            </h4>
+            <p className="text-purple-950 leading-relaxed">
+              O <strong>QualyQuest SGQ</strong> implementa a arquitetura de segregação estrita de acervo:
+            </p>
+            <ul className="space-y-1.5 list-disc list-inside text-purple-900">
+              <li>
+                <strong>Cessor MWM (Modern Logistics):</strong> opera a frota <em>Boeing 737-800BCF</em> e possui seu <code>AMM (D633A101-BBB)</code> na <strong>Rev. 90</strong>.
+              </li>
+              <li>
+                <strong>Cessor EUR (EuroAtlantic Airways):</strong> opera <em>Boeing 767-300</em> com <code>AMM (D633T131)</code> na <strong>Rev. 148</strong>, <em>Boeing 777-200</em> com <code>AMM (D633W101-ALI)</code> na <strong>Rev. 107</strong> e <em>Airbus A330</em> com <code>AMM</code> na <strong>Rev. 01/Jul/2026</strong>.
+              </li>
+              <li>
+                <strong>Cessor BAC (Braspress Transportes):</strong> opera <em>Boeing 737-400</em> com <code>AMM (D6-39033)</code> na <strong>Rev. 102</strong>.
+              </li>
+              <li>
+                <strong>Cessor KAT (Kalitta Air):</strong> opera <em>Boeing 747-400</em> com <code>AMM (D633U101-G6)</code> na <strong>Rev. 117</strong> e <em>Boeing 777</em> com <code>AMM (D633W101-DHA)</code> na <strong>Rev. 107</strong>.
+              </li>
+              <li>
+                <strong>Cessor CMA (CMA CGM Air Cargo):</strong> opera <em>Boeing 777F</em> com <code>AMM (D280W591S)</code> na <strong>Rev. 107</strong>.
+              </li>
+            </ul>
+            <p className="text-purple-950 font-semibold pt-1">
+              Princípio de Isolamento: A revisão, data ou recebimento de um manual para um cessor jamais sobrescreve ou altera os parâmetros dos demais cessores.
+            </p>
+          </div>
+
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Table className="w-4 h-4 text-emerald-600" />
+              Estrutura Oficial de 6 Colunas (Formulário F 001-02-1)
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+              <div className="p-2.5 bg-white rounded border border-slate-200">
+                <span className="font-bold text-slate-900 block">1. Publicação</span>
+                <span className="text-[11px] text-slate-500">Sigla técnica (ex: AMM, AIPC, SRM, MOMQ, RBAC 145).</span>
+              </div>
+              <div className="p-2.5 bg-white rounded border border-slate-200">
+                <span className="font-bold text-slate-900 block">2. Título</span>
+                <span className="text-[11px] text-slate-500">Descrição completa e part number / código do fabricante.</span>
+              </div>
+              <div className="p-2.5 bg-white rounded border border-slate-200">
+                <span className="font-bold text-slate-900 block">3. Proprietário</span>
+                <span className="text-[11px] text-slate-500">Fabricante OEM ou órgão regulador (BOEING, AIRBUS, ANAC, IMPACTO).</span>
+              </div>
+              <div className="p-2.5 bg-white rounded border border-slate-200">
+                <span className="font-bold text-slate-900 block">4. Cessor</span>
+                <span className="text-[11px] text-slate-500">Operador ou empresa cedente da frota (MWM, EUR, BAC, KAT, CMA).</span>
+              </div>
+              <div className="p-2.5 bg-white rounded border border-slate-200">
+                <span className="font-bold text-slate-900 block">5. Revisão</span>
+                <span className="text-[11px] text-slate-500">Número da revisão vigente homologada para aquele cessor.</span>
+              </div>
+              <div className="p-2.5 bg-white rounded border border-slate-200">
+                <span className="font-bold text-slate-900 block">6. Data da Revisão</span>
+                <span className="text-[11px] text-slate-500">Data oficial de vigência / aprovação (DD/MM/AAAA ou DD/Mês/AAAA).</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-lg space-y-2">
+            <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wide flex items-center gap-1.5">
+              <Download className="w-4 h-4 text-emerald-700" />
+              Exportação para Excel (.xlsx)
+            </h4>
+            <p className="text-emerald-950 leading-relaxed">
+              Na aba <strong>Planilha Oficial F 001-02-1</strong>, clique em <strong>"Exportar Planilha (.xlsx)"</strong> para gerar imediatamente um arquivo formatado com todas as publicações ativas, respeitando a ordem e os campos do formulário oficial para auditorias de clientes e autoridades aeronáuticas.
+            </p>
+          </div>
+
+          {onNavigateToTab && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <button
+                onClick={() => onNavigateToTab('controle-documental-empresas')}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-600 text-white font-bold text-xs hover:bg-purple-500 cursor-pointer shadow-xs"
+              >
+                <span>Acessar Matriz Multi-Cessor & Frotas</span>
               </button>
             </div>
           )}

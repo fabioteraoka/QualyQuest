@@ -15,15 +15,29 @@
  */
 
 export interface PublicacaoControladaF001 {
+  id?: string;
   publicacao: string;
   titulo: string;
-  proprietarioCessor: string;
-  numeroEDataRevisao: string;
-  numeroRevisao?: string;
+  proprietario?: string;
+  cessor?: string;
+  revisao?: string;
   dataRevisao?: string;
+  frota?: string;
+  proprietarioCessor?: string;
+  numeroEDataRevisao?: string;
+  numeroRevisao?: string;
 }
 
 export const COLUNAS_FORMULARIO_F001_02_1 = [
+  'Publicação',
+  'Título',
+  'Proprietário',
+  'Cessor',
+  'Revisão',
+  'Data da revisão',
+] as const;
+
+export const COLUNAS_FORMULARIO_F001_LEGADO = [
   'Publicação',
   'Título',
   'Proprietário / Cessor',
@@ -88,17 +102,111 @@ export function separarNumeroEDataRevisao(revStr: string | null | undefined): {
 }
 
 /**
+ * Normaliza um item do formulário F 001-02-1 para o modelo de 6 colunas oficiais
+ * [Publicação] [Título] [Proprietário] [Cessor] [Revisão] [Data da revisão] + [Frota]
+ */
+export function normalizarPublicacaoF001(pub: PublicacaoControladaF001, index: number = 0): PublicacaoControladaF001 {
+  let prop = pub.proprietario || '';
+  let cess = pub.cessor || '';
+  let frota = pub.frota || 'Geral';
+  
+  const pc = (pub.proprietarioCessor || '').trim();
+  
+  if (!prop || !cess) {
+    if (pc === 'ANAC') {
+      prop = 'ANAC';
+      cess = 'ANAC';
+    } else if (pc === 'IMPACTO') {
+      prop = 'IMPACTO';
+      cess = 'IMPACTO';
+    } else if (pc === 'MODERN') {
+      prop = 'MODERN';
+      cess = 'MODERN';
+    } else if (pc === 'EUROATLANTIC') {
+      prop = 'EUROATLANTIC';
+      cess = 'EUR';
+      frota = 'Multi-Frota';
+    } else if (pc === 'BRASPRESS') {
+      prop = 'BRASPRESS';
+      cess = 'BAC';
+    } else if (pc === 'KALITTA') {
+      prop = 'KALITTA';
+      cess = 'KALITTA';
+    } else if (pc.includes('MWM')) {
+      prop = 'BOEING';
+      cess = 'MWM';
+      frota = 'Boeing 737-800BCF';
+    } else if (pc.includes('EUR')) {
+      prop = pc.includes('AIRBUS') ? 'AIRBUS' : 'BOEING';
+      cess = 'EUR';
+      if (pub.titulo.includes('767-300')) frota = 'Boeing 767-300';
+      else if (pub.titulo.includes('777-200')) frota = 'Boeing 777-200';
+      else if (pub.titulo.includes('A330-300')) frota = 'Airbus A330-300';
+      else if (pub.titulo.includes('A330')) frota = 'Airbus A330';
+      else if (pub.titulo.includes('B767') || pub.titulo.includes('B777')) frota = 'Multi-Frota';
+    } else if (pc.includes('BAC')) {
+      prop = 'BOEING';
+      cess = 'BAC';
+      frota = 'Boeing 737-400';
+    } else if (pc.includes('KAT')) {
+      prop = 'BOEING';
+      cess = 'KAT';
+      if (pub.titulo.includes('747')) frota = 'Boeing 747-400';
+      else if (pub.titulo.includes('777')) frota = 'Boeing 777';
+    } else if (pc.includes('CMA')) {
+      prop = 'BOEING';
+      cess = 'CMA';
+      frota = 'Boeing 777F';
+    } else {
+      prop = pc || 'IMPACTO';
+      cess = pc || 'IMPACTO';
+    }
+  }
+
+  // Desdobra revisão e data
+  const { numeroRevisao, dataRevisao } = separarNumeroEDataRevisao(pub.numeroEDataRevisao || pub.revisao);
+  const rev = (pub.revisao || numeroRevisao || '0').replace(/^Rev\.?\s*/i, '');
+  const dt = pub.dataRevisao || dataRevisao || '';
+
+  return {
+    id: pub.id || `f001-pub-${index + 1}-${pub.publicacao.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${cess.toLowerCase()}`,
+    publicacao: pub.publicacao,
+    titulo: pub.titulo,
+    proprietario: prop,
+    cessor: cess,
+    revisao: rev,
+    dataRevisao: dt,
+    frota,
+    proprietarioCessor: pc || `${prop} (${cess})`,
+    numeroEDataRevisao: pub.numeroEDataRevisao || `Rev. ${rev}${dt ? ` – ${dt}` : ''}`,
+    numeroRevisao: rev,
+  };
+}
+
+/**
+ * Retorna o catálogo completo de publicações estruturado nas 6 colunas oficiais
+ */
+export function obterCatalogoF001Estruturado(): PublicacaoControladaF001[] {
+  return CATALOGO_F001_02_1.map((item, idx) => normalizarPublicacaoF001(item, idx));
+}
+
+/**
  * Converte um item de publicação no formato tabular exigido pelo importador
  */
 export function formatarLinhaF001(pub: PublicacaoControladaF001): Record<string, string> {
-  const { numeroRevisao, dataRevisao } = separarNumeroEDataRevisao(pub.numeroEDataRevisao);
+  const norm = normalizarPublicacaoF001(pub);
   return {
-    'Publicação': pub.publicacao,
-    'Título': pub.titulo,
-    'Proprietário / Cessor': pub.proprietarioCessor,
-    'Número e data da revisão': pub.numeroEDataRevisao,
-    'Número da Revisão': pub.numeroRevisao || numeroRevisao || 'Rev. 00',
-    'Data da Revisão': pub.dataRevisao || dataRevisao || '',
+    'Publicação': norm.publicacao,
+    'Título': norm.titulo,
+    'Proprietário': norm.proprietario,
+    'Cessor': norm.cessor,
+    'Revisão': norm.revisao,
+    'Data da revisão': norm.dataRevisao,
+    // Campos legados para compatibilidade
+    'Proprietário / Cessor': norm.proprietarioCessor || `${norm.proprietario} (${norm.cessor})`,
+    'Número e data da revisão': norm.numeroEDataRevisao || norm.revisao,
+    'Número da Revisão': norm.revisao,
+    'Data da Revisão': norm.dataRevisao,
   };
 }
 
