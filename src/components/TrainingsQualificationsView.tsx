@@ -59,6 +59,7 @@ import {
 } from '../services/competenciesEngine';
 import { TrainingDeduplicationModal } from './TrainingDeduplicationModal';
 import { FROTAS_PADRAO, NIVEIS_CURSO_PADRAO } from './FleetCompetencyMatrixView';
+import { formatarTituloCursoCompleto } from '../utils/courseFormatters';
 
 interface TrainingsQualificationsViewProps {
   organizationId: string;
@@ -124,6 +125,46 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
   const [treinoParaEditar, setTreinoParaEditar] = useState<RegistroTreinamentoColaborador | null>(null);
   const [motivoCorrecao, setMotivoCorrecao] = useState('');
   const [isCorrigindoTreino, setIsCorrigindoTreino] = useState(false);
+
+  // Estados controlados para preenchimento ágil e consistente de frota, nível e variante
+  const [modalTreinoCursoId, setModalTreinoCursoId] = useState<string>('');
+  const [modalTreinoFrota, setModalTreinoFrota] = useState<string>('');
+  const [modalTreinoNivel, setModalTreinoNivel] = useState<string>('');
+  const [modalTreinoVariante, setModalTreinoVariante] = useState<string>('');
+
+  const handleAbrirModalTreino = (treino?: RegistroTreinamentoColaborador | null) => {
+    setTreinoParaEditar(treino || null);
+    setMotivoCorrecao('');
+    if (treino) {
+      setModalTreinoCursoId(treino.treinamentoId);
+      setModalTreinoFrota(treino.frotaOuFamilia || '');
+      setModalTreinoNivel(treino.nivelOuModulo || '');
+      setModalTreinoVariante(treino.varianteAplicabilidade || '');
+    } else {
+      const primeiro = trainingCourses[0];
+      setModalTreinoCursoId(primeiro?.id || '');
+      setModalTreinoFrota(primeiro?.frotaOuFamilia || '');
+      setModalTreinoNivel(primeiro?.nivelOuModulo || '');
+      setModalTreinoVariante(
+        primeiro?.variantesAplicabilidade && primeiro.variantesAplicabilidade.length > 0
+          ? primeiro.variantesAplicabilidade.join(', ')
+          : ''
+      );
+    }
+    setModalTreinoOpen(true);
+  };
+
+  const handleTrocaCursoNoModal = (novoCursoId: string) => {
+    setModalTreinoCursoId(novoCursoId);
+    const c = trainingCourses.find((item) => item.id === novoCursoId);
+    if (c) {
+      if (c.frotaOuFamilia) setModalTreinoFrota(c.frotaOuFamilia);
+      if (c.nivelOuModulo) setModalTreinoNivel(c.nivelOuModulo);
+      if (c.variantesAplicabilidade && c.variantesAplicabilidade.length > 0) {
+        setModalTreinoVariante(c.variantesAplicabilidade.join(', '));
+      }
+    }
+  };
 
   // Modal Qualificação / CHT
   const [modalQualifOpen, setModalQualifOpen] = useState(false);
@@ -1074,7 +1115,14 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                         {/* Treinamento / Frota / Nível */}
                         <td className="p-3">
                           <div className="font-semibold text-slate-900 flex items-center gap-1.5 flex-wrap">
-                            <span>{tr.treinamentoTitulo}</span>
+                            <span>
+                              {formatarTituloCursoCompleto({
+                                titulo: tr.treinamentoTitulo,
+                                frotaOuFamilia: tr.frotaOuFamilia,
+                                nivelOuModulo: tr.nivelOuModulo,
+                                variantesAplicabilidade: tr.varianteAplicabilidade,
+                              })}
+                            </span>
                             {tr.ehReciclagem && (
                               <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-amber-100 text-amber-800 border border-amber-200">
                                 🔄 Reciclagem
@@ -1219,25 +1267,49 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {trainingCourses.map((curso) => (
-              <div
-                key={curso.id}
-                className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="font-mono text-xs px-2 py-0.5 bg-slate-100 text-slate-700 rounded font-semibold">
-                        {curso.codigo}
-                      </span>
-                      <h3 className="font-bold text-slate-900 text-sm mt-1">{curso.titulo}</h3>
-                    </div>
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-sky-100 text-sky-800">
-                      {curso.tipo}
-                    </span>
-                  </div>
+            {trainingCourses.map((curso) => {
+              const tituloCompleto = formatarTituloCursoCompleto(curso);
 
-                  <p className="text-xs text-slate-600">{curso.descricao}</p>
+              return (
+                <div
+                  key={curso.id}
+                  className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-3 flex flex-col justify-between hover:border-blue-300 transition-colors"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-mono text-xs px-2 py-0.5 bg-slate-100 text-slate-700 rounded font-semibold">
+                          {curso.codigo}
+                        </span>
+                        <h3 className="font-bold text-slate-900 text-sm mt-1">{tituloCompleto}</h3>
+                      </div>
+                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-sky-100 text-sky-800 shrink-0">
+                        {curso.tipo}
+                      </span>
+                    </div>
+
+                    {/* Identificação Visível Estruturada: Frota, Nível Técnico e Variantes */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {curso.frotaOuFamilia && (
+                        <span className="text-[11px] bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1">
+                          <Plane className="w-3 h-3 text-blue-600" />
+                          <span>{curso.frotaOuFamilia}</span>
+                        </span>
+                      )}
+                      {curso.nivelOuModulo && (
+                        <span className="text-[11px] bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-md font-semibold flex items-center gap-1">
+                          <GraduationCap className="w-3 h-3 text-indigo-600" />
+                          <span>{curso.nivelOuModulo}</span>
+                        </span>
+                      )}
+                      {curso.variantesAplicabilidade && curso.variantesAplicabilidade.length > 0 && (
+                        <span className="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-md font-mono">
+                          ⚙️ {curso.variantesAplicabilidade.join(' / ')}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-slate-600">{curso.descricao || curso.ementa}</p>
 
                   <div className="text-xs space-y-1 text-slate-500 pt-2 border-t border-slate-100">
                     <p>
@@ -1277,7 +1349,8 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   </button>
                 </div>
               </div>
-            ))}
+            );
+          })}
           </div>
         </div>
       )}
@@ -1591,24 +1664,37 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                 )}
               </div>
 
-              {/* Treinamento / Curso */}
+              {/* Treinamento / Curso com Identificação Completa por Frota e Nível */}
               <div>
-                <label className="font-semibold text-slate-700 block mb-1">Treinamento / Curso *</label>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Treinamento / Curso Homologado *
+                  <span className="text-[11px] text-slate-500 font-normal ml-1">
+                    (Selecione o nível e a frota correspondentes)
+                  </span>
+                </label>
                 <select
                   name="treinamentoId"
                   required
-                  defaultValue={treinoParaEditar?.treinamentoId || trainingCourses[0]?.id}
-                  className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                  value={modalTreinoCursoId}
+                  onChange={(e) => handleTrocaCursoNoModal(e.target.value)}
+                  className="w-full p-2 border border-slate-300 rounded-lg bg-white font-medium text-slate-800"
                 >
-                  {trainingCourses.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.codigo} — {c.titulo} ({c.cargaHorariaHoras}h){c.frotaOuFamilia ? ` [✈️ ${c.frotaOuFamilia}]` : ''}
-                    </option>
-                  ))}
+                  {trainingCourses.map((c) => {
+                    const fullTitle = formatarTituloCursoCompleto(c);
+                    const nivelTag = c.nivelOuModulo ? ` • ${c.nivelOuModulo}` : '';
+                    const varTag = c.variantesAplicabilidade && c.variantesAplicabilidade.length > 0
+                      ? ` • ${c.variantesAplicabilidade.join('/')}`
+                      : '';
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.codigo} — {fullTitle}{nivelTag}{varTag} ({c.cargaHorariaHoras}h)
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
-              {/* Frota, Nível e Variante */}
+              {/* Frota, Nível e Variante com Sincronia Automática e Edição Rastreável */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div>
                   <label className="font-semibold text-slate-700 block mb-1">Frota / Família</label>
@@ -1616,7 +1702,8 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                     type="text"
                     name="frotaOuFamilia"
                     list="frotas-list"
-                    defaultValue={treinoParaEditar?.frotaOuFamilia || ''}
+                    value={modalTreinoFrota}
+                    onChange={(e) => setModalTreinoFrota(e.target.value)}
                     placeholder="Ex: Airbus A320"
                     className="w-full p-2 border border-slate-300 rounded-lg bg-white"
                   />
@@ -1633,7 +1720,8 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                     type="text"
                     name="nivelOuModulo"
                     list="niveis-list"
-                    defaultValue={treinoParaEditar?.nivelOuModulo || ''}
+                    value={modalTreinoNivel}
+                    onChange={(e) => setModalTreinoNivel(e.target.value)}
                     placeholder="Ex: Ramp & Transit"
                     className="w-full p-2 border border-slate-300 rounded-lg bg-white"
                   />
@@ -1649,7 +1737,8 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   <input
                     type="text"
                     name="varianteAplicabilidade"
-                    defaultValue={treinoParaEditar?.varianteAplicabilidade || ''}
+                    value={modalTreinoVariante}
+                    onChange={(e) => setModalTreinoVariante(e.target.value)}
                     placeholder="Ex: CFM56, LEAP-1A, CEO"
                     className="w-full p-2 border border-slate-300 rounded-lg bg-white font-mono uppercase"
                   />

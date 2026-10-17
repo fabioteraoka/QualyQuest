@@ -31,6 +31,10 @@ import {
   Printer,
   Sparkles,
   Check,
+  Edit3,
+  Save,
+  RotateCcw,
+  X,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import {
@@ -56,6 +60,7 @@ import {
   saveDocumentoControlado,
   saveSolicitacaoCliente,
 } from '../services/firebase/documentControlFirestore';
+import { recordOrganizationAudit } from '../services/firebase/firestore';
 import {
   obterCatalogoF001Estruturado,
   PublicacaoControladaF001,
@@ -202,11 +207,184 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
   }, [docsClientes, selectedClienteId, selectedTipoDoc, selectedFrota, selectedSituacaoRecebimento, searchTerm]);
 
   // =========================================================================
-  // CATÁLOGO ESTRUTURADO F 001-02-1 & MATRIZ MULTI-CESSOR
+  // CATÁLOGO ESTRUTURADO F 001-02-1 & MATRIZ MULTI-CESSOR COM PERSISTÊNCIA
   // =========================================================================
-  const catalogoF001 = useMemo(() => {
+  const [catalogoF001, setCatalogoF001] = useState<PublicacaoControladaF001[]>(() => {
+    try {
+      const storageKey = `qualyquest_f001_catalog_${organizationId || 'default'}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar catálogo F001 do storage:', e);
+    }
     return obterCatalogoF001Estruturado();
-  }, []);
+  });
+
+  // Modal de Edição de Registro Individual da Matriz Multi-Cessor / Planilha F 001-02-1
+  const [editingF001Item, setEditingF001Item] = useState<PublicacaoControladaF001 | null>(null);
+  const [isF001EditModalOpen, setIsF001EditModalOpen] = useState(false);
+  const [f001EditFormData, setF001EditFormData] = useState<Partial<PublicacaoControladaF001>>({});
+  const [f001MotivoAlteracao, setF001MotivoAlteracao] = useState('');
+  const [f001ToastMessage, setF001ToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [matrizViewMode, setMatrizViewMode] = useState<'cards' | 'tabela'>('cards');
+
+  const handleOpenEditF001 = (item: PublicacaoControladaF001) => {
+    if (currentUser?.role === 'CONSULTA' || currentUser?.role === 'VIEWER') {
+      alert('Perfil de consulta não possui permissão para editar registros de documentação.');
+      return;
+    }
+    setEditingF001Item(item);
+    setF001EditFormData({
+      id: item.id,
+      codigo: item.codigo || `${item.publicacao}-${item.cessor}`,
+      publicacao: item.publicacao,
+      titulo: item.titulo,
+      proprietario: item.proprietario || 'BOEING',
+      cessor: item.cessor || 'EUR',
+      frota: item.frota || 'Geral',
+      revisao: item.revisao || 'Rev. 00',
+      dataRevisao: item.dataRevisao || '',
+      situacaoDocumental: item.situacaoDocumental || 'Vigente / Homologado',
+      situacaoRecebimento: item.situacaoRecebimento || 'Conferido / Aprovado',
+    });
+    setF001MotivoAlteracao('');
+    setIsF001EditModalOpen(true);
+  };
+
+  const handleSaveF001Edit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingF001Item) return;
+    if (!f001EditFormData.revisao?.trim()) {
+      alert('Informe o número da revisão vigente.');
+      return;
+    }
+    if (!f001EditFormData.dataRevisao?.trim()) {
+      alert('Informe a data da revisão.');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const usuarioNome = currentUser?.displayName || currentUser?.email || 'SGQ';
+    const usuarioEmail = currentUser?.email || 'sgq@impacto.aero';
+
+    const novaRev = f001EditFormData.revisao.trim();
+    const novaData = f001EditFormData.dataRevisao.trim();
+    const novoCessor = (f001EditFormData.cessor || editingF001Item.cessor || '').trim().toUpperCase();
+    const novaFrota = (f001EditFormData.frota || editingF001Item.frota || '').trim();
+    const novoProp = (f001EditFormData.proprietario || editingF001Item.proprietario || '').trim();
+    const novoTitulo = (f001EditFormData.titulo || editingF001Item.titulo || '').trim();
+    const novaSitDoc = f001EditFormData.situacaoDocumental || editingF001Item.situacaoDocumental || 'Vigente / Homologado';
+    const novaSitRec = f001EditFormData.situacaoRecebimento || editingF001Item.situacaoRecebimento || 'Conferido / Aprovado';
+
+    const detalhesAuditoria: Array<{ campo: string; valorAnterior: string; novoValor: string }> = [];
+
+    if (editingF001Item.revisao !== novaRev) {
+      detalhesAuditoria.push({ campo: 'Revisão', valorAnterior: editingF001Item.revisao || 'N/I', novoValor: novaRev });
+    }
+    if (editingF001Item.dataRevisao !== novaData) {
+      detalhesAuditoria.push({ campo: 'Data da Revisão', valorAnterior: editingF001Item.dataRevisao || 'N/I', novoValor: novaData });
+    }
+    if (editingF001Item.cessor !== novoCessor) {
+      detalhesAuditoria.push({ campo: 'Cessor / Operador', valorAnterior: editingF001Item.cessor || 'N/I', novoValor: novoCessor });
+    }
+    if (editingF001Item.frota !== novaFrota) {
+      detalhesAuditoria.push({ campo: 'Frota / Aplicação', valorAnterior: editingF001Item.frota || 'N/I', novoValor: novaFrota });
+    }
+    if (editingF001Item.proprietario !== novoProp) {
+      detalhesAuditoria.push({ campo: 'Proprietário OEM', valorAnterior: editingF001Item.proprietario || 'N/I', novoValor: novoProp });
+    }
+    if (editingF001Item.titulo !== novoTitulo) {
+      detalhesAuditoria.push({ campo: 'Título', valorAnterior: editingF001Item.titulo || '', novoValor: novoTitulo });
+    }
+
+    const novoHistorico = [...(editingF001Item.historicoAuditoria || [])];
+    detalhesAuditoria.forEach((det) => {
+      novoHistorico.unshift({
+        dataHora: now,
+        usuario: usuarioNome,
+        usuarioEmail,
+        campo: det.campo,
+        valorAnterior: det.valorAnterior,
+        novoValor: det.novoValor,
+        motivo: f001MotivoAlteracao.trim() || 'Ajuste de controle documental',
+      });
+    });
+
+    const registroAtualizado: PublicacaoControladaF001 = {
+      ...editingF001Item,
+      publicacao: (f001EditFormData.publicacao || editingF001Item.publicacao).trim().toUpperCase(),
+      titulo: novoTitulo,
+      proprietario: novoProp,
+      cessor: novoCessor,
+      frota: novaFrota,
+      revisao: novaRev,
+      dataRevisao: novaData,
+      numeroRevisao: novaRev,
+      numeroEDataRevisao: `Rev. ${novaRev} – ${novaData}`,
+      proprietarioCessor: `${novoProp} (${novoCessor})`,
+      situacaoDocumental: novaSitDoc,
+      situacaoRecebimento: novaSitRec,
+      atualizadoEm: now,
+      atualizadoPor: usuarioNome,
+      historicoAuditoria: novoHistorico,
+    };
+
+    // Atualiza apenas esta aplicação específica, sem contaminar outros cessores ou frotas
+    const novoCatalogo = catalogoF001.map((item) => {
+      if (item.id === editingF001Item.id) {
+        return registroAtualizado;
+      }
+      return item;
+    });
+
+    setCatalogoF001(novoCatalogo);
+
+    // Persistência local multi-tenant
+    try {
+      const storageKey = `qualyquest_f001_catalog_${organizationId || 'default'}`;
+      localStorage.setItem(storageKey, JSON.stringify(novoCatalogo));
+    } catch (err) {
+      console.warn('Erro ao salvar catálogo no localStorage:', err);
+    }
+
+    // Gravação da trilha de auditoria rastreável
+    try {
+      await recordOrganizationAudit(organizationId || 'org_impacto_aviation', {
+        entity: 'DOCUMENTO' as any,
+        entityId: registroAtualizado.id || `f001-${registroAtualizado.publicacao}-${registroAtualizado.cessor}`,
+        action: 'UPDATE',
+        changedByUid: currentUser?.uid || 'sgq-user',
+        changedByEmail: usuarioEmail,
+        summary: `Edição F 001-02-1: ${registroAtualizado.publicacao} (${registroAtualizado.cessor} - ${registroAtualizado.frota}) -> Rev. ${registroAtualizado.revisao} (${registroAtualizado.dataRevisao})`,
+        details: JSON.stringify({
+          publicacao: registroAtualizado.publicacao,
+          cessor: registroAtualizado.cessor,
+          frota: registroAtualizado.frota,
+          revisaoAnterior: editingF001Item.revisao,
+          revisaoNova: registroAtualizado.revisao,
+          dataRevisaoAnterior: editingF001Item.dataRevisao,
+          dataRevisaoNova: registroAtualizado.dataRevisao,
+          motivo: f001MotivoAlteracao,
+          alteracoes: detalhesAuditoria,
+        }),
+      });
+    } catch (auditErr) {
+      console.warn('Registro de auditoria efetuado com aviso:', auditErr);
+    }
+
+    setIsF001EditModalOpen(false);
+    setEditingF001Item(null);
+    setF001ToastMessage({
+      type: 'success',
+      text: `Publicação ${registroAtualizado.publicacao} (${registroAtualizado.cessor} / ${registroAtualizado.frota}) salva com sucesso!`,
+    });
+    setTimeout(() => setF001ToastMessage(null), 4000);
+  };
 
   // Lista de Cessores únicos presentes na planilha
   const f001Cessores = useMemo(() => {
@@ -1422,12 +1600,13 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                     <th className="py-3 px-3 w-32 text-center">5. Revisão</th>
                     <th className="py-3 px-3 w-32 text-center">6. Data da Revisão</th>
                     <th className="py-3 px-4 w-44">Frota / Aplicação</th>
+                    <th className="py-3 px-3 w-24 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {catalogoF001Filtrado.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500 text-xs">
+                      <td colSpan={9} className="py-12 text-center text-slate-500 text-xs">
                         Nenhuma publicação localizada com os filtros informados.
                       </td>
                     </tr>
@@ -1498,12 +1677,22 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                             </span>
                           </td>
                           <td className="py-3 px-3 text-center font-mono text-slate-300">
-                            {item.dataRevisao || '—'}
+                            {item.dataRevisao || <span className="text-slate-500 italic">Não informado</span>}
                           </td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800/80 text-slate-300 border border-slate-700/80 inline-block">
                               {item.frota || 'Geral'}
                             </span>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              onClick={() => handleOpenEditF001(item)}
+                              className="px-2 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                              title="Editar este registro de publicação"
+                            >
+                              <Edit3 className="w-3 h-3 text-indigo-300" />
+                              <span>Editar</span>
+                            </button>
                           </td>
                         </tr>
                       );
@@ -1616,6 +1805,36 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                 ))}
               </select>
 
+              {/* Seletor de Modo de Visualização: Cards vs Tabela */}
+              <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setMatrizViewMode('cards')}
+                  className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    matrizViewMode === 'cards'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Visualizar em cards detalhados por aplicação"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Cards</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMatrizViewMode('tabela')}
+                  className={`px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    matrizViewMode === 'tabela'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                  title="Visualizar em grade comparativa tabular"
+                >
+                  <Table className="w-3.5 h-3.5" />
+                  <span>Tabela</span>
+                </button>
+              </div>
+
               {(matrizSearchTerm || matrizSelectedCessor !== 'TODOS') && (
                 <button
                   onClick={() => {
@@ -1674,7 +1893,7 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                               : grupo.itens[0]?.titulo || grupo.publicacao}
                           </h4>
                           <span className="text-[11px] text-slate-400">
-                            Manual presente em <strong>{grupo.cessoresUnicos.length}</strong> operadoras/cessores diferentes com frotas distintas
+                            Manual presente em <strong>{grupo.cessoresUnicos.length}</strong> operadoras/cessores diferentes com frotas distintas ({grupo.itens.length} aplicações controladas)
                           </span>
                         </div>
                       </div>
@@ -1714,72 +1933,185 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                       </div>
                     </div>
 
-                    {/* Grade Comparativa das Instâncias deste Manual */}
+                    {/* Exibição das Aplicações deste Manual */}
                     {isExpanded && (
-                      <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/60">
-                        <table className="w-full text-xs text-left border-collapse">
-                          <thead>
-                            <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/80 text-[10px] uppercase tracking-wider">
-                              <th className="py-2.5 px-3 w-28">Cessor (Operador)</th>
-                              <th className="py-2.5 px-3 w-40">Frota da Empresa</th>
-                              <th className="py-2.5 px-4">Título Específico & Código do Fabricante (P/N)</th>
-                              <th className="py-2.5 px-3 w-28 text-center">Revisão Vigente</th>
-                              <th className="py-2.5 px-3 w-32 text-center">Data da Revisão</th>
-                              <th className="py-2.5 px-3 w-28">Proprietário OEM</th>
-                              <th className="py-2.5 px-3 w-32 text-center">Status no SGQ</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-800/50">
-                            {grupo.itens.map((instancia, instIdx) => (
-                              <tr key={instancia.id || instIdx} className="hover:bg-slate-800/30">
-                                <td className="py-3 px-3">
-                                  <span className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold border inline-block ${
-                                    instancia.cessor === 'EUR'
-                                      ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
-                                      : instancia.cessor === 'KAT'
-                                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                                      : instancia.cessor === 'BAC'
-                                      ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                      : instancia.cessor === 'MWM'
-                                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                                      : instancia.cessor === 'CMA'
-                                      ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
-                                      : 'bg-slate-800 text-slate-300 border-slate-700'
-                                  }`}>
-                                    {instancia.cessor}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 font-semibold text-white">
-                                  {instancia.frota || 'Geral'}
-                                </td>
-                                <td className="py-3 px-4 text-slate-300">
-                                  <div>{instancia.titulo}</div>
-                                  <span className="text-[10px] text-slate-500 block font-mono mt-0.5">
-                                    Ref: {instancia.proprietarioCessor || `${instancia.proprietario} (${instancia.cessor})`}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 text-center">
-                                  <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-0.5 rounded border border-emerald-500/30 inline-block">
-                                    {instancia.revisao || 'Rev. 00'}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3 text-center font-mono text-slate-300">
-                                  {instancia.dataRevisao || '—'}
-                                </td>
-                                <td className="py-3 px-3 font-medium text-slate-400">
-                                  {instancia.proprietario || 'OEM'}
-                                </td>
-                                <td className="py-3 px-3 text-center">
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1">
-                                    <Check className="w-3 h-3 text-emerald-400" />
-                                    Homologado
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      <>
+                        {/* Modo 1: Cards por Aplicação (Individualmente Editáveis) */}
+                        {matrizViewMode === 'cards' ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                            {grupo.itens.map((instancia, instIdx) => {
+                              const dataRev = instancia.dataRevisao || null;
+
+                              return (
+                                <div
+                                  key={instancia.id || instIdx}
+                                  className="bg-slate-950/80 border border-slate-800 rounded-xl p-4 flex flex-col justify-between space-y-3 hover:border-purple-500/40 transition-all shadow-xs"
+                                >
+                                  <div className="space-y-2.5">
+                                    {/* Top Bar do Card */}
+                                    <div className="flex items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border ${
+                                          instancia.cessor === 'EUR'
+                                            ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                            : instancia.cessor === 'KAT'
+                                            ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                            : instancia.cessor === 'BAC'
+                                            ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                            : instancia.cessor === 'MWM'
+                                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                            : instancia.cessor === 'CMA'
+                                            ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                            : 'bg-slate-800 text-slate-300 border-slate-700'
+                                        }`}>
+                                          {instancia.cessor}
+                                        </span>
+                                        <span className="text-xs font-semibold text-white truncate max-w-[140px]">
+                                          {instancia.frota || 'Geral'}
+                                        </span>
+                                      </div>
+
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1">
+                                        <Check className="w-3 h-3 text-emerald-400" />
+                                        {instancia.situacaoDocumental || 'Vigente'}
+                                      </span>
+                                    </div>
+
+                                    {/* Título & P/N */}
+                                    <div>
+                                      <h5 className="text-xs font-bold text-slate-200 leading-snug">
+                                        {instancia.titulo}
+                                      </h5>
+                                      <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                                        P/N & Ref: {instancia.proprietarioCessor || `${instancia.proprietario} (${instancia.cessor})`}
+                                      </span>
+                                    </div>
+
+                                    {/* Grid de Metadados Segregados */}
+                                    <div className="grid grid-cols-2 gap-2 bg-slate-900/90 p-2.5 rounded-lg border border-slate-800 text-[11px]">
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Revisão Vigente:</span>
+                                        <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/30 inline-block mt-0.5">
+                                          {instancia.revisao || 'Rev. 00'}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Data da Revisão:</span>
+                                        <span className="font-mono font-semibold text-slate-200 flex items-center gap-1 mt-0.5">
+                                          <Calendar className="w-3 h-3 text-purple-400 shrink-0" />
+                                          {dataRev ? dataRev : <span className="text-slate-500 font-normal italic">Não informado</span>}
+                                        </span>
+                                      </div>
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Proprietário OEM:</span>
+                                        <span className="font-medium text-slate-300 mt-0.5 block truncate">{instancia.proprietario || 'OEM'}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Recebimento:</span>
+                                        <span className="text-[10px] font-medium text-blue-300 mt-0.5 block truncate">{instancia.situacaoRecebimento || 'Conferido'}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Botão de Edição Individual */}
+                                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                                    <span className="text-[10px] text-slate-500 font-mono">
+                                      {instancia.publicacao} • {instancia.cessor}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditF001(instancia)}
+                                      className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                      title="Editar metadados desta aplicação específica"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5 text-purple-400" />
+                                      <span>Editar registro</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          /* Modo 2: Grade Comparativa Tabular */
+                          <div className="overflow-x-auto rounded-xl border border-slate-800/80 bg-slate-950/60">
+                            <table className="w-full text-xs text-left border-collapse">
+                              <thead>
+                                <tr className="border-b border-slate-800 text-slate-400 font-bold bg-slate-900/80 text-[10px] uppercase tracking-wider">
+                                  <th className="py-2.5 px-3 w-28">Cessor (Operador)</th>
+                                  <th className="py-2.5 px-3 w-40">Frota da Empresa</th>
+                                  <th className="py-2.5 px-4">Título Específico & Código do Fabricante (P/N)</th>
+                                  <th className="py-2.5 px-3 w-28 text-center">Revisão Vigente</th>
+                                  <th className="py-2.5 px-3 w-32 text-center">Data da Revisão</th>
+                                  <th className="py-2.5 px-3 w-28">Proprietário OEM</th>
+                                  <th className="py-2.5 px-3 w-32 text-center">Status no SGQ</th>
+                                  <th className="py-2.5 px-3 w-24 text-right">Ações</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/50">
+                                {grupo.itens.map((instancia, instIdx) => (
+                                  <tr key={instancia.id || instIdx} className="hover:bg-slate-800/30">
+                                    <td className="py-3 px-3">
+                                      <span className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold border inline-block ${
+                                        instancia.cessor === 'EUR'
+                                          ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                                          : instancia.cessor === 'KAT'
+                                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                          : instancia.cessor === 'BAC'
+                                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                          : instancia.cessor === 'MWM'
+                                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                          : instancia.cessor === 'CMA'
+                                          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                                          : 'bg-slate-800 text-slate-300 border-slate-700'
+                                      }`}>
+                                        {instancia.cessor}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 font-semibold text-white">
+                                      {instancia.frota || 'Geral'}
+                                    </td>
+                                    <td className="py-3 px-4 text-slate-300">
+                                      <div>{instancia.titulo}</div>
+                                      <span className="text-[10px] text-slate-500 block font-mono mt-0.5">
+                                        Ref: {instancia.proprietarioCessor || `${instancia.proprietario} (${instancia.cessor})`}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 text-center">
+                                      <span className="font-mono font-bold text-emerald-400 bg-emerald-950/40 px-2.5 py-0.5 rounded border border-emerald-500/30 inline-block">
+                                        {instancia.revisao || 'Rev. 00'}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 text-center font-mono text-slate-300">
+                                      {instancia.dataRevisao || <span className="text-slate-500 italic">Não informado</span>}
+                                    </td>
+                                    <td className="py-3 px-3 font-medium text-slate-400">
+                                      {instancia.proprietario || 'OEM'}
+                                    </td>
+                                    <td className="py-3 px-3 text-center">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 inline-flex items-center gap-1">
+                                        <Check className="w-3 h-3 text-emerald-400" />
+                                        {instancia.situacaoDocumental || 'Homologado'}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenEditF001(instancia)}
+                                        className="px-2 py-1 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 text-purple-200 border border-purple-500/40 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                        title="Editar este registro individual da matriz"
+                                      >
+                                        <Edit3 className="w-3 h-3 text-purple-400" />
+                                        <span>Editar</span>
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 );
@@ -2510,6 +2842,255 @@ export const ClientFleetDocumentControlView: React.FC<ClientFleetDocumentControl
                   className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold"
                 >
                   Cadastrar Documento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Toast Notification para F 001-02-1 */}
+      {f001ToastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 border border-emerald-400 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-5 h-5 text-emerald-100" />
+          <span className="text-xs font-bold">{f001ToastMessage.text}</span>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDIÇÃO INDIVIDUAL DE PUBLICAÇÃO & APLICAÇÃO (F 001-02-1)            */}
+      {/* ========================================================================= */}
+      {isF001EditModalOpen && editingF001Item && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <span className="px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-purple-600/30 text-purple-300 border border-purple-500/40">
+                  {f001EditFormData.publicacao || 'F001'}
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Edit3 className="w-4 h-4 text-purple-400" />
+                    Editar Registro da Publicação & Aplicação
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Cessor: <strong>{editingF001Item.cessor}</strong> • Frota: <strong>{editingF001Item.frota || 'Geral'}</strong>. A alteração afeta apenas este registro individual.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsF001EditModalOpen(false);
+                  setEditingF001Item(null);
+                }}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveF001Edit} className="p-6 space-y-4 overflow-y-auto text-xs">
+              {/* Alerta de Isolamento de Aplicação */}
+              <div className="p-3 bg-purple-950/30 border border-purple-500/30 rounded-xl text-purple-200 space-y-1">
+                <div className="font-bold flex items-center gap-1.5 text-xs text-purple-300">
+                  <ShieldAlert className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Isolamento Estrito Multi-Cessor & Rastreabilidade</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  As modificações salvas atualizarão exclusivamente este manual para o operador <strong>{f001EditFormData.cessor}</strong> na frota <strong>{f001EditFormData.frota}</strong>. A Planilha Oficial F 001-02-1 e as exportações refletirão os novos valores instantaneamente com trilha de auditoria.
+                </p>
+              </div>
+
+              {/* Bloco 1: Publicação, Cessor, Frota e Proprietário */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Publicação / Sigla *</label>
+                  <input
+                    type="text"
+                    required
+                    value={f001EditFormData.publicacao || ''}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, publicacao: e.target.value.toUpperCase() })}
+                    placeholder="Ex: AMM, AIPC, SRM, FIM"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-bold text-white uppercase focus:border-purple-500 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Cessor / Operador *</label>
+                  <select
+                    value={f001EditFormData.cessor || 'EUR'}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, cessor: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-bold text-purple-300 focus:border-purple-500 focus:outline-hidden"
+                  >
+                    {f001Cessores.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                    <option value="OUTRO">OUTRO / NOVO CESSOR</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Frota / Modelo de Aeronave *</label>
+                  <input
+                    type="text"
+                    required
+                    value={f001EditFormData.frota || ''}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, frota: e.target.value })}
+                    placeholder="Ex: Boeing 737-800BCF, Airbus A330"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-purple-500 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Proprietário OEM *</label>
+                  <input
+                    type="text"
+                    required
+                    value={f001EditFormData.proprietario || ''}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, proprietario: e.target.value })}
+                    placeholder="Ex: BOEING, AIRBUS, EMBRAER, IMPACTO"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white uppercase focus:border-purple-500 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Bloco 2: Datas e Revisão Segregadas com Rigor */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                    Número da Revisão Vigente *
+                    <span className="text-[10px] text-slate-500 font-normal ml-1">(Ex: Rev. 44, Emenda 08)</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={f001EditFormData.revisao || ''}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, revisao: e.target.value })}
+                    placeholder="Ex: Rev. 44"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-bold text-emerald-400 focus:border-purple-500 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                    Data da Revisão *
+                    <span className="text-[10px] text-purple-400 font-normal ml-1">(Data real da revisão técnica)</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={f001EditFormData.dataRevisao || ''}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, dataRevisao: e.target.value })}
+                    placeholder="Ex: 15/Mai/2024 ou 2024-05-15"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-semibold text-white focus:border-purple-500 focus:outline-hidden"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Data oficial emitida pelo fabricante/órgão para esta revisão.</p>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Situação Documental</label>
+                  <select
+                    value={f001EditFormData.situacaoDocumental || 'Vigente / Homologado'}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, situacaoDocumental: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-purple-500 focus:outline-hidden"
+                  >
+                    <option value="Vigente / Homologado">Vigente / Homologado</option>
+                    <option value="Em Revisão Periódica">Em Revisão Periódica</option>
+                    <option value="Aguardando Recebimento">Aguardando Recebimento</option>
+                    <option value="Obsoleto / Substituído">Obsoleto / Substituído</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-slate-300 block mb-1">Situação de Recebimento / Conferência</label>
+                  <select
+                    value={f001EditFormData.situacaoRecebimento || 'Conferido / Aprovado'}
+                    onChange={(e) => setF001EditFormData({ ...f001EditFormData, situacaoRecebimento: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-purple-500 focus:outline-hidden"
+                  >
+                    <option value="Conferido / Aprovado">Conferido / Aprovado</option>
+                    <option value="Recebido sem Divergências">Recebido sem Divergências</option>
+                    <option value="Pendente de Conferência Física">Pendente de Conferência Física</option>
+                    <option value="Divergência Notificada">Divergência Notificada ao Operador</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Título da Publicação */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-300 block mb-1">Título Completo da Publicação *</label>
+                <input
+                  type="text"
+                  required
+                  value={f001EditFormData.titulo || ''}
+                  onChange={(e) => setF001EditFormData({ ...f001EditFormData, titulo: e.target.value })}
+                  placeholder="Ex: Aircraft Maintenance Manual — B767-300 (EuroAtlantic)"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-purple-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Justificativa para a Trilha de Auditoria */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                  Justificativa Técnica da Alteração *
+                  <span className="text-[10px] text-slate-500 font-normal ml-1">(Rastreabilidade SGQ / RBAC 145)</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={f001MotivoAlteracao}
+                  onChange={(e) => setF001MotivoAlteracao(e.target.value)}
+                  placeholder="Ex: Atualização para a Revisão 44 recebida via portal do operador EuroAtlantic"
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:border-purple-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Histórico de Alterações Auditadas do Registro */}
+              {editingF001Item.historicoAuditoria && editingF001Item.historicoAuditoria.length > 0 && (
+                <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 space-y-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                    Histórico de Alterações Auditadas ({editingF001Item.historicoAuditoria.length}):
+                  </span>
+                  <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1">
+                    {editingF001Item.historicoAuditoria.map((h, hIdx) => (
+                      <div key={hIdx} className="text-[10px] text-slate-300 bg-slate-900 p-2 rounded-lg border border-slate-800 flex flex-col gap-0.5">
+                        <div className="flex items-center justify-between text-slate-400">
+                          <span>{new Date(h.dataHora).toLocaleString('pt-BR')} • {h.usuario}</span>
+                          <span className="text-purple-400 font-semibold">{h.campo}</span>
+                        </div>
+                        <div className="font-mono text-[10px] text-slate-300">
+                          De: <span className="text-rose-400">{h.valorAnterior}</span> &rarr; Para: <span className="text-emerald-400">{h.novoValor}</span>
+                        </div>
+                        {h.motivo && <span className="text-slate-400 italic">Motivo: {h.motivo}</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsF001EditModalOpen(false);
+                    setEditingF001Item(null);
+                  }}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-1.5 transition shadow-lg cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Salvar Alterações no Registro</span>
                 </button>
               </div>
             </form>

@@ -29,6 +29,7 @@ import {
   BaseEstacaoOperacao,
 } from '../types';
 import { calcularDiasParaVencimento } from '../services/competenciesEngine';
+import { formatarTituloCursoCompleto } from '../utils/courseFormatters';
 
 interface FleetCompetencyMatrixViewProps {
   organizationId: string;
@@ -453,35 +454,52 @@ export const FleetCompetencyMatrixView: React.FC<FleetCompetencyMatrixViewProps>
                       {item.niveisConcluidos.length === 0 ? (
                         <span className="text-slate-400 italic text-[11px]">Nenhum curso registrado</span>
                       ) : (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-col gap-1.5">
                           {item.treinamentos.map((t) => {
                             const isVencido =
                               t.dataValidade &&
                               calcularDiasParaVencimento(t.dataValidade) !== null &&
                               calcularDiasParaVencimento(t.dataValidade)! < 0;
 
+                            const tituloFormatado = formatarTituloCursoCompleto({
+                              titulo: t.treinamentoTitulo,
+                              frotaOuFamilia: t.frotaOuFamilia,
+                              nivelOuModulo: t.nivelOuModulo,
+                              variantesAplicabilidade: t.varianteAplicabilidade,
+                            });
+
                             return (
-                              <span
+                              <div
                                 key={t.id}
-                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border ${
+                                className={`p-1.5 rounded-lg border text-[11px] flex items-center justify-between gap-2 ${
                                   isVencido
-                                    ? 'bg-rose-50 border-rose-300 text-rose-800'
+                                    ? 'bg-rose-50/90 border-rose-200 text-rose-900'
                                     : t.ehReciclagem
-                                    ? 'bg-amber-50 border-amber-300 text-amber-800'
-                                    : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                    ? 'bg-amber-50/90 border-amber-200 text-amber-900'
+                                    : 'bg-slate-50 border-slate-200 text-slate-800'
                                 }`}
-                                title={`${t.treinamentoTitulo} — Realizado: ${t.dataRealizacao}${
+                                title={`${tituloFormatado} — Realizado: ${t.dataRealizacao}${
                                   t.dataValidade ? ` | Validade: ${t.dataValidade}` : ''
                                 }`}
                               >
-                                {t.ehReciclagem ? '🔄' : '✅'}
-                                <span>{t.nivelOuModulo || t.treinamentoTitulo}</span>
-                                {t.varianteAplicabilidade && (
-                                  <span className="text-[10px] text-slate-500 font-mono">
-                                    ({t.varianteAplicabilidade})
-                                  </span>
-                                )}
-                              </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-xs">{t.ehReciclagem ? '🔄' : '✅'}</span>
+                                  <span className="font-semibold">{tituloFormatado}</span>
+                                  {t.nivelOuModulo && (
+                                    <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-medium">
+                                      {t.nivelOuModulo}
+                                    </span>
+                                  )}
+                                  {t.varianteAplicabilidade && (
+                                    <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded font-mono">
+                                      {t.varianteAplicabilidade}
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="text-[10px] font-mono shrink-0 text-slate-500">
+                                  {t.dataRealizacao}
+                                </span>
+                              </div>
                             );
                           })}
                         </div>
@@ -636,25 +654,63 @@ export const FleetCompetencyMatrixView: React.FC<FleetCompetencyMatrixViewProps>
                   <p className="text-slate-500 italic">Nenhum treinamento registrado nesta frota.</p>
                 ) : (
                   <div className="space-y-1.5">
-                    {detalhesItem.treinamentos.map((t) => (
-                      <div key={t.id} className="p-2 bg-white rounded-lg border border-slate-200">
-                        <div className="flex justify-between font-semibold text-slate-800">
-                          <span>{t.treinamentoTitulo}</span>
-                          <span className={t.resultado === 'APROVADO' ? 'text-emerald-700' : 'text-rose-700'}>
-                            {t.resultado}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-slate-500 flex justify-between mt-1">
-                          <span>Realizado em: {t.dataRealizacao}</span>
-                          {t.dataValidade && <span>Validade: {t.dataValidade}</span>}
-                        </div>
-                        {t.numeroCertificado && (
-                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                            Certificado: {t.numeroCertificado}
+                    {detalhesItem.treinamentos.map((t) => {
+                      const tituloFormatado = formatarTituloCursoCompleto({
+                        titulo: t.treinamentoTitulo,
+                        frotaOuFamilia: t.frotaOuFamilia,
+                        nivelOuModulo: t.nivelOuModulo,
+                        variantesAplicabilidade: t.varianteAplicabilidade,
+                      });
+
+                      return (
+                        <div key={t.id} className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1.5">
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <div className="font-semibold text-slate-800 flex items-center gap-1.5 flex-wrap">
+                                <span>{t.ehReciclagem ? '🔄' : '🎓'}</span>
+                                <span>{tituloFormatado}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                {t.frotaOuFamilia && (
+                                  <span className="text-[10px] bg-blue-50 text-blue-700 font-semibold px-1.5 py-0.2 rounded border border-blue-200">
+                                    ✈️ {t.frotaOuFamilia}
+                                  </span>
+                                )}
+                                {t.nivelOuModulo && (
+                                  <span className="text-[10px] bg-indigo-50 text-indigo-700 font-semibold px-1.5 py-0.2 rounded border border-indigo-200">
+                                    🎯 {t.nivelOuModulo}
+                                  </span>
+                                )}
+                                {t.varianteAplicabilidade && (
+                                  <span className="text-[10px] bg-slate-100 text-slate-700 font-mono px-1.5 py-0.2 rounded border border-slate-200">
+                                    ⚙️ {t.varianteAplicabilidade}
+                                  </span>
+                                )}
+                                {t.ehReciclagem && (
+                                  <span className="text-[10px] bg-amber-50 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-200">
+                                    Reciclagem
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                              t.resultado === 'APROVADO' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {t.resultado}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    ))}
+                          <div className="text-[11px] text-slate-500 flex justify-between pt-1 border-t border-slate-100">
+                            <span>Realizado em: <strong>{t.dataRealizacao}</strong></span>
+                            {t.dataValidade && <span>Validade: <strong>{t.dataValidade}</strong></span>}
+                          </div>
+                          {t.numeroCertificado && (
+                            <div className="text-[10px] text-slate-400 font-mono">
+                              Certificado: {t.numeroCertificado}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

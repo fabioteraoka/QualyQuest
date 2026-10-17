@@ -14,8 +14,19 @@
  * 6. Data da Revisão (data da revisão)
  */
 
+export interface HistoricoAlteracaoF001 {
+  dataHora: string;
+  usuario: string;
+  usuarioEmail?: string;
+  campo: string;
+  valorAnterior: string;
+  novoValor: string;
+  motivo?: string;
+}
+
 export interface PublicacaoControladaF001 {
   id?: string;
+  codigo?: string;
   publicacao: string;
   titulo: string;
   proprietario?: string;
@@ -26,6 +37,11 @@ export interface PublicacaoControladaF001 {
   proprietarioCessor?: string;
   numeroEDataRevisao?: string;
   numeroRevisao?: string;
+  situacaoDocumental?: string;
+  situacaoRecebimento?: string;
+  atualizadoEm?: string;
+  atualizadoPor?: string;
+  historicoAuditoria?: HistoricoAlteracaoF001[];
 }
 
 export const COLUNAS_FORMULARIO_F001_02_1 = [
@@ -170,6 +186,7 @@ export function normalizarPublicacaoF001(pub: PublicacaoControladaF001, index: n
 
   return {
     id: pub.id || `f001-pub-${index + 1}-${pub.publicacao.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${cess.toLowerCase()}`,
+    codigo: pub.codigo || `${pub.publicacao}-${cess}`,
     publicacao: pub.publicacao,
     titulo: pub.titulo,
     proprietario: prop,
@@ -180,6 +197,11 @@ export function normalizarPublicacaoF001(pub: PublicacaoControladaF001, index: n
     proprietarioCessor: pc || `${prop} (${cess})`,
     numeroEDataRevisao: pub.numeroEDataRevisao || `Rev. ${rev}${dt ? ` – ${dt}` : ''}`,
     numeroRevisao: rev,
+    situacaoDocumental: pub.situacaoDocumental || 'Vigente / Homologado',
+    situacaoRecebimento: pub.situacaoRecebimento || 'Conferido / Aprovado',
+    atualizadoEm: pub.atualizadoEm,
+    atualizadoPor: pub.atualizadoPor,
+    historicoAuditoria: pub.historicoAuditoria || [],
   };
 }
 

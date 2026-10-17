@@ -25,7 +25,9 @@ import {
   FolderOpen,
   Download,
   HelpCircle,
-  MessageSquare
+  MessageSquare,
+  UserCheck,
+  User
 } from 'lucide-react';
 import { ManualRecord, StatusManual, ManualCapitulo, DocumentoControlado } from '../types';
 import { ManualsConsultModal } from './ManualsConsultModal';
@@ -41,6 +43,7 @@ import {
   normalizeDocumentCode,
   canonicalAlphanumericKey,
 } from '../services/documentControlAuditReconciliation';
+import { saveDocumentoControlado } from '../services/firebase/documentControlFirestore';
 
 interface ManualsRepositoryViewProps {
   manuals: ManualRecord[];
@@ -87,7 +90,12 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
     codigo: '',
     titulo: '',
     revisao: 'Rev. 01',
+    dataRevisao: '',
+    dataAprovacao: '',
     dataVigencia: new Date().toISOString().split('T')[0],
+    dataProximaRevisao: '',
+    proprietario: '',
+    assessor: '',
     orgaoRegulador: 'SGQ Interno',
     setoresAplicaveis: ['Qualidade'],
     descricaoResumo: '',
@@ -110,6 +118,8 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
       m.titulo.toLowerCase().includes(term) ||
       m.descricaoResumo.toLowerCase().includes(term) ||
       m.conteudoTexto.toLowerCase().includes(term) ||
+      (m.proprietario && m.proprietario.toLowerCase().includes(term)) ||
+      (m.assessor && m.assessor.toLowerCase().includes(term)) ||
       m.setoresAplicaveis.some((s) => s.toLowerCase().includes(term)) ||
       (m.capitulos || []).some((c) => c.titulo.toLowerCase().includes(term) || c.numero.toLowerCase().includes(term) || c.requisitoTexto.toLowerCase().includes(term));
 
@@ -126,7 +136,12 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
       codigo: '',
       titulo: '',
       revisao: 'Rev. 01',
+      dataRevisao: '',
+      dataAprovacao: '',
       dataVigencia: new Date().toISOString().split('T')[0],
+      dataProximaRevisao: '',
+      proprietario: '',
+      assessor: '',
       orgaoRegulador: 'ANAC / SGQ',
       setoresAplicaveis: ['REC - Manutenção / Calibração', 'Qualidade'],
       descricaoResumo: '',
@@ -141,11 +156,32 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
     setEditingManual(manual);
     setFormError(null);
     setCapituloError(null);
-    setFormData({ ...manual });
+
+    const codNorm = normalizeDocumentCode(manual.codigo);
+    const alpha = canonicalAlphanumericKey(manual.codigo);
+    const docAcervo = documentosControlados.find(
+      (d) =>
+        (manual.documentoControladoId && d.id === manual.documentoControladoId) ||
+        d.manualIAId === manual.id ||
+        normalizeDocumentCode(d.codigo) === codNorm ||
+        canonicalAlphanumericKey(d.codigo) === alpha
+    );
+
+    setFormData({
+      ...manual,
+      revisao: manual.revisao || docAcervo?.numeroRevisao || docAcervo?.revisaoVigenteNumero || 'Rev. 01',
+      dataRevisao: manual.dataRevisao || docAcervo?.dataRevisao || '',
+      dataAprovacao: manual.dataAprovacao || docAcervo?.dataAprovacao || '',
+      dataVigencia: manual.dataVigencia || docAcervo?.dataVigencia || '',
+      dataProximaRevisao: manual.dataProximaRevisao || docAcervo?.dataProximaRevisao || docAcervo?.proximaVerificacaoExterna || '',
+      proprietario: manual.proprietario || docAcervo?.proprietario || '',
+      assessor: manual.assessor || docAcervo?.assessor || '',
+      orgaoRegulador: manual.orgaoRegulador || docAcervo?.autoridadeNome || docAcervo?.emissor || 'SGQ',
+    });
     setIsModalOpen(true);
   };
 
-  const handleSaveForm = (e: React.FormEvent) => {
+  const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.codigo?.trim() || !formData.titulo?.trim()) {
       setFormError('Por favor, preencha o código e o título do manual.');
@@ -153,12 +189,47 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
     }
     setFormError(null);
 
+    const now = new Date().toISOString();
+    const newRev = (formData.revisao || 'Rev. 01').trim();
+    const oldRev = editingManual?.revisao || '';
+
+    const historicoAtual = [...(editingManual?.historicoAlteracoes || [])];
+    if (editingManual) {
+      historicoAtual.unshift({
+        versao: newRev,
+        data: now,
+        autor: userProfile?.displayName || userProfile?.email || 'SGQ',
+        descricao: `Edição de dados e governança: Revisão ${newRev}, Data Revisão: ${formData.dataRevisao || 'N/I'}, Vigência: ${formData.dataVigencia || 'N/I'}, Proprietário: ${formData.proprietario || 'N/I'}, Assessor: ${formData.assessor || 'N/I'}`,
+        campoAlterado: oldRev !== newRev ? 'revisao' : 'metadados_datas',
+        valorAnterior: oldRev,
+        novoValor: newRev,
+      });
+    }
+
+    const codNorm = normalizeDocumentCode(formData.codigo || '');
+    const alpha = canonicalAlphanumericKey(formData.codigo || '');
+    const docAcervo = documentosControlados.find(
+      (d) =>
+        (formData.documentoControladoId && d.id === formData.documentoControladoId) ||
+        (editingManual?.documentoControladoId && d.id === editingManual.documentoControladoId) ||
+        d.manualIAId === (editingManual ? editingManual.id : '') ||
+        normalizeDocumentCode(d.codigo) === codNorm ||
+        canonicalAlphanumericKey(d.codigo) === alpha
+    );
+
     const record: ManualRecord = {
       id: editingManual ? editingManual.id : `man-${Date.now()}`,
+      organizationId: userProfile?.organizationId || 'org_impacto_aviation',
       codigo: (formData.codigo || 'MANUAL').trim().toUpperCase(),
       titulo: (formData.titulo || 'Manual Sem Título').trim(),
-      revisao: formData.revisao || 'Rev. 01',
+      revisao: newRev,
+      dataRevisao: formData.dataRevisao ? formData.dataRevisao.trim() : undefined,
+      dataAprovacao: formData.dataAprovacao ? formData.dataAprovacao.trim() : undefined,
       dataVigencia: formData.dataVigencia || new Date().toISOString().split('T')[0],
+      dataProximaRevisao: formData.dataProximaRevisao ? formData.dataProximaRevisao.trim() : undefined,
+      proprietario: formData.proprietario ? formData.proprietario.trim() : undefined,
+      assessor: formData.assessor ? formData.assessor.trim() : undefined,
+      documentoControladoId: docAcervo ? docAcervo.id : formData.documentoControladoId,
       orgaoRegulador: formData.orgaoRegulador || 'SGQ',
       fonte: formData.fonte || 'Repositório SGQ',
       setoresAplicaveis: formData.setoresAplicaveis || ['Qualidade'],
@@ -168,11 +239,39 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
       status: (formData.status as StatusManual) || 'Vigente',
       arquivoNome: formData.arquivoNome,
       arquivoTamanho: formData.arquivoTamanho,
-      criadoEm: editingManual ? editingManual.criadoEm : new Date().toISOString(),
-      atualizadoEm: new Date().toISOString(),
+      criadoEm: editingManual ? editingManual.criadoEm : now,
+      atualizadoEm: now,
+      historicoAlteracoes: historicoAtual,
     };
 
     onSaveManual(record);
+
+    // Sincronizar com DocumentoControlado correspondente no Acervo SGQ preservando integridade
+    if (docAcervo) {
+      try {
+        const orgId = userProfile?.organizationId || 'org_impacto_aviation';
+        const docAcervoAtualizado: DocumentoControlado = {
+          ...docAcervo,
+          titulo: record.titulo,
+          numeroRevisao: record.revisao,
+          revisaoVigenteNumero: record.revisao,
+          dataRevisao: record.dataRevisao || docAcervo.dataRevisao,
+          dataAprovacao: record.dataAprovacao || docAcervo.dataAprovacao,
+          dataVigencia: record.dataVigencia,
+          dataProximaRevisao: record.dataProximaRevisao || docAcervo.dataProximaRevisao,
+          proprietario: record.proprietario || docAcervo.proprietario,
+          assessor: record.assessor || docAcervo.assessor,
+          manualIAId: record.id,
+          revisaoNoBancoIA: record.revisao,
+          statusSincroniaIA: 'SINCRONIZADO',
+          atualizadoEm: now,
+        };
+        await saveDocumentoControlado(orgId, docAcervoAtualizado, userProfile, docAcervo);
+      } catch (syncErr) {
+        console.warn('Sincronização com Acervo SGQ executada com aviso:', syncErr);
+      }
+    }
+
     setIsModalOpen(false);
     setEditingManual(null);
     setToastMessage({
@@ -670,70 +769,138 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                         return null;
                       })()}
 
-                      {/* Tags & Metadata */}
-                      <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
-                        <div className="flex items-center justify-between text-slate-500">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" /> Vigência:
-                          </span>
-                          <span className="font-semibold text-slate-700">{manual.dataVigencia}</span>
-                        </div>
+                      {/* Metadados de Vigência, Datas e Governança */}
+                      {(() => {
+                        const codNorm = normalizeDocumentCode(manual.codigo);
+                        const alpha = canonicalAlphanumericKey(manual.codigo);
+                        const docAcervo = documentosControlados.find(
+                          (d) =>
+                            (manual.documentoControladoId && d.id === manual.documentoControladoId) ||
+                            d.manualIAId === manual.id ||
+                            normalizeDocumentCode(d.codigo) === codNorm ||
+                            canonicalAlphanumericKey(d.codigo) === alpha
+                        );
 
-                        {manual.orgaoRegulador && (
-                          <div className="flex items-center justify-between text-slate-500">
-                            <span className="flex items-center gap-1">
-                              <Building className="w-3.5 h-3.5 text-slate-400" /> Órgão / Escopo:
-                            </span>
-                            <span className="font-semibold text-slate-700">{manual.orgaoRegulador}</span>
-                          </div>
-                        )}
+                        const dataRevExibida = manual.dataRevisao || docAcervo?.dataRevisao || null;
+                        const dataAprovExibida = manual.dataAprovacao || docAcervo?.dataAprovacao || null;
+                        const dataVigExibida = manual.dataVigencia || docAcervo?.dataVigencia || null;
+                        const dataProxRevExibida = manual.dataProximaRevisao || docAcervo?.dataProximaRevisao || docAcervo?.proximaVerificacaoExterna || null;
+                        const propExibido = manual.proprietario || docAcervo?.proprietario || null;
+                        const assessorExibido = manual.assessor || docAcervo?.assessor || null;
 
-                        <div className="flex items-center justify-between text-slate-500">
-                          <span className="flex items-center gap-1">
-                            <Layers className="w-3.5 h-3.5 text-slate-400" /> Requisitos Indexados:
-                          </span>
-                          <span className="font-bold text-indigo-600">{manual.capitulos?.length || 0} itens</span>
-                        </div>
+                        return (
+                          <div className="space-y-2 pt-2 border-t border-slate-100 text-xs">
+                            {/* Grid de Datas Rigorosamente Segregadas */}
+                            <div className="grid grid-cols-2 gap-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/70 text-[11px]">
+                              <div>
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Data da Revisão:</span>
+                                <span className="font-bold text-slate-900 flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-indigo-600 shrink-0" />
+                                  {dataRevExibida ? dataRevExibida : <span className="text-slate-400 font-normal italic">Não informado</span>}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Início Vigência:</span>
+                                <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  {dataVigExibida ? dataVigExibida : <span className="text-slate-400 font-normal italic">Não informado</span>}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Data de Aprovação:</span>
+                                <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                  <ShieldCheck className="w-3 h-3 text-blue-600 shrink-0" />
+                                  {dataAprovExibida ? dataAprovExibida : <span className="text-slate-400 font-normal italic">Não informado</span>}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="text-[10px] uppercase font-bold text-slate-500 block">Próxima Revisão:</span>
+                                <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-amber-600 shrink-0" />
+                                  {dataProxRevExibida ? dataProxRevExibida : <span className="text-slate-400 font-normal italic">Não informado</span>}
+                                </span>
+                              </div>
+                            </div>
 
-                        {/* Setores Tags */}
-                        {manual.setoresAplicaveis && manual.setoresAplicaveis.length > 0 && (
-                          <div className="flex flex-wrap gap-1 pt-1">
-                            {manual.setoresAplicaveis.slice(0, 2).map((s, idx) => (
-                              <span key={idx} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">
-                                {s}
+                            {/* Governança: Proprietário e Assessor Independentes */}
+                            <div className="space-y-1 pt-1 text-[11px]">
+                              <div className="flex items-center justify-between text-slate-600">
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <Building className="w-3 h-3 text-slate-400" /> Proprietário:
+                                </span>
+                                <span className="font-semibold text-slate-800 truncate max-w-[180px]">
+                                  {propExibido || <span className="text-slate-400 font-normal italic">Não informado</span>}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-slate-600">
+                                <span className="flex items-center gap-1 text-slate-500">
+                                  <UserCheck className="w-3 h-3 text-slate-400" /> Assessor:
+                                </span>
+                                <span className="font-semibold text-slate-800 truncate max-w-[180px]">
+                                  {assessorExibido || <span className="text-slate-400 font-normal italic">Não informado</span>}
+                                </span>
+                              </div>
+                              {manual.orgaoRegulador && (
+                                <div className="flex items-center justify-between text-slate-600">
+                                  <span className="flex items-center gap-1 text-slate-500">
+                                    <ShieldCheck className="w-3 h-3 text-slate-400" /> Órgão / Escopo:
+                                  </span>
+                                  <span className="font-medium text-slate-700 truncate max-w-[180px]">
+                                    {manual.orgaoRegulador}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-between text-slate-500 pt-1">
+                              <span className="flex items-center gap-1 text-[11px]">
+                                <Layers className="w-3 h-3 text-slate-400" /> Requisitos Indexados:
                               </span>
-                            ))}
-                            {manual.setoresAplicaveis.length > 2 && (
-                              <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded font-medium">
-                                +{manual.setoresAplicaveis.length - 2}
-                              </span>
+                              <span className="font-bold text-indigo-600 text-xs">{manual.capitulos?.length || 0} itens</span>
+                            </div>
+
+                            {/* Setores Tags */}
+                            {manual.setoresAplicaveis && manual.setoresAplicaveis.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-1">
+                                {manual.setoresAplicaveis.slice(0, 2).map((s, idx) => (
+                                  <span key={idx} className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">
+                                    {s}
+                                  </span>
+                                ))}
+                                {manual.setoresAplicaveis.length > 2 && (
+                                  <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded font-medium">
+                                    +{manual.setoresAplicaveis.length - 2}
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
-                        )}
-                      </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Footer Actions */}
-                    <div className="p-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between">
+                    <div className="p-3 bg-slate-50/80 border-t border-slate-100 flex items-center justify-between gap-2">
                       <button
                         onClick={() => setSelectedManual(manual)}
-                        className="text-xs text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 transition-colors"
+                        className="text-xs text-indigo-700 hover:text-indigo-900 font-bold flex items-center gap-1 transition-colors cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Ver Requisitos</span>
                       </button>
 
-                      <div className="flex items-center space-x-1">
+                      <div className="flex items-center space-x-1.5">
                         <button
                           onClick={() => handleOpenEdit(manual)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-white transition-colors"
-                          title="Editar Revisão"
+                          className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
+                          title="Editar Metadados e Datas da Revisão"
                         >
-                          <Edit3 className="w-3.5 h-3.5" />
+                          <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>Editar Documento</span>
                         </button>
                         <button
                           onClick={() => setManualToDelete(manual)}
-                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                           title="Excluir Manual"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -971,7 +1138,8 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Bloco 1: Identificação Básica e Revisão */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">Código do Manual *</label>
                   <input
@@ -985,7 +1153,7 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Revisão Atual *</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">Número da Revisão Vigente *</label>
                   <input
                     type="text"
                     required
@@ -997,7 +1165,26 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Data de Vigência *</label>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Data da Revisão *
+                    <span className="text-[10px] text-slate-500 font-normal ml-1">(Emissão técnica)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dataRevisao || ''}
+                    onChange={(e) => setFormData({ ...formData, dataRevisao: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              {/* Bloco 2: Datas Oficiais Segregadas */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-100/60 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Data de Início de Vigência *
+                    <span className="text-[10px] text-emerald-700 font-normal ml-1">(Eficácia)</span>
+                  </label>
                   <input
                     type="date"
                     required
@@ -1005,6 +1192,67 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                     onChange={(e) => setFormData({ ...formData, dataVigencia: e.target.value })}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
                   />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Data de Aprovação Formal
+                    <span className="text-[10px] text-blue-700 font-normal ml-1">(Portaria/Diretoria)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dataAprovacao || ''}
+                    onChange={(e) => setFormData({ ...formData, dataAprovacao: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-700 block mb-1">
+                    Data da Próxima Revisão
+                    <span className="text-[10px] text-amber-700 font-normal ml-1">(Limite periódico)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.dataProximaRevisao || ''}
+                    onChange={(e) => setFormData({ ...formData, dataProximaRevisao: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              {/* Bloco 3: Governança — Proprietário e Assessor Independentes */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-indigo-50/40 p-3 rounded-xl border border-indigo-100">
+                <div>
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1 mb-1">
+                    <Building className="w-3.5 h-3.5 text-indigo-600" />
+                    Proprietário do Documento
+                    <span className="text-[10px] text-slate-500 font-normal">(Governança técnica)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: IMPACTO Aviation MRO, BOEING, ANAC"
+                    value={formData.proprietario || ''}
+                    onChange={(e) => setFormData({ ...formData, proprietario: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Pessoa ou entidade titular responsável pela governança do documento.</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-800 flex items-center gap-1 mb-1">
+                    <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    Assessor do Documento
+                    <span className="text-[10px] text-slate-500 font-normal">(Assessoria / Análise)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Engenharia de Manutenção, Assessor SGQ"
+                    value={formData.assessor || ''}
+                    onChange={(e) => setFormData({ ...formData, assessor: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">Pessoa ou setor responsável pela assessoria e análise técnica documental.</p>
                 </div>
               </div>
 

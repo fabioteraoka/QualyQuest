@@ -573,9 +573,15 @@ export interface ManualRecord {
   revisao: string; // Ex: 'Rev. 14' ou 'Emenda 07'
   tipoDocumento?: TipoDocumento;
   dataEmissao?: string;
+  dataRevisao?: string; // Data técnica real da revisão vigente (ex: YYYY-MM-DD)
+  dataAprovacao?: string; // Data formal de aprovação regulatória
   dataVigencia: string; // YYYY-MM-DD (Início de vigência)
   dataFimVigencia?: string; // YYYY-MM-DD (Fim de vigência, se obsoleto)
+  dataProximaRevisao?: string; // Data prevista para próxima revisão técnica
   dataVencimentoRevisao?: string;
+  proprietario?: string; // Proprietário do documento (governança / responsabilidade)
+  assessor?: string; // Assessor do documento (assessoria técnica / análise documental)
+  documentoControladoId?: string; // ID correspondente no Acervo SGQ
   orgaoRegulador?: string; // Ex: 'ANAC', 'FAA', 'ISO', 'SGQ Interno'
   fonte: string; // Ex: 'Portal ANAC / DOU', 'Repositório SGQ Interno'
   setoresAplicaveis: string[];
@@ -596,6 +602,9 @@ export interface ManualRecord {
     data: string;
     autor: string;
     descricao: string;
+    campoAlterado?: string;
+    valorAnterior?: string;
+    novoValor?: string;
   }>;
 }
 
@@ -2193,11 +2202,14 @@ export interface DocumentoControlado {
 
   // NOVOS CAMPOS: MÓDULO DE VERIFICAÇÃO AUTOMÁTICA VS. MANUAL & RELATÓRIO DE CONFORMIDADE
   areaPublicacao?: string; // Área temática da publicação (ex: 'Regulamentação Aeronáutica', 'Manuais de Voo & Linha', 'SGQ & Procedimentos')
-  proprietario?: string; // Fabricante ou Autoridade OEM (ex: 'BOEING', 'AIRBUS', 'IMPACTO', 'ANAC')
+  proprietario?: string; // Fabricante ou Autoridade OEM / Proprietário do documento (ex: 'BOEING', 'AIRBUS', 'IMPACTO', 'ANAC')
+  assessor?: string; // Assessor do documento (análise técnica / assessoria documental) — campo independente
   cessor?: string; // Operador ou Empresa Cedente da frota (ex: 'EUR', 'MWM', 'BAC', 'KAT', 'CMA', 'IMPACTO', 'ANAC')
   proprietarioCessor?: string; // Proprietário ou Cessor legado do manual (ex: 'IMPACTO', 'ANAC', 'BOEING', 'KALITTA')
   numeroRevisao?: string; // Sinônimo direto para Número da Revisão (ex: 'Rev. 08', 'Emenda 09', 'Rev. 107')
   dataRevisao?: string; // Sinônimo direto para Data da Revisão
+  dataVigencia?: string; // Data de início da vigência técnica/regulatória
+  dataProximaRevisao?: string; // Data prevista para próxima revisão
   tipoVerificacao?: 'AUTOMATICO' | 'MANUAL'; // Classificação de Automação
   urlFonteVerificacao?: string; // Mapeamento de Fonte (URL pública para robô ou portal restrito)
   statusVerificacao?: 'CONFORME' | 'NOVA_REVISAO_IDENTIFICADA' | 'PENDENTE_VERIFICACAO' | 'ERRO_FONTE' | 'FONTE_INDISPONIVEL' | 'VERIFICACAO_NAO_CONCLUSIVA';
