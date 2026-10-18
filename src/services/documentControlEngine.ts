@@ -22,8 +22,10 @@ export function determinarRevisaoVigenteNaData(
   revisoes: RevisaoDocumental[],
   dataReferencia: string // YYYY-MM-DD
 ): ResultadoVigenciaTemporal {
-  // Filtra revisões que pertencem a este documento
-  const revisoesDoDoc = revisoes.filter((r) => r.documentoId === documento.id);
+  // Filtra revisões que pertencem a este documento (por ID ou código unívoco)
+  const revisoesDoDoc = revisoes.filter(
+    (r) => r.documentoId === documento.id || (documento.codigo && r.codigoDocumento === documento.codigo)
+  );
 
   if (!revisoesDoDoc || revisoesDoDoc.length === 0) {
     return {
@@ -34,7 +36,7 @@ export function determinarRevisaoVigenteNaData(
       revisaoVigenteNaData: undefined,
       revisaoVigenteHoje: undefined,
       statusDeterminacao: 'NAO_DETERMINADO_REQUER_VALIDACAO_HUMANA',
-      justificativaRastreavel: `Nenhuma revisão cadastrada para o documento ${documento.codigo}. Aplicabilidade e vigência não determinadas.`,
+      justificativaRastreavel: `Dados insuficientes: Nenhuma revisão cadastrada no histórico formal para o documento ${documento.codigo}. Aplicabilidade e vigência temporal não determinadas.`,
       revisaoVigenteNaDataDiferenteDeHoje: false,
     };
   }

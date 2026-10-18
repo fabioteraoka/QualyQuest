@@ -84,9 +84,49 @@ O QualiGest possui 35 capítulos técnicos incorporados diretamente na aplicaç�
 - Consulte o quadro de colaboradores filtrando por especialidade (**CEL**, **GMP**, **AVI**) e status operacional.
 - O sistema bloqueia preventivamente assinaturas técnicas no caso de CHT ou treinamentos mandatórios vencidos (ex: Fatores Humanos bienal, SGSO).
 
-### 3.4. Controle Documental com Consulta Temporal na Data da OS (Fase 10)
-- Registre publicações controladas no formato **F 001-02-1**.
-- Na aba **"Máquina Temporal"**, digite a data de qualquer Ordem de Serviço executada no passado para certificar qual revisão exata de manual (AMM/CMM) estava em vigor naquele instante.
+### 3.4. Controle Documental, Revisões & Motor de Conhecimento Temporal (Fase 10)
+
+O módulo **Controle Documental & Revisões** gerencia todo o acervo técnico regulatório da organização (manuais de fabricantes OEM, normas de autoridades ANAC/FAA/EASA, procedimentos internos MOMQ/POPs e especificações de clientes).
+
+#### 📍 Onde Encontrar a Edição do Documento e Revisão
+1. No menu principal lateral, acesse **Documentação & SGQ** > **Controle Documental & Revisões**.
+2. Na sub-aba **Acervo & Biblioteca Técnica (F 001-02-1)**:
+   - Cada card de documento controlado possui o botão **"Editar"** (com ícone de lápis azul).
+   - Ao clicar em **"Linha do Tempo"** ou no card para abrir os detalhes, o cabeçalho superior direito exibe o botão **"Editar Documento & Revisão"**.
+   - Na sub-aba **Conhecimento Temporal**, ao consultar um manual, o painel do resultado disponibiliza o atalho rápido **"Editar Metadados & Revisão Vigente"**.
+
+#### 📝 Como Cadastrar e Editar a Revisão Atual
+1. Ao acionar o botão de edição, o modal **Editar Documento Controlado & Revisão** é aberto.
+2. Na **Seção 1 (Identificação Geral)**, confira o título, categoria, emissor, **Proprietário do Documento** (órgão/empresa responsável pela governança) e **Assessor do Documento** (técnico responsável pela análise documental).
+3. Na **Seção 2 (Revisão Vigente & Vigência Temporal)**, preencha os campos obrigatórios conectados diretamente ao banco de dados:
+   - **Número da Revisão Vigente:** código oficial da revisão atual (ex: `Rev. 08`, `Emenda 09`, `Rev. 107`).
+   - **Data da Revisão:** data formal de publicação/emissão informada pelo fabricante ou autoridade.
+   - **Data de Início da Vigência:** data exata a partir da qual a revisão passou a ser legalmente e tecnicamente mandatória para as manutenções no MRO.
+   - **Data de Aprovação Técnica:** data de aprovação/homologação interna da revisão pela Garantia da Qualidade SGQ.
+   - **Data Prevista para Próxima Revisão:** prazo regulamentar para revalidação periódica.
+4. Clique em **"Salvar Documento & Revisão"**.
+   - **Documento sem histórico anterior:** O sistema cria atomicamente o primeiro registro de `RevisaoDocumental` com status `VIGENTE`, garantindo que o documento imediatamente passe a responder às consultas do Motor de Conhecimento Temporal.
+   - **Documento com histórico existente:** Se a revisão for a mesma em vigor, as datas e número são sincronizados com precisão. Caso seja necessária uma transição para uma nova revisão, o sistema preserva a anterior intacta com suas datas de início e fim de vigência, evitando criação de revisões duplicadas ou apagamento silencioso do passado.
+
+#### 📅 Como Registrar a Data de Vigência
+- A data de início da vigência (`dataVigencia`) é independente da data de emissão (`dataRevisao`):
+  - **Data da Revisão:** quando a autoridade/OEM emitiu o documento.
+  - **Início da Vigência:** quando a empresa incorporou ou passou a ser obrigada a seguir a norma.
+- *Atenção:* O QualiGest nunca substitui silenciosamente datas de revisão ou vigência por datas de upload do arquivo ou criação de registros no sistema.
+
+#### 🔍 Como Consultar o Histórico Cronológico
+1. No card do documento no Acervo, clique em **"Linha do Tempo"** (ou no botão do modal de detalhes).
+2. O histórico exibe a árvore cronológica de revisões:
+   - A revisão em vigor é sinalizada com badge verde **`VIGENTE`** e ícone de nó ativo.
+   - Revisões anteriores exibem badge cinza **`SUBSTITUIDO`**, acompanhadas da data em que foram substituídas e a referência expressa da revisão sucessora.
+   - É possível inspecionar o escopo de alterações de cada época, o responsável pela homologação e baixar a via do arquivo correspondente àquela versão histórica.
+
+#### ⏳ Como Interpretar uma Consulta Temporal sem Dados Suficientes
+Na sub-aba **Conhecimento Temporal**, ao selecionar um documento e a data em que uma Ordem de Serviço (OS) ou evento ocorreu no passado:
+1. **Resultado `DETERMINADO` (Revisão Vigente Identificada):** O sistema aponta matematicamente qual revisão (mesmo substituída hoje) era a única aplicável no dia do evento, gerando o parecer formal de defesa para auditorias ANAC/EASA.
+2. **Resultado `Dados Insuficientes no Histórico Temporal`:** Significa que o documento ainda não possui revisões registradas na linha do tempo imutável com datas de vigência formalizadas.
+   - **Ação:** O painel disponibiliza os botões **"Cadastrar Revisão no Histórico"** e **"Editar Metadados & Revisão Vigente"** para sanar imediatamente a pendência cadastral.
+3. **Resultado `Data Anterior à Primeira Revisão Controlada` (`DOCUMENTO_NAO_EXISTIA_NA_DATA`):** O evento ocorreu antes da entrada em vigor da revisão mais antiga conhecida do manual. O sistema atesta para os auditores que na referida data o manual não existia formalmente na organização.
 
 ### 3.5. Importação Inteligente de Dados com Reconciliação (Fase 15)
 - Acesse **Recursos & Controles** > **Importação Inteligente**.

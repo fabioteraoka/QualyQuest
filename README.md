@@ -75,12 +75,14 @@ Geração automática de relatórios oficiais no formato padrão da aviação, c
 
 ---
 
-### 4. Controle Documental & Máquina Temporal de Revisões (Fase 10)
-Centro de controle para Manuais de Manutenção de Aeronaves (AMM), Manuais de Componentes (CMM), Manuais Gerais de Operação (MGO/MOE) e Diretrizes de Aeronavegabilidade (DA/AD):
-- **Consulta Temporal Reversa:** Digite qualquer data do passado para saber instantaneamente qual revisão exata estava vigente no momento de uma ordem de serviço.
+### 4. Controle Documental, Revisões & Motor de Conhecimento Temporal (Fase 10)
+Centro de controle para Manuais de Manutenção de Aeronaves (AMM), Manuais de Componentes (CMM), Manuais Gerais de Operação (MOMQ/MOE), Diretrizes de Aeronavegabilidade (DA/AD) e Especificações de Clientes:
+- **Governança Total de Revisão Atual:** Cadastro e edição direta no Acervo com campos para número da revisão vigente, data da revisão (emissão), data de início da vigência, data de aprovação formal SGQ, data da próxima revisão, proprietário e assessor técnico.
+- **Sincronização Atômica Não-Destrutiva:** Persistência simultânea em `DocumentoControlado` e `RevisaoDocumental`, com provimento automático de primeira revisão e bloqueio estrito de duplicidade.
+- **Motor de Conhecimento Temporal:** Resolução determinística que responde com precisão matemática: *"Qual documento/revisão estava legalmente vigente na data em que determinado evento ou Ordem de Serviço ocorreu?"*, gerando parecer de defesa para auditorias ANAC/EASA.
+- **Linha do Tempo Cronológica:** Preservação imutável de todas as revisões anteriores com datas de início e fim de vigência, escopo de alterações e arquivos digitais históricos.
 - **Comparador Visual de Revisões:** Destaque automático de adições (verde) e supressões (vermelho) entre revisões de manuais.
-- **Monitoramento de Fontes Oficiais:** Verificação periódica de portais de fabricantes (Boeing, Airbus, Embraer) e autoridades (ANAC, FAA, EASA).
-- **Evidências de Leitura Operacional:** Mecânicos registram leitura obrigatória antes da liberação de tarefas críticas.
+- **Monitoramento de Fontes Oficiais & Robôs:** Verificação periódica de portais de fabricantes (Boeing, Airbus, Embraer) e autoridades (ANAC, FAA, EASA) com detecção de novas revisões.
 
 <p align="center">
   <img src="./public/screenshots/document_control.jpg" alt="Controle Documental e Comparador de Revisões" width="100%" style="border-radius: 8px;" />

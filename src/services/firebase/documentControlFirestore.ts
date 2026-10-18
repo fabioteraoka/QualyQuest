@@ -300,6 +300,13 @@ export async function saveDocumentoControlado(
             responsavelNome: previousDocument.responsavelNome,
             statusGeral: previousDocument.statusGeral,
             exigeEvidenciaLeitura: previousDocument.exigeEvidenciaLeitura,
+            numeroRevisao: previousDocument.numeroRevisao || previousDocument.revisaoVigenteNumero,
+            dataRevisao: previousDocument.dataRevisao,
+            dataAprovacao: previousDocument.dataAprovacao,
+            dataVigencia: previousDocument.dataVigencia,
+            dataProximaRevisao: previousDocument.dataProximaRevisao,
+            proprietario: previousDocument.proprietario || previousDocument.proprietarioCessor,
+            assessor: previousDocument.assessor,
           })
         : undefined,
       newValue: JSON.stringify({
@@ -310,6 +317,13 @@ export async function saveDocumentoControlado(
         responsavelNome: documento.responsavelNome,
         statusGeral: documento.statusGeral,
         exigeEvidenciaLeitura: documento.exigeEvidenciaLeitura,
+        numeroRevisao: documento.numeroRevisao || documento.revisaoVigenteNumero,
+        dataRevisao: documento.dataRevisao,
+        dataAprovacao: documento.dataAprovacao,
+        dataVigencia: documento.dataVigencia,
+        dataProximaRevisao: documento.dataProximaRevisao,
+        proprietario: documento.proprietario || documento.proprietarioCessor,
+        assessor: documento.assessor,
       }),
       reason: isNew ? 'Novo documento inserido no Acervo SGQ' : 'Atualização de metadados documentais',
       origin: 'CONTROLE_DOCUMENTAL',
@@ -866,20 +880,24 @@ export async function aprovarRevisaoDocumental(
       statusCicloVida: 'VIGENTE',
       aprovadoPorNome: user.displayName || user.email,
       aprovadoPorUid: user.uid,
-      dataAprovacao: hoje,
+      dataAprovacao: novaRevisao.dataAprovacao || hoje,
       justificativaAprovacao: justificativa || 'Aprovação técnica formal no QualiGest SGQ.',
       ehImutavel: true,
       updatedAt: new Date().toISOString(),
     };
     batch.set(newRef, sanitizeForFirestore(newPayload), { merge: true });
 
-    // 3. Atualizar o ponteiro de revisão vigente no DocumentoControlado
+    // 3. Atualizar o ponteiro de revisão vigente e metadados no DocumentoControlado
     const docRef = doc(db, 'organizations', organizationId, 'controlled_documents', novaRevisao.documentoId);
     batch.update(
       docRef,
       sanitizeForFirestore({
         revisaoVigenteId: novaRevisao.id,
         revisaoVigenteNumero: novaRevisao.numeroRevisao,
+        numeroRevisao: novaRevisao.numeroRevisao,
+        dataRevisao: novaRevisao.dataEmissao || novaRevisao.dataEntradaVigor,
+        dataAprovacao: newPayload.dataAprovacao,
+        dataVigencia: novaRevisao.dataEntradaVigor,
         updatedAt: new Date().toISOString(),
       })
     );

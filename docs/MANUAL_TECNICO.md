@@ -145,3 +145,13 @@ export interface SlideApresentacao {
 * **Decisão:** Implementar proxy reverso em `server.ts` sob o prefixo `/api/impacto/*`, com mascaramento de cabeçalhos de autorização e fallback inteligente para contingência offline.
 * **Impacto:** Segurança estrita de credenciais e operação contínua do hangar mesmo em caso de instabilidade de rede.
 
+#### ADR-021: Governança de Metadados e Sincronização Não-Destrutiva no Controle Documental & Motor Temporal
+* **Contexto:** Existência de divergência entre campos de revisão previstos no modelo (`numeroRevisao`, `dataRevisao`, `dataVigencia`, `dataAprovacao`, `dataProximaRevisao`, `proprietario`, `assessor`) e os campos de entrada disponibilizados no formulário modal do Acervo. Além disso, havia necessidade de sincronizar a entidade `DocumentoControlado` com `RevisaoDocumental` sem criar revisões duplicadas e preservando a imutabilidade do histórico temporal para fiscalizações ANAC.
+* **Decisão:**
+  1. Conectar bidirecionalmente todos os 7 campos no modal `Editar Documento Controlado & Revisão` (`DocumentControlCenterView.tsx`), persistindo-os tanto no documento quanto na revisão correspondente via `saveDocumentoControlado` e `saveRevisaoDocumental`.
+  2. Implementar auto-provisionamento de primeira revisão: se o documento ainda não possuir registros em `RevisaoDocumental`, o salvamento cria atomicamente o primeiro registro com status `VIGENTE`, preenchendo o ponteiro `revisaoVigenteId` e registrando o log no Audit Trail.
+  3. Prevenção estrita de duplicidade: bloquear cadastro ou edição com número de revisão idêntico ao de outra revisão existente no mesmo documento.
+  4. Preservação cronológica do Motor Temporal: garantir que a edição de metadados não sobrescreva silentemente datas de revisões históricas substituídas, mantendo `dataEntradaVigor` e `dataSubstituicao` estritamente segregadas da data de upload do arquivo.
+* **Impacto:** Resolução determinística e matematicamente rastreável para auditorias aeronáuticas, eliminando inconsistências cadastrais e garantindo integridade transacional multi-tenant no Firestore.
+
+

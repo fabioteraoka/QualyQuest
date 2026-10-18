@@ -88,6 +88,7 @@ import {
   HardDrive,
   AlertCircle,
   HelpCircle,
+  Save,
 } from 'lucide-react';
 import { ComplianceReportModal } from './ComplianceReportModal';
 import {
@@ -501,15 +502,19 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
   // Handlers de Governança Documental
   const handleOpenEditDoc = (doc: DocumentoControlado) => {
     setDocToEdit(doc);
+    const revVigente =
+      revisoes.find((r) => r.id === doc.revisaoVigenteId) ||
+      revisoes.find((r) => (r.documentoId === doc.id || r.codigoDocumento === doc.codigo) && r.statusCicloVida === 'VIGENTE');
+
     setEditDocForm({
       titulo: doc.titulo,
       categoria: doc.categoria,
       emissor: doc.emissor,
       responsavelNome: doc.responsavelNome || '',
-      numeroRevisao: doc.numeroRevisao || doc.revisaoVigenteNumero || '',
-      dataRevisao: doc.dataRevisao || '',
-      dataAprovacao: doc.dataAprovacao || '',
-      dataVigencia: doc.dataVigencia || '',
+      numeroRevisao: doc.numeroRevisao || doc.revisaoVigenteNumero || revVigente?.numeroRevisao || '',
+      dataRevisao: doc.dataRevisao || revVigente?.dataEmissao || '',
+      dataAprovacao: doc.dataAprovacao || revVigente?.dataAprovacao || '',
+      dataVigencia: doc.dataVigencia || revVigente?.dataEntradaVigor || '',
       dataProximaRevisao: doc.dataProximaRevisao || doc.proximaVerificacaoExterna || '',
       proprietario: doc.proprietario || doc.proprietarioCessor || '',
       assessor: doc.assessor || '',
@@ -525,24 +530,111 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
 
     try {
       setIsSubmittingDocAction(true);
+      const numRevClean = editDocForm.numeroRevisao.trim();
+      const dataRevClean = editDocForm.dataRevisao.trim();
+      const dataAprovClean = editDocForm.dataAprovacao.trim();
+      const dataVigClean = editDocForm.dataVigencia.trim();
+      const dataProxRevClean = editDocForm.dataProximaRevisao.trim();
+      const propClean = editDocForm.proprietario.trim();
+      const assessorClean = editDocForm.assessor.trim();
+
       const updatedDoc: DocumentoControlado = {
         ...docToEdit,
-        titulo: editDocForm.titulo,
+        titulo: editDocForm.titulo.trim(),
         categoria: editDocForm.categoria,
-        emissor: editDocForm.emissor,
-        responsavelNome: editDocForm.responsavelNome,
-        numeroRevisao: editDocForm.numeroRevisao.trim() || undefined,
-        revisaoVigenteNumero: editDocForm.numeroRevisao.trim() || docToEdit.revisaoVigenteNumero,
-        dataRevisao: editDocForm.dataRevisao.trim() || undefined,
-        dataAprovacao: editDocForm.dataAprovacao.trim() || undefined,
-        dataVigencia: editDocForm.dataVigencia.trim() || undefined,
-        dataProximaRevisao: editDocForm.dataProximaRevisao.trim() || undefined,
-        proprietario: editDocForm.proprietario.trim() || undefined,
-        assessor: editDocForm.assessor.trim() || undefined,
+        emissor: editDocForm.emissor.trim(),
+        responsavelNome: editDocForm.responsavelNome.trim(),
+        numeroRevisao: numRevClean || undefined,
+        revisaoVigenteNumero: numRevClean || docToEdit.revisaoVigenteNumero,
+        dataRevisao: dataRevClean || undefined,
+        dataAprovacao: dataAprovClean || undefined,
+        dataVigencia: dataVigClean || undefined,
+        dataProximaRevisao: dataProxRevClean || undefined,
+        proprietario: propClean || undefined,
+        proprietarioCessor: propClean || docToEdit.proprietarioCessor,
+        assessor: assessorClean || undefined,
         exigeEvidenciaLeitura: editDocForm.exigeEvidenciaLeitura,
         aplicabilidadePadrao: editDocForm.aplicabilidadePadrao,
         atualizadoEm: new Date().toISOString(),
       };
+
+      // Rastreabilidade e Coerência entre DocumentoControlado e RevisaoDocumental:
+      const revisoesDoDoc = revisoes.filter(
+        (r) => r.documentoId === docToEdit.id || (docToEdit.codigo && r.codigoDocumento === docToEdit.codigo)
+      );
+
+      // Cenário A: Se o documento ainda não possui nenhum registro em RevisaoDocumental e foi informado número de revisão
+      if (revisoesDoDoc.length === 0 && numRevClean) {
+        const novaRevId = `rev-${docToEdit.id}-${Date.now()}`;
+        const dataVigorEfetiva = dataVigClean || dataRevClean || new Date().toISOString().split('T')[0];
+        const novaRev: RevisaoDocumental = {
+          id: novaRevId,
+          organizationId,
+          documentoId: docToEdit.id,
+          codigoDocumento: docToEdit.codigo,
+          tituloDocumento: updatedDoc.titulo,
+          numeroRevisao: numRevClean,
+          dataEmissao: dataRevClean || dataVigorEfetiva,
+          dataEntradaVigor: dataVigorEfetiva,
+          dataAprovacao: dataAprovClean || undefined,
+          statusCicloVida: 'VIGENTE',
+          aprovadoPorNome: currentUser?.displayName || 'Garantia da Qualidade SGQ',
+          aprovadoPorUid: currentUser?.uid || 'system',
+          justificativaAprovacao: 'Cadastro inicial da revisão vigente no Controle Documental SGQ.',
+          escopoAlteracoes: 'Registro inicial de revisão e datas de vigência do documento.',
+          origemRevisao:
+            updatedDoc.categoria === 'DOCUMENTO_AUTORIDADE'
+              ? 'FONTE_EXTERNA_OFICIAL'
+              : updatedDoc.categoria === 'DOCUMENTO_CLIENTE'
+              ? 'CLIENTE_FORNECIDA'
+              : 'INTERNA',
+          ehImutavel: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        await saveRevisaoDocumental(organizationId, novaRev, currentUser);
+        updatedDoc.revisaoVigenteId = novaRevId;
+        updatedDoc.revisaoVigenteNumero = numRevClean;
+      } else if (revisoesDoDoc.length > 0) {
+        // Cenário B: Documento já possui revisões no histórico
+        // Validação anti-duplicação: não permitir dois registros com o mesmo número de revisão no mesmo documento
+        if (numRevClean) {
+          const revExistenteMesmoNumero = revisoesDoDoc.find(
+            (r) =>
+              r.numeroRevisao.trim().toLowerCase() === numRevClean.toLowerCase() &&
+              r.id !== docToEdit.revisaoVigenteId
+          );
+          if (revExistenteMesmoNumero && docToEdit.revisaoVigenteId && revExistenteMesmoNumero.id !== docToEdit.revisaoVigenteId) {
+            alert(
+              `Atenção: A revisão "${numRevClean}" já existe no histórico do documento ${docToEdit.codigo}. Para garantir a imutabilidade e a rastreabilidade, não é permitido duplicar números de revisão.`
+            );
+            setIsSubmittingDocAction(false);
+            return;
+          }
+        }
+
+        const revCorrespondente =
+          revisoesDoDoc.find((r) => r.id === docToEdit.revisaoVigenteId) ||
+          revisoesDoDoc.find((r) => r.statusCicloVida === 'VIGENTE') ||
+          revisoesDoDoc.find((r) => r.numeroRevisao.trim().toLowerCase() === numRevClean.toLowerCase());
+
+        if (revCorrespondente) {
+          // Atualiza os metadados da revisão vigente identificada sem alterar silentemente histórico passado
+          const revAtualizada: RevisaoDocumental = {
+            ...revCorrespondente,
+            tituloDocumento: updatedDoc.titulo,
+            numeroRevisao: numRevClean || revCorrespondente.numeroRevisao,
+            dataEmissao: dataRevClean || revCorrespondente.dataEmissao,
+            dataEntradaVigor: dataVigClean || revCorrespondente.dataEntradaVigor,
+            dataAprovacao: dataAprovClean || revCorrespondente.dataAprovacao,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveRevisaoDocumental(organizationId, revAtualizada, currentUser);
+          updatedDoc.revisaoVigenteId = revCorrespondente.id;
+          updatedDoc.revisaoVigenteNumero = revAtualizada.numeroRevisao;
+        }
+      }
 
       await saveDocumentoControlado(organizationId, updatedDoc, currentUser, docToEdit);
       setIsEditDocModalOpen(false);
@@ -550,7 +642,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
         setSelectedDocForDetail(updatedDoc);
       }
       setDocToEdit(null);
-      showToast('Documento atualizado com sucesso e registrado no Audit Trail!');
+      showToast('Documento e metadados de revisão salvos com sucesso no Audit Trail!');
     } catch (err: any) {
       alert(`Erro ao atualizar documento: ${err.message}`);
     } finally {
@@ -1090,6 +1182,7 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       revisaoHoje: revHoje,
       aplicabilidade,
       dataConsultada: temporalDate,
+      resultadoTemporal,
     };
   }, [documentos, revisoes, temporalDocId, temporalDate, temporalAeronave, temporalSetor, temporalProcesso, temporalCliente]);
 
@@ -1880,19 +1973,61 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400 font-medium">Número da Revisão:</span>
+                        <span className="text-slate-400 font-medium">Revisão Vigente:</span>
                         <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          {doc.numeroRevisao || doc.revisaoVigenteNumero || revVigente?.numeroRevisao || 'Rev. 00'}
+                          {doc.numeroRevisao || doc.revisaoVigenteNumero || revVigente?.numeroRevisao || (
+                            <span className="text-slate-500 font-normal italic">Sem revisão cadastrada</span>
+                          )}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-slate-400 font-medium">Data da Revisão:</span>
                         <span className="text-slate-200 font-mono font-medium">
-                          {doc.dataRevisao || revVigente?.dataEntradaVigor || doc.atualizadoEm?.split('T')[0] || '-'}
+                          {doc.dataRevisao || revVigente?.dataEmissao || (
+                            <span className="text-slate-500 font-normal italic">Não informado</span>
+                          )}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Início da Vigência:</span>
+                        <span className="text-slate-200 font-mono font-medium">
+                          {doc.dataVigencia || revVigente?.dataEntradaVigor || (
+                            <span className="text-slate-500 font-normal italic">Não informado</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Data de Aprovação:</span>
+                        <span className="text-slate-200 font-mono font-medium">
+                          {doc.dataAprovacao || revVigente?.dataAprovacao || (
+                            <span className="text-slate-500 font-normal italic">Não informado</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Próxima Revisão:</span>
+                        <span className="text-slate-200 font-mono font-medium">
+                          {doc.dataProximaRevisao || (
+                            <span className="text-slate-500 font-normal italic">Não informado</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Proprietário (OEM):</span>
+                        <span className="text-slate-200 font-semibold truncate max-w-[180px]">
+                          {doc.proprietario || doc.proprietarioCessor || doc.emissor || (
+                            <span className="text-slate-500 font-normal italic">Não informado</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 font-medium">Assessor:</span>
+                        <span className="text-slate-200 font-semibold truncate max-w-[180px]">
+                          {doc.assessor || <span className="text-slate-500 font-normal italic">Não informado</span>}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
                         <span className="text-slate-400 font-medium">Tipo de Verificação:</span>
                         <span className={`font-semibold ${doc.tipoVerificacao === 'AUTOMATICO' ? 'text-indigo-400' : 'text-amber-400'}`}>
                           {doc.tipoVerificacao === 'AUTOMATICO' ? 'Automática' : 'Manual'}
@@ -2027,10 +2162,11 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
 
                         <button
                           onClick={() => handleOpenEditDoc(doc)}
-                          className="text-xs text-slate-400 hover:text-sky-300 p-1.5 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-                          title="Editar Metadados do Documento"
+                          className="text-xs text-sky-300 hover:text-white flex items-center gap-1 px-2 py-1 rounded bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 transition-colors cursor-pointer font-medium"
+                          title="Editar metadados, revisão vigente e datas do documento"
                         >
-                          <Edit className="w-3.5 h-3.5" />
+                          <Edit className="w-3.5 h-3.5 text-sky-400" />
+                          <span>Editar</span>
                         </button>
 
                         {isDocInativo ? (
@@ -2108,11 +2244,11 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <button
                       onClick={() => handleOpenEditDoc(selectedDocForDetail)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 transition-colors"
-                      title="Editar Metadados"
+                      className="px-3 py-1.5 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                      title="Editar metadados, revisão vigente e datas deste documento"
                     >
                       <Edit className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Editar</span>
+                      <span>Editar Documento & Revisão</span>
                     </button>
 
                     {selectedDocForDetail.statusGeral === 'INATIVO' ? (
@@ -2184,44 +2320,52 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 )}
 
                 {/* Painel Estruturado de Governança Documental: Datas & Vigência */}
-                <div className="mx-6 mt-4 p-4 rounded-xl border bg-slate-950/80 border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+                <div className="mx-6 mt-4 p-4 rounded-xl border bg-slate-950/80 border-slate-800 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 text-xs">
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Número da Revisão:</span>
-                    <span className="text-emerald-400 font-mono font-bold text-sm">
-                      {selectedDocForDetail.numeroRevisao || selectedDocForDetail.revisaoVigenteNumero || 'Rev. 01'}
-                    </span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Data da Revisão:</span>
-                    <span className="text-slate-200 font-mono font-medium text-xs">
-                      {selectedDocForDetail.dataRevisao || selectedDocForDetail.atualizadoEm?.split('T')[0] || '-'}
-                    </span>
-                  </div>
-                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Tipo de Verificação:</span>
-                    <span className="font-semibold text-xs flex items-center gap-1 text-slate-200">
-                      {selectedDocForDetail.tipoVerificacao === 'AUTOMATICO' ? (
-                        <span className="text-indigo-400 flex items-center gap-1"><Bot className="w-3.5 h-3.5" /> Automática</span>
-                      ) : (
-                        <span className="text-amber-400 flex items-center gap-1"><UserCheck className="w-3.5 h-3.5" /> Manual</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Revisão Vigente:</span>
+                    <span className="text-emerald-400 font-mono font-bold text-sm block truncate">
+                      {selectedDocForDetail.numeroRevisao || selectedDocForDetail.revisaoVigenteNumero || (
+                        <span className="text-slate-500 font-normal italic text-xs">Sem revisão</span>
                       )}
                     </span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Última Verificação:</span>
-                    <span
-                      className={`font-mono text-[11px] ${
-                        selectedDocForDetail.dataUltimaVerificacao ? 'text-slate-200 font-medium' : 'text-amber-400 font-semibold'
-                      }`}
-                    >
-                      {formatarDataHoraVerificacao(selectedDocForDetail.dataUltimaVerificacao)}
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Data da Revisão:</span>
+                    <span className="text-slate-200 font-mono font-medium text-xs block truncate">
+                      {selectedDocForDetail.dataRevisao || <span className="text-slate-500 italic">Não informado</span>}
                     </span>
                   </div>
                   <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
-                    <span className="text-slate-500 block text-[11px] mb-0.5">Resultado da Verificação:</span>
-                    <div className="pt-0.5">
-                      {renderResultadoVerificacaoBadge(selectedDocForDetail, handleOpenDiscrepancyValidation)}
-                    </div>
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Início Vigência:</span>
+                    <span className="text-slate-200 font-mono font-medium text-xs block truncate">
+                      {selectedDocForDetail.dataVigencia || <span className="text-slate-500 italic">Não informado</span>}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Aprovação:</span>
+                    <span className="text-slate-200 font-mono font-medium text-xs block truncate">
+                      {selectedDocForDetail.dataAprovacao || <span className="text-slate-500 italic">Não informado</span>}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Próx. Revisão:</span>
+                    <span className="text-slate-200 font-mono font-medium text-xs block truncate">
+                      {selectedDocForDetail.dataProximaRevisao || <span className="text-slate-500 italic">Não informado</span>}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Proprietário:</span>
+                    <span className="text-slate-200 font-medium text-xs block truncate" title={selectedDocForDetail.proprietario || selectedDocForDetail.proprietarioCessor || selectedDocForDetail.emissor}>
+                      {selectedDocForDetail.proprietario || selectedDocForDetail.proprietarioCessor || selectedDocForDetail.emissor || (
+                        <span className="text-slate-500 italic">Não informado</span>
+                      )}
+                    </span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800/80">
+                    <span className="text-slate-400 block text-[10px] uppercase font-bold mb-0.5">Assessor:</span>
+                    <span className="text-slate-200 font-medium text-xs block truncate" title={selectedDocForDetail.assessor}>
+                      {selectedDocForDetail.assessor || <span className="text-slate-500 italic">Não informado</span>}
+                    </span>
                   </div>
                 </div>
 
@@ -2240,15 +2384,36 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
 
                     <button
                       onClick={() => setIsNewRevisionModalOpen(true)}
-                      className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors"
+                      className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       Propor Nova Revisão
                     </button>
                   </div>
 
-                  {/* Linha do Tempo */}
-                  <div className="space-y-4 border-l-2 border-slate-800 ml-4 pl-6 relative">
+                  {/* Linha do Tempo ou Estado Vazio */}
+                  {revisoesDoDocSelecionado.length === 0 ? (
+                    <div className="p-8 text-center bg-slate-950/60 border border-dashed border-slate-800 rounded-xl space-y-3">
+                      <div className="p-3 bg-amber-500/10 text-amber-400 rounded-full w-fit mx-auto border border-amber-500/20">
+                        <AlertTriangle className="w-6 h-6" />
+                      </div>
+                      <div className="space-y-1">
+                        <h5 className="text-sm font-bold text-white">Nenhuma revisão cadastrada no histórico formal</h5>
+                        <p className="text-xs text-slate-400 max-w-md mx-auto">
+                          Este documento ainda não possui revisões registradas na linha do tempo imutável. Para alimentar o Motor de Conhecimento Temporal e responder auditorias, cadastre a primeira revisão.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsNewRevisionModalOpen(true)}
+                        className="px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Cadastrar Primeira Revisão</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 border-l-2 border-slate-800 ml-4 pl-6 relative">
                     {revisoesDoDocSelecionado.map((rev) => {
                       const isVigente = rev.statusCicloVida === 'VIGENTE';
                       const isSubstituido = rev.statusCicloVida === 'SUBSTITUIDO';
@@ -2365,7 +2530,8 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                       );
                     })}
                   </div>
-                </div>
+                )}
+              </div>
 
                 {/* Rodapé do Modal */}
                 <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
@@ -3448,40 +3614,99 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                       <div>
                         <span className="text-xs text-slate-400">Revisão Aplicável em {temporalResult.dataConsultada}:</span>
                         <h3 className="text-xl font-bold text-white mt-0.5">
-                          {temporalResult.revisaoNoEvento?.numeroRevisao || 'Nenhuma revisão vigente localizada'}
+                          {temporalResult.revisaoNoEvento ? (
+                            temporalResult.revisaoNoEvento.numeroRevisao
+                          ) : temporalResult.resultadoTemporal?.statusDeterminacao === 'DOCUMENTO_NAO_EXISTIA_NA_DATA' ? (
+                            'Documento Não Existia na Data'
+                          ) : (
+                            'Dados Insuficientes no Histórico'
+                          )}
                         </h3>
                         <p className="text-xs text-emerald-400 font-mono mt-1">
-                          Documento: {temporalResult.documento.codigo}
+                          Documento: {temporalResult.documento.codigo} — {temporalResult.documento.titulo}
                         </p>
                       </div>
 
-                      {temporalResult.revisaoNoEvento && (
-                        <div className="space-y-2 text-xs text-slate-300 bg-slate-900/60 p-3 rounded-lg border border-slate-800">
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Entrada em Vigor:</span>
-                            <span className="font-semibold text-white">
-                              {temporalResult.revisaoNoEvento.dataEntradaVigor}
-                            </span>
+                      {temporalResult.revisaoNoEvento ? (
+                        <>
+                          <div className="space-y-2 text-xs text-slate-300 bg-slate-900/60 p-3 rounded-lg border border-slate-800">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Data da Revisão / Emissão:</span>
+                              <span className="font-semibold text-white font-mono">
+                                {temporalResult.revisaoNoEvento.dataEmissao || 'Não informado'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Entrada em Vigor:</span>
+                              <span className="font-semibold text-emerald-400 font-mono">
+                                {temporalResult.revisaoNoEvento.dataEntradaVigor}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Substituída / Válida até:</span>
+                              <span className="font-semibold text-white font-mono">
+                                {temporalResult.revisaoNoEvento.dataSubstituicao || 'Continua em vigor'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Data de Aprovação:</span>
+                              <span className="font-semibold text-white font-mono">
+                                {temporalResult.revisaoNoEvento.dataAprovacao || 'Não informado'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Aprovador Técnico:</span>
+                              <span>{temporalResult.revisaoNoEvento.aprovadoPorNome || 'Garantia da Qualidade SGQ'}</span>
+                            </div>
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Substituída / Válida até:</span>
-                            <span className="font-semibold text-white">
-                              {temporalResult.revisaoNoEvento.dataSubstituicao || 'Continua em vigor'}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-slate-400">Aprovador Técnico:</span>
-                            <span>{temporalResult.revisaoNoEvento.aprovadoPorNome || 'Eng. Paulo Okubo'}</span>
-                          </div>
-                        </div>
-                      )}
 
-                      {temporalResult.revisaoNoEvento?.escopoAlteracoes && (
-                        <div className="text-xs text-slate-300">
-                          <span className="text-slate-400 block mb-1">Conteúdo/Exigência na Época:</span>
-                          <p className="bg-slate-900 p-2.5 rounded border border-slate-800 leading-relaxed">
-                            {temporalResult.revisaoNoEvento.escopoAlteracoes}
-                          </p>
+                          {temporalResult.revisaoNoEvento.escopoAlteracoes && (
+                            <div className="text-xs text-slate-300">
+                              <span className="text-slate-400 block mb-1">Conteúdo/Exigência na Época:</span>
+                              <p className="bg-slate-900 p-2.5 rounded border border-slate-800 leading-relaxed">
+                                {temporalResult.revisaoNoEvento.escopoAlteracoes}
+                              </p>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-amber-200 text-xs space-y-3">
+                          <div className="flex items-start gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                            <div>
+                              <strong className="text-amber-300 block mb-0.5">
+                                {temporalResult.resultadoTemporal?.statusDeterminacao === 'DOCUMENTO_NAO_EXISTIA_NA_DATA'
+                                  ? 'Data Anterior à Primeira Revisão Controlada'
+                                  : 'Dados Insuficientes no Histórico Temporal'}
+                              </strong>
+                              <p className="text-slate-300 text-[11px] leading-relaxed">
+                                {temporalResult.resultadoTemporal?.justificativaRastreavel ||
+                                  'Registros de revisão insuficientes para determinar com segurança matemática a revisão aplicável nesta data.'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-amber-500/20 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDocForDetail(temporalResult.documento);
+                                setIsNewRevisionModalOpen(true);
+                              }}
+                              className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Cadastrar Revisão no Histórico</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditDoc(temporalResult.documento)}
+                              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5 text-sky-400" />
+                              <span>Editar Metadados & Revisão Vigente</span>
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -3497,14 +3722,51 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                         </span>
                       </div>
 
-                      <h3 className="text-xl font-bold text-white">
-                        {temporalResult.revisaoHoje?.numeroRevisao || temporalResult.documento.revisaoVigenteNumero}
-                      </h3>
+                      <div>
+                        <h3 className="text-xl font-bold text-white">
+                          {temporalResult.revisaoHoje?.numeroRevisao ||
+                            temporalResult.documento.numeroRevisao ||
+                            temporalResult.documento.revisaoVigenteNumero || (
+                              <span className="text-slate-500 italic font-normal text-base">Sem revisão cadastrada</span>
+                            )}
+                        </h3>
+                        <p className="text-xs text-slate-400 font-mono mt-0.5">
+                          {temporalResult.documento.codigo} — {temporalResult.documento.titulo}
+                        </p>
+                      </div>
 
                       <div className="space-y-2 text-xs text-slate-300 bg-slate-900/60 p-3 rounded-lg border border-slate-800">
                         <div className="flex justify-between">
+                          <span className="text-slate-400">Data da Revisão Atual:</span>
+                          <span className="font-semibold text-white font-mono">
+                            {temporalResult.revisaoHoje?.dataEmissao ||
+                              temporalResult.documento.dataRevisao ||
+                              'Não informado'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Início da Vigência:</span>
+                          <span className="font-semibold text-emerald-400 font-mono">
+                            {temporalResult.revisaoHoje?.dataEntradaVigor ||
+                              temporalResult.documento.dataVigencia ||
+                              'Não informado'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Data de Aprovação:</span>
+                          <span className="font-semibold text-white font-mono">
+                            {temporalResult.revisaoHoje?.dataAprovacao ||
+                              temporalResult.documento.dataAprovacao ||
+                              'Não informado'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
                           <span className="text-slate-400">Status Comparativo:</span>
-                          {temporalResult.revisaoNoEvento?.id === temporalResult.revisaoHoje?.id ? (
+                          {!temporalResult.revisaoNoEvento ? (
+                            <span className="text-amber-400 font-semibold flex items-center gap-1">
+                              <HelpCircle className="w-3.5 h-3.5" /> Sem revisão no evento
+                            </span>
+                          ) : temporalResult.revisaoNoEvento?.id === temporalResult.revisaoHoje?.id ? (
                             <span className="text-emerald-400 font-semibold flex items-center gap-1">
                               <Check className="w-3.5 h-3.5" /> Mesma revisão vigente hoje
                             </span>
@@ -3526,10 +3788,18 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                           <ShieldCheck className="w-3.5 h-3.5" /> Parecer de Validade para Auditoria:
                         </span>
                         <p className="leading-relaxed text-slate-300 text-[11px]">
-                          Caso um auditor ou cliente questione a execução com base na redação da revisão atual (
-                          {temporalResult.revisaoHoje?.numeroRevisao}), este relatório comprova formalmente que em{' '}
-                          {temporalResult.dataConsultada} o requisito mandatório era o da{' '}
-                          <strong>{temporalResult.revisaoNoEvento?.numeroRevisao}</strong>.
+                          {temporalResult.revisaoNoEvento ? (
+                            <>
+                              Caso um auditor ou cliente questione a execução com base na redação da revisão atual (
+                              {temporalResult.revisaoHoje?.numeroRevisao || 'vigente'}), este relatório comprova formalmente que em{' '}
+                              {temporalResult.dataConsultada} o requisito mandatório era o da{' '}
+                              <strong>{temporalResult.revisaoNoEvento.numeroRevisao}</strong>.
+                            </>
+                          ) : (
+                            <>
+                              Para comprovação formal em auditorias, registre no acervo a revisão vigente ou a série histórica deste documento para demonstrar a conformidade regulamentar RBAC 145.
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -4699,89 +4969,154 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl">
             <h3 className="text-base font-bold text-white flex items-center gap-2">
               <Plus className="w-5 h-5 text-sky-400" />
-              Propor Nova Revisão: {selectedDocForDetail.codigo}
+              {revisoes.filter((r) => r.documentoId === selectedDocForDetail.id || (selectedDocForDetail.codigo && r.codigoDocumento === selectedDocForDetail.codigo)).length === 0
+                ? `Cadastrar Revisão Inicial: ${selectedDocForDetail.codigo}`
+                : `Propor / Cadastrar Nova Revisão: ${selectedDocForDetail.codigo}`}
             </h3>
             <p className="text-xs text-slate-400">
-              A homologação de uma nova revisão substitui a revisão vigente de forma atômica e imutável.
+              {revisoes.filter((r) => r.documentoId === selectedDocForDetail.id || (selectedDocForDetail.codigo && r.codigoDocumento === selectedDocForDetail.codigo)).length === 0
+                ? 'Registre a primeira revisão formal no histórico imutável para sincronizar com o Motor de Conhecimento Temporal.'
+                : 'A homologação de uma nova revisão substitui a revisão vigente de forma atômica, imutável e rastreável.'}
             </p>
 
             <form
               onSubmit={async (e) => {
                 e.preventDefault();
                 const formData = new FormData(e.currentTarget);
-                const numeroRevisao = formData.get('numeroRevisao') as string;
-                const dataEntradaVigor = formData.get('dataEntradaVigor') as string;
-                const escopoAlteracoes = formData.get('escopoAlteracoes') as string;
-                const justificativa = formData.get('justificativa') as string;
+                const numeroRevisao = (formData.get('numeroRevisao') as string)?.trim();
+                const dataEmissao = (formData.get('dataEmissao') as string)?.trim();
+                const dataEntradaVigor = (formData.get('dataEntradaVigor') as string)?.trim();
+                const dataAprovacao = (formData.get('dataAprovacao') as string)?.trim();
+                const escopoAlteracoes = (formData.get('escopoAlteracoes') as string)?.trim();
+                const justificativa = (formData.get('justificativa') as string)?.trim();
+
+                if (!numeroRevisao) {
+                  alert('Por favor, informe o número da revisão.');
+                  return;
+                }
+
+                // Validação de unicidade estrita: não criar dois registros para a mesma revisão do mesmo documento
+                const revisoesDoDoc = revisoes.filter(
+                  (r) =>
+                    r.documentoId === selectedDocForDetail.id ||
+                    (selectedDocForDetail.codigo && r.codigoDocumento === selectedDocForDetail.codigo)
+                );
+                const jaExiste = revisoesDoDoc.some(
+                  (r) => r.numeroRevisao.trim().toLowerCase() === numeroRevisao.toLowerCase()
+                );
+                if (jaExiste) {
+                  alert(
+                    `Atenção: A revisão "${numeroRevisao}" já está cadastrada para o documento ${selectedDocForDetail.codigo}. Para manter a rastreabilidade imutável, utilize uma numeração sequencial diferente.`
+                  );
+                  return;
+                }
 
                 const revAnterior = revisoes.find((r) => r.id === selectedDocForDetail.revisaoVigenteId);
 
+                const dataVigorEfetiva = dataEntradaVigor || dataEmissao || new Date().toISOString().split('T')[0];
                 const novaRev: RevisaoDocumental = {
-                  id: `rev-${Date.now()}`,
+                  id: `rev-${selectedDocForDetail.id}-${Date.now()}`,
                   organizationId,
                   documentoId: selectedDocForDetail.id,
                   codigoDocumento: selectedDocForDetail.codigo,
                   tituloDocumento: selectedDocForDetail.titulo,
                   numeroRevisao,
-                  dataEmissao: new Date().toISOString().split('T')[0],
-                  dataEntradaVigor,
+                  dataEmissao: dataEmissao || dataVigorEfetiva,
+                  dataEntradaVigor: dataVigorEfetiva,
+                  dataAprovacao: dataAprovacao || undefined,
                   statusCicloVida: 'VIGENTE',
-                  escopoAlteracoes,
-                  origemRevisao: 'INTERNA',
+                  escopoAlteracoes: escopoAlteracoes || 'Registro de revisão no histórico imutável SGQ.',
+                  origemRevisao:
+                    selectedDocForDetail.categoria === 'DOCUMENTO_AUTORIDADE'
+                      ? 'FONTE_EXTERNA_OFICIAL'
+                      : selectedDocForDetail.categoria === 'DOCUMENTO_CLIENTE'
+                      ? 'CLIENTE_FORNECIDA'
+                      : 'INTERNA',
                   ehImutavel: true,
                   createdAt: new Date().toISOString(),
                   updatedAt: new Date().toISOString(),
                 };
 
-                await aprovarRevisaoDocumental(organizationId, novaRev, revAnterior, justificativa, currentUser);
+                await aprovarRevisaoDocumental(
+                  organizationId,
+                  novaRev,
+                  revAnterior,
+                  justificativa || 'Cadastro e homologação de revisão no SGQ QualiGest.',
+                  currentUser
+                );
 
                 setIsNewRevisionModalOpen(false);
                 setSelectedDocForDetail(null);
-                showToast(`Revisão ${numeroRevisao} aprovada e homologada como VIGENTE!`);
+                showToast(`Revisão ${numeroRevisao} cadastrada e homologada como VIGENTE com sucesso!`);
               }}
               className="space-y-3 text-xs"
             >
-              <div>
-                <label className="block text-slate-300 mb-1">Número da Nova Revisão:</label>
-                <input
-                  type="text"
-                  name="numeroRevisao"
-                  placeholder="Ex: Rev. 09"
-                  required
-                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Número da Revisão *</label>
+                  <input
+                    type="text"
+                    name="numeroRevisao"
+                    placeholder="Ex: Rev. 08 ou Emenda 09"
+                    required
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-emerald-400 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Data da Revisão (Emissão) *</label>
+                  <input
+                    type="date"
+                    name="dataEmissao"
+                    defaultValue={new Date().toISOString().split('T')[0]}
+                    required
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white font-mono focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Data de Início da Vigência *</label>
+                  <input
+                    type="date"
+                    name="dataEntradaVigor"
+                    defaultValue={new Date().toISOString().split('T')[0]}
+                    required
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white font-mono focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Data de Aprovação Técnica</label>
+                  <input
+                    type="date"
+                    name="dataAprovacao"
+                    defaultValue={new Date().toISOString().split('T')[0]}
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white font-mono focus:outline-none focus:border-sky-500"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1">Data de Entrada em Vigor:</label>
-                <input
-                  type="date"
-                  name="dataEntradaVigor"
-                  defaultValue={new Date().toISOString().split('T')[0]}
-                  required
-                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-300 mb-1">Escopo e Resumo das Alterações:</label>
+                <label className="block text-slate-300 mb-1 font-semibold">Escopo e Resumo das Alterações *</label>
                 <textarea
                   name="escopoAlteracoes"
-                  rows={3}
-                  placeholder="Descreva as cláusulas ou capítulos alterados e seus motivos..."
+                  rows={2}
+                  placeholder="Descreva as cláusulas, capítulos ou especificações técnicas modificadas..."
                   required
-                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white"
+                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1">Justificativa Técnica da Homologação:</label>
+                <label className="block text-slate-300 mb-1 font-semibold">Justificativa Técnica da Homologação *</label>
                 <input
                   type="text"
                   name="justificativa"
-                  placeholder="Ex: Atendimento ao finding da auditoria ANAC"
+                  placeholder="Ex: Atendimento ao finding da auditoria ANAC ou atualização de procedimento operacional"
                   required
-                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white"
+                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
                 />
               </div>
 
@@ -4789,11 +5124,11 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
                 <button
                   type="button"
                   onClick={() => setIsNewRevisionModalOpen(false)}
-                  className="px-3 py-1.5 rounded bg-slate-800 text-slate-300"
+                  className="px-3 py-1.5 rounded bg-slate-800 text-slate-300 hover:text-white"
                 >
                   Cancelar
                 </button>
-                <button type="submit" className="px-4 py-1.5 rounded bg-emerald-600 text-white font-semibold">
+                <button type="submit" className="px-4 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold cursor-pointer">
                   Aprovar & Homologar Revisão
                 </button>
               </div>
@@ -5066,15 +5401,17 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
       {/* ========================================================================= */}
       {isEditDocModalOpen && docToEdit && (
         <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-lg p-6 space-y-4 shadow-2xl animate-scale-in">
-            <div className="flex items-start justify-between border-b border-slate-800 pb-3">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-2xl max-h-[92vh] flex flex-col p-6 space-y-4 shadow-2xl animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-800 pb-3 shrink-0">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-sky-500/10 text-sky-400 rounded-lg border border-sky-500/20">
                   <Edit className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-white">Editar Documento Controlado</h3>
-                  <p className="text-xs text-slate-400 font-mono">{docToEdit.codigo}</p>
+                  <h3 className="text-base font-bold text-white">Editar Documento Controlado & Revisão</h3>
+                  <p className="text-xs text-slate-400 font-mono">
+                    Código: <strong className="text-sky-400">{docToEdit.codigo}</strong> • Gestão e Rastreabilidade SGQ
+                  </p>
                 </div>
               </div>
               <button
@@ -5085,96 +5422,234 @@ export const DocumentControlCenterView: React.FC<DocumentControlCenterViewProps>
               </button>
             </div>
 
-            <form onSubmit={handleSaveEditDoc} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 mb-1 font-semibold">Título do Documento *</label>
-                <input
-                  type="text"
-                  value={editDocForm.titulo}
-                  onChange={(e) => setEditDocForm({ ...editDocForm, titulo: e.target.value })}
-                  required
-                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
-                />
+            <form onSubmit={handleSaveEditDoc} className="space-y-4 text-xs overflow-y-auto pr-1">
+              {/* Alerta de Governança e Rastreabilidade */}
+              <div className="p-3 bg-sky-950/30 border border-sky-500/30 rounded-xl text-sky-200 text-[11px] leading-relaxed flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong>Controle de Metadados e Revisão Vigente:</strong> As alterações salvas atualizam os dados do documento no Acervo, no Audit Trail e alimentam o Motor de Conhecimento Temporal para responder auditorias e fiscalizações ANAC.
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-300 mb-1 font-semibold">Categoria *</label>
-                  <select
-                    value={editDocForm.categoria}
-                    onChange={(e) =>
-                      setEditDocForm({ ...editDocForm, categoria: e.target.value as CategoriaDocumental })
-                    }
-                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
-                  >
-                    <option value="DOCUMENTO_INTERNO">Manual / Procedimento Interno</option>
-                    <option value="DOCUMENTO_AUTORIDADE">Norma de Autoridade (ANAC/FAA/EASA)</option>
-                    <option value="DOCUMENTO_FABRICANTE">Manual de Fabricante (CMM/AMM/SB/AD)</option>
-                    <option value="DOCUMENTO_CLIENTE">Especificação Técnica de Cliente</option>
-                  </select>
-                </div>
+              {/* Seção 1: Identificação Básica */}
+              <div className="space-y-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+                <span className="text-[11px] uppercase font-bold text-slate-400 block tracking-wider">
+                  1. Identificação Geral do Documento
+                </span>
 
                 <div>
-                  <label className="block text-slate-300 mb-1 font-semibold">Emissor / Fonte *</label>
+                  <label className="block text-slate-300 mb-1 font-semibold">Título do Documento *</label>
                   <input
                     type="text"
-                    value={editDocForm.emissor}
-                    onChange={(e) => setEditDocForm({ ...editDocForm, emissor: e.target.value })}
+                    value={editDocForm.titulo}
+                    onChange={(e) => setEditDocForm({ ...editDocForm, titulo: e.target.value })}
                     required
-                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
+                    className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:outline-none focus:border-sky-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-semibold">Categoria *</label>
+                    <select
+                      value={editDocForm.categoria}
+                      onChange={(e) =>
+                        setEditDocForm({ ...editDocForm, categoria: e.target.value as CategoriaDocumental })
+                      }
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:outline-none focus:border-sky-500"
+                    >
+                      <option value="DOCUMENTO_INTERNO">Manual / Procedimento Interno</option>
+                      <option value="DOCUMENTO_AUTORIDADE">Norma de Autoridade (ANAC/FAA/EASA)</option>
+                      <option value="DOCUMENTO_FABRICANTE">Manual de Fabricante (CMM/AMM/SB/AD)</option>
+                      <option value="DOCUMENTO_CLIENTE">Especificação Técnica de Cliente</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-semibold">Emissor / Fonte *</label>
+                    <input
+                      type="text"
+                      value={editDocForm.emissor}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, emissor: e.target.value })}
+                      required
+                      placeholder="Ex: Impacto Aviation MRO, ANAC, BOEING"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-semibold">
+                      Proprietário do Documento (OEM / Governança)
+                    </label>
+                    <input
+                      type="text"
+                      value={editDocForm.proprietario}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, proprietario: e.target.value })}
+                      placeholder="Ex: IMPACTO, BOEING, AIRBUS, ANAC"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:outline-none focus:border-sky-500"
+                    />
+                    <span className="text-[10px] text-slate-500">Pessoa ou órgão responsável pela governança da publicação</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 mb-1 font-semibold">
+                      Assessor do Documento (Análise Documental)
+                    </label>
+                    <input
+                      type="text"
+                      value={editDocForm.assessor}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, assessor: e.target.value })}
+                      placeholder="Ex: Eng. Paulo Okubo, Mariana Silva"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:outline-none focus:border-sky-500"
+                    />
+                    <span className="text-[10px] text-slate-500">Pessoa responsável pela assessoria técnica (independente do proprietário)</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Responsável Técnico / Gestor</label>
+                  <input
+                    type="text"
+                    value={editDocForm.responsavelNome}
+                    onChange={(e) => setEditDocForm({ ...editDocForm, responsavelNome: e.target.value })}
+                    placeholder="Ex: Engenharia de Manutenção / Gestor da Qualidade"
+                    className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:outline-none focus:border-sky-500"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 mb-1 font-semibold">Responsável Técnico / Gestor</label>
-                <input
-                  type="text"
-                  value={editDocForm.responsavelNome}
-                  onChange={(e) => setEditDocForm({ ...editDocForm, responsavelNome: e.target.value })}
-                  placeholder="Ex: Engenharia de Manutenção / Gestor da Qualidade"
-                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
-                />
+              {/* Seção 2: Revisão Vigente e Vigência Temporal */}
+              <div className="space-y-3 bg-slate-950/80 p-4 rounded-xl border border-sky-500/30">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <span className="text-xs font-bold text-sky-400 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Calendar className="w-4 h-4 text-sky-400" />
+                    2. Revisão Vigente & Vigência Temporal
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-500/30">
+                    Sincronia com Motor Temporal
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-200 mb-1 font-semibold">
+                      Número da Revisão Vigente *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editDocForm.numeroRevisao}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, numeroRevisao: e.target.value })}
+                      placeholder="Ex: Rev. 08, Emenda 09, Edição 2"
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-emerald-400 font-mono font-bold focus:outline-none focus:border-emerald-500"
+                    />
+                    <span className="text-[10px] text-slate-400">Número da revisão atualmente em vigor</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-200 mb-1 font-semibold">
+                      Data da Revisão *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={editDocForm.dataRevisao}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, dataRevisao: e.target.value })}
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white font-mono focus:outline-none focus:border-sky-500"
+                    />
+                    <span className="text-[10px] text-slate-400">Data oficial emitida pelo fabricante/autoridade para a revisão</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-200 mb-1 font-semibold">
+                      Data de Início da Vigência *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={editDocForm.dataVigencia}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, dataVigencia: e.target.value })}
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                    <span className="text-[10px] text-slate-400">Data a partir da qual a revisão passou a ser legalmente exigível</span>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-200 mb-1 font-semibold">
+                      Data de Aprovação Técnica
+                    </label>
+                    <input
+                      type="date"
+                      value={editDocForm.dataAprovacao}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, dataAprovacao: e.target.value })}
+                      className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white font-mono focus:outline-none focus:border-sky-500"
+                    />
+                    <span className="text-[10px] text-slate-400">Data da homologação/aprovação formal no SGQ</span>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-slate-200 mb-1 font-semibold">
+                      Data Prevista para Próxima Revisão
+                    </label>
+                    <input
+                      type="date"
+                      value={editDocForm.dataProximaRevisao}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, dataProximaRevisao: e.target.value })}
+                      className="w-full sm:w-1/2 p-2 bg-slate-900 border border-slate-700 rounded text-white font-mono focus:outline-none focus:border-sky-500"
+                    />
+                    <span className="text-[10px] text-slate-400 block mt-0.5">Prazo regulamentar de revalidação periódica</span>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-slate-300 mb-1 font-semibold">Aplicabilidade Padrão</label>
-                <input
-                  type="text"
-                  value={editDocForm.aplicabilidadePadrao}
-                  onChange={(e) => setEditDocForm({ ...editDocForm, aplicabilidadePadrao: e.target.value })}
-                  placeholder="Ex: Todas as frotas Caravan 208B ou Linha de Motores PT6A"
-                  className="w-full p-2 bg-slate-950 border border-slate-800 rounded text-white focus:outline-none focus:border-sky-500"
-                />
-              </div>
+              {/* Seção 3: Aplicabilidade & Evidências */}
+              <div className="space-y-3 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800">
+                <span className="text-[11px] uppercase font-bold text-slate-400 block tracking-wider">
+                  3. Aplicabilidade & Evidências de Leitura
+                </span>
 
-              <div className="pt-1">
-                <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300">
+                <div>
+                  <label className="block text-slate-300 mb-1 font-semibold">Aplicabilidade Padrão</label>
                   <input
-                    type="checkbox"
-                    checked={editDocForm.exigeEvidenciaLeitura}
-                    onChange={(e) => setEditDocForm({ ...editDocForm, exigeEvidenciaLeitura: e.target.checked })}
-                    className="rounded bg-slate-950 border-slate-700 text-sky-600 focus:ring-sky-500"
+                    type="text"
+                    value={typeof editDocForm.aplicabilidadePadrao === 'string' ? editDocForm.aplicabilidadePadrao : ''}
+                    onChange={(e) => setEditDocForm({ ...editDocForm, aplicabilidadePadrao: e.target.value })}
+                    placeholder="Ex: Todas as frotas Caravan 208B ou Linha de Motores PT6A"
+                    className="w-full p-2 bg-slate-900 border border-slate-700 rounded text-white focus:outline-none focus:border-sky-500"
                   />
-                  <span>Exige evidência formal de leitura e confirmação pelos mecânicos/técnicos</span>
-                </label>
+                </div>
+
+                <div className="pt-1">
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={editDocForm.exigeEvidenciaLeitura}
+                      onChange={(e) => setEditDocForm({ ...editDocForm, exigeEvidenciaLeitura: e.target.checked })}
+                      className="rounded bg-slate-950 border-slate-700 text-sky-600 focus:ring-sky-500"
+                    />
+                    <span>Exige evidência formal de leitura e confirmação pelos mecânicos/técnicos</span>
+                  </label>
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsEditDocModalOpen(false)}
                   disabled={isSubmittingDocAction}
-                  className="px-3.5 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  className="px-4 py-2 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 font-medium transition cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmittingDocAction}
-                  className="px-4 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white font-semibold flex items-center gap-1.5"
+                  className="px-5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center gap-2 shadow-md shadow-sky-600/20 transition cursor-pointer"
                 >
-                  {isSubmittingDocAction ? <span>Salvando...</span> : <span>Salvar Alterações</span>}
+                  <Save className="w-4 h-4" />
+                  {isSubmittingDocAction ? <span>Salvando no SGQ...</span> : <span>Salvar Alterações</span>}
                 </button>
               </div>
             </form>
