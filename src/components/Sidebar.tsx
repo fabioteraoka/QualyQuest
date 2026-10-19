@@ -32,6 +32,7 @@ import {
   ChevronRight,
   FolderTree,
   Archive,
+  Plane,
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
@@ -204,6 +205,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           id: 'pessoas-competencias',
           label: 'Colaboradores',
           icon: <Users className="w-4 h-4 text-emerald-400" />,
+        },
+        {
+          id: 'rooster-mro',
+          label: 'Roster & Mecânicos (MRO)',
+          icon: <Plane className="w-4 h-4 text-sky-400" />,
         },
         {
           id: 'treinamentos-qualificacoes',

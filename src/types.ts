@@ -3340,5 +3340,7 @@ export interface ResultadoReconstrucaoIndices {
   mensagem: string;
 }
 
+export * from './types/roster';
+
 
 

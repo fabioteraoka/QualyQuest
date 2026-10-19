@@ -1,0 +1,319 @@
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  activeAdapter,
+  DatabaseState,
+  generateConferenceData,
+  loadDatabase,
+  loadEmbeddedOfficialData,
+  PostImportConferenceData,
+  repository,
+  subscribeToDatabase,
+} from '../services/storage';
+import { CategoriaPessoa, SituacaoPessoa, Usuario } from '../types';
+
+export type ActiveTab =
+  | 'dashboard'
+  | 'designacao'
+  | 'roster'
+  | 'conferencia'
+  | 'pessoas'
+  | 'ficha'
+  | 'licencas'
+  | 'treinamentos'
+  | 'motores'
+  | 'matrizes'
+  | 'vencimentos'
+  | 'catalogo'
+  | 'designacoes_crud'
+  | 'importar'
+  | 'configuracoes'
+  | 'auditoria'
+  | 'manual';
+
+interface AppContextType {
+  db: DatabaseState;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
+  // Global Filters
+  filtroBase: string; // 'TOTAL' or specific base like 'REC'
+  setFiltroBase: (base: string) => void;
+  filtroCategoria: 'Mecânico' | 'Administrativo' | 'Todos';
+  setFiltroCategoria: (cat: 'Mecânico' | 'Administrativo' | 'Todos') => void;
+  filtroSituacao: 'Ativo' | 'Inativo' | 'Todos';
+  setFiltroSituacao: (sit: 'Ativo' | 'Inativo' | 'Todos') => void;
+  buscaGlobal: string;
+  setBuscaGlobal: (q: string) => void;
+  dataReferencia: string;
+  setDataReferencia: (date: string) => void;
+  faixas: { faixa_1: number; faixa_2: number; faixa_3: number };
+  setFaixas: (faixas: { faixa_1: number; faixa_2: number; faixa_3: number }) => void;
+  // Selected person for Ficha do Mecânico
+  selectedPessoaId: string | null;
+  setSelectedPessoaId: (id: string | null) => void;
+  navigateToFicha: (pessoaId: string) => void;
+  // User profile
+  currentUser: Usuario;
+  setCurrentUser: (user: Usuario) => void;
+  // Toast notifications
+  toastMessage: string | null;
+  showToast: (msg: string) => void;
+  // Print trigger
+  triggerPrint: () => void;
+  // Post-import conference
+  lastConferenceData: PostImportConferenceData | null;
+  setLastConferenceData: (data: PostImportConferenceData | null) => void;
+  loadEmbeddedOfficial: () => Promise<void>;
+  isLoadingEmbedded: boolean;
+  // Cloud & Connection status
+  isCloud: boolean;
+  isOffline: boolean;
+}
+
+export interface AppProviderProps {
+  children: React.ReactNode;
+  initialTab?: ActiveTab;
+  initialSelectedPessoaId?: string | null;
+  externalUser?: { nome?: string; email?: string; perfil?: string };
+  syncPersons?: any[];
+  onActiveTabChange?: (tab: ActiveTab) => void;
+}
+
+const AppContext = createContext<AppContextType | undefined>(undefined);
+
+export const AppProvider: React.FC<AppProviderProps> = ({
+  children,
+  initialTab,
+  initialSelectedPessoaId,
+  externalUser,
+  syncPersons,
+  onActiveTabChange,
+}) => {
+  const [db, setDb] = useState<DatabaseState>(loadDatabase());
+  const [isOffline, setIsOffline] = useState<boolean>(!navigator.onLine);
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(initialTab || 'pessoas');
+  const [filtroBase, setFiltroBase] = useState<string>('TOTAL');
+  const [filtroCategoria, setFiltroCategoria] = useState<'Mecânico' | 'Administrativo' | 'Todos'>('Todos');
+  const [filtroSituacao, setFiltroSituacao] = useState<'Ativo' | 'Inativo' | 'Todos'>('Ativo');
+  const [buscaGlobal, setBuscaGlobal] = useState<string>('');
+  const [selectedPessoaId, setSelectedPessoaId] = useState<string | null>(initialSelectedPessoaId || null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [lastConferenceData, setLastConferenceData] = useState<PostImportConferenceData | null>(null);
+  const [isLoadingEmbedded, setIsLoadingEmbedded] = useState<boolean>(false);
+
+  // Sync initialTab if changed externally
+  useEffect(() => {
+    if (initialTab && initialTab !== activeTab) {
+      setActiveTabState(initialTab);
+    }
+  }, [initialTab]);
+
+  // Sync initialSelectedPessoaId if changed externally
+  useEffect(() => {
+    if (initialSelectedPessoaId && initialSelectedPessoaId !== selectedPessoaId) {
+      setSelectedPessoaId(initialSelectedPessoaId);
+    }
+  }, [initialSelectedPessoaId]);
+
+  const setActiveTab = (tab: ActiveTab) => {
+    setActiveTabState(tab);
+    onActiveTabChange?.(tab);
+  };
+
+  const [dataReferencia, setDataReferenciaState] = useState<string>(
+    db.configuracao?.data_referencia || '2026-10-15'
+  );
+  const [faixas, setFaixasState] = useState<{ faixa_1: number; faixa_2: number; faixa_3: number }>({
+    faixa_1: db.configuracao?.faixa_1 || 30,
+    faixa_2: db.configuracao?.faixa_2 || 60,
+    faixa_3: db.configuracao?.faixa_3 || 90,
+  });
+
+  const [currentUser, setCurrentUser] = useState<Usuario>(() => {
+    if (externalUser?.nome || externalUser?.email) {
+      return {
+        id: 'USR-EXT',
+        nome: externalUser.nome || externalUser.email || 'Usuário SGQ',
+        email: externalUser.email || 'qualidade@impactoaviation.com',
+        perfil: 'Admin',
+      };
+    }
+    return (
+      db.usuarios?.[0] || {
+        id: 'USR-01',
+        nome: 'Alysson Rabelo',
+        email: 'alysson.rabelo@impactoaviation.com',
+        perfil: 'Admin',
+      }
+    );
+  });
+
+  // Keep externalUser in sync if changed
+  useEffect(() => {
+    if (externalUser?.nome && currentUser.nome !== externalUser.nome) {
+      setCurrentUser((prev) => ({
+        ...prev,
+        nome: externalUser.nome || prev.nome,
+        email: externalUser.email || prev.email,
+      }));
+    }
+  }, [externalUser?.nome, externalUser?.email]);
+
+  // Sync with QualiGest persons if present
+  useEffect(() => {
+    if (syncPersons && Array.isArray(syncPersons) && syncPersons.length > 0) {
+      const currentDb = loadDatabase();
+      let hasChanges = false;
+      for (const sp of syncPersons) {
+        const idToCheck = sp.matricula || sp.id;
+        const exists = currentDb.pessoas.some((p) => p.id === idToCheck || p.nome === sp.nome);
+        if (!exists) {
+          const baseNormalized = (sp.baseOperacionalId || sp.baseOperacional || 'REC')
+            .split(' - ')[0]
+            .trim()
+            .toUpperCase();
+          const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP'].includes(baseNormalized)
+            ? baseNormalized
+            : 'REC';
+
+          currentDb.pessoas.push({
+            id: idToCheck || `COL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            nome: sp.nome,
+            categoria: (sp.funcao || '').toLowerCase().includes('adm') ? 'Administrativo' : 'Mecânico',
+            situacao: sp.status === 'INATIVO' ? 'Inativo' : 'Ativo',
+            base_principal_id: baseFinal,
+            cliente_ou_area: sp.setor || 'Manutenção Aeronáutica',
+            canac: sp.camposCustomizados?.canac || sp.matricula || '',
+            criado_em: sp.createdAt || new Date().toISOString(),
+            atualizado_em: sp.updatedAt || new Date().toISOString(),
+            atualizado_por: sp.criadoPor || 'QualiGest Sync',
+          });
+          hasChanges = true;
+        }
+      }
+      if (hasChanges) {
+        repository.saveConfiguracao({ ...currentDb.configuracao }, currentUser.nome);
+        setDb({ ...currentDb });
+      }
+    }
+  }, [syncPersons]);
+
+  // Set initial selected person once persons exist
+  useEffect(() => {
+    if (!selectedPessoaId && db.pessoas.length > 0) {
+      setSelectedPessoaId(db.pessoas[0].id);
+    }
+  }, [db.pessoas, selectedPessoaId]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToDatabase(() => {
+      const updated = loadDatabase();
+      setDb({ ...updated });
+      if (updated.configuracao) {
+        setDataReferenciaState(updated.configuracao.data_referencia);
+        setFaixasState({
+          faixa_1: updated.configuracao.faixa_1,
+          faixa_2: updated.configuracao.faixa_2,
+          faixa_3: updated.configuracao.faixa_3,
+        });
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  const setDataReferencia = (d: string) => {
+    setDataReferenciaState(d);
+    repository.saveConfiguracao({ ...db.configuracao, data_referencia: d }, currentUser.nome);
+  };
+
+  const setFaixas = (newFaixas: { faixa_1: number; faixa_2: number; faixa_3: number }) => {
+    setFaixasState(newFaixas);
+    repository.saveConfiguracao({ ...db.configuracao, ...newFaixas }, currentUser.nome);
+  };
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 3500);
+  };
+
+  const navigateToFicha = (pessoaId: string) => {
+    setSelectedPessoaId(pessoaId);
+    setActiveTab('ficha');
+  };
+
+  const triggerPrint = () => {
+    window.print();
+  };
+
+  const loadEmbeddedOfficial = async () => {
+    setIsLoadingEmbedded(true);
+    try {
+      const confData = await loadEmbeddedOfficialData(currentUser.nome);
+      setLastConferenceData(confData);
+      showToast('Dados oficiais embutidos carregados com sucesso!');
+      setActiveTab('importar');
+    } catch (err: any) {
+      alert(`Erro ao carregar dados oficiais embutidos: ${err?.message || err}`);
+    } finally {
+      setIsLoadingEmbedded(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  return (
+    <AppContext.Provider
+      value={{
+        db,
+        activeTab,
+        setActiveTab,
+        filtroBase,
+        setFiltroBase,
+        filtroCategoria,
+        setFiltroCategoria,
+        filtroSituacao,
+        setFiltroSituacao,
+        buscaGlobal,
+        setBuscaGlobal,
+        dataReferencia,
+        setDataReferencia,
+        faixas,
+        setFaixas,
+        selectedPessoaId,
+        setSelectedPessoaId,
+        navigateToFicha,
+        currentUser,
+        setCurrentUser,
+        toastMessage,
+        showToast,
+        triggerPrint,
+        lastConferenceData,
+        setLastConferenceData,
+        loadEmbeddedOfficial,
+        isLoadingEmbedded,
+        isCloud: activeAdapter.isCloud,
+        isOffline,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useApp = () => {
+  const context = useContext(AppContext);
+  if (!context) {
+    throw new Error('useApp must be used within an AppProvider');
+  }
+  return context;
+};

@@ -73,6 +73,8 @@ import {
 import { BulkActionModal } from './common/BulkActionModal';
 import { FleetCompetencyMatrixView } from './FleetCompetencyMatrixView';
 import { OperationalBasesView } from './OperationalBasesView';
+import { RoosterModule } from './RoosterModule';
+import { ActiveTab as RoosterActiveTab } from '../rooster/context/AppContext';
 
 interface PersonsCompetenciesViewProps {
   organizationId: string;
@@ -109,7 +111,11 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   onNavigateToExpirations,
   onNavigateToImport,
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES'>('COLABORADORES');
+  const [activeSubTab, setActiveSubTab] = useState<
+    'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO'
+  >('COLABORADORES');
+  const [roosterInitialTab, setRoosterInitialTab] = useState<RoosterActiveTab>('pessoas');
+  const [roosterInitialPessoaId, setRoosterInitialPessoaId] = useState<string | null>(null);
   const [modoMatriz, setModoMatriz] = useState<'FROTA_NIVEIS' | 'GRADE_GERAL'>('FROTA_NIVEIS');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSetor, setSelectedSetor] = useState('TODOS');
@@ -747,6 +753,23 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
         >
           <MapPin className="w-4 h-4 text-sky-600" /> Bases Operacionais ({bases.length})
         </button>
+        <button
+          onClick={() => {
+            setRoosterInitialTab('pessoas');
+            setActiveSubTab('ROOSTER_MRO');
+          }}
+          className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition ${
+            activeSubTab === 'ROOSTER_MRO'
+              ? 'border-sky-600 text-sky-900 bg-sky-50/70 px-2.5 rounded-t-lg'
+              : 'border-transparent text-sky-700 hover:text-sky-900 hover:bg-sky-50/40 px-2 rounded-t-lg'
+          }`}
+        >
+          <Plane className="w-4 h-4 text-sky-600" />
+          <span>Roster &amp; Mecânicos (Rooster)</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-100 text-sky-900 font-bold uppercase border border-sky-200">
+            MRO ANAC
+          </span>
+        </button>
       </div>
 
       {/* ========================================================================= */}
@@ -1307,6 +1330,19 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   >
                     <Edit className="w-3.5 h-3.5 text-blue-600" />
                     <span>Editar</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setRoosterInitialPessoaId(selectedColaborador.matricula || selectedColaborador.id);
+                      setRoosterInitialTab('ficha');
+                      setActiveSubTab('ROOSTER_MRO');
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-bold text-sky-900 bg-sky-100 hover:bg-sky-200 rounded-lg transition flex items-center gap-1.5 border border-sky-300 shadow-2xs cursor-pointer"
+                    title="Abrir Ficha Técnica e Dossiê Completo no Roster de Manutenção (Rooster)"
+                  >
+                    <Plane className="w-3.5 h-3.5 text-sky-700" />
+                    <span>Dossiê Roster</span>
                   </button>
 
                   {selectedColaborador.status === 'INATIVO' || selectedColaborador.status === 'DESLIGADO' ? (
@@ -2357,6 +2393,22 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
             userProfile={userProfile}
             bases={bases}
             persons={persons}
+          />
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* ABA 5: ROSTER & MECÂNICOS (MRO IMPACTO AVIATION / ROOSTER)                 */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'ROOSTER_MRO' && (
+        <div className="space-y-4">
+          <RoosterModule
+            userProfile={userProfile}
+            qualigestPersons={persons}
+            initialTab={roosterInitialTab}
+            initialSelectedPessoaId={roosterInitialPessoaId}
+            embedded={true}
+            onNavigateBackToSGQ={() => setActiveSubTab('COLABORADORES')}
           />
         </div>
       )}

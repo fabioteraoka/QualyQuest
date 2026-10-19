@@ -35,5 +35,19 @@
     .shadow-2xl {
       box-shadow: none !important;
     }
+
+    .no-print {
+      display: none !important;
+    }
+
+    .print-only {
+      display: block !important;
+    }
+  }
+
+  @media screen {
+    .print-only {
+      display: none !important;
+    }
   }
 }

@@ -67,6 +67,7 @@ import { FerramentasMetrologiaView } from '../FerramentasMetrologiaView';
 import { SmartImportMigrationView } from '../SmartImportMigrationView';
 import { SmartAuditView } from '../SmartAuditView';
 import { SystemDesignerOfficialView } from '../SystemDesignerOfficialView';
+import { RoosterModule } from '../RoosterModule';
 
 export interface AppViewRouterProps {
   activeTab: string;
@@ -542,6 +543,15 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
           onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
           onNavigateToImport={() => setActiveTab('importacao-inteligente')}
+        />
+      );
+
+    case 'rooster-mro':
+      return (
+        <RoosterModule
+          userProfile={props.userProfile}
+          qualigestPersons={props.persons}
+          onNavigateBackToSGQ={() => setActiveTab('pessoas-competencias')}
         />
       );
 
