@@ -158,6 +158,12 @@ if (typeof window !== 'undefined') {
   });
 }
 
+export function setOrganizationId(orgId: string): void {
+  if (activeAdapter && typeof (activeAdapter as any).setOrganizationId === 'function') {
+    (activeAdapter as any).setOrganizationId(orgId);
+  }
+}
+
 export function getActiveAdapter(): StorageAdapter {
   return activeAdapter;
 }
@@ -179,6 +185,17 @@ export function loadDatabase(): DatabaseState {
   if (activeAdapter && activeAdapter.isCloud) {
     const cloudDb = activeAdapter.getDatabase();
     if (cloudDb && Array.isArray(cloudDb.bases) && cloudDb.bases.length > 0) {
+      if (cloudDb.pessoas.length === 0) {
+        // Fallback to seed into cloudDb if temporarily awaiting remote docs
+        const initialData = buildImpactoOfficialInitialDatabase();
+        cloudDb.pessoas = [...initialData.pessoas];
+        if (cloudDb.licencas.length === 0) cloudDb.licencas = [...initialData.licencas];
+        if (cloudDb.treinamentos.length === 0) cloudDb.treinamentos = [...initialData.treinamentos];
+        if (cloudDb.designacoesPessoa.length === 0) cloudDb.designacoesPessoa = [...initialData.designacoesPessoa];
+        if (cloudDb.designacoesBase.length === 0) cloudDb.designacoesBase = [...initialData.designacoesBase];
+        if (cloudDb.designacoesFuncao.length === 0) cloudDb.designacoesFuncao = [...initialData.designacoesFuncao];
+        if (cloudDb.designacoesAeronave.length === 0) cloudDb.designacoesAeronave = [...initialData.designacoesAeronave];
+      }
       return cloudDb;
     }
   }
@@ -2203,3 +2220,127 @@ export const repository = {
     }
   },
 };
+
+export function syncWithQualigest(options: {
+  orgId?: string;
+  persons?: any[];
+  trainingRecords?: any[];
+  userProfile?: any;
+}): void {
+  if (options.orgId) {
+    setOrganizationId(options.orgId);
+  }
+  const db = loadDatabase();
+  let hasChanges = false;
+  const userName =
+    options.userProfile?.displayName || options.userProfile?.email || 'QualiGest Sync';
+
+  if (options.persons && Array.isArray(options.persons) && options.persons.length > 0) {
+    for (const sp of options.persons) {
+      const match = db.pessoas.find(
+        (p) =>
+          p.id === sp.id ||
+          p.id === sp.matricula ||
+          (p.canac && p.canac === sp.matricula) ||
+          (p.canac && p.canac === sp.camposCustomizados?.canac) ||
+          p.nome.trim().toLowerCase() === sp.nome.trim().toLowerCase()
+      );
+
+      const baseNormalized = (sp.baseOperacionalId || sp.baseOperacional || 'REC')
+        .split(' - ')[0]
+        .trim()
+        .toUpperCase();
+      const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP', 'SOD'].includes(baseNormalized)
+        ? baseNormalized
+        : 'REC';
+      const situacaoFinal =
+        sp.status === 'INATIVO' || sp.status === 'DESLIGADO' ? 'Inativo' : 'Ativo';
+      const categoriaFinal = (sp.funcao || '').toLowerCase().includes('adm')
+        ? 'Administrativo'
+        : 'Mecânico';
+
+      if (match) {
+        if (
+          match.situacao !== situacaoFinal ||
+          match.base_principal_id !== baseFinal ||
+          match.nome !== sp.nome ||
+          (sp.matricula && !match.canac)
+        ) {
+          match.nome = sp.nome;
+          match.situacao = situacaoFinal;
+          match.base_principal_id = baseFinal;
+          match.cliente_ou_area = sp.setor || match.cliente_ou_area;
+          if (sp.matricula && !match.canac) match.canac = sp.matricula;
+          match.atualizado_em = new Date().toISOString();
+          match.atualizado_por = userName;
+          hasChanges = true;
+        }
+      } else {
+        const newPessoa: Pessoa = {
+          id: sp.matricula || sp.id,
+          nome: sp.nome,
+          categoria: categoriaFinal,
+          situacao: situacaoFinal,
+          base_principal_id: baseFinal,
+          cliente_ou_area: sp.setor || 'Operações de Manutenção',
+          canac: sp.camposCustomizados?.canac || sp.matricula || '',
+          criado_em: sp.createdAt || new Date().toISOString(),
+          atualizado_em: sp.updatedAt || new Date().toISOString(),
+          atualizado_por: userName,
+        };
+        db.pessoas.push(newPessoa);
+        hasChanges = true;
+      }
+    }
+  }
+
+  if (
+    options.trainingRecords &&
+    Array.isArray(options.trainingRecords) &&
+    options.trainingRecords.length > 0
+  ) {
+    for (const tr of options.trainingRecords) {
+      const exists = db.treinamentos.some(
+        (t) =>
+          t.id === tr.id ||
+          (t.curso_id === (tr.treinamentoCodigo || tr.treinamentoId) &&
+            t.data_execucao === (tr.dataRealizacao || tr.dataConclusao))
+      );
+
+      if (!exists) {
+        let pessoaId = tr.colaboradorId;
+        const matchedPerson = db.pessoas.find(
+          (p) =>
+            p.id === tr.colaboradorId ||
+            p.canac === tr.colaboradorMatricula ||
+            (p as any).matricula === tr.colaboradorMatricula ||
+            (tr.colaboradorNome &&
+              p.nome.trim().toLowerCase() === tr.colaboradorNome.trim().toLowerCase())
+        );
+        if (matchedPerson) {
+          pessoaId = matchedPerson.id;
+        }
+
+        db.treinamentos.push({
+          id: tr.id || `TRN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          pessoa_id: pessoaId,
+          curso_id: tr.treinamentoCodigo || tr.treinamentoId || 'CC-001',
+          data_execucao:
+            tr.dataRealizacao ||
+            tr.dataConclusao ||
+            (tr.createdAt ? tr.createdAt.split('T')[0] : '2024-01-01'),
+          observacao: tr.observacoes || '',
+          substituido_por: null,
+          criado_em: tr.createdAt || new Date().toISOString(),
+          atualizado_em: tr.updatedAt || new Date().toISOString(),
+          atualizado_por: tr.instrutor || userName,
+        });
+        hasChanges = true;
+      }
+    }
+  }
+
+  if (hasChanges) {
+    persistDatabase(db);
+  }
+}

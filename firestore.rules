@@ -522,6 +522,65 @@ service cloud.firestore {
         allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(toolId);
         allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin() || getUserRole() != 'CONSULTA') && isValidId(organizationId) && isValidId(toolId);
       }
+      // ----------------------------------------------------
+      // FASE 16: Roster & Mecânicos MRO (Subcoleções Integradas de Pessoas & Competências)
+      // ----------------------------------------------------
+      match /roster_licencas/{licencaId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(licencaId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin() || getUserRole() != 'CONSULTA') && isValidId(organizationId) && isValidId(licencaId);
+      }
+
+      match /roster_motores/{motorId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(motorId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(motorId);
+      }
+
+      match /roster_treinamentos_motor/{itemId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(itemId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin() || getUserRole() != 'CONSULTA') && isValidId(organizationId) && isValidId(itemId);
+      }
+
+      match /roster_designacoes_pessoa/{itemId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(itemId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin() || getUserRole() != 'CONSULTA') && isValidId(organizationId) && isValidId(itemId);
+      }
+
+      match /roster_designacoes_base/{itemId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(itemId);
+      }
+
+      match /roster_designacoes_funcao/{itemId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(itemId);
+      }
+
+      match /roster_designacoes_aeronave/{itemId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update, delete: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(itemId);
+      }
+
+      match /roster_cursos_catalogo/{courseId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(courseId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(courseId);
+      }
+
+      match /roster_configuracao/{configId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(configId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(configId);
+      }
+
+      match /roster_auditoria/{auditId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId) && isValidId(organizationId) && isValidId(auditId);
+        allow update, delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(auditId);
+      }
     }
 
     // ----------------------------------------------------
@@ -531,6 +590,64 @@ service cloud.firestore {
       allow get, list: if isSignedIn();
       allow create, update: if isSignedIn() && isValidId(diagnosticId);
       allow delete: if isSystemAdmin() && isValidId(diagnosticId);
+    }
+
+    // ----------------------------------------------------
+    // Roster MRO Coleções Globais / Compatibilidade
+    // ----------------------------------------------------
+    match /base/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+    }
+    match /pessoa/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+    }
+    match /licenca/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /curso_catalogo/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+    }
+    match /treinamento/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /motor_catalogo/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+    }
+    match /treinamento_motor/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /designacao_pessoa/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /designacao_base/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /designacao_funcao/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /designacao_aeronave/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /configuracao/{id} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+    }
+    match /auditoria/{id} {
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSystemAdmin();
     }
   }
 }

@@ -24,10 +24,13 @@ import { useApp } from '../context/AppContext';
 import { repository } from '../services/storage';
 import {
   AeronaveDesignacao,
+  CategoriaPessoa,
   CursoCatalogo,
+  EasaType,
   ItemStatus,
   Licenca,
   Pessoa,
+  SituacaoPessoa,
   Treinamento,
 } from '../types';
 import {
@@ -255,6 +258,77 @@ export const FichaMecanicoView: React.FC = () => {
     }
   };
 
+  // State and Handlers for editing mechanic / person data
+  const [modalEditarPessoa, setModalEditarPessoa] = useState(false);
+  const [editNome, setEditNome] = useState('');
+  const [editCanac, setEditCanac] = useState('');
+  const [editCategoria, setEditCategoria] = useState<CategoriaPessoa>('Mecânico');
+  const [editSituacao, setEditSituacao] = useState<SituacaoPessoa>('Ativo');
+  const [editBasePrincipal, setEditBasePrincipal] = useState('REC');
+  const [editClienteOuArea, setEditClienteOuArea] = useState('');
+  const [editImp, setEditImp] = useState('');
+  const [editEasaType, setEditEasaType] = useState<EasaType>('N/A');
+  const [editBasesDesignadas, setEditBasesDesignadas] = useState<string[]>([]);
+
+  const handleOpenEditarPessoa = () => {
+    if (!pessoa) return;
+    setEditNome(pessoa.nome);
+    setEditCanac(pessoa.canac || '');
+    setEditCategoria(pessoa.categoria);
+    setEditSituacao(pessoa.situacao);
+    setEditBasePrincipal(pessoa.base_principal_id);
+    setEditClienteOuArea(pessoa.cliente_ou_area || '');
+    setEditImp(desigPessoa?.imp || '');
+    setEditEasaType((desigPessoa?.easa_type as EasaType) || 'N/A');
+    setEditBasesDesignadas(basesPessoa);
+    setModalEditarPessoa(true);
+  };
+
+  const handleSavePessoaEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pessoa || !editNome.trim()) return;
+
+    const updatedPessoa: Pessoa = {
+      ...pessoa,
+      nome: editNome.trim(),
+      canac: editCanac.trim(),
+      categoria: editCategoria,
+      situacao: editSituacao,
+      base_principal_id: editBasePrincipal,
+      cliente_ou_area: editClienteOuArea.trim(),
+      atualizado_em: new Date().toISOString(),
+      atualizado_por: currentUser.nome,
+    };
+
+    repository.savePessoa(updatedPessoa, currentUser.nome);
+
+    repository.saveDesignacaoPessoa(
+      {
+        pessoa_id: pessoa.id,
+        imp: editImp.trim() || desigPessoa?.imp || '',
+        easa_type: editEasaType,
+        incluir_na_lista: desigPessoa ? desigPessoa.incluir_na_lista : true,
+        nome_na_lista: editNome.trim(),
+      },
+      currentUser.nome
+    );
+
+    if (editBasesDesignadas.length > 0) {
+      repository.setDesignacaoBasesForPessoa(pessoa.id, editBasesDesignadas, currentUser.nome);
+    }
+
+    setModalEditarPessoa(false);
+    showToast(`Dados de ${editNome} atualizados e salvos no banco de dados!`);
+  };
+
+  if (!pessoa) {
+    return (
+      <div className="p-8 text-center text-slate-500">
+        <p className="font-semibold text-sm">Carregando dados dos mecânicos...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Top Selector and Actions (Hidden in Print) */}
@@ -281,6 +355,14 @@ export const FichaMecanicoView: React.FC = () => {
         <div className="flex items-center gap-2">
           {currentUser.perfil !== 'Leitor' && (
             <>
+              <button
+                onClick={handleOpenEditarPessoa}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-900 bg-emerald-50 border border-emerald-300 rounded-md hover:bg-emerald-100 transition-colors cursor-pointer shadow-2xs"
+                title="Editar dados cadastrais, base, CANAC e designações deste mecânico no banco de dados"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Editar Dados do Mecânico</span>
+              </button>
               <button
                 onClick={() => setModalNovaLicenca(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 transition-colors cursor-pointer shadow-2xs"
@@ -319,11 +401,27 @@ export const FichaMecanicoView: React.FC = () => {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-bold text-slate-950">{pessoa.nome}</h1>
+                <button
+                  onClick={handleOpenEditarPessoa}
+                  className="p-1 text-slate-400 hover:text-emerald-600 transition-colors cursor-pointer rounded"
+                  title="Editar cadastro do mecânico"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                </button>
                 <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-300">
                   {pessoa.id}
                 </span>
                 <span className="text-[11px] bg-sky-100 text-sky-900 font-semibold px-2 py-0.5 rounded">
                   {pessoa.categoria}
+                </span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                    pessoa.situacao === 'Ativo'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-red-100 text-red-800 border border-red-200'
+                  }`}
+                >
+                  {pessoa.situacao}
                 </span>
               </div>
               <div className="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
@@ -950,6 +1048,205 @@ export const FichaMecanicoView: React.FC = () => {
                 className="px-4 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer"
               >
                 Confirmar Renovação
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Editar Cadastro do Mecânico / Colaborador */}
+      {modalEditarPessoa && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
+          <form
+            onSubmit={handleSavePessoaEdit}
+            className="bg-white rounded-xl shadow-2xl max-w-xl w-full p-6 space-y-4 my-8 border border-slate-200"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">
+                  <Edit2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">
+                    Editar Cadastro do Mecânico / Colaborador
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    ID no Banco: <span className="font-mono font-bold text-slate-700">{pessoa.id}</span> · Alterações são gravadas diretamente no banco de dados
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalEditarPessoa(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+              <div className="md:col-span-2">
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Nome Completo *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editNome}
+                  onChange={(e) => setEditNome(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  CANAC (Código ANAC)
+                </label>
+                <input
+                  type="text"
+                  value={editCanac}
+                  onChange={(e) => setEditCanac(e.target.value)}
+                  placeholder="Ex: 124859"
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Código IMP (Designação Interna)
+                </label>
+                <input
+                  type="text"
+                  value={editImp}
+                  onChange={(e) => setEditImp(e.target.value)}
+                  placeholder="Ex: IMP-1042"
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Categoria
+                </label>
+                <select
+                  value={editCategoria}
+                  onChange={(e) => setEditCategoria(e.target.value as CategoriaPessoa)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="Mecânico">Mecânico</option>
+                  <option value="Administrativo">Administrativo</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Situação Cadastral
+                </label>
+                <select
+                  value={editSituacao}
+                  onChange={(e) => setEditSituacao(e.target.value as SituacaoPessoa)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="Ativo">Ativo</option>
+                  <option value="Inativo">Inativo</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Base Principal
+                </label>
+                <select
+                  value={editBasePrincipal}
+                  onChange={(e) => setEditBasePrincipal(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-bold"
+                >
+                  {db.bases.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} — {b.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Habilitação EASA Type
+                </label>
+                <select
+                  value={editEasaType}
+                  onChange={(e) => setEditEasaType(e.target.value as EasaType)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="N/A">N/A (Não aplicável)</option>
+                  <option value="B1">EASA B1 (Mecânica / Célula)</option>
+                  <option value="B2">EASA B2 (Aviônica / Elétrica)</option>
+                  <option value="A">EASA A (Linha / Trânsito)</option>
+                  <option value="C">EASA C (Base Hangar)</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Cliente / Área / Setor Operacional
+                </label>
+                <input
+                  type="text"
+                  value={editClienteOuArea}
+                  onChange={(e) => setEditClienteOuArea(e.target.value)}
+                  placeholder="Ex: Manutenção de Linha / Trânsito"
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="font-semibold text-slate-700 block mb-1">
+                  Bases Designadas (Disponibilidade Operacional)
+                </label>
+                <div className="flex flex-wrap gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                  {db.bases.map((b) => {
+                    const checked = editBasesDesignadas.includes(b.id);
+                    return (
+                      <label
+                        key={b.id}
+                        className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold hover:text-emerald-700"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditBasesDesignadas([...editBasesDesignadas, b.id]);
+                            } else {
+                              setEditBasesDesignadas(
+                                editBasesDesignadas.filter((id) => id !== b.id)
+                              );
+                            }
+                          }}
+                          className="rounded text-emerald-600 focus:ring-emerald-500"
+                        />
+                        <span>{b.id} ({b.nome.split('/')[0].trim()})</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setModalEditarPessoa(false)}
+                className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Salvar no Banco de Dados</span>
               </button>
             </div>
           </form>

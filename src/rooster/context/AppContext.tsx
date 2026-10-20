@@ -7,7 +7,9 @@ import {
   loadEmbeddedOfficialData,
   PostImportConferenceData,
   repository,
+  setOrganizationId,
   subscribeToDatabase,
+  syncWithQualigest,
 } from '../services/storage';
 import { CategoriaPessoa, SituacaoPessoa, Usuario } from '../types';
 
@@ -73,8 +75,11 @@ export interface AppProviderProps {
   children: React.ReactNode;
   initialTab?: ActiveTab;
   initialSelectedPessoaId?: string | null;
-  externalUser?: { nome?: string; email?: string; perfil?: string };
+  organizationId?: string;
+  externalUser?: { nome?: string; email?: string; perfil?: string; role?: string };
   syncPersons?: any[];
+  syncTrainingRecords?: any[];
+  syncBases?: any[];
   onActiveTabChange?: (tab: ActiveTab) => void;
 }
 
@@ -84,8 +89,11 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   children,
   initialTab,
   initialSelectedPessoaId,
+  organizationId,
   externalUser,
   syncPersons,
+  syncTrainingRecords,
+  syncBases,
   onActiveTabChange,
 }) => {
   const [db, setDb] = useState<DatabaseState>(loadDatabase());
@@ -107,12 +115,24 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     }
   }, [initialTab]);
 
-  // Sync initialSelectedPessoaId if changed externally
+  // Sync initialSelectedPessoaId if changed externally with robust person resolution
   useEffect(() => {
-    if (initialSelectedPessoaId && initialSelectedPessoaId !== selectedPessoaId) {
-      setSelectedPessoaId(initialSelectedPessoaId);
+    if (initialSelectedPessoaId) {
+      const match = db.pessoas.find(
+        (p) =>
+          p.id === initialSelectedPessoaId ||
+          p.canac === initialSelectedPessoaId ||
+          (p as any).matricula === initialSelectedPessoaId ||
+          p.nome.trim().toLowerCase() === initialSelectedPessoaId.trim().toLowerCase() ||
+          p.nome.trim().toLowerCase().includes(initialSelectedPessoaId.trim().toLowerCase())
+      );
+      if (match && match.id !== selectedPessoaId) {
+        setSelectedPessoaId(match.id);
+      } else if (!match && initialSelectedPessoaId !== selectedPessoaId) {
+        setSelectedPessoaId(initialSelectedPessoaId);
+      }
     }
-  }, [initialSelectedPessoaId]);
+  }, [initialSelectedPessoaId, db.pessoas]);
 
   const setActiveTab = (tab: ActiveTab) => {
     setActiveTabState(tab);
@@ -134,7 +154,10 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         id: 'USR-EXT',
         nome: externalUser.nome || externalUser.email || 'Usuário SGQ',
         email: externalUser.email || 'qualidade@impactoaviation.com',
-        perfil: 'Admin',
+        perfil:
+          externalUser.role === 'ADMIN' || externalUser.role === 'GESTOR_SGQ'
+            ? 'Admin'
+            : (externalUser.perfil as any) || 'Admin',
       };
     }
     return (
@@ -154,48 +177,26 @@ export const AppProvider: React.FC<AppProviderProps> = ({
         ...prev,
         nome: externalUser.nome || prev.nome,
         email: externalUser.email || prev.email,
+        perfil:
+          externalUser.role === 'ADMIN' || externalUser.role === 'GESTOR_SGQ'
+            ? 'Admin'
+            : prev.perfil,
       }));
     }
-  }, [externalUser?.nome, externalUser?.email]);
+  }, [externalUser?.nome, externalUser?.email, externalUser?.role]);
 
-  // Sync with QualiGest persons if present
+  // Synchronize QualiGest SGQ persons, training records, and active organization
   useEffect(() => {
-    if (syncPersons && Array.isArray(syncPersons) && syncPersons.length > 0) {
-      const currentDb = loadDatabase();
-      let hasChanges = false;
-      for (const sp of syncPersons) {
-        const idToCheck = sp.matricula || sp.id;
-        const exists = currentDb.pessoas.some((p) => p.id === idToCheck || p.nome === sp.nome);
-        if (!exists) {
-          const baseNormalized = (sp.baseOperacionalId || sp.baseOperacional || 'REC')
-            .split(' - ')[0]
-            .trim()
-            .toUpperCase();
-          const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP'].includes(baseNormalized)
-            ? baseNormalized
-            : 'REC';
-
-          currentDb.pessoas.push({
-            id: idToCheck || `COL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-            nome: sp.nome,
-            categoria: (sp.funcao || '').toLowerCase().includes('adm') ? 'Administrativo' : 'Mecânico',
-            situacao: sp.status === 'INATIVO' ? 'Inativo' : 'Ativo',
-            base_principal_id: baseFinal,
-            cliente_ou_area: sp.setor || 'Manutenção Aeronáutica',
-            canac: sp.camposCustomizados?.canac || sp.matricula || '',
-            criado_em: sp.createdAt || new Date().toISOString(),
-            atualizado_em: sp.updatedAt || new Date().toISOString(),
-            atualizado_por: sp.criadoPor || 'QualiGest Sync',
-          });
-          hasChanges = true;
-        }
-      }
-      if (hasChanges) {
-        repository.saveConfiguracao({ ...currentDb.configuracao }, currentUser.nome);
-        setDb({ ...currentDb });
-      }
+    if (organizationId) {
+      setOrganizationId(organizationId);
     }
-  }, [syncPersons]);
+    syncWithQualigest({
+      orgId: organizationId,
+      persons: syncPersons,
+      trainingRecords: syncTrainingRecords,
+      userProfile: externalUser,
+    });
+  }, [organizationId, syncPersons, syncTrainingRecords, externalUser?.nome]);
 
   // Set initial selected person once persons exist
   useEffect(() => {
@@ -238,7 +239,15 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   };
 
   const navigateToFicha = (pessoaId: string) => {
-    setSelectedPessoaId(pessoaId);
+    const match = db.pessoas.find(
+      (p) =>
+        p.id === pessoaId ||
+        p.canac === pessoaId ||
+        (p as any).matricula === pessoaId ||
+        p.nome.trim().toLowerCase() === pessoaId.trim().toLowerCase() ||
+        p.nome.trim().toLowerCase().includes(pessoaId.trim().toLowerCase())
+    );
+    setSelectedPessoaId(match ? match.id : pessoaId);
     setActiveTab('ficha');
   };
 

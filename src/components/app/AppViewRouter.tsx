@@ -548,10 +548,23 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
 
     case 'rooster-mro':
       return (
-        <RoosterModule
+        <PersonsCompetenciesView
+          organizationId={props.activeOrgId}
           userProfile={props.userProfile}
-          qualigestPersons={props.persons}
-          onNavigateBackToSGQ={() => setActiveTab('pessoas-competencias')}
+          persons={props.persons}
+          competencies={props.competencies}
+          personCompetencies={props.personCompetencies}
+          qualifications={props.qualifications}
+          trainingRecords={props.trainingRecords}
+          documents={props.personDocuments}
+          activities={props.activityRequirements}
+          nonConformities={props.records}
+          bases={props.basesOperacionais}
+          initialStatusFilter={props.initialPersonStatusFilter}
+          initialSubTab="ROOSTER_MRO"
+          onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
+          onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
+          onNavigateToImport={() => setActiveTab('importacao-inteligente')}
         />
       );
 

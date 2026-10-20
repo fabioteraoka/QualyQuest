@@ -33,6 +33,7 @@ import {
   UploadCloud,
   MapPin,
   Plane,
+  FileCheck2,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -89,6 +90,7 @@ interface PersonsCompetenciesViewProps {
   nonConformities?: any[];
   bases?: BaseEstacaoOperacao[];
   initialStatusFilter?: string;
+  initialSubTab?: 'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA';
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
   onNavigateToImport?: () => void;
@@ -107,13 +109,14 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   nonConformities = [],
   bases = [],
   initialStatusFilter,
+  initialSubTab,
   onNavigateToTrainings,
   onNavigateToExpirations,
   onNavigateToImport,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO'
-  >('COLABORADORES');
+    'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA'
+  >(initialSubTab || 'COLABORADORES');
   const [roosterInitialTab, setRoosterInitialTab] = useState<RoosterActiveTab>('pessoas');
   const [roosterInitialPessoaId, setRoosterInitialPessoaId] = useState<string | null>(null);
   const [modoMatriz, setModoMatriz] = useState<'FROTA_NIVEIS' | 'GRADE_GERAL'>('FROTA_NIVEIS');
@@ -128,6 +131,12 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       setSelectedStatus(initialStatusFilter);
     }
   }, [initialStatusFilter]);
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   // Colaborador Selecionado para Visão 360°
   const [selectedColaborador, setSelectedColaborador] = useState<ColaboradorPessoa | null>(null);
@@ -711,64 +720,108 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
         </div>
       </div>
 
-      {/* Sub-navegação em Abas */}
-      <div className="flex border-b border-slate-200 gap-6">
+      {/* Sub-navegação em Abas Integradas de Pessoas & Competências */}
+      <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-0.5 scrollbar-thin">
         <button
           onClick={() => setActiveSubTab('COLABORADORES')}
-          className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
+          className={`pb-3 px-3 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
             activeSubTab === 'COLABORADORES'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
+              ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-lg'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
           }`}
         >
-          <Users className="w-4 h-4" /> Colaboradores Cadastrados ({persons.length})
+          <Users className="w-4 h-4 text-blue-600" />
+          <span>Colaboradores Cadastrados</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-blue-100 text-blue-800">
+            {persons.length}
+          </span>
         </button>
-        <button
-          onClick={() => setActiveSubTab('MATRIZ')}
-          className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
-            activeSubTab === 'MATRIZ'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Activity className="w-4 h-4 text-emerald-600" /> Matriz de Competências
-        </button>
-        <button
-          onClick={() => setActiveSubTab('CATALOGO')}
-          className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
-            activeSubTab === 'CATALOGO'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Award className="w-4 h-4 text-purple-600" /> Catálogo de Competências ({competencies.length})
-        </button>
-        <button
-          onClick={() => setActiveSubTab('BASES')}
-          className={`pb-3 text-sm font-medium border-b-2 flex items-center gap-2 transition ${
-            activeSubTab === 'BASES'
-              ? 'border-blue-600 text-blue-600'
-              : 'border-transparent text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <MapPin className="w-4 h-4 text-sky-600" /> Bases Operacionais ({bases.length})
-        </button>
+
         <button
           onClick={() => {
             setRoosterInitialTab('pessoas');
             setActiveSubTab('ROOSTER_MRO');
           }}
-          className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition ${
+          className={`pb-3 px-3 text-xs md:text-sm font-bold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
             activeSubTab === 'ROOSTER_MRO'
-              ? 'border-sky-600 text-sky-900 bg-sky-50/70 px-2.5 rounded-t-lg'
-              : 'border-transparent text-sky-700 hover:text-sky-900 hover:bg-sky-50/40 px-2 rounded-t-lg'
+              ? 'border-sky-600 text-sky-900 bg-sky-50/80 rounded-t-lg shadow-2xs'
+              : 'border-transparent text-sky-800 hover:text-sky-950 hover:bg-sky-50/40 rounded-t-lg'
           }`}
         >
           <Plane className="w-4 h-4 text-sky-600" />
-          <span>Roster &amp; Mecânicos (Rooster)</span>
+          <span>Roster &amp; Mecânicos (MRO)</span>
           <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-100 text-sky-900 font-bold uppercase border border-sky-200">
-            MRO ANAC
+            ANAC / EASA
           </span>
+        </button>
+
+        <button
+          onClick={() => {
+            setRoosterInitialTab('designacao');
+            setActiveSubTab('ROOSTER_DESIGNACAO');
+          }}
+          className={`pb-3 px-3 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'ROOSTER_DESIGNACAO'
+              ? 'border-sky-600 text-sky-900 bg-sky-50/80 rounded-t-lg'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <FileCheck2 className="w-4 h-4 text-emerald-600" />
+          <span>Lista Oficial de Designação</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-emerald-100 text-emerald-800">
+            A4
+          </span>
+        </button>
+
+        <button
+          onClick={() => {
+            setRoosterInitialTab('conferencia');
+            setActiveSubTab('ROOSTER_CONFERENCIA');
+          }}
+          className={`pb-3 px-3 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'ROOSTER_CONFERENCIA'
+              ? 'border-sky-600 text-sky-900 bg-sky-50/80 rounded-t-lg'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-500" />
+          <span>Conferência &amp; Pré-Turno</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('MATRIZ')}
+          className={`pb-3 px-3 text-xs md:text-sm font-medium border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'MATRIZ'
+              ? 'border-blue-600 text-blue-600 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Activity className="w-4 h-4 text-emerald-600" />
+          <span>Matriz de Competências</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('CATALOGO')}
+          className={`pb-3 px-3 text-xs md:text-sm font-medium border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'CATALOGO'
+              ? 'border-blue-600 text-blue-600 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <Award className="w-4 h-4 text-purple-600" />
+          <span>Catálogo de Competências ({competencies.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('BASES')}
+          className={`pb-3 px-3 text-xs md:text-sm font-medium border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
+            activeSubTab === 'BASES'
+              ? 'border-blue-600 text-blue-600 bg-blue-50/40 rounded-t-lg'
+              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+          }`}
+        >
+          <MapPin className="w-4 h-4 text-sky-600" />
+          <span>Bases Operacionais ({bases.length})</span>
         </button>
       </div>
 
@@ -2398,14 +2451,26 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       )}
 
       {/* ========================================================================= */}
-      {/* ABA 5: ROSTER & MECÂNICOS (MRO IMPACTO AVIATION / ROOSTER)                 */}
+      {/* ABAS ROOSTER MRO: ROSTER & MECÂNICOS, LISTA DE DESIGNAÇÃO, CONFERÊNCIA    */}
       {/* ========================================================================= */}
-      {activeSubTab === 'ROOSTER_MRO' && (
+      {(activeSubTab === 'ROOSTER_MRO' ||
+        activeSubTab === 'ROOSTER_DESIGNACAO' ||
+        activeSubTab === 'ROOSTER_CONFERENCIA') && (
         <div className="space-y-4">
           <RoosterModule
             userProfile={userProfile}
             qualigestPersons={persons}
-            initialTab={roosterInitialTab}
+            organizationId={organizationId}
+            trainingRecords={trainingRecords}
+            qualifications={qualifications}
+            bases={bases}
+            initialTab={
+              activeSubTab === 'ROOSTER_DESIGNACAO'
+                ? 'designacao'
+                : activeSubTab === 'ROOSTER_CONFERENCIA'
+                ? 'conferencia'
+                : roosterInitialTab
+            }
             initialSelectedPessoaId={roosterInitialPessoaId}
             embedded={true}
             onNavigateBackToSGQ={() => setActiveSubTab('COLABORADORES')}

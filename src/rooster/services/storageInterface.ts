@@ -23,6 +23,7 @@ export interface StorageAdapter {
 
   init(): Promise<void>;
   getDatabase(): DatabaseState;
+  setOrganizationId?(orgId: string): void;
 
   // Person CRUD
   savePessoa(pessoa: Pessoa, usuarioNome: string): Promise<void>;

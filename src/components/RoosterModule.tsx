@@ -50,14 +50,25 @@ import { ProximosVencimentosView } from '../rooster/views/ProximosVencimentosVie
 import { RelatorioRosterView } from '../rooster/views/RelatorioRosterView';
 import { TreinamentosView } from '../rooster/views/TreinamentosView';
 
-import { ColaboradorPessoa, UserProfile } from '../types';
+import {
+  ColaboradorPessoa,
+  UserProfile,
+  RegistroTreinamentoColaborador,
+  CursoTreinamento,
+  QualificacaoColaborador,
+} from '../types';
 import { loadDatabase, repository } from '../rooster/services/storage';
 
 export interface RoosterModuleProps {
   initialTab?: ActiveTab;
   initialSelectedPessoaId?: string | null;
+  organizationId?: string;
   userProfile?: UserProfile | null;
   qualigestPersons?: ColaboradorPessoa[];
+  trainingRecords?: RegistroTreinamentoColaborador[];
+  trainingCourses?: CursoTreinamento[];
+  qualifications?: QualificacaoColaborador[];
+  bases?: any[];
   onNavigateBackToSGQ?: () => void;
   embedded?: boolean;
 }
@@ -383,8 +394,13 @@ const RoosterInternalWorkspace: React.FC<{
 export const RoosterModule: React.FC<RoosterModuleProps> = ({
   initialTab = 'pessoas',
   initialSelectedPessoaId,
+  organizationId,
   userProfile,
   qualigestPersons = [],
+  trainingRecords = [],
+  trainingCourses = [],
+  qualifications = [],
+  bases = [],
   onNavigateBackToSGQ,
   embedded = false,
 }) => {
@@ -392,11 +408,15 @@ export const RoosterModule: React.FC<RoosterModuleProps> = ({
     <AppProvider
       initialTab={initialTab}
       initialSelectedPessoaId={initialSelectedPessoaId}
+      organizationId={organizationId}
       externalUser={{
         nome: userProfile?.displayName,
         email: userProfile?.email,
+        role: userProfile?.role,
       }}
       syncPersons={qualigestPersons}
+      syncTrainingRecords={trainingRecords}
+      syncBases={bases}
     >
       <RoosterInternalWorkspace
         onNavigateBackToSGQ={onNavigateBackToSGQ}
