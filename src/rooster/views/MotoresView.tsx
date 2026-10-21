@@ -35,7 +35,7 @@ export const MotoresView: React.FC = () => {
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     const id = editingMotor?.id || `MOT-${fabricante}-${modelo.replace(/[^a-zA-Z0-9]/g, '_').toUpperCase() || 'GEN'}`;
     const motorData: MotorCatalogo = {
@@ -44,13 +44,31 @@ export const MotoresView: React.FC = () => {
       modelo,
     };
 
-    const idx = db.motoresCatalogo.findIndex((m) => m.id === id);
-    if (idx >= 0) db.motoresCatalogo[idx] = motorData;
-    else db.motoresCatalogo.push(motorData);
+    try {
+      await repository.saveMotor(motorData, currentUser.nome);
+      setModalOpen(false);
+      showToast(`Motor ${fabricante} ${modelo} persistido no Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao salvar motor no Firestore: ${err?.message || err}`);
+    }
+  };
 
-    repository.saveBase(db.bases[0]); // Trigger save & notification
-    setModalOpen(false);
-    showToast(`Motor ${fabricante} ${modelo} cadastrado com sucesso!`);
+  const handleDelete = async (motorId: string, motorNome: string) => {
+    if (confirm(`Deseja realmente excluir o motor "${motorNome}"?`)) {
+      try {
+        await repository.deleteMotor(motorId, currentUser.nome);
+        showToast(`Motor "${motorNome}" removido do Firestore.`);
+      } catch (err: any) {
+        showToast(`Erro ao remover motor do Firestore: ${err?.message || err}`);
+      }
+    }
+  };
+
+  const handleEdit = (m: MotorCatalogo) => {
+    setEditingMotor(m);
+    setFabricante(m.fabricante);
+    setModelo(m.modelo);
+    setModalOpen(true);
   };
 
   return (
@@ -128,7 +146,26 @@ export const MotoresView: React.FC = () => {
                 <span className="text-slate-500 font-medium">
                   <strong>{mechanicsIds.size}</strong> mecânicos habilitados
                 </span>
-                <span className="text-sky-700 font-semibold text-[11px]">Vínculo N:N</span>
+                {currentUser.perfil !== 'Leitor' ? (
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleEdit(m)}
+                      className="text-slate-400 hover:text-sky-700 p-1 cursor-pointer"
+                      title="Editar motor"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(m.id, `${m.fabricante} ${m.modelo}`)}
+                      className="text-slate-400 hover:text-red-600 p-1 cursor-pointer"
+                      title="Excluir motor"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-sky-700 font-semibold text-[11px]">Vínculo N:N</span>
+                )}
               </div>
             </div>
           );

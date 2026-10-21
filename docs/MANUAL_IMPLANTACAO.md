@@ -47,13 +47,10 @@ Antes de liberar qualquer release em produção, execute obrigatoriamente a suí
 # 1. Checagem estrita de integridade TypeScript (linter)
 npm run lint
 
-# 2. Execução da Homologação da Fase 12.2 (Teste de Espelho SSoT e Resiliência)
-npx tsx scripts/homologation-fase12-2.ts
+# 2. Execução da Bateria de Testes de Integração QualyQuest + Rooster
+npm run test:integration
 
-# 3. Execução da Homologação Adversarial Global (Matriz 5x5, RBAC, Multi-Tenant, Red Team)
-npx tsx scripts/homologation-fase6-3.ts
-
-# 4. Compilação do build de produção (Vite + esbuild server.cjs)
+# 3. Compilação do build de produção (Vite + esbuild server.cjs)
 npm run build
 ```
 

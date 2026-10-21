@@ -840,6 +840,38 @@
       "schema": "CalibratedTool",
       "description": "Aeronautical tooling and precision instruments under calibration and metrology controls"
     },
+    "/organizations/{organizationId}/roster_motores/{motorId}": {
+      "schema": "MotorCatalogo",
+      "description": "Aeronautical engine models for MRO aircraft maintenance authorizations"
+    },
+    "/organizations/{organizationId}/roster_treinamentos_motor/{itemId}": {
+      "schema": "TreinamentoMotor",
+      "description": "Links between training records and engine models"
+    },
+    "/organizations/{organizationId}/roster_designacoes_pessoa/{pessoaId}": {
+      "schema": "DesignacaoPessoa",
+      "description": "Official company designations (IMP, EASA) per mechanic"
+    },
+    "/organizations/{organizationId}/roster_designacoes_base/{itemId}": {
+      "schema": "DesignacaoBase",
+      "description": "Authorized base assignments per mechanic"
+    },
+    "/organizations/{organizationId}/roster_designacoes_funcao/{itemId}": {
+      "schema": "DesignacaoFuncao",
+      "description": "Authorized technical functions matrix per mechanic"
+    },
+    "/organizations/{organizationId}/roster_designacoes_aeronave/{itemId}": {
+      "schema": "DesignacaoAeronave",
+      "description": "Authorized aircraft fleet and model assignments per mechanic"
+    },
+    "/organizations/{organizationId}/roster_configuracao/{configId}": {
+      "schema": "Configuracao",
+      "description": "Operational parameters, reference dates and warning thresholds"
+    },
+    "/organizations/{organizationId}/roster_auditoria/{auditId}": {
+      "schema": "Auditoria",
+      "description": "Immutable operational audit trails for MRO modifications"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile records indexed strictly by Firebase Auth UID"

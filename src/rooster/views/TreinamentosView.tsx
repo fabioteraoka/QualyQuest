@@ -91,7 +91,7 @@ export const TreinamentosView: React.FC = () => {
   }, [db.treinamentos, mostrarHistorico, filtroGrupo, busca, cursosMap, pessoasMap]);
 
   // Handle Save Batch
-  const handleSaveLote = (e: React.FormEvent) => {
+  const handleSaveLote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loteCursoId || !loteDataExec || lotePessoasIds.length === 0) {
       alert('Selecione o curso, a data de execução e ao menos um colaborador.');
@@ -99,41 +99,55 @@ export const TreinamentosView: React.FC = () => {
     }
 
     const now = new Date().toISOString();
-    lotePessoasIds.forEach((pId) => {
-      const id = `TRN-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-      const trn: Treinamento = {
-        id,
-        pessoa_id: pId,
-        curso_id: loteCursoId,
-        data_execucao: loteDataExec,
-        observacao: loteObs,
-        substituido_por: null,
-        criado_em: now,
-        atualizado_em: now,
-        atualizado_por: currentUser.nome,
-      };
-      repository.saveTreinamento(trn, loteMotoresIds, currentUser.nome);
-    });
+    try {
+      const savePromises = lotePessoasIds.map((pId) => {
+        const id = `TRN-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
+        const trn: Treinamento = {
+          id,
+          pessoa_id: pId,
+          curso_id: loteCursoId,
+          data_execucao: loteDataExec,
+          observacao: loteObs,
+          substituido_por: null,
+          criado_em: now,
+          atualizado_em: now,
+          atualizado_por: currentUser.nome,
+        };
+        return repository.saveTreinamento(trn, loteMotoresIds, currentUser.nome);
+      });
 
-    setModalLoteOpen(false);
-    showToast(`Treinamento lançado para ${lotePessoasIds.length} colaboradores com sucesso!`);
-    setLotePessoasIds([]);
-    setLoteMotoresIds([]);
+      await Promise.all(savePromises);
+
+      setModalLoteOpen(false);
+      showToast(`Treinamento lançado para ${lotePessoasIds.length} colaboradores com sucesso no Firestore!`);
+      setLotePessoasIds([]);
+      setLoteMotoresIds([]);
+    } catch (err: any) {
+      showToast(`Erro ao lançar treinamento em lote: ${err?.message || err}`);
+    }
   };
 
-  const handleRenovacao = (e: React.FormEvent) => {
+  const handleRenovacao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalRenovar || !renovacaoData) return;
 
-    repository.renovarTreinamento(modalRenovar.id, renovacaoData, currentUser.nome);
-    setModalRenovar(null);
-    showToast(`Treinamento renovado com sucesso!`);
+    try {
+      await repository.renovarTreinamento(modalRenovar.id, renovacaoData, currentUser.nome);
+      setModalRenovar(null);
+      showToast(`Treinamento renovado com sucesso no Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao renovar treinamento no Firestore: ${err?.message || err}`);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Deseja realmente excluir este treinamento?')) {
-      repository.deleteTreinamento(id, currentUser.nome);
-      showToast('Treinamento excluído.');
+      try {
+        await repository.deleteTreinamento(id, currentUser.nome);
+        showToast('Treinamento excluído do Firestore.');
+      } catch (err: any) {
+        showToast(`Erro ao excluir treinamento do Firestore: ${err?.message || err}`);
+      }
     }
   };
 

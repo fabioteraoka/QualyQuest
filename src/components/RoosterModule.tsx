@@ -57,7 +57,7 @@ import {
   CursoTreinamento,
   QualificacaoColaborador,
 } from '../types';
-import { loadDatabase, repository } from '../rooster/services/storage';
+import { loadDatabase, repository, reconcileCanonicalFirestoreData } from '../rooster/services/storage';
 
 export interface RoosterModuleProps {
   initialTab?: ActiveTab;
@@ -77,7 +77,19 @@ const RoosterInternalWorkspace: React.FC<{
   onNavigateBackToSGQ?: () => void;
   embedded?: boolean;
   qualigestPersons?: ColaboradorPessoa[];
-}> = ({ onNavigateBackToSGQ, embedded, qualigestPersons = [] }) => {
+  trainingRecords?: RegistroTreinamentoColaborador[];
+  trainingCourses?: CursoTreinamento[];
+  qualifications?: QualificacaoColaborador[];
+  organizationId?: string;
+}> = ({
+  onNavigateBackToSGQ,
+  embedded,
+  qualigestPersons = [],
+  trainingRecords = [],
+  trainingCourses = [],
+  qualifications = [],
+  organizationId,
+}) => {
   const {
     db,
     activeTab,
@@ -93,6 +105,7 @@ const RoosterInternalWorkspace: React.FC<{
   const [helpTopic, setHelpTopic] = useState<string>('dashboard');
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [isCompactNav, setIsCompactNav] = useState(embedded ?? false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     const handleOpenHelp = (e: any) => {
@@ -122,48 +135,36 @@ const RoosterInternalWorkspace: React.FC<{
     }
   };
 
-  // Sync QualiGest persons explicitly on button click if requested
-  const handleManualSync = () => {
-    if (!qualigestPersons || qualigestPersons.length === 0) {
-      showToast('Nenhum colaborador do SGQ encontrado para sincronizar.');
-      return;
-    }
+  // Reconciliação canônica explícita com o Firestore
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      const stats = await reconcileCanonicalFirestoreData({
+        orgId: organizationId || 'org_impacto_aviation',
+        persons: qualigestPersons,
+        trainingRecords,
+        courses: trainingCourses,
+        qualifications,
+        userName: currentUser.nome,
+      });
 
-    const currentDb = loadDatabase();
-    let addedCount = 0;
-    for (const sp of qualigestPersons) {
-      const idToCheck = sp.matricula || sp.id;
-      const exists = currentDb.pessoas.some((p) => p.id === idToCheck || p.nome === sp.nome);
-      if (!exists) {
-        const baseNormalized = (sp.baseOperacionalId || sp.baseOperacional || 'REC')
-          .split(' - ')[0]
-          .trim()
-          .toUpperCase();
-        const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP'].includes(baseNormalized)
-          ? baseNormalized
-          : 'REC';
+      const total =
+        stats.persistedPersons +
+        stats.persistedCourses +
+        stats.persistedTrainings +
+        stats.persistedQualifications;
 
-        currentDb.pessoas.push({
-          id: idToCheck || `COL-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          nome: sp.nome,
-          categoria: (sp.funcao || '').toLowerCase().includes('adm') ? 'Administrativo' : 'Mecânico',
-          situacao: sp.status === 'INATIVO' ? 'Inativo' : 'Ativo',
-          base_principal_id: baseFinal,
-          cliente_ou_area: sp.setor || 'Manutenção Aeronáutica',
-          canac: sp.camposCustomizados?.canac || sp.matricula || '',
-          criado_em: sp.createdAt || new Date().toISOString(),
-          atualizado_em: sp.updatedAt || new Date().toISOString(),
-          atualizado_por: currentUser.nome || 'QualiGest Sync',
-        });
-        addedCount++;
+      if (total > 0) {
+        showToast(
+          `Persistência confirmada no Firestore: ${stats.persistedPersons} colaboradores, ${stats.persistedCourses} cursos, ${stats.persistedTrainings} treinamentos, ${stats.persistedQualifications} licenças.`
+        );
+      } else {
+        showToast('Dados canônicos de pessoas, cursos e treinamentos já estão 100% íntegros com o Firestore.');
       }
-    }
-
-    if (addedCount > 0) {
-      repository.saveConfiguracao({ ...currentDb.configuracao }, currentUser.nome);
-      showToast(`Sincronizados ${addedCount} novos colaboradores com sucesso!`);
-    } else {
-      showToast('Todos os colaboradores do SGQ já estão sincronizados no Roster.');
+    } catch (err: any) {
+      showToast(`Falha na sincronização Firestore: ${err?.message || err}`);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -267,11 +268,14 @@ const RoosterInternalWorkspace: React.FC<{
           {qualigestPersons.length > 0 && (
             <button
               onClick={handleManualSync}
-              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Sincronizar colaboradores do SGQ para o banco do Roster"
+              disabled={isSyncing}
+              className={`px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer ${
+                isSyncing ? 'opacity-70 cursor-not-allowed' : ''
+              }`}
+              title="Sincronizar colaboradores do SGQ para o banco do Roster no Firestore"
             >
-              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Sincronizar SGQ ({qualigestPersons.length})</span>
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-400 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>{isSyncing ? 'Sincronizando...' : `Sincronizar SGQ (${qualigestPersons.length})`}</span>
             </button>
           )}
 
@@ -416,12 +420,18 @@ export const RoosterModule: React.FC<RoosterModuleProps> = ({
       }}
       syncPersons={qualigestPersons}
       syncTrainingRecords={trainingRecords}
+      syncTrainingCourses={trainingCourses}
+      syncQualifications={qualifications}
       syncBases={bases}
     >
       <RoosterInternalWorkspace
         onNavigateBackToSGQ={onNavigateBackToSGQ}
         embedded={embedded}
         qualigestPersons={qualigestPersons}
+        trainingRecords={trainingRecords}
+        trainingCourses={trainingCourses}
+        qualifications={qualifications}
+        organizationId={organizationId}
       />
     </AppProvider>
   );

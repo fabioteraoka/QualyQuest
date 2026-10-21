@@ -535,6 +535,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           personCompetencies={props.personCompetencies}
           qualifications={props.qualifications}
           trainingRecords={props.trainingRecords}
+          trainingCourses={props.trainingCourses}
           documents={props.personDocuments}
           activities={props.activityRequirements}
           nonConformities={props.records}
@@ -556,6 +557,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           personCompetencies={props.personCompetencies}
           qualifications={props.qualifications}
           trainingRecords={props.trainingRecords}
+          trainingCourses={props.trainingCourses}
           documents={props.personDocuments}
           activities={props.activityRequirements}
           nonConformities={props.records}

@@ -180,7 +180,7 @@ export const FichaMecanicoView: React.FC = () => {
   }
 
   // Handle Save New Training
-  const handleSaveTreinamento = (e: React.FormEvent) => {
+  const handleSaveTreinamento = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novoTrnCursoId || !novoTrnDataExec) return;
 
@@ -198,16 +198,20 @@ export const FichaMecanicoView: React.FC = () => {
       atualizado_por: currentUser.nome,
     };
 
-    repository.saveTreinamento(novo, novoTrnMotores, currentUser.nome);
-    setModalNovoTreinamento(false);
-    setNovoTrnCursoId('');
-    setNovoTrnMotores([]);
-    setNovoTrnObs('');
-    showToast(`Treinamento cadastrado com sucesso para ${pessoa.nome}!`);
+    try {
+      await repository.saveTreinamento(novo, novoTrnMotores, currentUser.nome);
+      setModalNovoTreinamento(false);
+      setNovoTrnCursoId('');
+      setNovoTrnMotores([]);
+      setNovoTrnObs('');
+      showToast(`Treinamento cadastrado e persistido no Firestore para ${pessoa.nome}!`);
+    } catch (err: any) {
+      showToast(`Erro ao salvar treinamento: ${err?.message || err}`);
+    }
   };
 
   // Handle Save New License
-  const handleSaveLicenca = (e: React.FormEvent) => {
+  const handleSaveLicenca = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!novaLicNumero) return;
 
@@ -226,35 +230,51 @@ export const FichaMecanicoView: React.FC = () => {
       atualizado_por: currentUser.nome,
     };
 
-    repository.saveLicenca(nova, currentUser.nome);
-    setModalNovaLicenca(false);
-    setNovaLicNumero('');
-    setNovaLicVencimento('');
-    setNovaLicExpedicao('');
-    showToast(`Licença ${novaLicOrgao} ${novaLicTipo} salva com sucesso!`);
-  };
-
-  // Handle Quick Renewal
-  const handleRenovacao = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!modalRenovar || !renovacaoData) return;
-
-    repository.renovarTreinamento(modalRenovar.id, renovacaoData, currentUser.nome);
-    setModalRenovar(null);
-    showToast(`Treinamento renovado com sucesso!`);
-  };
-
-  const handleExcluirLicenca = (licId: string) => {
-    if (confirm('Deseja realmente remover esta licença?')) {
-      repository.deleteLicenca(licId, currentUser.nome);
-      showToast('Licença excluída.');
+    try {
+      await repository.saveLicenca(nova, currentUser.nome);
+      setModalNovaLicenca(false);
+      setNovaLicNumero('');
+      setNovaLicVencimento('');
+      setNovaLicExpedicao('');
+      showToast(`Licença ${novaLicOrgao} ${novaLicTipo} persistida no Firestore com sucesso!`);
+    } catch (err: any) {
+      showToast(`Erro ao salvar licença: ${err?.message || err}`);
     }
   };
 
-  const handleExcluirTreinamento = (trnId: string) => {
+  // Handle Quick Renewal
+  const handleRenovacao = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalRenovar || !renovacaoData) return;
+
+    try {
+      await repository.renovarTreinamento(modalRenovar.id, renovacaoData, currentUser.nome);
+      setModalRenovar(null);
+      showToast(`Treinamento renovado com sucesso no Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao renovar treinamento: ${err?.message || err}`);
+    }
+  };
+
+  const handleExcluirLicenca = async (licId: string) => {
+    if (confirm('Deseja realmente remover esta licença?')) {
+      try {
+        await repository.deleteLicenca(licId, currentUser.nome);
+        showToast('Licença excluída do Firestore.');
+      } catch (err: any) {
+        showToast(`Erro ao excluir licença: ${err?.message || err}`);
+      }
+    }
+  };
+
+  const handleExcluirTreinamento = async (trnId: string) => {
     if (confirm('Deseja realmente remover este treinamento?')) {
-      repository.deleteTreinamento(trnId, currentUser.nome);
-      showToast('Treinamento excluído.');
+      try {
+        await repository.deleteTreinamento(trnId, currentUser.nome);
+        showToast('Treinamento excluído do Firestore.');
+      } catch (err: any) {
+        showToast(`Erro ao excluir treinamento: ${err?.message || err}`);
+      }
     }
   };
 
@@ -284,41 +304,45 @@ export const FichaMecanicoView: React.FC = () => {
     setModalEditarPessoa(true);
   };
 
-  const handleSavePessoaEdit = (e: React.FormEvent) => {
+  const handleSavePessoaEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pessoa || !editNome.trim()) return;
 
-    const updatedPessoa: Pessoa = {
-      ...pessoa,
-      nome: editNome.trim(),
-      canac: editCanac.trim(),
-      categoria: editCategoria,
-      situacao: editSituacao,
-      base_principal_id: editBasePrincipal,
-      cliente_ou_area: editClienteOuArea.trim(),
-      atualizado_em: new Date().toISOString(),
-      atualizado_por: currentUser.nome,
-    };
+    try {
+      const updatedPessoa: Pessoa = {
+        ...pessoa,
+        nome: editNome.trim(),
+        canac: editCanac.trim(),
+        categoria: editCategoria,
+        situacao: editSituacao,
+        base_principal_id: editBasePrincipal,
+        cliente_ou_area: editClienteOuArea.trim(),
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: currentUser.nome,
+      };
 
-    repository.savePessoa(updatedPessoa, currentUser.nome);
+      await repository.savePessoa(updatedPessoa, currentUser.nome);
 
-    repository.saveDesignacaoPessoa(
-      {
-        pessoa_id: pessoa.id,
-        imp: editImp.trim() || desigPessoa?.imp || '',
-        easa_type: editEasaType,
-        incluir_na_lista: desigPessoa ? desigPessoa.incluir_na_lista : true,
-        nome_na_lista: editNome.trim(),
-      },
-      currentUser.nome
-    );
+      await repository.saveDesignacaoPessoa(
+        {
+          pessoa_id: pessoa.id,
+          imp: editImp.trim() || desigPessoa?.imp || '',
+          easa_type: editEasaType,
+          incluir_na_lista: desigPessoa ? desigPessoa.incluir_na_lista : true,
+          nome_na_lista: editNome.trim(),
+        },
+        currentUser.nome
+      );
 
-    if (editBasesDesignadas.length > 0) {
-      repository.setDesignacaoBasesForPessoa(pessoa.id, editBasesDesignadas, currentUser.nome);
+      if (editBasesDesignadas.length > 0) {
+        await repository.setDesignacaoBasesForPessoa(pessoa.id, editBasesDesignadas, currentUser.nome);
+      }
+
+      setModalEditarPessoa(false);
+      showToast(`Dados de ${editNome} atualizados e salvos com sucesso no Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao atualizar cadastro no Firestore: ${err?.message || err}`);
     }
-
-    setModalEditarPessoa(false);
-    showToast(`Dados de ${editNome} atualizados e salvos no banco de dados!`);
   };
 
   if (!pessoa) {

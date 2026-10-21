@@ -601,48 +601,47 @@ service cloud.firestore {
     }
     match /pessoa/{id} {
       allow get, list: if isSignedIn();
-      allow create, update: if isSignedIn() && getUserRole() != 'CONSULTA';
-      allow delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/persons
     }
     match /licenca/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/qualifications
     }
     match /curso_catalogo/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/trainingCourses
     }
     match /treinamento/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/trainingRecords
     }
     match /motor_catalogo/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+      allow create, update, delete: if isSystemAdmin(); // Canônico: organizations/{organizationId}/roster_motores
     }
     match /treinamento_motor/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_treinamentos_motor
     }
     match /designacao_pessoa/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_pessoa
     }
     match /designacao_base/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_base
     }
     match /designacao_funcao/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_funcao
     }
     match /designacao_aeronave/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_aeronave
     }
     match /configuracao/{id} {
       allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && getUserRole() != 'CONSULTA';
+      allow create, update, delete: if isSystemAdmin(); // Canônico: organizations/{organizationId}/roster_configuracao
     }
     match /auditoria/{id} {
       allow get, list: if isSignedIn();

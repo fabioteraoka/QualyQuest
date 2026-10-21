@@ -79,6 +79,8 @@ export interface AppProviderProps {
   externalUser?: { nome?: string; email?: string; perfil?: string; role?: string };
   syncPersons?: any[];
   syncTrainingRecords?: any[];
+  syncTrainingCourses?: any[];
+  syncQualifications?: any[];
   syncBases?: any[];
   onActiveTabChange?: (tab: ActiveTab) => void;
 }
@@ -93,6 +95,8 @@ export const AppProvider: React.FC<AppProviderProps> = ({
   externalUser,
   syncPersons,
   syncTrainingRecords,
+  syncTrainingCourses,
+  syncQualifications,
   syncBases,
   onActiveTabChange,
 }) => {
@@ -185,7 +189,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
     }
   }, [externalUser?.nome, externalUser?.email, externalUser?.role]);
 
-  // Synchronize QualiGest SGQ persons, training records, and active organization
+  // Synchronize QualiGest SGQ persons, training records, courses, qualifications and active organization
   useEffect(() => {
     if (organizationId) {
       setOrganizationId(organizationId);
@@ -196,7 +200,7 @@ export const AppProvider: React.FC<AppProviderProps> = ({
       trainingRecords: syncTrainingRecords,
       userProfile: externalUser,
     });
-  }, [organizationId, syncPersons, syncTrainingRecords, externalUser?.nome]);
+  }, [organizationId, syncPersons, syncTrainingRecords, syncTrainingCourses, syncQualifications, externalUser?.nome]);
 
   // Set initial selected person once persons exist
   useEffect(() => {

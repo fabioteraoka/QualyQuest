@@ -123,6 +123,7 @@ O QualiGest foi construído através de 15 fases de engenharia contínua, todas 
 13. **Fase 13 — Auditoria Inteligente por Requisitos com Resolução por Exceção:** Arquitetura "Um Controle, Vários Requisitos" com checklist Kalitta Air QA-14 / EASA / ANAC, árvore hierárquica por seções e confirmação de conformidade em lote para foco exclusivo nas exceções e desvios.
 14. **Fase 14 — System Designer Oficial Permanente & Registro de ADRs:** Registro vivo e imutável das Decisões Arquiteturais de Software (ADRs), topologia de componentes, matriz de fluxo de dados e inventário técnico de coleções.
 15. **Fase 15 — Motor de Importação Inteligente de Dados & Reconciliação:** Wizard em 4 etapas com upload e detecção de planilhas, mapeamento de colunas assistido por IA Gemini, pré-visualização de diff de reconciliação (novo, atualizado, inalterado) e reversão segura de carga (Undo).
+16. **Fase 16 — Integração Definitiva QualyQuest + Rooster MRO (SSoT):** Unificação total dos cadastros de mecânicos, catálogo mestre de cursos, registros de treinamentos, habilitações ANAC/FAA e matrizes operacionais sob `organizations/{organizationId}/*`, preservando 100% dos dados QualyQuest nas edições via Rooster e bloqueando novas gravações nas coleções legadas de raiz.
 
 ---
 

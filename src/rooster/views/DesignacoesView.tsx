@@ -46,19 +46,27 @@ export const DesignacoesView: React.FC = () => {
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }, [db.pessoas, db.designacoesBase, baseFiltro, busca]);
 
-  const toggleFuncao = (pessoaId: string, funcao: FuncaoDesignacao, atual: SimNaoVazio) => {
+  const toggleFuncao = async (pessoaId: string, funcao: FuncaoDesignacao, atual: SimNaoVazio) => {
     if (currentUser.perfil === 'Leitor') return;
     const proximo: SimNaoVazio = atual === 'SIM' ? 'NÃO' : atual === 'NÃO' ? '' : 'SIM';
-    repository.setDesignacaoFuncao(pessoaId, funcao, proximo);
+    try {
+      await repository.setDesignacaoFuncao(pessoaId, funcao, proximo, currentUser.nome);
+    } catch (err: any) {
+      showToast(`Erro ao atualizar designação: ${err?.message || err}`);
+    }
   };
 
-  const toggleAeronave = (pessoaId: string, aeronave: AeronaveDesignacao, atual: SimNaoVazio) => {
+  const toggleAeronave = async (pessoaId: string, aeronave: AeronaveDesignacao, atual: SimNaoVazio) => {
     if (currentUser.perfil === 'Leitor') return;
     const proximo: SimNaoVazio = atual === 'SIM' ? 'NÃO' : atual === 'NÃO' ? '' : 'SIM';
-    repository.setDesignacaoAeronave(pessoaId, aeronave, proximo);
+    try {
+      await repository.setDesignacaoAeronave(pessoaId, aeronave, proximo, currentUser.nome);
+    } catch (err: any) {
+      showToast(`Erro ao atualizar aeronave designada: ${err?.message || err}`);
+    }
   };
 
-  const handleToggleBase = (pessoaId: string, baseId: string, currentBases: string[]) => {
+  const handleToggleBase = async (pessoaId: string, baseId: string, currentBases: string[]) => {
     if (currentUser.perfil === 'Leitor') return;
     let newBases: string[];
     if (currentBases.includes(baseId)) {
@@ -66,7 +74,11 @@ export const DesignacoesView: React.FC = () => {
     } else {
       newBases = [...currentBases, baseId];
     }
-    repository.setDesignacaoBasesForPessoa(pessoaId, newBases);
+    try {
+      await repository.setDesignacaoBasesForPessoa(pessoaId, newBases, currentUser.nome);
+    } catch (err: any) {
+      showToast(`Erro ao atualizar bases designadas: ${err?.message || err}`);
+    }
   };
 
   return (

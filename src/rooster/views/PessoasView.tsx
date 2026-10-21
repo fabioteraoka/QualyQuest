@@ -85,56 +85,73 @@ export const PessoasView: React.FC = () => {
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !nome) return;
+    if (!id || !nome.trim()) return;
 
-    const pessoaData: Pessoa = {
-      id,
-      nome,
-      categoria,
-      situacao,
-      base_principal_id: basePrincipalId,
-      cliente_ou_area: clienteOuArea,
-      canac,
-      criado_em: editingPessoa?.criado_em || new Date().toISOString(),
-      atualizado_em: new Date().toISOString(),
-      atualizado_por: currentUser.nome,
-    };
+    setIsSubmitting(true);
+    try {
+      const pessoaData: Pessoa = {
+        id: id.trim(),
+        nome: nome.trim(),
+        categoria,
+        situacao,
+        base_principal_id: basePrincipalId,
+        cliente_ou_area: clienteOuArea.trim(),
+        canac: canac.trim(),
+        criado_em: editingPessoa?.criado_em || new Date().toISOString(),
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: currentUser.nome,
+      };
 
-    repository.savePessoa(pessoaData, currentUser.nome);
+      await repository.savePessoa(pessoaData, currentUser.nome);
 
-    // If new mechanic, also ensure default designation record exists
-    if (!editingPessoa) {
-      repository.saveDesignacaoPessoa({
-        pessoa_id: id,
-        imp: `IMP-${id.replace(/[^0-9]/g, '') || '999'}`,
-        easa_type: 'N/A',
-        incluir_na_lista: true,
-        nome_na_lista: nome,
-      });
-      repository.setDesignacaoBasesForPessoa(id, [basePrincipalId]);
+      // If new mechanic, also ensure default designation record exists
+      if (!editingPessoa) {
+        await repository.saveDesignacaoPessoa({
+          pessoa_id: id.trim(),
+          imp: `IMP-${id.replace(/[^0-9]/g, '') || '999'}`,
+          easa_type: 'N/A',
+          incluir_na_lista: true,
+          nome_na_lista: nome.trim(),
+        });
+        await repository.setDesignacaoBasesForPessoa(id.trim(), [basePrincipalId]);
+      }
+
+      setModalOpen(false);
+      showToast(`Colaborador ${nome.trim()} salvo com sucesso no Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao persistir no Firestore: ${err?.message || err}`);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setModalOpen(false);
-    showToast(`Pessoa ${nome} salva com sucesso!`);
   };
 
-  const handleDelete = (p: Pessoa) => {
+  const handleDelete = async (p: Pessoa) => {
     if (confirm(`Deseja realmente remover o colaborador ${p.nome}?`)) {
-      const removed = repository.deletePessoa(p.id, currentUser.nome);
-      if (removed) {
-        setDeletedPessoaBackup(removed);
-        showToast(`Colaborador ${p.nome} excluído.`);
+      try {
+        const removed = await repository.deletePessoa(p.id, currentUser.nome);
+        if (removed) {
+          setDeletedPessoaBackup(removed);
+          showToast(`Colaborador ${p.nome} excluído do Firestore.`);
+        }
+      } catch (err: any) {
+        showToast(`Erro ao excluir do Firestore: ${err?.message || err}`);
       }
     }
   };
 
-  const handleUndo = () => {
+  const handleUndo = async () => {
     if (deletedPessoaBackup) {
-      repository.savePessoa(deletedPessoaBackup, currentUser.nome);
-      showToast(`Exclusão de ${deletedPessoaBackup.nome} desfeita.`);
-      setDeletedPessoaBackup(null);
+      try {
+        await repository.savePessoa(deletedPessoaBackup, currentUser.nome);
+        showToast(`Exclusão de ${deletedPessoaBackup.nome} desfeita no Firestore.`);
+        setDeletedPessoaBackup(null);
+      } catch (err: any) {
+        showToast(`Erro ao restaurar no Firestore: ${err?.message || err}`);
+      }
     }
   };
 

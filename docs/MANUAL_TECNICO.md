@@ -145,13 +145,15 @@ export interface SlideApresentacao {
 * **Decisão:** Implementar proxy reverso em `server.ts` sob o prefixo `/api/impacto/*`, com mascaramento de cabeçalhos de autorização e fallback inteligente para contingência offline.
 * **Impacto:** Segurança estrita de credenciais e operação contínua do hangar mesmo em caso de instabilidade de rede.
 
-#### ADR-021: Governança de Metadados e Sincronização Não-Destrutiva no Controle Documental & Motor Temporal
-* **Contexto:** Existência de divergência entre campos de revisão previstos no modelo (`numeroRevisao`, `dataRevisao`, `dataVigencia`, `dataAprovacao`, `dataProximaRevisao`, `proprietario`, `assessor`) e os campos de entrada disponibilizados no formulário modal do Acervo. Além disso, havia necessidade de sincronizar a entidade `DocumentoControlado` com `RevisaoDocumental` sem criar revisões duplicadas e preservando a imutabilidade do histórico temporal para fiscalizações ANAC.
+#### ADR-022: Integração Definitiva QualyQuest + Rooster MRO com Fonte Única de Verdade (SSoT) no Firestore
+* **Contexto:** Os repositórios QualyQuest e Rooster mantinham cadastros paralelos e coleções legadas globais na raiz (`pessoa`, `licenca`, `curso_catalogo`, `treinamento`), com risco de assincronia e inconsistência de dados operacionais.
 * **Decisão:**
-  1. Conectar bidirecionalmente todos os 7 campos no modal `Editar Documento Controlado & Revisão` (`DocumentControlCenterView.tsx`), persistindo-os tanto no documento quanto na revisão correspondente via `saveDocumentoControlado` e `saveRevisaoDocumental`.
-  2. Implementar auto-provisionamento de primeira revisão: se o documento ainda não possuir registros em `RevisaoDocumental`, o salvamento cria atomicamente o primeiro registro com status `VIGENTE`, preenchendo o ponteiro `revisaoVigenteId` e registrando o log no Audit Trail.
-  3. Prevenção estrita de duplicidade: bloquear cadastro ou edição com número de revisão idêntico ao de outra revisão existente no mesmo documento.
-  4. Preservação cronológica do Motor Temporal: garantir que a edição de metadados não sobrescreva silentemente datas de revisões históricas substituídas, mantendo `dataEntradaVigor` e `dataSubstituicao` estritamente segregadas da data de upload do arquivo.
-* **Impacto:** Resolução determinística e matematicamente rastreável para auditorias aeronáuticas, eliminando inconsistências cadastrais e garantindo integridade transacional multi-tenant no Firestore.
+  1. Adotar as entidades canônicas sob `organizations/{organizationId}/...` (`persons`, `trainingCourses`, `trainingRecords`, `qualifications`, `roster_*`) como a única fonte da verdade para ambos os módulos.
+  2. Implementar adaptadores bidirecionais em `FirestoreAdapter` que mapeiam dados em tempo real, preservando 100% dos campos QualyQuest (data de admissão, cargo operacional, ramais, observações e restrições) em qualquer edição via Rooster.
+  3. Transformar todas as operações de persistência do `repository` em assíncronas (`async/await`) com tratamento de exceções e confirmação de escrita direta no Firestore.
+  4. Desativar gravações redundantes nas coleções legadas globais via `firestore.rules` (`allow write: if false;`), protegendo o multi-tenancy.
+  5. Criar suite de testes automatizados (`test:integration`) e serviço de auditoria/migração (`migrationAuditService.ts`) com backup e rollback controlados.
+* **Impacto:** Eliminação completa de cadastros paralelos, preservação de integridade referencial aeronáutica e governança unificada em tempo real.
+
 
 

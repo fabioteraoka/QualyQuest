@@ -58,3 +58,26 @@ Na nova arquitetura em 8 blocos, o módulo **ADMINISTRAÇÃO** consolida:
    - Auditoria Técnica e Hardening de Segurança;
    - Diagnóstico em Tempo Real do Firebase Firestore & Auth.
 
+---
+
+### 6. Governança da Integração QualyQuest + Rooster MRO
+
+#### 6.1. Fonte Única de Verdade (SSoT) e Coleções Canônicas
+Para eliminar silos e persistências redundantes, todos os dados de pessoas e qualificações MRO residem exclusivamente sob as subcoleções da organização:
+- **Colaboradores & Mecânicos:** `organizations/{organizationId}/persons`
+- **Catálogo de Cursos:** `organizations/{organizationId}/trainingCourses`
+- **Registros de Treinamentos:** `organizations/{organizationId}/trainingRecords`
+- **Licenças & Habilitações:** `organizations/{organizationId}/qualifications`
+- **Matrizes & Especializações MRO:** `organizations/{organizationId}/roster_motores`, `roster_designacoes_*`, `roster_configuracao`.
+
+#### 6.2. Bloqueio de Coleções Legadas Globais
+As coleções de raiz legadas (`pessoa`, `licenca`, `curso_catalogo`, `treinamento`, `motor_catalogo`, etc.) tiveram suas gravações estritamente desabilitadas em `firestore.rules`. Usuários e operadores não conseguem mais criar registros paralelos na raiz.
+
+#### 6.3. Procedimento de Inventário, Backup e Migração
+O serviço administrativo `migrationAuditService.ts` provê:
+1. **Inventário Automatizado:** Varre contagens de documentos na raiz legada e nas subcoleções do tenant.
+2. **Relatório de Conflitos:** Detecta divergências de CANAC/matrícula versus ID estável. Não funde registros homônimos ambíguos automaticamente.
+3. **Snapshot Preventivo de Backup:** Antes de qualquer migração, o sistema cria um snapshot verificado `BKP-{orgId}-{timestamp}` gravado em `roster_auditoria`.
+4. **Execução Idempotente:** Registros já existentes no tenant canônico são ignorados (`skippedRecords`), prevenindo sobrescritas acidentais.
+5. **Plano de Reversão (Rollback):** Função `rollbackMigration(backupPayload)` restaura o estado exato dos dados caso haja anomalia.
+

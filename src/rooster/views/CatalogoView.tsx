@@ -57,7 +57,7 @@ export const CatalogoView: React.FC = () => {
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!curso) return;
 
@@ -71,9 +71,24 @@ export const CatalogoView: React.FC = () => {
       ativo: true,
     };
 
-    repository.saveCursoCatalogo(cursoData, currentUser.nome);
-    setModalOpen(false);
-    showToast(`Curso ${curso} atualizado no catálogo!`);
+    try {
+      await repository.saveCursoCatalogo(cursoData, currentUser.nome);
+      setModalOpen(false);
+      showToast(`Curso ${curso} persistido no catálogo do Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao salvar curso no Firestore: ${err?.message || err}`);
+    }
+  };
+
+  const handleDelete = async (cursoId: string, cursoNome: string) => {
+    if (confirm(`Deseja realmente remover o curso "${cursoNome}" do catálogo?`)) {
+      try {
+        await repository.deleteCurso(cursoId, currentUser.nome);
+        showToast(`Curso "${cursoNome}" removido do Firestore.`);
+      } catch (err: any) {
+        showToast(`Erro ao remover curso do Firestore: ${err?.message || err}`);
+      }
+    }
   };
 
   return (
@@ -174,13 +189,22 @@ export const CatalogoView: React.FC = () => {
                   </td>
                   <td className="py-2 px-3 text-right">
                     {currentUser.perfil !== 'Leitor' && (
-                      <button
-                        onClick={() => handleEdit(c)}
-                        className="text-slate-500 hover:text-sky-700 p-1 cursor-pointer"
-                        title="Editar validade"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleEdit(c)}
+                          className="text-slate-500 hover:text-sky-700 p-1 cursor-pointer"
+                          title="Editar curso"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id, c.curso)}
+                          className="text-slate-400 hover:text-red-600 p-1 cursor-pointer"
+                          title="Remover curso"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

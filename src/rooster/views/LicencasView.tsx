@@ -83,51 +83,65 @@ export const LicencasView: React.FC = () => {
     setModalOpen(true);
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pessoaId || !numero) return;
+    if (!pessoaId || !numero.trim()) {
+      showToast('Preencha o colaborador e o número da licença.');
+      return;
+    }
 
-    const id = editingLicenca?.id || `LIC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const licData: Licenca = {
-      id,
-      pessoa_id: pessoaId,
-      orgao,
-      tipo,
-      habilitacao,
-      numero,
-      data_vencimento: tipo === 'CHT' ? dataVencimento || null : null,
-      data_expedicao: tipo === 'AMP' ? dataExpedicao || null : null,
-      criado_em: editingLicenca?.criado_em || new Date().toISOString(),
-      atualizado_em: new Date().toISOString(),
-      atualizado_por: currentUser.nome,
-    };
+    try {
+      const licData: Licenca = {
+        id: editingLicenca?.id || `LIC-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        pessoa_id: pessoaId,
+        orgao,
+        tipo,
+        habilitacao: habilitacao as any,
+        numero: numero.trim(),
+        data_vencimento: tipo === 'CHT' ? dataVencimento || null : null,
+        data_expedicao: tipo === 'AMP' ? dataExpedicao || null : null,
+        criado_em: editingLicenca?.criado_em || new Date().toISOString(),
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: currentUser.nome,
+      };
 
-    repository.saveLicenca(licData, currentUser.nome);
-    setModalOpen(false);
-    showToast(`Licença ${licData.numero} salva com sucesso! O sistema foi atualizado.`);
-  };
-
-  const handleDelete = (id: string) => {
-    if (confirm('Deseja realmente excluir esta licença?')) {
-      repository.deleteLicenca(id, currentUser.nome);
-      showToast('Licença removida.');
+      await repository.saveLicenca(licData, currentUser.nome);
+      setModalOpen(false);
+      showToast(`Licença ${licData.numero} salva com sucesso no Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao salvar licença no Firestore: ${err?.message || err}`);
     }
   };
 
-  const handleSaveInlineDate = (lic: Licenca) => {
+  const handleDelete = async (id: string) => {
+    if (confirm('Deseja realmente excluir esta licença?')) {
+      try {
+        await repository.deleteLicenca(id, currentUser.nome);
+        showToast('Licença removida com sucesso do Firestore.');
+      } catch (err: any) {
+        showToast(`Erro ao excluir licença do Firestore: ${err?.message || err}`);
+      }
+    }
+  };
+
+  const handleSaveInlineDate = async (lic: Licenca) => {
     if (!inlineDateValue) {
       setInlineEditId(null);
       return;
     }
-    const updated: Licenca = {
-      ...lic,
-      data_vencimento: inlineDateValue,
-      atualizado_em: new Date().toISOString(),
-      atualizado_por: currentUser.nome,
-    };
-    repository.saveLicenca(updated, currentUser.nome);
-    setInlineEditId(null);
-    showToast(`Data da CHT alterada para ${formatarDataBr(inlineDateValue)}! Atualizado em todo o sistema.`);
+    try {
+      const updated: Licenca = {
+        ...lic,
+        data_vencimento: inlineDateValue,
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: currentUser.nome,
+      };
+      await repository.saveLicenca(updated, currentUser.nome);
+      setInlineEditId(null);
+      showToast(`Data da CHT alterada para ${formatarDataBr(inlineDateValue)} no Firestore!`);
+    } catch (err: any) {
+      showToast(`Erro ao atualizar data no Firestore: ${err?.message || err}`);
+    }
   };
 
   return (

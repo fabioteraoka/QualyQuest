@@ -41,6 +41,7 @@ import {
   CompetenciaColaborador,
   QualificacaoColaborador,
   RegistroTreinamentoColaborador,
+  CursoTreinamento,
   DocumentoEvidenciaPessoa,
   AtividadeCompetenciaRequerida,
   UserProfile,
@@ -85,6 +86,7 @@ interface PersonsCompetenciesViewProps {
   personCompetencies: CompetenciaColaborador[];
   qualifications: QualificacaoColaborador[];
   trainingRecords: RegistroTreinamentoColaborador[];
+  trainingCourses?: CursoTreinamento[];
   documents: DocumentoEvidenciaPessoa[];
   activities: AtividadeCompetenciaRequerida[];
   nonConformities?: any[];
@@ -104,6 +106,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   personCompetencies = [],
   qualifications = [],
   trainingRecords = [],
+  trainingCourses = [],
   documents = [],
   activities = [],
   nonConformities = [],
@@ -2462,6 +2465,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
             qualigestPersons={persons}
             organizationId={organizationId}
             trainingRecords={trainingRecords}
+            trainingCourses={trainingCourses}
             qualifications={qualifications}
             bases={bases}
             initialTab={

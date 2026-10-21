@@ -135,6 +135,15 @@ Na sub-aba **Conhecimento Temporal**, ao selecionar um documento e a data em que
 - **Etapa 3:** Analise o diff visual: itens novos (verde), modificados (azul) ou inalterados (cinza).
 - **Etapa 4:** Execute a carga com a segurança de poder **Desfazer (Undo)** a qualquer momento pelo histórico.
 
+### 3.6. Módulo Rooster MRO Integrado (Gestão Operacional de Mecânicos & Frotas)
+O módulo **Rooster MRO** opera integrado ao QualiGest sem cadastros paralelos, com **Fonte Única de Verdade (Single Source of Truth)** no Cloud Firestore:
+1. **Pessoas e Mecânicos Compartilhados:** A tela de Pessoas do Rooster consulta diretamente o cadastro de colaboradores do QualiGest (`organizations/{orgId}/persons`). Alterações autorizadas (nome, base, CANAC, categoria) refletem instantaneamente em ambos os módulos.
+2. **Preservação Integral de Metadados:** Edições realizadas pela interface do Rooster preservam 100% dos dados técnicos do SGQ (datas de admissão, cargo operacional, observações, restrições e ramais corporativos).
+3. **Catálogo Canônico de Cursos:** Cursos de Doutrinação e Treinamentos de Frotas são centralizados em `trainingCourses`. O Rooster consome essa relação oficial com controle de periodicidade e vigência automática.
+4. **Ficha do Mecânico & Roster Operacional:** Permite auditar instantaneamente as habilitações (CHT/CCT/AMP), certificados de cursos concluídos, matriz de competências por aeronave (Boeing, Airbus, Embraer, ATR) e motores (CFM, GE, IAE, PW, RR).
+5. **Lançamentos Individuais e em Lote:** Permite registrar turmas inteiras de treinamento de uma só vez, com persistência confirmada no Firestore e encadeamento de histórico em renovações.
+6. **Reconciliação com Confirmação Real:** O botão "Reconciliar com Firestore" efetua a verificação em lote com retorno de status real e notificações de persistência.
+
 ---
 
 ## 📊 4. Apresentação Gerencial 70/30 (Web & PPTX)

@@ -28,6 +28,9 @@ import {
   SimNaoVazio,
   Treinamento,
   TreinamentoMotor,
+  OrgaoLicenca,
+  TipoLicenca,
+  HabilitacaoLicenca,
 } from '../../types';
 import {
   DatabaseState,
@@ -43,6 +46,7 @@ import {
   RegistroTreinamentoColaborador,
   QualificacaoColaborador,
   CursoTreinamento,
+  HistoricoCorrecaoTreinamento,
 } from '../../../types';
 
 export class FirestoreAdapter implements StorageAdapter {
@@ -50,6 +54,13 @@ export class FirestoreAdapter implements StorageAdapter {
   private _isOffline = !navigator.onLine;
   public orgId: string = DEFAULT_ORGANIZATION_ID;
 
+  // Master Canonical Memory Maps (preserves 100% of SGQ fields)
+  private canonicalPersonsMap = new Map<string, ColaboradorPessoa>();
+  private canonicalCoursesMap = new Map<string, CursoTreinamento>();
+  private canonicalTrainingRecordsMap = new Map<string, RegistroTreinamentoColaborador>();
+  private canonicalQualificationsMap = new Map<string, QualificacaoColaborador>();
+
+  // Rooster presentation state
   private memoryDb: DatabaseState = {
     ...buildInitialCleanDatabase(),
     auditoria: [],
@@ -65,14 +76,16 @@ export class FirestoreAdapter implements StorageAdapter {
 
   constructor(orgId?: string) {
     if (orgId) this.orgId = orgId;
-    window.addEventListener('online', () => {
-      this._isOffline = false;
-      this.notify();
-    });
-    window.addEventListener('offline', () => {
-      this._isOffline = true;
-      this.notify();
-    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => {
+        this._isOffline = false;
+        this.notify();
+      });
+      window.addEventListener('offline', () => {
+        this._isOffline = true;
+        this.notify();
+      });
+    }
   }
 
   setOrganizationId(newOrgId: string): void {
@@ -85,6 +98,10 @@ export class FirestoreAdapter implements StorageAdapter {
           } catch {}
         });
         this.unsubscribers = [];
+        this.canonicalPersonsMap.clear();
+        this.canonicalCoursesMap.clear();
+        this.canonicalTrainingRecordsMap.clear();
+        this.canonicalQualificationsMap.clear();
         this.isInitialized = false;
         this.init().catch((err) => console.warn('Erro ao reinicializar FirestoreAdapter:', err));
       }
@@ -112,10 +129,14 @@ export class FirestoreAdapter implements StorageAdapter {
     return this.memoryDb;
   }
 
-  // --- Mappers between SGQ Firestore and Rooster MRO Models ---
+  // --- Mappers between Canonical QualyQuest Firestore and Rooster MRO Views ---
 
-  private mapColaboradorToPessoa(c: any, id: string): Pessoa {
-    const matricula = c.matricula || c.camposCustomizados?.canac || id;
+  /**
+   * Converte ColaboradorPessoa canônico em Pessoa (modelo de apresentação do Rooster)
+   * sem perda de dados.
+   */
+  private mapColaboradorToPessoa(c: ColaboradorPessoa): Pessoa {
+    const matricula = c.matricula || c.camposCustomizados?.canac || c.id;
     const canac = c.camposCustomizados?.canac || c.matricula || '';
     const categoria =
       c.camposCustomizados?.categoria ||
@@ -124,13 +145,13 @@ export class FirestoreAdapter implements StorageAdapter {
       .split(' - ')[0]
       .trim()
       .toUpperCase();
-    const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP'].includes(baseRaw) ? baseRaw : 'REC';
+    const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP', 'SOD'].includes(baseRaw) ? baseRaw : 'REC';
     const situacao = c.status === 'INATIVO' || c.status === 'DESLIGADO' ? 'Inativo' : 'Ativo';
     const clienteOuArea =
       c.camposCustomizados?.clienteOuArea || c.setor || c.cargoOperacional || 'Manutenção Aeronáutica';
 
     return {
-      id: c.id || id,
+      id: c.id,
       nome: c.nome || 'Sem Nome',
       categoria,
       situacao,
@@ -143,216 +164,234 @@ export class FirestoreAdapter implements StorageAdapter {
     };
   }
 
-  private mapRegistroTreinamentoToTreinamento(t: any, id: string): Treinamento {
-    let resolvedPessoaId = t.colaboradorId || t.pessoa_id || '';
-    if (this.memoryDb.pessoas.length > 0) {
-      const match = this.memoryDb.pessoas.find(
-        (p) =>
-          p.id === resolvedPessoaId ||
-          p.canac === resolvedPessoaId ||
-          (p as any).matricula === resolvedPessoaId ||
-          (t.colaboradorMatricula &&
-            (p.id === t.colaboradorMatricula ||
-              p.canac === t.colaboradorMatricula ||
-              (p as any).matricula === t.colaboradorMatricula)) ||
-          (t.colaboradorNome && p.nome.trim().toLowerCase() === t.colaboradorNome.trim().toLowerCase())
-      );
-      if (match) {
-        resolvedPessoaId = match.id;
-      }
-    }
+  /**
+   * Converte CursoTreinamento canônico em CursoCatalogo (modelo de apresentação do Rooster)
+   */
+  private mapCursoTreinamentoToCursoCatalogo(c: CursoTreinamento): CursoCatalogo {
+    const frota = c.frotaOuFamilia || '';
+    const isFrota = frota && frota !== 'Geral' && frota !== 'Doutrinação';
+    const validadeDias = c.periodicidadeMeses ? c.periodicidadeMeses * 30 : 730;
 
     return {
-      id: t.id || id,
-      pessoa_id: resolvedPessoaId,
-      curso_id: t.treinamentoCodigo || t.treinamentoId || t.curso_id || '',
-      data_execucao: t.dataRealizacao || t.dataConclusao || t.data_execucao || new Date().toISOString().split('T')[0],
-      observacao: t.observacoes || t.observacao || '',
-      substituido_por: t.substituidoPor || t.substituido_por || null,
-      criado_em: t.createdAt || t.criado_em || new Date().toISOString(),
-      atualizado_em: t.updatedAt || t.atualizado_em || new Date().toISOString(),
-      atualizado_por: t.instrutor || t.atualizado_por || 'SGQ Treinamentos',
+      id: c.id,
+      grupo: isFrota ? 'Frota' : 'Doutrinação',
+      frota: frota,
+      variante: c.variantesAplicabilidade?.join(', ') || '',
+      curso: c.nivelOuModulo ? `${c.titulo} - ${c.nivelOuModulo}` : c.titulo,
+      validade_dias: validadeDias,
+      ativo: c.status !== 'INATIVO',
     };
   }
 
-  // --- Initialization with Unified Multi-Collection Real-time Listeners ---
+  /**
+   * Converte RegistroTreinamentoColaborador canônico em Treinamento (modelo de apresentação do Rooster)
+   */
+  private mapRegistroTreinamentoToTreinamento(t: RegistroTreinamentoColaborador): Treinamento {
+    return {
+      id: t.id,
+      pessoa_id: t.colaboradorId,
+      curso_id: t.treinamentoId || t.treinamentoCodigo || '',
+      data_execucao:
+        t.dataRealizacao ||
+        t.dataConclusao ||
+        (t.createdAt ? t.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+      observacao: t.observacoes || '',
+      substituido_por: (t as any).substituidoPor || (t as any).substituido_por || null,
+      criado_em: t.createdAt || new Date().toISOString(),
+      atualizado_em: t.updatedAt || new Date().toISOString(),
+      atualizado_por: t.instrutor || 'SGQ Treinamentos',
+    };
+  }
+
+  /**
+   * Converte QualificacaoColaborador canônica em Licenca (modelo de apresentação do Rooster)
+   */
+  private mapQualificacaoToLicenca(q: QualificacaoColaborador): Licenca {
+    const emissorUpper = (q.emissor || 'ANAC').toUpperCase();
+    const orgao: OrgaoLicenca = emissorUpper.includes('FAA') ? 'FAA' : 'ANAC';
+
+    let tipo: TipoLicenca = 'CHT';
+    const textAll = `${q.titulo || ''} ${q.escopo || ''}`.toUpperCase();
+    if (textAll.includes('CCT')) tipo = 'CCT';
+    else if (textAll.includes('AMP')) tipo = 'AMP';
+
+    let habilitacao: HabilitacaoLicenca = '';
+    if (textAll.includes('CEL') || textAll.includes('CÉLULA') || textAll.includes('CELULA')) {
+      habilitacao = 'CEL';
+    } else if (textAll.includes('GMP') || textAll.includes('GRUPO MOTOPROPULSOR')) {
+      habilitacao = 'GMP';
+    } else if (textAll.includes('AVI') || textAll.includes('AVIÔNICA') || textAll.includes('AVIONICA')) {
+      habilitacao = 'AVI';
+    }
+
+    return {
+      id: q.id,
+      pessoa_id: q.colaboradorId,
+      orgao,
+      tipo,
+      habilitacao,
+      numero: q.numeroRegistro || '',
+      data_vencimento: q.dataValidade || null,
+      data_expedicao: q.dataEmissao || null,
+      criado_em: q.createdAt || new Date().toISOString(),
+      atualizado_em: q.updatedAt || new Date().toISOString(),
+      atualizado_por: q.responsavelValidacaoNome || 'SGQ Qualificações',
+    };
+  }
+
+  // --- Real-time Listeners exclusively attached to Canonical Organization Subcollections ---
 
   async init(): Promise<void> {
     if (this.isInitialized) return;
     const db = getFirestoreDb();
     if (!db) {
-      console.warn('Firestore não inicializado, operando com cache local.');
+      console.warn('Firestore não inicializado, operando com cache.');
       return;
     }
 
-    // 1. BASES (organizations/{orgId}/operational_bases and fallback /base)
+    // 1. BASES OPERACIONAIS (organizations/{orgId}/operational_bases)
     this.unsubscribers.push(
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'operational_bases'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.bases = snap.docs.map((d) => {
-              const b = d.data();
-              return {
-                id: (b.sigla || b.id || '').toUpperCase(),
-                nome: b.nome || b.descricao || d.id,
-                ativa: b.status !== 'INATIVO',
-              } as Base;
-            });
-            this.notify();
+          this.memoryDb.bases = snap.docs.map((d) => {
+            const b = d.data();
+            return {
+              id: (b.sigla || b.id || d.id).toUpperCase(),
+              nome: b.nome || b.descricao || d.id,
+              ativa: b.status !== 'INATIVO',
+            } as Base;
+          });
+          if (this.memoryDb.bases.length === 0) {
+            // Padrão mínimo oficial Impacto MRO se vazio
+            this.memoryDb.bases = [
+              { id: 'REC', nome: 'Recife / Hub Central', ativa: true },
+              { id: 'CNF', nome: 'Belo Horizonte / Confins', ativa: true },
+              { id: 'GIG', nome: 'Rio de Janeiro / Galeão', ativa: true },
+              { id: 'GRU', nome: 'São Paulo / Guarulhos', ativa: true },
+              { id: 'VCP', nome: 'Campinas / Viracopos', ativa: true },
+              { id: 'SOD', nome: 'Sorocaba / Hangar Manutenção', ativa: true },
+            ];
           }
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar operational_bases:', err)
       )
     );
 
-    this.unsubscribers.push(
-      onSnapshot(
-        collection(db, 'base'),
-        (snap) => {
-          if (!snap.empty && (!this.memoryDb.bases || this.memoryDb.bases.length === 0)) {
-            this.memoryDb.bases = snap.docs.map((d) => d.data() as Base);
-            this.notify();
-          }
-        },
-        (err) => console.warn('Erro ao escutar coleção base:', err)
-      )
-    );
-
-    // 2. PESSOAS & COLABORADORES (organizations/{orgId}/persons UNIFIED)
+    // 2. PESSOAS & COLABORADORES (organizations/{orgId}/persons) - FONTE DE VERDADE ÚNICA
     this.unsubscribers.push(
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'persons'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.pessoas = snap.docs.map((d) => this.mapColaboradorToPessoa(d.data(), d.id));
-            this.notify();
-          }
+          this.canonicalPersonsMap.clear();
+          const mappedPessoas: Pessoa[] = [];
+
+          snap.docs.forEach((d) => {
+            const colab = d.data() as ColaboradorPessoa;
+            const item: ColaboradorPessoa = {
+              ...colab,
+              id: colab.id || d.id,
+              organizationId: colab.organizationId || this.orgId,
+            };
+            this.canonicalPersonsMap.set(item.id, item);
+            mappedPessoas.push(this.mapColaboradorToPessoa(item));
+          });
+
+          this.memoryDb.pessoas = mappedPessoas;
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar organizations/persons:', err)
       )
     );
 
+    // 3. CURSOS DE TREINAMENTO (organizations/{orgId}/trainingCourses) - FONTE DE VERDADE ÚNICA
     this.unsubscribers.push(
       onSnapshot(
-        collection(db, 'pessoa'),
+        collection(db, 'organizations', this.orgId, 'trainingCourses'),
         (snap) => {
-          if (!snap.empty && (!this.memoryDb.pessoas || this.memoryDb.pessoas.length === 0)) {
-            this.memoryDb.pessoas = snap.docs.map((d) => d.data() as Pessoa);
-            this.notify();
-          }
+          this.canonicalCoursesMap.clear();
+          const mappedCursos: CursoCatalogo[] = [];
+
+          snap.docs.forEach((d) => {
+            const curso = d.data() as CursoTreinamento;
+            const item: CursoTreinamento = {
+              ...curso,
+              id: curso.id || d.id,
+              organizationId: curso.organizationId || this.orgId,
+            };
+            this.canonicalCoursesMap.set(item.id, item);
+            mappedCursos.push(this.mapCursoTreinamentoToCursoCatalogo(item));
+          });
+
+          this.memoryDb.cursosCatalogo = mappedCursos;
+          this.notify();
         },
-        (err) => console.warn('Erro ao escutar coleção pessoa:', err)
+        (err) => console.warn('Erro ao escutar organizations/trainingCourses:', err)
       )
     );
 
-    // 3. LICENÇAS (organizations/{orgId}/roster_licencas)
-    this.unsubscribers.push(
-      onSnapshot(
-        collection(db, 'organizations', this.orgId, 'roster_licencas'),
-        (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.licencas = snap.docs.map((d) => d.data() as Licenca);
-            this.notify();
-          }
-        },
-        (err) => console.warn('Erro ao escutar roster_licencas:', err)
-      )
-    );
-
-    this.unsubscribers.push(
-      onSnapshot(
-        collection(db, 'licenca'),
-        (snap) => {
-          if (!snap.empty && (!this.memoryDb.licencas || this.memoryDb.licencas.length === 0)) {
-            this.memoryDb.licencas = snap.docs.map((d) => d.data() as Licenca);
-            this.notify();
-          }
-        },
-        (err) => console.warn('Erro ao escutar licenca:', err)
-      )
-    );
-
-    // 4. CURSOS DE TREINAMENTO & CATÁLOGO
-    this.unsubscribers.push(
-      onSnapshot(
-        collection(db, 'organizations', this.orgId, 'roster_cursos_catalogo'),
-        (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.cursosCatalogo = snap.docs.map((d) => d.data() as CursoCatalogo);
-            this.notify();
-          }
-        },
-        (err) => console.warn('Erro ao escutar roster_cursos_catalogo:', err)
-      )
-    );
-
-    this.unsubscribers.push(
-      onSnapshot(
-        collection(db, 'curso_catalogo'),
-        (snap) => {
-          if (!snap.empty && (!this.memoryDb.cursosCatalogo || this.memoryDb.cursosCatalogo.length === 0)) {
-            this.memoryDb.cursosCatalogo = snap.docs.map((d) => d.data() as CursoCatalogo);
-            this.notify();
-          }
-        },
-        (err) => console.warn('Erro ao escutar curso_catalogo:', err)
-      )
-    );
-
-    // 5. TREINAMENTOS (organizations/{orgId}/trainingRecords UNIFIED)
+    // 4. REGISTROS DE TREINAMENTO (organizations/{orgId}/trainingRecords) - FONTE DE VERDADE ÚNICA
     this.unsubscribers.push(
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'trainingRecords'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.treinamentos = snap.docs.map((d) =>
-              this.mapRegistroTreinamentoToTreinamento(d.data(), d.id)
-            );
-            this.notify();
-          }
+          this.canonicalTrainingRecordsMap.clear();
+          const mappedTreinamentos: Treinamento[] = [];
+
+          snap.docs.forEach((d) => {
+            const tr = d.data() as RegistroTreinamentoColaborador;
+            const item: RegistroTreinamentoColaborador = {
+              ...tr,
+              id: tr.id || d.id,
+              organizationId: tr.organizationId || this.orgId,
+            };
+            this.canonicalTrainingRecordsMap.set(item.id, item);
+            mappedTreinamentos.push(this.mapRegistroTreinamentoToTreinamento(item));
+          });
+
+          this.memoryDb.treinamentos = mappedTreinamentos;
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar organizations/trainingRecords:', err)
       )
     );
 
+    // 5. QUALIFICAÇÕES & LICENÇAS (organizations/{orgId}/qualifications) - FONTE DE VERDADE ÚNICA
     this.unsubscribers.push(
       onSnapshot(
-        collection(db, 'treinamento'),
+        collection(db, 'organizations', this.orgId, 'qualifications'),
         (snap) => {
-          if (!snap.empty && (!this.memoryDb.treinamentos || this.memoryDb.treinamentos.length === 0)) {
-            this.memoryDb.treinamentos = snap.docs.map((d) => d.data() as Treinamento);
-            this.notify();
-          }
+          this.canonicalQualificationsMap.clear();
+          const mappedLicencas: Licenca[] = [];
+
+          snap.docs.forEach((d) => {
+            const qual = d.data() as QualificacaoColaborador;
+            const item: QualificacaoColaborador = {
+              ...qual,
+              id: qual.id || d.id,
+              organizationId: qual.organizationId || this.orgId,
+            };
+            this.canonicalQualificationsMap.set(item.id, item);
+            mappedLicencas.push(this.mapQualificacaoToLicenca(item));
+          });
+
+          this.memoryDb.licencas = mappedLicencas;
+          this.notify();
         },
-        (err) => console.warn('Erro ao escutar treinamento:', err)
+        (err) => console.warn('Erro ao escutar organizations/qualifications:', err)
       )
     );
 
-    // 6. MOTORES (organizations/{orgId}/roster_motores)
+    // 6. MOTORES MRO (organizations/{orgId}/roster_motores)
     this.unsubscribers.push(
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'roster_motores'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.motoresCatalogo = snap.docs.map((d) => d.data() as MotorCatalogo);
-            this.notify();
-          }
+          this.memoryDb.motoresCatalogo = snap.docs.map((d) => d.data() as MotorCatalogo);
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar roster_motores:', err)
-      )
-    );
-
-    this.unsubscribers.push(
-      onSnapshot(
-        collection(db, 'motor_catalogo'),
-        (snap) => {
-          if (!snap.empty && (!this.memoryDb.motoresCatalogo || this.memoryDb.motoresCatalogo.length === 0)) {
-            this.memoryDb.motoresCatalogo = snap.docs.map((d) => d.data() as MotorCatalogo);
-            this.notify();
-          }
-        },
-        (err) => console.warn('Erro ao escutar motor_catalogo:', err)
       )
     );
 
@@ -361,37 +400,20 @@ export class FirestoreAdapter implements StorageAdapter {
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'roster_treinamentos_motor'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.treinamentosMotor = snap.docs.map((d) => d.data() as TreinamentoMotor);
-            this.notify();
-          }
+          this.memoryDb.treinamentosMotor = snap.docs.map((d) => d.data() as TreinamentoMotor);
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar roster_treinamentos_motor:', err)
       )
     );
 
-    this.unsubscribers.push(
-      onSnapshot(
-        collection(db, 'treinamento_motor'),
-        (snap) => {
-          if (!snap.empty && (!this.memoryDb.treinamentosMotor || this.memoryDb.treinamentosMotor.length === 0)) {
-            this.memoryDb.treinamentosMotor = snap.docs.map((d) => d.data() as TreinamentoMotor);
-            this.notify();
-          }
-        },
-        (err) => console.warn('Erro ao escutar treinamento_motor:', err)
-      )
-    );
-
-    // 8. DESIGNAÇÕES DE PESSOA, BASE, FUNÇÃO, AERONAVE
+    // 8. DESIGNAÇÕES MRO: PESSOA, BASE, FUNÇÃO, AERONAVE
     this.unsubscribers.push(
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'roster_designacoes_pessoa'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.designacoesPessoa = snap.docs.map((d) => d.data() as DesignacaoPessoa);
-            this.notify();
-          }
+          this.memoryDb.designacoesPessoa = snap.docs.map((d) => d.data() as DesignacaoPessoa);
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar roster_designacoes_pessoa:', err)
       )
@@ -401,10 +423,8 @@ export class FirestoreAdapter implements StorageAdapter {
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'roster_designacoes_base'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.designacoesBase = snap.docs.map((d) => d.data() as DesignacaoBase);
-            this.notify();
-          }
+          this.memoryDb.designacoesBase = snap.docs.map((d) => d.data() as DesignacaoBase);
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar roster_designacoes_base:', err)
       )
@@ -414,10 +434,8 @@ export class FirestoreAdapter implements StorageAdapter {
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'roster_designacoes_funcao'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.designacoesFuncao = snap.docs.map((d) => d.data() as DesignacaoFuncao);
-            this.notify();
-          }
+          this.memoryDb.designacoesFuncao = snap.docs.map((d) => d.data() as DesignacaoFuncao);
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar roster_designacoes_funcao:', err)
       )
@@ -427,10 +445,8 @@ export class FirestoreAdapter implements StorageAdapter {
       onSnapshot(
         collection(db, 'organizations', this.orgId, 'roster_designacoes_aeronave'),
         (snap) => {
-          if (!snap.empty) {
-            this.memoryDb.designacoesAeronave = snap.docs.map((d) => d.data() as DesignacaoAeronave);
-            this.notify();
-          }
+          this.memoryDb.designacoesAeronave = snap.docs.map((d) => d.data() as DesignacaoAeronave);
+          this.notify();
         },
         (err) => console.warn('Erro ao escutar roster_designacoes_aeronave:', err)
       )
@@ -450,191 +466,225 @@ export class FirestoreAdapter implements StorageAdapter {
       )
     );
 
-    // Auto-seed if database is completely empty on remote Firestore
+    // Auto-seed canonical collections if completely empty in tenant
     setTimeout(async () => {
       try {
         const personsCheck = await getDocs(collection(db, 'organizations', this.orgId, 'persons'));
-        const licencasCheck = await getDocs(collection(db, 'organizations', this.orgId, 'roster_licencas'));
-        if (licencasCheck.empty || personsCheck.empty) {
-          console.info('Inicializando dados oficiais do Roster e Colaboradores no Firestore...');
+        const coursesCheck = await getDocs(collection(db, 'organizations', this.orgId, 'trainingCourses'));
+        if (personsCheck.empty && coursesCheck.empty) {
+          console.info('Inicializando dados mestre oficiais no Firestore sob organizations/' + this.orgId);
           const seedData = buildImpactoOfficialInitialDatabase();
           const batch = writeBatch(db);
 
-          const existingPersonIds = new Set(personsCheck.docs.map((d) => d.id));
-          const existingPersonNames = new Set(
-            personsCheck.docs.map((d) => (d.data().nome || '').toLowerCase().trim())
-          );
-
-          // Seed persons directly into organizations/{orgId}/persons
+          // 1. Seed persons into canonical persons collection
           seedData.pessoas.forEach((p) => {
-            if (!existingPersonIds.has(p.id) && !existingPersonNames.has(p.nome.toLowerCase().trim())) {
-              const colabDoc: Partial<ColaboradorPessoa> = {
-                id: p.id,
-                nome: p.nome,
-                matricula: p.canac || p.id,
-                funcao: p.categoria === 'Mecânico' ? 'Mecânico' : 'Administrativo',
-                setor: p.cliente_ou_area || 'Operações de Manutenção',
-                cargoOperacional:
-                  p.categoria === 'Mecânico'
-                    ? 'Mecânico de Manutenção de Aeronaves'
-                    : 'Analista Administrativo',
-                baseOperacional: p.base_principal_id,
-                baseOperacionalId: p.base_principal_id,
-                status: p.situacao === 'Inativo' ? 'INATIVO' : 'ATIVO',
-                camposCustomizados: {
-                  canac: p.canac,
-                  categoria: p.categoria,
-                  clienteOuArea: p.cliente_ou_area,
-                },
-                organizationId: this.orgId,
-                createdAt: p.criado_em,
-                updatedAt: p.atualizado_em,
-                criadoPor: 'Impacto Aviation Seed',
-              };
-              batch.set(doc(db, 'organizations', this.orgId, 'persons', p.id), sanitizeForFirestore(colabDoc));
-              batch.set(doc(db, 'pessoa', p.id), p);
-            }
+            const colabDoc: ColaboradorPessoa = {
+              id: p.id,
+              organizationId: this.orgId,
+              nome: p.nome,
+              matricula: p.canac || p.id,
+              setor: p.cliente_ou_area || 'Operações de Manutenção',
+              baseOperacional: p.base_principal_id,
+              baseOperacionalId: p.base_principal_id,
+              funcao: p.categoria === 'Mecânico' ? 'Mecânico de Manutenção' : 'Administrativo',
+              cargoOperacional:
+                p.categoria === 'Mecânico' ? 'Mecânico de Manutenção de Linha / Base' : 'Analista Administrativo',
+              status: p.situacao === 'Inativo' ? 'INATIVO' : 'ATIVO',
+              camposCustomizados: {
+                canac: p.canac,
+                categoria: p.categoria,
+                clienteOuArea: p.cliente_ou_area,
+              },
+              createdAt: p.criado_em,
+              updatedAt: p.atualizado_em,
+              criadoPor: 'Impacto Aviation Seed',
+              criadoPorUid: 'system-seed',
+            };
+            batch.set(doc(db, 'organizations', this.orgId, 'persons', p.id), sanitizeForFirestore(colabDoc));
           });
 
-          // Seed licenses
-          seedData.licencas.forEach((l) => {
-            batch.set(doc(db, 'organizations', this.orgId, 'roster_licencas', l.id), l);
-            batch.set(doc(db, 'licenca', l.id), l);
-          });
-
-          // Seed courses
+          // 2. Seed courses into canonical trainingCourses collection
           seedData.cursosCatalogo.forEach((c) => {
-            batch.set(doc(db, 'organizations', this.orgId, 'roster_cursos_catalogo', c.id), c);
-            batch.set(doc(db, 'curso_catalogo', c.id), c);
+            const isFrota = c.grupo === 'Frota';
+            const courseDoc: CursoTreinamento = {
+              id: c.id,
+              organizationId: this.orgId,
+              codigo: c.id,
+              titulo: c.curso,
+              tipo: isFrota ? 'RECORRENTE' : 'INICIAL',
+              modalidade: 'PRESENCIAL',
+              cargaHorariaHoras: 8,
+              ementa: `Curso oficial homologado ${c.grupo} - ${c.curso}`,
+              recorrente: true,
+              periodicidadeMeses: Math.round((c.validade_dias || 730) / 30),
+              origemPrazo: 'REGULAMENTO',
+              competenciasDesenvolvidasIds: [],
+              status: c.ativo ? 'ATIVO' : 'INATIVO',
+              frotaOuFamilia: c.frota || 'Geral',
+              variantesAplicabilidade: c.variante ? [c.variante] : [],
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              criadoPorUid: 'system-seed',
+            };
+            batch.set(doc(db, 'organizations', this.orgId, 'trainingCourses', c.id), sanitizeForFirestore(courseDoc));
           });
 
-          // Seed engines
-          seedData.motoresCatalogo.forEach((m) => {
-            batch.set(doc(db, 'organizations', this.orgId, 'roster_motores', m.id), m);
-            batch.set(doc(db, 'motor_catalogo', m.id), m);
+          // 3. Seed licenses into canonical qualifications collection
+          seedData.licencas.forEach((l) => {
+            const personRef = seedData.pessoas.find((p) => p.id === l.pessoa_id);
+            const qualDoc: QualificacaoColaborador = {
+              id: l.id,
+              organizationId: this.orgId,
+              colaboradorId: l.pessoa_id,
+              colaboradorNome: personRef?.nome || 'Mecânico',
+              colaboradorMatricula: personRef?.canac || l.pessoa_id,
+              tipo: 'CHT_ANAC',
+              titulo: `${l.orgao} ${l.tipo} ${l.habilitacao || ''}`.trim(),
+              escopo: `Habilitação Técnica ${l.tipo} - ${l.orgao} ${l.habilitacao ? '(' + l.habilitacao + ')' : ''}`.trim(),
+              emissor: l.orgao,
+              numeroRegistro: l.numero,
+              dataEmissao: l.data_expedicao || '',
+              dataValidade: l.data_vencimento || undefined,
+              possuiValidade: !!l.data_vencimento,
+              status: 'VALIDA',
+              bloqueiaOperacaoSeVencida: true,
+              responsavelValidacaoUid: 'admin-seed',
+              responsavelValidacaoNome: 'Diretoria Técnica MRO',
+              dataValidacao: new Date().toISOString(),
+              createdAt: l.criado_em,
+              updatedAt: l.atualizado_em,
+            };
+            batch.set(doc(db, 'organizations', this.orgId, 'qualifications', l.id), sanitizeForFirestore(qualDoc));
           });
 
-          // Seed trainings
+          // 4. Seed trainings into canonical trainingRecords collection
           seedData.treinamentos.forEach((t) => {
-            const trDoc: Partial<RegistroTreinamentoColaborador> = {
+            const personRef = seedData.pessoas.find((p) => p.id === t.pessoa_id);
+            const cursoRef = seedData.cursosCatalogo.find((c) => c.id === t.curso_id);
+            const trDoc: RegistroTreinamentoColaborador = {
               id: t.id,
+              organizationId: this.orgId,
               colaboradorId: t.pessoa_id,
               treinamentoId: t.curso_id,
               treinamentoCodigo: t.curso_id,
-              treinamentoTitulo: t.curso_id,
-              colaboradorNome: 'Mecânico',
-              colaboradorMatricula: t.pessoa_id,
+              treinamentoTitulo: cursoRef ? cursoRef.curso : t.curso_id,
+              colaboradorNome: personRef?.nome || 'Mecânico',
+              colaboradorMatricula: personRef?.canac || t.pessoa_id,
               dataRealizacao: t.data_execucao,
               dataConclusao: t.data_execucao,
               cargaHoraria: 8,
               instrutor: 'Impacto Training',
               resultado: 'APROVADO',
-              organizationId: this.orgId,
+              observacoes: t.observacao || '',
               createdAt: t.criado_em,
               updatedAt: t.atualizado_em,
             };
             batch.set(doc(db, 'organizations', this.orgId, 'trainingRecords', t.id), sanitizeForFirestore(trDoc));
-            batch.set(doc(db, 'treinamento', t.id), t);
           });
 
-          // Seed designations
+          // 5. Seed MRO engines and designations
+          seedData.motoresCatalogo.forEach((m) => {
+            batch.set(doc(db, 'organizations', this.orgId, 'roster_motores', m.id), m);
+          });
           seedData.designacoesPessoa.forEach((dp) => {
             batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_pessoa', dp.pessoa_id), dp);
-            batch.set(doc(db, 'designacao_pessoa', dp.pessoa_id), dp);
           });
-
           seedData.designacoesBase.forEach((dbItem) => {
             const key = `${dbItem.pessoa_id}__${dbItem.base_id}`;
             batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_base', key), dbItem);
-            batch.set(doc(db, 'designacao_base', key), dbItem);
           });
-
           seedData.designacoesFuncao.forEach((df) => {
             const key = `${df.pessoa_id}__${df.funcao}`;
             batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_funcao', key), df);
-            batch.set(doc(db, 'designacao_funcao', key), df);
           });
-
           seedData.designacoesAeronave.forEach((da) => {
             const key = `${da.pessoa_id}__${da.aeronave}`;
             batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_aeronave', key), da);
-            batch.set(doc(db, 'designacao_aeronave', key), da);
           });
-
-          // Seed config
           batch.set(doc(db, 'organizations', this.orgId, 'roster_configuracao', 'geral'), seedData.configuracao);
-          batch.set(doc(db, 'configuracao', 'geral'), seedData.configuracao);
 
           await batch.commit();
-          console.info('Inicialização de dados oficiais do Roster gravada no Firestore com sucesso.');
+          console.info('Inicialização mestre canônica gravada no Firestore com sucesso.');
         }
       } catch (err) {
-        console.warn('Erro ao verificar/semear dados iniciais do Roster:', err);
+        console.warn('Erro ao verificar/semear dados canônicos iniciais:', err);
       }
     }, 1200);
 
     this.isInitialized = true;
   }
 
-  // --- CRUD Operations Fully Synchronized with Firestore & SGQ ---
+  // --- CRUD Operations strictly targeting Canonical Collections without data loss ---
 
+  /**
+   * Salva Colaborador no Firestore preservando 100% dos atributos SGQ originais.
+   */
   async savePessoa(pessoa: Pessoa, usuarioNome: string): Promise<void> {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const now = new Date().toISOString();
-    const existing = this.memoryDb.pessoas.find((p) => p.id === pessoa.id);
 
-    const updatedPessoa: Pessoa = {
-      ...pessoa,
-      criado_em: existing?.criado_em || pessoa.criado_em || now,
-      atualizado_em: now,
-      atualizado_por: usuarioNome,
+    // Recupera entidade canônica completa para fusão sem perda de dados
+    const existingColab = this.canonicalPersonsMap.get(pessoa.id);
+
+    const updatedColab: ColaboradorPessoa = {
+      id: pessoa.id,
+      organizationId: this.orgId,
+      nome: pessoa.nome.trim(),
+      matricula: existingColab?.matricula || pessoa.canac || pessoa.id,
+      setor: existingColab?.setor || pessoa.cliente_ou_area || 'Operações de Manutenção',
+      funcao: existingColab?.funcao || (pessoa.categoria === 'Mecânico' ? 'Mecânico de Manutenção' : 'Administrativo'),
+      cargoOperacional:
+        existingColab?.cargoOperacional ||
+        (pessoa.categoria === 'Mecânico' ? 'Mecânico de Manutenção de Linha / Base' : 'Analista Administrativo'),
+      baseOperacional: pessoa.base_principal_id,
+      baseOperacionalId: pessoa.base_principal_id,
+      status: pessoa.situacao === 'Inativo' ? 'INATIVO' : (existingColab?.status === 'INATIVO' ? 'ATIVO' : (existingColab?.status || 'ATIVO')),
+      statusCustomizado: existingColab?.statusCustomizado,
+      dataAdmissao: existingColab?.dataAdmissao,
+      contatoCorporativo: existingColab?.contatoCorporativo,
+      observacoes: existingColab?.observacoes,
+      restricaoOperacional: existingColab?.restricaoOperacional,
+      inativadoEm: existingColab?.inativadoEm,
+      inativadoPor: existingColab?.inativadoPor,
+      motivoInativacao: existingColab?.motivoInativacao,
+      reativadoEm: existingColab?.reativadoEm,
+      reativadoPor: existingColab?.reativadoPor,
+      motivoReativacao: existingColab?.motivoReativacao,
+      camposCustomizados: {
+        ...(existingColab?.camposCustomizados || {}),
+        canac: pessoa.canac,
+        categoria: pessoa.categoria,
+        clienteOuArea: pessoa.cliente_ou_area,
+      },
+      createdAt: existingColab?.createdAt || pessoa.criado_em || now,
+      updatedAt: now,
+      criadoPor: existingColab?.criadoPor || usuarioNome,
+      criadoPorUid: existingColab?.criadoPorUid || 'rooster-mro',
     };
 
-    // 1. Update internal memory cache immediately
+    // 1. Atualiza cache em memória
+    this.canonicalPersonsMap.set(pessoa.id, updatedColab);
+    const updatedPessoa = this.mapColaboradorToPessoa(updatedColab);
     const idx = this.memoryDb.pessoas.findIndex((p) => p.id === pessoa.id);
     if (idx >= 0) this.memoryDb.pessoas[idx] = updatedPessoa;
     else this.memoryDb.pessoas.push(updatedPessoa);
     this.notify();
 
-    // 2. Save directly to organizations/{orgId}/persons as ColaboradorPessoa
-    const colabDoc: Partial<ColaboradorPessoa> = {
-      id: pessoa.id,
-      nome: pessoa.nome,
-      matricula: pessoa.canac || pessoa.id,
-      funcao: pessoa.categoria === 'Mecânico' ? 'Mecânico de Manutenção' : 'Administrativo',
-      setor: pessoa.cliente_ou_area || 'Operações de Manutenção',
-      cargoOperacional: pessoa.categoria === 'Mecânico' ? 'Mecânico de Linha / Base' : 'Analista Administrativo',
-      baseOperacional: pessoa.base_principal_id,
-      baseOperacionalId: pessoa.base_principal_id,
-      status: pessoa.situacao === 'Inativo' ? 'INATIVO' : 'ATIVO',
-      camposCustomizados: {
-        canac: pessoa.canac,
-        categoria: pessoa.categoria,
-        clienteOuArea: pessoa.cliente_ou_area,
-      },
-      organizationId: this.orgId,
-      updatedAt: now,
-      createdAt: updatedPessoa.criado_em,
-      criadoPor: usuarioNome,
-    };
-
-    const batch = writeBatch(db);
-    batch.set(
+    // 2. Persiste EXCLUSIVAMENTE na coleção canônica organizations/{orgId}/persons
+    await setDoc(
       doc(db, 'organizations', this.orgId, 'persons', pessoa.id),
-      sanitizeForFirestore(colabDoc),
+      sanitizeForFirestore(updatedColab),
       { merge: true }
     );
-    batch.set(doc(db, 'pessoa', pessoa.id), updatedPessoa, { merge: true });
-    await batch.commit();
 
     await this.recordAudit(
-      existing ? 'EDITAR' : 'CRIAR',
-      'pessoa',
+      existingColab ? 'EDITAR' : 'CRIAR',
+      'colaborador_pessoa',
       pessoa.id,
-      `${existing ? 'Editou' : 'Criou'} colaborador/mecânico ${pessoa.nome} (CANAC: ${pessoa.canac || 'N/A'})`,
-      existing,
-      updatedPessoa,
+      `${existingColab ? 'Editou' : 'Criou'} colaborador/mecânico ${pessoa.nome} (CANAC: ${pessoa.canac || 'N/A'})`,
+      existingColab,
+      updatedColab,
       usuarioNome
     );
   }
@@ -643,23 +693,23 @@ export class FirestoreAdapter implements StorageAdapter {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const existing = this.memoryDb.pessoas.find((p) => p.id === id) || null;
+    const existingColab = this.canonicalPersonsMap.get(id);
 
-    // Remove from memory cache
+    // Remove do cache
     this.memoryDb.pessoas = this.memoryDb.pessoas.filter((p) => p.id !== id);
+    this.canonicalPersonsMap.delete(id);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'organizations', this.orgId, 'persons', id));
-    batch.delete(doc(db, 'pessoa', id));
-    await batch.commit();
+    // Exclui EXCLUSIVAMENTE da coleção canônica
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'persons', id));
 
     if (existing) {
       await this.recordAudit(
         'EXCLUIR',
-        'pessoa',
+        'colaborador_pessoa',
         id,
         `Excluiu colaborador/mecânico ${existing.nome}`,
-        existing,
+        existingColab || existing,
         null,
         usuarioNome
       );
@@ -670,72 +720,91 @@ export class FirestoreAdapter implements StorageAdapter {
   async saveBase(base: Base, usuarioNome: string): Promise<void> {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
-    await setDoc(doc(db, 'organizations', this.orgId, 'operational_bases', base.id), base, { merge: true });
-    await setDoc(doc(db, 'base', base.id), base, { merge: true });
+    const now = new Date().toISOString();
+
+    const idx = this.memoryDb.bases.findIndex((b) => b.id === base.id);
+    if (idx >= 0) this.memoryDb.bases[idx] = base;
+    else this.memoryDb.bases.push(base);
+    this.notify();
+
+    const baseDoc = {
+      id: base.id,
+      sigla: base.id,
+      nome: base.nome,
+      status: base.ativa ? 'ATIVO' : 'INATIVO',
+      updatedAt: now,
+    };
+
+    await setDoc(
+      doc(db, 'organizations', this.orgId, 'operational_bases', base.id),
+      sanitizeForFirestore(baseDoc),
+      { merge: true }
+    );
+
     await this.recordAudit('EDITAR', 'base', base.id, `Salva base ${base.id} - ${base.nome}`, null, base, usuarioNome);
   }
 
+  /**
+   * Salva Licença como QualificacaoColaborador canônica em organizations/{orgId}/qualifications
+   */
   async saveLicenca(licenca: Licenca, usuarioNome: string): Promise<void> {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const now = new Date().toISOString();
-    const existing = this.memoryDb.licencas.find((l) => l.id === licenca.id);
-    const updated: Licenca = {
-      ...licenca,
-      criado_em: existing?.criado_em || licenca.criado_em || now,
-      atualizado_em: now,
-      atualizado_por: usuarioNome,
-    };
 
-    const idx = this.memoryDb.licencas.findIndex((l) => l.id === licenca.id);
-    if (idx >= 0) this.memoryDb.licencas[idx] = updated;
-    else this.memoryDb.licencas.push(updated);
-    this.notify();
-
+    const existingQualif = this.canonicalQualificationsMap.get(licenca.id);
     const personRef = this.memoryDb.pessoas.find((p) => p.id === licenca.pessoa_id);
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'roster_licencas', licenca.id), updated, { merge: true });
-    batch.set(doc(db, 'licenca', licenca.id), updated, { merge: true });
-
-    // Also register in qualifications in SGQ
-    const qualifDoc: Partial<QualificacaoColaborador> = {
+    const qualifDoc: QualificacaoColaborador = {
       id: licenca.id,
       organizationId: this.orgId,
       colaboradorId: licenca.pessoa_id,
-      colaboradorNome: personRef?.nome || 'Colaborador',
-      colaboradorMatricula: personRef?.canac || personRef?.id || '',
-      tipo: 'CHT_ANAC',
+      colaboradorNome: personRef?.nome || existingQualif?.colaboradorNome || 'Colaborador',
+      colaboradorMatricula: personRef?.canac || personRef?.id || existingQualif?.colaboradorMatricula || '',
+      tipo: existingQualif?.tipo || 'CHT_ANAC',
       titulo: `${licenca.orgao} ${licenca.tipo} ${licenca.habilitacao || ''}`.trim(),
-      escopo: `Habilitação Técnica ${licenca.tipo} - ${licenca.orgao}`,
+      escopo:
+        existingQualif?.escopo ||
+        `Habilitação Técnica ${licenca.tipo} - ${licenca.orgao} ${licenca.habilitacao ? '(' + licenca.habilitacao + ')' : ''}`.trim(),
       emissor: licenca.orgao,
       numeroRegistro: licenca.numero,
-      dataEmissao: licenca.data_expedicao || '',
+      dataEmissao: licenca.data_expedicao || existingQualif?.dataEmissao || '',
       dataValidade: licenca.data_vencimento || undefined,
       possuiValidade: !!licenca.data_vencimento,
-      status: 'VALIDA',
-      bloqueiaOperacaoSeVencida: true,
-      responsavelValidacaoUid: 'admin-sgq',
-      responsavelValidacaoNome: usuarioNome,
-      dataValidacao: now,
+      status: existingQualif?.status || 'VALIDA',
+      limitacoesOperacionais: existingQualif?.limitacoesOperacionais,
+      bloqueiaOperacaoSeVencida: existingQualif?.bloqueiaOperacaoSeVencida ?? true,
+      documentoComprobatorioId: existingQualif?.documentoComprobatorioId,
+      documentoComprobatorioNome: existingQualif?.documentoComprobatorioNome,
+      responsavelValidacaoUid: existingQualif?.responsavelValidacaoUid || 'admin-sgq',
+      responsavelValidacaoNome: existingQualif?.responsavelValidacaoNome || usuarioNome,
+      dataValidacao: existingQualif?.dataValidacao || now,
+      observacoes: existingQualif?.observacoes,
+      createdAt: existingQualif?.createdAt || licenca.criado_em || now,
       updatedAt: now,
-      createdAt: updated.criado_em,
     };
-    batch.set(
+
+    this.canonicalQualificationsMap.set(licenca.id, qualifDoc);
+    const updatedLicenca = this.mapQualificacaoToLicenca(qualifDoc);
+    const idx = this.memoryDb.licencas.findIndex((l) => l.id === licenca.id);
+    if (idx >= 0) this.memoryDb.licencas[idx] = updatedLicenca;
+    else this.memoryDb.licencas.push(updatedLicenca);
+    this.notify();
+
+    // Persiste EXCLUSIVAMENTE na coleção canônica
+    await setDoc(
       doc(db, 'organizations', this.orgId, 'qualifications', licenca.id),
       sanitizeForFirestore(qualifDoc),
       { merge: true }
     );
 
-    await batch.commit();
-
     await this.recordAudit(
-      existing ? 'EDITAR' : 'CRIAR',
-      'licenca',
+      existingQualif ? 'EDITAR' : 'CRIAR',
+      'licenca_qualificacao',
       licenca.id,
-      `${existing ? 'Atualizou' : 'Cadastrou'} licença ${licenca.orgao} ${licenca.tipo} ${licenca.habilitacao || ''}`,
-      existing,
-      updated,
+      `${existingQualif ? 'Atualizou' : 'Cadastrou'} licença ${licenca.orgao} ${licenca.tipo} ${licenca.habilitacao || ''}`,
+      existingQualif,
+      qualifDoc,
       usuarioNome
     );
   }
@@ -744,82 +813,126 @@ export class FirestoreAdapter implements StorageAdapter {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const existing = this.memoryDb.licencas.find((l) => l.id === id) || null;
+    const existingQualif = this.canonicalQualificationsMap.get(id);
 
     this.memoryDb.licencas = this.memoryDb.licencas.filter((l) => l.id !== id);
+    this.canonicalQualificationsMap.delete(id);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'organizations', this.orgId, 'roster_licencas', id));
-    batch.delete(doc(db, 'organizations', this.orgId, 'qualifications', id));
-    batch.delete(doc(db, 'licenca', id));
-    await batch.commit();
+    // Exclui EXCLUSIVAMENTE da coleção canônica
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'qualifications', id));
 
     if (existing) {
-      await this.recordAudit('EXCLUIR', 'licenca', id, `Excluiu licença ${existing.numero}`, existing, null, usuarioNome);
+      await this.recordAudit(
+        'EXCLUIR',
+        'licenca_qualificacao',
+        id,
+        `Excluiu licença ${existing.numero}`,
+        existingQualif || existing,
+        null,
+        usuarioNome
+      );
     }
     return existing;
   }
 
+  /**
+   * Salva Curso no Catálogo canônico organizations/{orgId}/trainingCourses
+   */
   async saveCurso(curso: CursoCatalogo, usuarioNome: string): Promise<void> {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
+    const now = new Date().toISOString();
 
-    const idx = this.memoryDb.cursosCatalogo.findIndex((c) => c.id === curso.id);
-    if (idx >= 0) this.memoryDb.cursosCatalogo[idx] = curso;
-    else this.memoryDb.cursosCatalogo.push(curso);
-    this.notify();
+    const existingCourse = this.canonicalCoursesMap.get(curso.id);
+    const isFrota = curso.grupo === 'Frota';
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'roster_cursos_catalogo', curso.id), curso, { merge: true });
-    batch.set(doc(db, 'curso_catalogo', curso.id), curso, { merge: true });
-
-    // Also mirror to trainingCourses in SGQ
-    const trainingCourseDoc: Partial<CursoTreinamento> = {
+    const trainingCourseDoc: CursoTreinamento = {
       id: curso.id,
       organizationId: this.orgId,
-      codigo: curso.id,
-      titulo: `${curso.grupo}: ${curso.curso} ${curso.variante || ''}`.trim(),
-      tipo: curso.grupo === 'Doutrinação' ? 'INICIAL' : 'RECORRENTE',
-      modalidade: 'PRESENCIAL',
-      cargaHorariaHoras: 8,
-      ementa: `Curso homologado ${curso.grupo} - ${curso.curso}`,
-      recorrente: true,
-      origemPrazo: 'REGULAMENTO',
-      competenciasDesenvolvidasIds: [],
+      codigo: existingCourse?.codigo || curso.id,
+      titulo: curso.curso,
+      tipo: existingCourse?.tipo || (isFrota ? 'RECORRENTE' : 'INICIAL'),
+      modalidade: existingCourse?.modalidade || 'PRESENCIAL',
+      cargaHorariaHoras: existingCourse?.cargaHorariaHoras || 8,
+      ementa: existingCourse?.ementa || `Curso homologado ${curso.grupo} - ${curso.curso}`,
+      recorrente: existingCourse !== undefined ? existingCourse.recorrente : true,
+      origemPrazo: existingCourse?.origemPrazo || 'REGULAMENTO',
+      competenciasDesenvolvidasIds: existingCourse?.competenciasDesenvolvidasIds || [],
       periodicidadeMeses: Math.round((curso.validade_dias || 730) / 30),
       status: curso.ativo ? 'ATIVO' : 'INATIVO',
-      updatedAt: new Date().toISOString(),
-      createdAt: new Date().toISOString(),
+      frotaOuFamilia: curso.frota || existingCourse?.frotaOuFamilia || 'Geral',
+      variantesAplicabilidade: curso.variante
+        ? curso.variante.split(',').map((v) => v.trim()).filter(Boolean)
+        : existingCourse?.variantesAplicabilidade || [],
+      nivelOuModulo: existingCourse?.nivelOuModulo,
+      niveisDisponiveis: existingCourse?.niveisDisponiveis,
+      exigeReciclagem: existingCourse?.exigeReciclagem,
+      cursoOrigemReciclagemId: existingCourse?.cursoOrigemReciclagemId,
+      cursoOrigemReciclagemTitulo: existingCourse?.cursoOrigemReciclagemTitulo,
+      evidenciaExigida: existingCourse?.evidenciaExigida,
+      exigeAvaliacaoOuAprovacaoAdicional: existingCourse?.exigeAvaliacaoOuAprovacaoAdicional,
+      createdAt: existingCourse?.createdAt || now,
+      updatedAt: now,
+      criadoPorUid: existingCourse?.criadoPorUid || 'rooster-mro',
     };
-    batch.set(
+
+    this.canonicalCoursesMap.set(curso.id, trainingCourseDoc);
+    const updatedCurso = this.mapCursoTreinamentoToCursoCatalogo(trainingCourseDoc);
+    const idx = this.memoryDb.cursosCatalogo.findIndex((c) => c.id === curso.id);
+    if (idx >= 0) this.memoryDb.cursosCatalogo[idx] = updatedCurso;
+    else this.memoryDb.cursosCatalogo.push(updatedCurso);
+    this.notify();
+
+    // Persiste EXCLUSIVAMENTE na coleção canônica
+    await setDoc(
       doc(db, 'organizations', this.orgId, 'trainingCourses', curso.id),
       sanitizeForFirestore(trainingCourseDoc),
       { merge: true }
     );
 
-    await batch.commit();
-    await this.recordAudit('EDITAR', 'curso_catalogo', curso.id, `Salva curso ${curso.curso}`, null, curso, usuarioNome);
+    await this.recordAudit(
+      existingCourse ? 'EDITAR' : 'CRIAR',
+      'curso_catalogo',
+      curso.id,
+      `Salva curso ${curso.curso}`,
+      existingCourse,
+      trainingCourseDoc,
+      usuarioNome
+    );
   }
 
   async deleteCurso(id: string, usuarioNome: string): Promise<CursoCatalogo | null> {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const existing = this.memoryDb.cursosCatalogo.find((c) => c.id === id) || null;
+    const existingCourse = this.canonicalCoursesMap.get(id);
 
     this.memoryDb.cursosCatalogo = this.memoryDb.cursosCatalogo.filter((c) => c.id !== id);
+    this.canonicalCoursesMap.delete(id);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'organizations', this.orgId, 'roster_cursos_catalogo', id));
-    batch.delete(doc(db, 'curso_catalogo', id));
-    await batch.commit();
+    // Exclui EXCLUSIVAMENTE da coleção canônica
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'trainingCourses', id));
 
     if (existing) {
-      await this.recordAudit('EXCLUIR', 'curso_catalogo', id, `Excluiu curso ${existing.curso}`, existing, null, usuarioNome);
+      await this.recordAudit(
+        'EXCLUIR',
+        'curso_catalogo',
+        id,
+        `Excluiu curso ${existing.curso}`,
+        existingCourse || existing,
+        null,
+        usuarioNome
+      );
     }
     return existing;
   }
 
+  /**
+   * Salva Registro de Treinamento no Firestore organizations/{orgId}/trainingRecords
+   * mantendo histórico de auditoria e validação SGQ.
+   */
   async saveTreinamento(
     treinamento: Treinamento,
     motoresIds: string[] = [],
@@ -828,81 +941,104 @@ export class FirestoreAdapter implements StorageAdapter {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const now = new Date().toISOString();
-    const existing = this.memoryDb.treinamentos.find((t) => t.id === treinamento.id);
-    const updated: Treinamento = {
-      ...treinamento,
-      criado_em: existing?.criado_em || treinamento.criado_em || now,
-      atualizado_em: now,
-      atualizado_por: usuarioNome,
-    };
 
-    // Update memory
-    const idx = this.memoryDb.treinamentos.findIndex((t) => t.id === treinamento.id);
-    if (idx >= 0) this.memoryDb.treinamentos[idx] = updated;
-    else this.memoryDb.treinamentos.push(updated);
-    this.notify();
-
-    const cursoRef = this.memoryDb.cursosCatalogo.find((c) => c.id === treinamento.curso_id);
+    const existingRecord = this.canonicalTrainingRecordsMap.get(treinamento.id);
+    const cursoRef = this.canonicalCoursesMap.get(treinamento.curso_id) ||
+      this.memoryDb.cursosCatalogo.find((c) => c.id === treinamento.curso_id);
     const personRef = this.memoryDb.pessoas.find((p) => p.id === treinamento.pessoa_id);
 
-    let dataValidade: string | undefined = undefined;
-    if (cursoRef?.validade_dias && cursoRef.validade_dias > 0 && cursoRef.validade_dias < 90000) {
-      const d = new Date(treinamento.data_execucao);
-      d.setDate(d.getDate() + cursoRef.validade_dias);
-      dataValidade = d.toISOString().split('T')[0];
+    let dataValidade = existingRecord?.dataValidade;
+    if (!dataValidade) {
+      const validadeDias =
+        (cursoRef as any)?.validade_dias ||
+        ((cursoRef as any)?.periodicidadeMeses ? (cursoRef as any).periodicidadeMeses * 30 : null);
+      if (validadeDias && validadeDias > 0 && validadeDias < 90000) {
+        const d = new Date(treinamento.data_execucao);
+        d.setDate(d.getDate() + validadeDias);
+        dataValidade = d.toISOString().split('T')[0];
+      }
     }
 
-    const trainingRecord: Partial<RegistroTreinamentoColaborador> = {
+    const trainingRecordDoc: RegistroTreinamentoColaborador = {
       id: treinamento.id,
       organizationId: this.orgId,
       treinamentoId: treinamento.curso_id,
-      treinamentoCodigo: treinamento.curso_id,
-      treinamentoTitulo: cursoRef
-        ? `${cursoRef.grupo}: ${cursoRef.curso} ${cursoRef.variante || ''}`.trim()
-        : treinamento.curso_id,
+      treinamentoCodigo: (cursoRef as any)?.codigo || treinamento.curso_id,
+      treinamentoTitulo:
+        (cursoRef as any)?.titulo ||
+        (cursoRef as any)?.curso ||
+        treinamento.curso_id,
       colaboradorId: treinamento.pessoa_id,
-      colaboradorNome: personRef?.nome || 'Colaborador',
-      colaboradorMatricula: personRef?.canac || personRef?.id || '',
+      colaboradorNome: personRef?.nome || existingRecord?.colaboradorNome || 'Colaborador',
+      colaboradorMatricula: personRef?.canac || personRef?.id || existingRecord?.colaboradorMatricula || '',
       dataRealizacao: treinamento.data_execucao,
       dataConclusao: treinamento.data_execucao,
       dataValidade,
-      cargaHoraria: 8,
-      instrutor: usuarioNome,
-      resultado: 'APROVADO',
-      observacoes: treinamento.observacao || '',
+      cargaHoraria: (cursoRef as any)?.cargaHorariaHoras || existingRecord?.cargaHoraria || 8,
+      instrutor: existingRecord?.instrutor || usuarioNome,
+      entidadeInstrutora: existingRecord?.entidadeInstrutora,
+      resultado: existingRecord?.resultado || 'APROVADO',
+      aproveitamentoPercentual: existingRecord?.aproveitamentoPercentual,
+      documentoCertificadoId: existingRecord?.documentoCertificadoId,
+      numeroCertificado: existingRecord?.numeroCertificado,
+      observacoes: treinamento.observacao || existingRecord?.observacoes || '',
+      validadoPorSGQUid: existingRecord?.validadoPorSGQUid,
+      validadoPorSGQNome: existingRecord?.validadoPorSGQNome,
+      dataValidacaoSGQ: existingRecord?.dataValidacaoSGQ,
+      frotaOuFamilia: (cursoRef as any)?.frotaOuFamilia || existingRecord?.frotaOuFamilia,
+      varianteAplicabilidade:
+        (cursoRef as any)?.variantesAplicabilidade?.[0] || existingRecord?.varianteAplicabilidade,
+      nivelOuModulo: (cursoRef as any)?.nivelOuModulo || existingRecord?.nivelOuModulo,
+      ehReciclagem: existingRecord?.ehReciclagem,
+      registroTreinamentoOrigemId: existingRecord?.registroTreinamentoOrigemId,
+      historicoCorrecoes: existingRecord?.historicoCorrecoes || [],
+      createdAt: existingRecord?.createdAt || treinamento.criado_em || now,
       updatedAt: now,
-      createdAt: updated.criado_em,
     };
 
+    // Atualiza cache em memória
+    this.canonicalTrainingRecordsMap.set(treinamento.id, trainingRecordDoc);
+    const updatedTreinamento = this.mapRegistroTreinamentoToTreinamento(trainingRecordDoc);
+    const idx = this.memoryDb.treinamentos.findIndex((t) => t.id === treinamento.id);
+    if (idx >= 0) this.memoryDb.treinamentos[idx] = updatedTreinamento;
+    else this.memoryDb.treinamentos.push(updatedTreinamento);
+    this.notify();
+
+    // Persiste na coleção canônica de treinamentos e vincula motores
     const batch = writeBatch(db);
     batch.set(
       doc(db, 'organizations', this.orgId, 'trainingRecords', treinamento.id),
-      sanitizeForFirestore(trainingRecord),
+      sanitizeForFirestore(trainingRecordDoc),
       { merge: true }
     );
-    batch.set(doc(db, 'treinamento', treinamento.id), updated, { merge: true });
 
-    // Sync motors
+    // Sincroniza vínculos de motores MRO (organizations/{orgId}/roster_treinamentos_motor)
     const oldMotors = this.memoryDb.treinamentosMotor.filter((tm) => tm.treinamento_id === treinamento.id);
     for (const om of oldMotors) {
-      batch.delete(doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', `${om.treinamento_id}__${om.motor_id}`));
-      batch.delete(doc(db, 'treinamento_motor', `${om.treinamento_id}__${om.motor_id}`));
+      batch.delete(
+        doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', `${om.treinamento_id}__${om.motor_id}`)
+      );
     }
+    this.memoryDb.treinamentosMotor = this.memoryDb.treinamentosMotor.filter(
+      (tm) => tm.treinamento_id !== treinamento.id
+    );
+
     for (const mId of motoresIds) {
       const key = `${treinamento.id}__${mId}`;
       const motorEntry = { treinamento_id: treinamento.id, motor_id: mId };
+      this.memoryDb.treinamentosMotor.push(motorEntry);
       batch.set(doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', key), motorEntry);
-      batch.set(doc(db, 'treinamento_motor', key), motorEntry);
     }
 
     await batch.commit();
+
     await this.recordAudit(
-      existing ? 'EDITAR' : 'CRIAR',
-      'treinamento',
+      existingRecord ? 'EDITAR' : 'CRIAR',
+      'registro_treinamento',
       treinamento.id,
-      `${existing ? 'Atualizou' : 'Lançou'} treinamento (${treinamento.data_execucao})`,
-      existing,
-      updated,
+      `${existingRecord ? 'Atualizou' : 'Lançou'} treinamento (${treinamento.data_execucao}) para colaborador ${trainingRecordDoc.colaboradorNome}`,
+      existingRecord,
+      trainingRecordDoc,
       usuarioNome
     );
   }
@@ -911,23 +1047,35 @@ export class FirestoreAdapter implements StorageAdapter {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const existing = this.memoryDb.treinamentos.find((t) => t.id === id) || null;
+    const existingRecord = this.canonicalTrainingRecordsMap.get(id);
 
     this.memoryDb.treinamentos = this.memoryDb.treinamentos.filter((t) => t.id !== id);
+    this.canonicalTrainingRecordsMap.delete(id);
     this.notify();
 
     const batch = writeBatch(db);
     batch.delete(doc(db, 'organizations', this.orgId, 'trainingRecords', id));
-    batch.delete(doc(db, 'treinamento', id));
 
     const motors = this.memoryDb.treinamentosMotor.filter((tm) => tm.treinamento_id === id);
     for (const m of motors) {
-      batch.delete(doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', `${m.treinamento_id}__${m.motor_id}`));
-      batch.delete(doc(db, 'treinamento_motor', `${m.treinamento_id}__${m.motor_id}`));
+      batch.delete(
+        doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', `${m.treinamento_id}__${m.motor_id}`)
+      );
     }
+    this.memoryDb.treinamentosMotor = this.memoryDb.treinamentosMotor.filter((tm) => tm.treinamento_id !== id);
 
     await batch.commit();
+
     if (existing) {
-      await this.recordAudit('EXCLUIR', 'treinamento', id, `Excluiu treinamento ${id}`, existing, null, usuarioNome);
+      await this.recordAudit(
+        'EXCLUIR',
+        'registro_treinamento',
+        id,
+        `Excluiu treinamento ${id}`,
+        existingRecord || existing,
+        null,
+        usuarioNome
+      );
     }
     return existing;
   }
@@ -942,86 +1090,93 @@ export class FirestoreAdapter implements StorageAdapter {
     const antigo = this.memoryDb.treinamentos.find((t) => t.id === antigoId);
     if (!antigo) return null;
 
-    const curso = this.memoryDb.cursosCatalogo.find((c) => c.id === antigo.curso_id);
+    const curso =
+      this.canonicalCoursesMap.get(antigo.curso_id) ||
+      this.memoryDb.cursosCatalogo.find((c) => c.id === antigo.curso_id);
     let novaValidade: string | undefined = undefined;
-    if (curso?.validade_dias && curso.validade_dias > 0 && curso.validade_dias < 90000) {
+    const validadeDias =
+      (curso as any)?.validade_dias ||
+      ((curso as any)?.periodicidadeMeses ? (curso as any).periodicidadeMeses * 30 : null);
+    if (validadeDias && validadeDias > 0 && validadeDias < 90000) {
       const d = new Date(novaData);
-      d.setDate(d.getDate() + curso.validade_dias);
+      d.setDate(d.getDate() + validadeDias);
       novaValidade = d.toISOString().split('T')[0];
     }
 
     const novoId = `TRN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const now = new Date().toISOString();
-    const novo: Treinamento = {
-      ...antigo,
-      id: novoId,
-      data_execucao: novaData,
-      substituido_por: null,
-      criado_em: now,
-      atualizado_em: now,
-      atualizado_por: usuarioNome,
-    };
+    const personRef = this.memoryDb.pessoas.find((p) => p.id === antigo.pessoa_id);
 
-    const personRef = this.memoryDb.pessoas.find((p) => p.id === novo.pessoa_id);
-
-    // Update memory
-    this.memoryDb.treinamentos.push(novo);
-    const antigoMemory = this.memoryDb.treinamentos.find((t) => t.id === antigoId);
-    if (antigoMemory) antigoMemory.substituido_por = novoId;
-    this.notify();
-
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'trainingRecords', novoId), {
+    const novoRecord: RegistroTreinamentoColaborador = {
       id: novoId,
       organizationId: this.orgId,
-      treinamentoId: novo.curso_id,
-      treinamentoCodigo: novo.curso_id,
-      treinamentoTitulo: curso ? `${curso.grupo}: ${curso.curso} ${curso.variante || ''}`.trim() : novo.curso_id,
-      colaboradorId: novo.pessoa_id,
+      treinamentoId: antigo.curso_id,
+      treinamentoCodigo: (curso as any)?.codigo || antigo.curso_id,
+      treinamentoTitulo:
+        (curso as any)?.titulo ||
+        (curso as any)?.curso ||
+        antigo.curso_id,
+      colaboradorId: antigo.pessoa_id,
       colaboradorNome: personRef?.nome || 'Colaborador',
       colaboradorMatricula: personRef?.canac || personRef?.id || '',
-      dataRealizacao: novo.data_execucao,
-      dataConclusao: novo.data_execucao,
+      dataRealizacao: novaData,
+      dataConclusao: novaData,
       dataValidade: novaValidade,
-      cargaHoraria: 8,
+      cargaHoraria: (curso as any)?.cargaHorariaHoras || 8,
       instrutor: usuarioNome,
       resultado: 'APROVADO',
-      observacoes: `Renovação que substituiu o treinamento anterior (${antigoId})`,
+      observacoes: `Renovação de treinamento que revalidou o registro anterior (${antigoId})`,
+      registroTreinamentoOrigemId: antigoId,
+      ehReciclagem: true,
       createdAt: now,
       updatedAt: now,
-    });
-    batch.set(doc(db, 'treinamento', novoId), novo);
+    };
 
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, 'organizations', this.orgId, 'trainingRecords', novoId),
+      sanitizeForFirestore(novoRecord)
+    );
+
+    // Marca o registro anterior como substituído para rastreabilidade
     batch.update(doc(db, 'organizations', this.orgId, 'trainingRecords', antigoId), {
       substituidoPor: novoId,
       updatedAt: now,
     });
-    batch.update(doc(db, 'treinamento', antigoId), {
-      substituido_por: novoId,
-      atualizado_em: now,
-      atualizado_por: usuarioNome,
-    });
 
+    // Replica associações de motores
     const motoresAntigos = this.memoryDb.treinamentosMotor.filter((tm) => tm.treinamento_id === antigoId);
     for (const ma of motoresAntigos) {
       const key = `${novoId}__${ma.motor_id}`;
       const mObj = { treinamento_id: novoId, motor_id: ma.motor_id };
+      this.memoryDb.treinamentosMotor.push(mObj);
       batch.set(doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', key), mObj);
-      batch.set(doc(db, 'treinamento_motor', key), mObj);
     }
 
     await batch.commit();
+
+    // Atualiza cache em memória
+    this.canonicalTrainingRecordsMap.set(novoId, novoRecord);
+    const novoTreinamento = this.mapRegistroTreinamentoToTreinamento(novoRecord);
+    this.memoryDb.treinamentos.push(novoTreinamento);
+    const antigoMemory = this.memoryDb.treinamentos.find((t) => t.id === antigoId);
+    if (antigoMemory) antigoMemory.substituido_por = novoId;
+    this.notify();
+
     await this.recordAudit(
       'RENOVAR',
-      'treinamento',
+      'registro_treinamento',
       novoId,
       `Renovou treinamento ${antigo.curso_id} para ${novaData} (Substituiu ${antigoId})`,
       antigo,
-      novo,
+      novoTreinamento,
       usuarioNome
     );
-    return novo;
+
+    return novoTreinamento;
   }
+
+  // --- Motores MRO ---
 
   async saveMotor(motor: MotorCatalogo, usuarioNome: string): Promise<void> {
     const db = getFirestoreDb();
@@ -1031,10 +1186,7 @@ export class FirestoreAdapter implements StorageAdapter {
     else this.memoryDb.motoresCatalogo.push(motor);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'roster_motores', motor.id), motor, { merge: true });
-    batch.set(doc(db, 'motor_catalogo', motor.id), motor, { merge: true });
-    await batch.commit();
+    await setDoc(doc(db, 'organizations', this.orgId, 'roster_motores', motor.id), motor, { merge: true });
     await this.recordAudit('EDITAR', 'motor_catalogo', motor.id, `Salva motor ${motor.fabricante} ${motor.modelo}`, null, motor, usuarioNome);
   }
 
@@ -1046,16 +1198,15 @@ export class FirestoreAdapter implements StorageAdapter {
     this.memoryDb.motoresCatalogo = this.memoryDb.motoresCatalogo.filter((m) => m.id !== id);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'organizations', this.orgId, 'roster_motores', id));
-    batch.delete(doc(db, 'motor_catalogo', id));
-    await batch.commit();
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'roster_motores', id));
 
     if (existing) {
       await this.recordAudit('EXCLUIR', 'motor_catalogo', id, `Excluiu motor ${existing.fabricante} ${existing.modelo}`, existing, null, usuarioNome);
     }
     return existing;
   }
+
+  // --- Designações MRO ---
 
   async saveDesignacaoPessoa(dp: DesignacaoPessoa, usuarioNome: string): Promise<void> {
     const db = getFirestoreDb();
@@ -1066,10 +1217,7 @@ export class FirestoreAdapter implements StorageAdapter {
     else this.memoryDb.designacoesPessoa.push(dp);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_pessoa', dp.pessoa_id), dp, { merge: true });
-    batch.set(doc(db, 'designacao_pessoa', dp.pessoa_id), dp, { merge: true });
-    await batch.commit();
+    await setDoc(doc(db, 'organizations', this.orgId, 'roster_designacoes_pessoa', dp.pessoa_id), dp, { merge: true });
     await this.recordAudit('EDITAR', 'designacao_pessoa', dp.pessoa_id, `Atualizou designação pessoa ${dp.pessoa_id}`, null, dp, usuarioNome);
   }
 
@@ -1077,6 +1225,7 @@ export class FirestoreAdapter implements StorageAdapter {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
 
+    const oldBases = this.memoryDb.designacoesBase.filter((b) => b.pessoa_id === pessoaId);
     this.memoryDb.designacoesBase = this.memoryDb.designacoesBase.filter((b) => b.pessoa_id !== pessoaId);
     bases.forEach((bId) => {
       this.memoryDb.designacoesBase.push({ pessoa_id: pessoaId, base_id: bId });
@@ -1084,16 +1233,14 @@ export class FirestoreAdapter implements StorageAdapter {
     this.notify();
 
     const batch = writeBatch(db);
-    const oldBases = this.memoryDb.designacoesBase.filter((b) => b.pessoa_id === pessoaId);
     for (const ob of oldBases) {
-      batch.delete(doc(db, 'organizations', this.orgId, 'roster_designacoes_base', `${ob.pessoa_id}__${ob.base_id}`));
-      batch.delete(doc(db, 'designacao_base', `${ob.pessoa_id}__${ob.base_id}`));
+      batch.delete(
+        doc(db, 'organizations', this.orgId, 'roster_designacoes_base', `${ob.pessoa_id}__${ob.base_id}`)
+      );
     }
     for (const bId of bases) {
       const key = `${pessoaId}__${bId}`;
-      const entry = { pessoa_id: pessoaId, base_id: bId };
-      batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_base', key), entry);
-      batch.set(doc(db, 'designacao_base', key), entry);
+      batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_base', key), { pessoa_id: pessoaId, base_id: bId });
     }
 
     await batch.commit();
@@ -1116,10 +1263,7 @@ export class FirestoreAdapter implements StorageAdapter {
     else this.memoryDb.designacoesFuncao.push(entry);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_funcao', docId), entry, { merge: true });
-    batch.set(doc(db, 'designacao_funcao', docId), entry, { merge: true });
-    await batch.commit();
+    await setDoc(doc(db, 'organizations', this.orgId, 'roster_designacoes_funcao', docId), entry, { merge: true });
     await this.recordAudit('EDITAR', 'designacao_funcao', docId, `Função ${funcao} = ${valor}`, null, { funcao, valor }, usuarioNome);
   }
 
@@ -1139,10 +1283,7 @@ export class FirestoreAdapter implements StorageAdapter {
     else this.memoryDb.designacoesAeronave.push(entry);
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'roster_designacoes_aeronave', docId), entry, { merge: true });
-    batch.set(doc(db, 'designacao_aeronave', docId), entry, { merge: true });
-    await batch.commit();
+    await setDoc(doc(db, 'organizations', this.orgId, 'roster_designacoes_aeronave', docId), entry, { merge: true });
     await this.recordAudit('EDITAR', 'designacao_aeronave', docId, `Aeronave ${aeronave} = ${valor}`, null, { aeronave, valor }, usuarioNome);
   }
 
@@ -1152,10 +1293,7 @@ export class FirestoreAdapter implements StorageAdapter {
     this.memoryDb.configuracao = { ...config };
     this.notify();
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, 'organizations', this.orgId, 'roster_configuracao', 'geral'), config, { merge: true });
-    batch.set(doc(db, 'configuracao', 'geral'), config, { merge: true });
-    await batch.commit();
+    await setDoc(doc(db, 'organizations', this.orgId, 'roster_configuracao', 'geral'), config, { merge: true });
     await this.recordAudit('EDITAR', 'configuracao', 'GLOBAL', `Atualizou parâmetros operacionais do sistema`, null, config, usuarioNome);
   }
 
@@ -1165,8 +1303,6 @@ export class FirestoreAdapter implements StorageAdapter {
     try {
       const snap = await getDoc(doc(db, 'organizations', this.orgId, 'roster_configuracao', 'acesso'));
       if (snap.exists() && snap.data()?.hash_sha256) return snap.data().hash_sha256;
-      const topSnap = await getDoc(doc(db, 'configuracao', 'acesso'));
-      if (topSnap.exists() && topSnap.data()?.hash_sha256) return topSnap.data().hash_sha256;
     } catch (e) {
       console.warn('Erro ao consultar hash de acesso no Firestore:', e);
     }
@@ -1179,7 +1315,6 @@ export class FirestoreAdapter implements StorageAdapter {
     if (db) {
       try {
         await setDoc(doc(db, 'organizations', this.orgId, 'roster_configuracao', 'acesso'), { hash_sha256: hash }, { merge: true });
-        await setDoc(doc(db, 'configuracao', 'acesso'), { hash_sha256: hash }, { merge: true });
       } catch (e) {
         console.warn('Erro ao salvar hash de acesso no Firestore:', e);
       }
@@ -1219,7 +1354,6 @@ export class FirestoreAdapter implements StorageAdapter {
 
     try {
       await setDoc(doc(db, 'organizations', this.orgId, 'roster_auditoria', id), auditItem);
-      await setDoc(doc(db, 'auditoria', id), auditItem);
     } catch (e) {
       console.warn('Erro ao registrar auditoria no Firestore:', e);
     }
@@ -1249,7 +1383,7 @@ export class FirestoreAdapter implements StorageAdapter {
       throw new Error(`Importação rejeitada: ${report.totalErros} erros de validação.`);
     }
 
-    onProgress?.(30, 'Processando entidades...');
+    onProgress?.(30, 'Processando entidades canônicas...');
     console.info(`Gravando importação ${modo} no Firestore para organização ${this.orgId}...`);
     onProgress?.(100, 'Concluído com sucesso');
 

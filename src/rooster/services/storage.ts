@@ -148,24 +148,46 @@ function notify() {
   });
 }
 
-export const activeAdapter: StorageAdapter = isFirebaseConfigured()
-  ? new FirestoreAdapter()
-  : new LocalAdapter();
+let _activeAdapter: StorageAdapter | null = null;
+let _hasAutoInitialized = false;
 
-if (typeof window !== 'undefined') {
-  activeAdapter.init().catch((err) => {
-    console.warn('Erro ao inicializar adaptador de armazenamento:', err);
-  });
+function resolveAdapter(): StorageAdapter {
+  if (!_activeAdapter) {
+    _activeAdapter = isFirebaseConfigured() ? new FirestoreAdapter() : new LocalAdapter();
+  }
+  if (!_hasAutoInitialized && typeof window !== 'undefined') {
+    _hasAutoInitialized = true;
+    _activeAdapter.init().catch((err) => {
+      console.warn('Erro ao inicializar adaptador de armazenamento:', err);
+    });
+  }
+  return _activeAdapter;
 }
 
+export const activeAdapter: StorageAdapter = new Proxy({} as StorageAdapter, {
+  get(_target, prop, receiver) {
+    const adapter = resolveAdapter();
+    const value = Reflect.get(adapter, prop, receiver);
+    if (typeof value === 'function') {
+      return value.bind(adapter);
+    }
+    return value;
+  },
+  set(_target, prop, value, receiver) {
+    const adapter = resolveAdapter();
+    return Reflect.set(adapter, prop, value, receiver);
+  },
+});
+
 export function setOrganizationId(orgId: string): void {
-  if (activeAdapter && typeof (activeAdapter as any).setOrganizationId === 'function') {
-    (activeAdapter as any).setOrganizationId(orgId);
+  const adapter = resolveAdapter();
+  if (adapter && typeof (adapter as any).setOrganizationId === 'function') {
+    (adapter as any).setOrganizationId(orgId);
   }
 }
 
 export function getActiveAdapter(): StorageAdapter {
-  return activeAdapter;
+  return resolveAdapter();
 }
 
 export function addStorageListener(listener: Listener): () => void {
@@ -184,18 +206,7 @@ let memoryDb: DatabaseState | null = null;
 export function loadDatabase(): DatabaseState {
   if (activeAdapter && activeAdapter.isCloud) {
     const cloudDb = activeAdapter.getDatabase();
-    if (cloudDb && Array.isArray(cloudDb.bases) && cloudDb.bases.length > 0) {
-      if (cloudDb.pessoas.length === 0) {
-        // Fallback to seed into cloudDb if temporarily awaiting remote docs
-        const initialData = buildImpactoOfficialInitialDatabase();
-        cloudDb.pessoas = [...initialData.pessoas];
-        if (cloudDb.licencas.length === 0) cloudDb.licencas = [...initialData.licencas];
-        if (cloudDb.treinamentos.length === 0) cloudDb.treinamentos = [...initialData.treinamentos];
-        if (cloudDb.designacoesPessoa.length === 0) cloudDb.designacoesPessoa = [...initialData.designacoesPessoa];
-        if (cloudDb.designacoesBase.length === 0) cloudDb.designacoesBase = [...initialData.designacoesBase];
-        if (cloudDb.designacoesFuncao.length === 0) cloudDb.designacoesFuncao = [...initialData.designacoesFuncao];
-        if (cloudDb.designacoesAeronave.length === 0) cloudDb.designacoesAeronave = [...initialData.designacoesAeronave];
-      }
+    if (cloudDb) {
       return cloudDb;
     }
   }
@@ -1863,7 +1874,11 @@ export const repository = {
   // Pessoas
   getPessoas: (): Pessoa[] => loadDatabase().pessoas,
   getPessoaById: (id: string): Pessoa | undefined => loadDatabase().pessoas.find((p) => p.id === id),
-  savePessoa: (pessoa: Pessoa, usuarioNome = 'Admin'): void => {
+  savePessoa: async (pessoa: Pessoa, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.savePessoa(pessoa, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.pessoas.findIndex((p) => p.id === pessoa.id);
     const now = new Date().toISOString();
@@ -1893,11 +1908,11 @@ export const repository = {
       pessoa,
       usuarioNome
     );
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.savePessoa(pessoa, usuarioNome).catch((e) => console.warn(e));
-    }
   },
-  deletePessoa: (id: string, usuarioNome = 'Admin'): Pessoa | null => {
+  deletePessoa: async (id: string, usuarioNome = 'Admin'): Promise<Pessoa | null> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      return await activeAdapter.deletePessoa(id, usuarioNome);
+    }
     const db = loadDatabase();
     const idx = db.pessoas.findIndex((p) => p.id === id);
     if (idx < 0) return null;
@@ -1905,15 +1920,16 @@ export const repository = {
     db.pessoas.splice(idx, 1);
     persistDatabase(db);
     recordAudit('EXCLUIR', 'pessoa', id, `Excluiu pessoa ${removed.nome}`, removed, null, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.deletePessoa(id, usuarioNome).catch((e) => console.warn(e));
-    }
     return removed;
   },
 
   // Bases
   getBases: (): Base[] => loadDatabase().bases,
-  saveBase: (base: Base, usuarioNome = 'Admin'): void => {
+  saveBase: async (base: Base, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.saveBase(base, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.bases.findIndex((b) => b.id === base.id);
     if (idx >= 0) {
@@ -1923,15 +1939,16 @@ export const repository = {
     }
     persistDatabase(db);
     recordAudit('EDITAR', 'base', base.id, `Salva base ${base.id} - ${base.nome}`, null, base, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.saveBase(base, usuarioNome).catch((e) => console.warn(e));
-    }
   },
 
   // Licencas
   getLicencas: (): Licenca[] => loadDatabase().licencas,
   getLicencasByPessoa: (pessoaId: string): Licenca[] => loadDatabase().licencas.filter((l) => l.pessoa_id === pessoaId),
-  saveLicenca: (licenca: Licenca, usuarioNome = 'Admin'): void => {
+  saveLicenca: async (licenca: Licenca, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.saveLicenca(licenca, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.licencas.findIndex((l) => l.id === licenca.id);
     const now = new Date().toISOString();
@@ -1956,16 +1973,16 @@ export const repository = {
       acao,
       'licenca',
       licenca.id,
-      `${acao === 'CRIAR' ? 'Cadastrou' : 'Atualizou'} licença ${licenca.orgao} ${licenca.tipo} ${licenca.habilitacao || ''} (Venc: ${licenca.data_vencimento || 'N/A'})`,
+      `${acao === 'CRIAR' ? 'Cadastrou' : 'Atualizou'} licença ${licenca.orgao} ${licenca.tipo} ${licenca.habilitacao || ''}`,
       antes,
       licenca,
       usuarioNome
     );
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.saveLicenca(licenca, usuarioNome).catch((e) => console.warn(e));
-    }
   },
-  deleteLicenca: (id: string, usuarioNome = 'Admin'): Licenca | null => {
+  deleteLicenca: async (id: string, usuarioNome = 'Admin'): Promise<Licenca | null> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      return await activeAdapter.deleteLicenca(id, usuarioNome);
+    }
     const db = loadDatabase();
     const idx = db.licencas.findIndex((l) => l.id === id);
     if (idx < 0) return null;
@@ -1973,15 +1990,16 @@ export const repository = {
     db.licencas.splice(idx, 1);
     persistDatabase(db);
     recordAudit('EXCLUIR', 'licenca', id, `Excluiu licença ${removed.numero}`, removed, null, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.deleteLicenca(id, usuarioNome).catch((e) => console.warn(e));
-    }
     return removed;
   },
 
   // Cursos Catalogo
   getCursos: (): CursoCatalogo[] => loadDatabase().cursosCatalogo,
-  saveCurso: (curso: CursoCatalogo, usuarioNome = 'Admin'): void => {
+  saveCurso: async (curso: CursoCatalogo, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.saveCurso(curso, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.cursosCatalogo.findIndex((c) => c.id === curso.id);
     if (idx >= 0) {
@@ -1991,14 +2009,14 @@ export const repository = {
     }
     persistDatabase(db);
     recordAudit('EDITAR', 'curso_catalogo', curso.id, `Salva curso do catálogo ${curso.curso} (Validade: ${curso.validade_dias}d)`, null, curso, usuarioNome);
+  },
+  saveCursoCatalogo: async (curso: CursoCatalogo, usuarioNome = 'Admin'): Promise<void> => {
+    await repository.saveCurso(curso, usuarioNome);
+  },
+  deleteCurso: async (id: string, usuarioNome = 'Admin'): Promise<CursoCatalogo | null> => {
     if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.saveCurso(curso, usuarioNome).catch((e) => console.warn(e));
+      return await activeAdapter.deleteCurso(id, usuarioNome);
     }
-  },
-  saveCursoCatalogo: (curso: CursoCatalogo, usuarioNome = 'Admin'): void => {
-    repository.saveCurso(curso, usuarioNome);
-  },
-  deleteCurso: (id: string, usuarioNome = 'Admin'): CursoCatalogo | null => {
     const db = loadDatabase();
     const idx = db.cursosCatalogo.findIndex((c) => c.id === id);
     if (idx < 0) return null;
@@ -2006,9 +2024,6 @@ export const repository = {
     db.cursosCatalogo.splice(idx, 1);
     persistDatabase(db);
     recordAudit('EXCLUIR', 'curso_catalogo', id, `Excluiu curso ${removed.curso}`, removed, null, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.deleteCurso(id, usuarioNome).catch((e) => console.warn(e));
-    }
     return removed;
   },
 
@@ -2016,11 +2031,15 @@ export const repository = {
   getTreinamentos: (): Treinamento[] => loadDatabase().treinamentos,
   getTreinamentosByPessoa: (pessoaId: string): Treinamento[] =>
     loadDatabase().treinamentos.filter((t) => t.pessoa_id === pessoaId),
-  saveTreinamento: (
+  saveTreinamento: async (
     treinamento: Treinamento,
     motoresIds: string[] = [],
     usuarioNome = 'Admin'
-  ): void => {
+  ): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.saveTreinamento(treinamento, motoresIds, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.treinamentos.findIndex((t) => t.id === treinamento.id);
     const now = new Date().toISOString();
@@ -2040,7 +2059,6 @@ export const repository = {
       });
     }
 
-    // Sync motors
     db.treinamentosMotor = db.treinamentosMotor.filter((tm) => tm.treinamento_id !== treinamento.id);
     motoresIds.forEach((mId) => {
       db.treinamentosMotor.push({ treinamento_id: treinamento.id, motor_id: mId });
@@ -2056,11 +2074,11 @@ export const repository = {
       treinamento,
       usuarioNome
     );
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.saveTreinamento(treinamento, motoresIds, usuarioNome).catch((e) => console.warn(e));
-    }
   },
-  deleteTreinamento: (id: string, usuarioNome = 'Admin'): Treinamento | null => {
+  deleteTreinamento: async (id: string, usuarioNome = 'Admin'): Promise<Treinamento | null> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      return await activeAdapter.deleteTreinamento(id, usuarioNome);
+    }
     const db = loadDatabase();
     const idx = db.treinamentos.findIndex((t) => t.id === id);
     if (idx < 0) return null;
@@ -2069,12 +2087,12 @@ export const repository = {
     db.treinamentosMotor = db.treinamentosMotor.filter((tm) => tm.treinamento_id !== id);
     persistDatabase(db);
     recordAudit('EXCLUIR', 'treinamento', id, `Excluiu treinamento ${id}`, removed, null, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.deleteTreinamento(id, usuarioNome).catch((e) => console.warn(e));
-    }
     return removed;
   },
-  renovarTreinamento: (antigoId: string, novaData: string, usuarioNome = 'Admin'): Treinamento | null => {
+  renovarTreinamento: async (antigoId: string, novaData: string, usuarioNome = 'Admin'): Promise<Treinamento | null> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      return await activeAdapter.renovarTreinamento(antigoId, novaData, usuarioNome);
+    }
     const db = loadDatabase();
     const antigo = db.treinamentos.find((t) => t.id === antigoId);
     if (!antigo) return null;
@@ -2112,15 +2130,16 @@ export const repository = {
       novo,
       usuarioNome
     );
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.renovarTreinamento(antigoId, novaData, usuarioNome).catch((e) => console.warn(e));
-    }
     return novo;
   },
 
   // Motores
   getMotores: (): MotorCatalogo[] => loadDatabase().motoresCatalogo,
-  saveMotor: (motor: MotorCatalogo, usuarioNome = 'Admin'): void => {
+  saveMotor: async (motor: MotorCatalogo, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.saveMotor(motor, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.motoresCatalogo.findIndex((m) => m.id === motor.id);
     if (idx >= 0) {
@@ -2130,11 +2149,11 @@ export const repository = {
     }
     persistDatabase(db);
     recordAudit('EDITAR', 'motor_catalogo', motor.id, `Salva motor ${motor.fabricante} ${motor.modelo}`, null, motor, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.saveMotor(motor, usuarioNome).catch((e) => console.warn(e));
-    }
   },
-  deleteMotor: (id: string, usuarioNome = 'Admin'): MotorCatalogo | null => {
+  deleteMotor: async (id: string, usuarioNome = 'Admin'): Promise<MotorCatalogo | null> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      return await activeAdapter.deleteMotor(id, usuarioNome);
+    }
     const db = loadDatabase();
     const idx = db.motoresCatalogo.findIndex((m) => m.id === id);
     if (idx < 0) return null;
@@ -2143,25 +2162,27 @@ export const repository = {
     db.treinamentosMotor = db.treinamentosMotor.filter((tm) => tm.motor_id !== id);
     persistDatabase(db);
     recordAudit('EXCLUIR', 'motor_catalogo', id, `Excluiu motor ${removed.fabricante} ${removed.modelo}`, removed, null, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.deleteMotor(id, usuarioNome).catch((e) => console.warn(e));
-    }
     return removed;
   },
 
   // Designacoes
-  saveDesignacaoPessoa: (dp: DesignacaoPessoa, usuarioNome = 'Admin'): void => {
+  saveDesignacaoPessoa: async (dp: DesignacaoPessoa, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.saveDesignacaoPessoa(dp, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.designacoesPessoa.findIndex((d) => d.pessoa_id === dp.pessoa_id);
     if (idx >= 0) db.designacoesPessoa[idx] = dp;
     else db.designacoesPessoa.push(dp);
     persistDatabase(db);
     recordAudit('EDITAR', 'designacao_pessoa', dp.pessoa_id, `Atualizou designação pessoa ${dp.pessoa_id} (IMP: ${dp.imp})`, null, dp, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.saveDesignacaoPessoa(dp, usuarioNome).catch((e) => console.warn(e));
-    }
   },
-  setDesignacaoBases: (pessoaId: string, bases: string[], usuarioNome = 'Admin'): void => {
+  setDesignacaoBases: async (pessoaId: string, bases: string[], usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.setDesignacaoBases(pessoaId, bases, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     db.designacoesBase = db.designacoesBase.filter((b) => b.pessoa_id !== pessoaId);
     bases.forEach((bId) => {
@@ -2169,57 +2190,185 @@ export const repository = {
     });
     persistDatabase(db);
     recordAudit('EDITAR', 'designacao_base', pessoaId, `Atualizou bases designadas para ${pessoaId}: ${bases.join(', ')}`, null, bases, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.setDesignacaoBases(pessoaId, bases, usuarioNome).catch((e) => console.warn(e));
-    }
   },
-  setDesignacaoBasesForPessoa: (pessoaId: string, bases: string[], usuarioNome = 'Admin'): void => {
-    repository.setDesignacaoBases(pessoaId, bases, usuarioNome);
+  setDesignacaoBasesForPessoa: async (pessoaId: string, bases: string[], usuarioNome = 'Admin'): Promise<void> => {
+    await repository.setDesignacaoBases(pessoaId, bases, usuarioNome);
   },
-  setDesignacaoFuncao: (
+  setDesignacaoFuncao: async (
     pessoaId: string,
     funcao: FuncaoDesignacao,
     valor: SimNaoVazio,
     usuarioNome = 'Admin'
-  ): void => {
+  ): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.setDesignacaoFuncao(pessoaId, funcao, valor, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.designacoesFuncao.findIndex((df) => df.pessoa_id === pessoaId && df.funcao === funcao);
     if (idx >= 0) db.designacoesFuncao[idx].valor = valor;
     else db.designacoesFuncao.push({ pessoa_id: pessoaId, funcao, valor });
     persistDatabase(db);
     recordAudit('EDITAR', 'designacao_funcao', `${pessoaId}-${funcao}`, `Função ${funcao} = ${valor} para ${pessoaId}`, null, { funcao, valor }, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.setDesignacaoFuncao(pessoaId, funcao, valor, usuarioNome).catch((e) => console.warn(e));
-    }
   },
-  setDesignacaoAeronave: (
+  setDesignacaoAeronave: async (
     pessoaId: string,
     aeronave: AeronaveDesignacao,
     valor: SimNaoVazio,
     usuarioNome = 'Admin'
-  ): void => {
+  ): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.setDesignacaoAeronave(pessoaId, aeronave, valor, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     const idx = db.designacoesAeronave.findIndex((da) => da.pessoa_id === pessoaId && da.aeronave === aeronave);
     if (idx >= 0) db.designacoesAeronave[idx].valor = valor;
     else db.designacoesAeronave.push({ pessoa_id: pessoaId, aeronave, valor });
     persistDatabase(db);
     recordAudit('EDITAR', 'designacao_aeronave', `${pessoaId}-${aeronave}`, `Aeronave ${aeronave} = ${valor} para ${pessoaId}`, null, { aeronave, valor }, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.setDesignacaoAeronave(pessoaId, aeronave, valor, usuarioNome).catch((e) => console.warn(e));
-    }
   },
 
   // Configuracao
-  saveConfiguracao: (config: Configuracao, usuarioNome = 'Admin'): void => {
+  saveConfiguracao: async (config: Configuracao, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await activeAdapter.saveConfiguracao(config, usuarioNome);
+      return;
+    }
     const db = loadDatabase();
     db.configuracao = { ...config };
     persistDatabase(db);
     recordAudit('EDITAR', 'configuracao', 'GLOBAL', `Atualizou parâmetros operacionais do sistema`, null, config, usuarioNome);
-    if (activeAdapter && activeAdapter.isCloud) {
-      activeAdapter.saveConfiguracao(config, usuarioNome).catch((e) => console.warn(e));
-    }
   },
 };
+
+/**
+ * Reconcilia dados canônicos diretamente no Firestore com confirmação real de persistência.
+ */
+export async function reconcileCanonicalFirestoreData(options: {
+  orgId: string;
+  persons?: any[];
+  trainingRecords?: any[];
+  courses?: any[];
+  qualifications?: any[];
+  userName?: string;
+}): Promise<{
+  persistedPersons: number;
+  persistedCourses: number;
+  persistedTrainings: number;
+  persistedQualifications: number;
+}> {
+  if (options.orgId) {
+    setOrganizationId(options.orgId);
+  }
+
+  const result = {
+    persistedPersons: 0,
+    persistedCourses: 0,
+    persistedTrainings: 0,
+    persistedQualifications: 0,
+  };
+
+  const userName = options.userName || 'Reconciliação Canônica';
+
+  if (activeAdapter && activeAdapter.isCloud) {
+    // 1. Sincroniza Pessoas se fornecidas
+    if (options.persons && Array.isArray(options.persons)) {
+      for (const p of options.persons) {
+        if (p.id && p.nome) {
+          const mappedPessoa: Pessoa = {
+            id: p.id,
+            nome: p.nome,
+            categoria: (p.camposCustomizados?.categoria || (p.funcao || '').toLowerCase().includes('adm')) ? 'Administrativo' : 'Mecânico',
+            situacao: p.status === 'INATIVO' || p.status === 'DESLIGADO' ? 'Inativo' : 'Ativo',
+            base_principal_id: (p.baseOperacionalId || p.baseOperacional || 'REC').split(' - ')[0].trim().toUpperCase(),
+            cliente_ou_area: p.camposCustomizados?.clienteOuArea || p.setor || p.cargoOperacional || '',
+            canac: p.camposCustomizados?.canac || p.matricula || '',
+            criado_em: p.createdAt || new Date().toISOString(),
+            atualizado_em: new Date().toISOString(),
+            atualizado_por: userName,
+          };
+          await activeAdapter.savePessoa(mappedPessoa, userName);
+          result.persistedPersons++;
+        }
+      }
+    }
+
+    // 2. Sincroniza Catálogo de Cursos se fornecido
+    if (options.courses && Array.isArray(options.courses)) {
+      for (const c of options.courses) {
+        if (c.id && (c.titulo || c.curso)) {
+          const isFrota = c.frotaOuFamilia && c.frotaOuFamilia !== 'Geral' && c.frotaOuFamilia !== 'Doutrinação';
+          const validadeDias = c.validade_dias || (c.periodicidadeMeses ? c.periodicidadeMeses * 30 : 730);
+          const mappedCurso: CursoCatalogo = {
+            id: c.id,
+            grupo: isFrota ? 'Frota' : 'Doutrinação',
+            frota: c.frotaOuFamilia || c.frota || '',
+            variante: Array.isArray(c.variantesAplicabilidade) ? c.variantesAplicabilidade.join(', ') : (c.variante || ''),
+            curso: c.titulo || c.curso,
+            validade_dias: validadeDias,
+            ativo: c.status !== 'INATIVO',
+          };
+          await activeAdapter.saveCurso(mappedCurso, userName);
+          result.persistedCourses++;
+        }
+      }
+    }
+
+    // 3. Sincroniza Registros de Treinamento se fornecidos
+    if (options.trainingRecords && Array.isArray(options.trainingRecords)) {
+      for (const tr of options.trainingRecords) {
+        if (tr.id && (tr.colaboradorId || tr.pessoa_id)) {
+          const mappedTrn: Treinamento = {
+            id: tr.id,
+            pessoa_id: tr.colaboradorId || tr.pessoa_id,
+            curso_id: tr.treinamentoId || tr.curso_id || '',
+            data_execucao: tr.dataRealizacao || tr.dataConclusao || tr.data_execucao || new Date().toISOString().split('T')[0],
+            observacao: tr.observacoes || tr.observacao || '',
+            substituido_por: tr.substituidoPor || tr.substituido_por || null,
+            criado_em: tr.createdAt || tr.criado_em || new Date().toISOString(),
+            atualizado_em: new Date().toISOString(),
+            atualizado_por: tr.instrutor || userName,
+          };
+          await activeAdapter.saveTreinamento(mappedTrn, [], userName);
+          result.persistedTrainings++;
+        }
+      }
+    }
+
+    // 4. Sincroniza Qualificações e Licenças se fornecidas
+    if (options.qualifications && Array.isArray(options.qualifications)) {
+      for (const q of options.qualifications) {
+        if (q.id && (q.colaboradorId || q.pessoa_id)) {
+          const emissorUpper = (q.emissor || q.orgao || 'ANAC').toUpperCase();
+          const orgao = emissorUpper.includes('FAA') ? 'FAA' : 'ANAC';
+          let tipo: any = 'CHT';
+          const textAll = `${q.titulo || ''} ${q.escopo || ''} ${q.tipo || ''}`.toUpperCase();
+          if (textAll.includes('CCT')) tipo = 'CCT';
+          else if (textAll.includes('AMP')) tipo = 'AMP';
+
+          const mappedLic: Licenca = {
+            id: q.id,
+            pessoa_id: q.colaboradorId || q.pessoa_id,
+            orgao,
+            tipo,
+            habilitacao: q.habilitacao || '',
+            numero: q.numeroRegistro || q.numero || '',
+            data_vencimento: q.dataValidade || q.data_vencimento || null,
+            data_expedicao: q.dataEmissao || q.data_expedicao || null,
+            criado_em: q.createdAt || q.criado_em || new Date().toISOString(),
+            atualizado_em: new Date().toISOString(),
+            atualizado_por: q.responsavelValidacaoNome || userName,
+          };
+          await activeAdapter.saveLicenca(mappedLic, userName);
+          result.persistedQualifications++;
+        }
+      }
+    }
+  }
+
+  return result;
+}
 
 export function syncWithQualigest(options: {
   orgId?: string;
@@ -2230,117 +2379,9 @@ export function syncWithQualigest(options: {
   if (options.orgId) {
     setOrganizationId(options.orgId);
   }
-  const db = loadDatabase();
-  let hasChanges = false;
-  const userName =
-    options.userProfile?.displayName || options.userProfile?.email || 'QualiGest Sync';
-
-  if (options.persons && Array.isArray(options.persons) && options.persons.length > 0) {
-    for (const sp of options.persons) {
-      const match = db.pessoas.find(
-        (p) =>
-          p.id === sp.id ||
-          p.id === sp.matricula ||
-          (p.canac && p.canac === sp.matricula) ||
-          (p.canac && p.canac === sp.camposCustomizados?.canac) ||
-          p.nome.trim().toLowerCase() === sp.nome.trim().toLowerCase()
-      );
-
-      const baseNormalized = (sp.baseOperacionalId || sp.baseOperacional || 'REC')
-        .split(' - ')[0]
-        .trim()
-        .toUpperCase();
-      const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP', 'SOD'].includes(baseNormalized)
-        ? baseNormalized
-        : 'REC';
-      const situacaoFinal =
-        sp.status === 'INATIVO' || sp.status === 'DESLIGADO' ? 'Inativo' : 'Ativo';
-      const categoriaFinal = (sp.funcao || '').toLowerCase().includes('adm')
-        ? 'Administrativo'
-        : 'Mecânico';
-
-      if (match) {
-        if (
-          match.situacao !== situacaoFinal ||
-          match.base_principal_id !== baseFinal ||
-          match.nome !== sp.nome ||
-          (sp.matricula && !match.canac)
-        ) {
-          match.nome = sp.nome;
-          match.situacao = situacaoFinal;
-          match.base_principal_id = baseFinal;
-          match.cliente_ou_area = sp.setor || match.cliente_ou_area;
-          if (sp.matricula && !match.canac) match.canac = sp.matricula;
-          match.atualizado_em = new Date().toISOString();
-          match.atualizado_por = userName;
-          hasChanges = true;
-        }
-      } else {
-        const newPessoa: Pessoa = {
-          id: sp.matricula || sp.id,
-          nome: sp.nome,
-          categoria: categoriaFinal,
-          situacao: situacaoFinal,
-          base_principal_id: baseFinal,
-          cliente_ou_area: sp.setor || 'Operações de Manutenção',
-          canac: sp.camposCustomizados?.canac || sp.matricula || '',
-          criado_em: sp.createdAt || new Date().toISOString(),
-          atualizado_em: sp.updatedAt || new Date().toISOString(),
-          atualizado_por: userName,
-        };
-        db.pessoas.push(newPessoa);
-        hasChanges = true;
-      }
-    }
-  }
-
-  if (
-    options.trainingRecords &&
-    Array.isArray(options.trainingRecords) &&
-    options.trainingRecords.length > 0
-  ) {
-    for (const tr of options.trainingRecords) {
-      const exists = db.treinamentos.some(
-        (t) =>
-          t.id === tr.id ||
-          (t.curso_id === (tr.treinamentoCodigo || tr.treinamentoId) &&
-            t.data_execucao === (tr.dataRealizacao || tr.dataConclusao))
-      );
-
-      if (!exists) {
-        let pessoaId = tr.colaboradorId;
-        const matchedPerson = db.pessoas.find(
-          (p) =>
-            p.id === tr.colaboradorId ||
-            p.canac === tr.colaboradorMatricula ||
-            (p as any).matricula === tr.colaboradorMatricula ||
-            (tr.colaboradorNome &&
-              p.nome.trim().toLowerCase() === tr.colaboradorNome.trim().toLowerCase())
-        );
-        if (matchedPerson) {
-          pessoaId = matchedPerson.id;
-        }
-
-        db.treinamentos.push({
-          id: tr.id || `TRN-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          pessoa_id: pessoaId,
-          curso_id: tr.treinamentoCodigo || tr.treinamentoId || 'CC-001',
-          data_execucao:
-            tr.dataRealizacao ||
-            tr.dataConclusao ||
-            (tr.createdAt ? tr.createdAt.split('T')[0] : '2024-01-01'),
-          observacao: tr.observacoes || '',
-          substituido_por: null,
-          criado_em: tr.createdAt || new Date().toISOString(),
-          atualizado_em: tr.updatedAt || new Date().toISOString(),
-          atualizado_por: tr.instrutor || userName,
-        });
-        hasChanges = true;
-      }
-    }
-  }
-
-  if (hasChanges) {
-    persistDatabase(db);
+  // Se o adaptador de nuvem estiver ativo, os listeners em tempo real do Firestore já
+  // mantêm a fonte de verdade sincronizada diretamente das coleções canônicas organizations/{orgId}/*
+  if (activeAdapter && activeAdapter.isCloud) {
+    return;
   }
 }
