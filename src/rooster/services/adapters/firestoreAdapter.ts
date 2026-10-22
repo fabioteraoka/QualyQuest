@@ -158,6 +158,15 @@ export class FirestoreAdapter implements StorageAdapter {
       base_principal_id: baseFinal,
       cliente_ou_area: clienteOuArea,
       canac,
+      matricula,
+      setor: c.setor,
+      funcao: c.funcao,
+      cargo_operacional: c.cargoOperacional,
+      data_admissao: c.dataAdmissao,
+      contato_corporativo: c.contatoCorporativo,
+      observacoes: c.observacoes,
+      status_customizado: c.statusCustomizado,
+      restricao_operacional: c.restricaoOperacional,
       criado_em: c.createdAt || new Date().toISOString(),
       atualizado_em: c.updatedAt || new Date().toISOString(),
       atualizado_por: c.criadoPor || 'SGQ Colaboradores',
@@ -170,7 +179,8 @@ export class FirestoreAdapter implements StorageAdapter {
   private mapCursoTreinamentoToCursoCatalogo(c: CursoTreinamento): CursoCatalogo {
     const frota = c.frotaOuFamilia || '';
     const isFrota = frota && frota !== 'Geral' && frota !== 'Doutrinação';
-    const validadeDias = c.periodicidadeMeses ? c.periodicidadeMeses * 30 : 730;
+    const hasPeriodicidade = typeof c.periodicidadeMeses === 'number' && c.periodicidadeMeses > 0;
+    const validadeDias = hasPeriodicidade ? c.periodicidadeMeses! * 30 : (c.recorrente ? 730 : 0);
 
     return {
       id: c.id,
@@ -180,6 +190,16 @@ export class FirestoreAdapter implements StorageAdapter {
       curso: c.nivelOuModulo ? `${c.titulo} - ${c.nivelOuModulo}` : c.titulo,
       validade_dias: validadeDias,
       ativo: c.status !== 'INATIVO',
+      codigo: c.codigo || c.id,
+      tipo: c.tipo,
+      modalidade: c.modalidade,
+      carga_horaria_horas: c.cargaHorariaHoras,
+      ementa: c.ementa,
+      recorrente: c.recorrente,
+      periodicidade_meses: c.periodicidadeMeses,
+      origem_prazo: c.origemPrazo,
+      nivel_ou_modulo: c.nivelOuModulo,
+      sem_validade: !c.recorrente && !hasPeriodicidade,
     };
   }
 
@@ -196,6 +216,12 @@ export class FirestoreAdapter implements StorageAdapter {
         t.dataConclusao ||
         (t.createdAt ? t.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
       observacao: t.observacoes || '',
+      resultado: t.resultado as any,
+      instrutor: t.instrutor,
+      carga_horaria: t.cargaHoraria,
+      numero_certificado: t.numeroCertificado,
+      registro_treinamento_origem_id: t.registroTreinamentoOrigemId,
+      data_validade: t.dataValidade,
       substituido_por: (t as any).substituidoPor || (t as any).substituido_por || null,
       criado_em: t.createdAt || new Date().toISOString(),
       atualizado_em: t.updatedAt || new Date().toISOString(),
@@ -233,6 +259,13 @@ export class FirestoreAdapter implements StorageAdapter {
       numero: q.numeroRegistro || '',
       data_vencimento: q.dataValidade || null,
       data_expedicao: q.dataEmissao || null,
+      status: q.status as any,
+      escopo: q.escopo,
+      limitacoes_operacionais: q.limitacoesOperacionais,
+      bloqueia_operacao_se_vencida: q.bloqueiaOperacaoSeVencida,
+      documento_comprobatorio_id: q.documentoComprobatorioId,
+      responsavel_validacao_nome: q.responsavelValidacaoNome,
+      observacoes: q.observacoes,
       criado_em: q.createdAt || new Date().toISOString(),
       atualizado_em: q.updatedAt || new Date().toISOString(),
       atualizado_por: q.responsavelValidacaoNome || 'SGQ Qualificações',
@@ -631,20 +664,32 @@ export class FirestoreAdapter implements StorageAdapter {
       id: pessoa.id,
       organizationId: this.orgId,
       nome: pessoa.nome.trim(),
-      matricula: existingColab?.matricula || pessoa.canac || pessoa.id,
-      setor: existingColab?.setor || pessoa.cliente_ou_area || 'Operações de Manutenção',
-      funcao: existingColab?.funcao || (pessoa.categoria === 'Mecânico' ? 'Mecânico de Manutenção' : 'Administrativo'),
+      matricula: pessoa.matricula || existingColab?.matricula || pessoa.canac || pessoa.id,
+      setor: pessoa.setor || existingColab?.setor || pessoa.cliente_ou_area || 'Operações de Manutenção',
+      funcao: pessoa.funcao || existingColab?.funcao || (pessoa.categoria === 'Mecânico' ? 'Mecânico de Manutenção' : 'Administrativo'),
       cargoOperacional:
+        pessoa.cargo_operacional ||
         existingColab?.cargoOperacional ||
         (pessoa.categoria === 'Mecânico' ? 'Mecânico de Manutenção de Linha / Base' : 'Analista Administrativo'),
       baseOperacional: pessoa.base_principal_id,
       baseOperacionalId: pessoa.base_principal_id,
       status: pessoa.situacao === 'Inativo' ? 'INATIVO' : (existingColab?.status === 'INATIVO' ? 'ATIVO' : (existingColab?.status || 'ATIVO')),
-      statusCustomizado: existingColab?.statusCustomizado,
-      dataAdmissao: existingColab?.dataAdmissao,
-      contatoCorporativo: existingColab?.contatoCorporativo,
-      observacoes: existingColab?.observacoes,
-      restricaoOperacional: existingColab?.restricaoOperacional,
+      statusCustomizado: pessoa.status_customizado || existingColab?.statusCustomizado,
+      dataAdmissao: pessoa.data_admissao || existingColab?.dataAdmissao,
+      contatoCorporativo: pessoa.contato_corporativo || existingColab?.contatoCorporativo,
+      observacoes: pessoa.observacoes || existingColab?.observacoes,
+      restricaoOperacional: pessoa.restricao_operacional
+        ? {
+            possuiRestricao: Boolean(pessoa.restricao_operacional.possuiRestricao),
+            impedeExecucao: Boolean(pessoa.restricao_operacional.impedeExecucao),
+            apenasAlerta: Boolean(pessoa.restricao_operacional.apenasAlerta),
+            motivo: pessoa.restricao_operacional.motivo,
+            dataInicio: pessoa.restricao_operacional.dataInicio,
+            dataFim: pessoa.restricao_operacional.dataFim,
+            registradoPor: pessoa.restricao_operacional.registradoPor,
+            registradoEm: pessoa.restricao_operacional.registradoEm,
+          }
+        : existingColab?.restricaoOperacional,
       inativadoEm: existingColab?.inativadoEm,
       inativadoPor: existingColab?.inativadoPor,
       motivoInativacao: existingColab?.motivoInativacao,
@@ -761,9 +806,10 @@ export class FirestoreAdapter implements StorageAdapter {
       colaboradorId: licenca.pessoa_id,
       colaboradorNome: personRef?.nome || existingQualif?.colaboradorNome || 'Colaborador',
       colaboradorMatricula: personRef?.canac || personRef?.id || existingQualif?.colaboradorMatricula || '',
-      tipo: existingQualif?.tipo || 'CHT_ANAC',
+      tipo: existingQualif?.tipo || (licenca.tipo === 'AMP' ? 'AUTORIZACAO_INTERNA' : 'CHT_ANAC'),
       titulo: `${licenca.orgao} ${licenca.tipo} ${licenca.habilitacao || ''}`.trim(),
       escopo:
+        licenca.escopo ||
         existingQualif?.escopo ||
         `Habilitação Técnica ${licenca.tipo} - ${licenca.orgao} ${licenca.habilitacao ? '(' + licenca.habilitacao + ')' : ''}`.trim(),
       emissor: licenca.orgao,
@@ -771,15 +817,15 @@ export class FirestoreAdapter implements StorageAdapter {
       dataEmissao: licenca.data_expedicao || existingQualif?.dataEmissao || '',
       dataValidade: licenca.data_vencimento || undefined,
       possuiValidade: !!licenca.data_vencimento,
-      status: existingQualif?.status || 'VALIDA',
-      limitacoesOperacionais: existingQualif?.limitacoesOperacionais,
-      bloqueiaOperacaoSeVencida: existingQualif?.bloqueiaOperacaoSeVencida ?? true,
-      documentoComprobatorioId: existingQualif?.documentoComprobatorioId,
+      status: licenca.status || existingQualif?.status || 'VALIDA',
+      limitacoesOperacionais: licenca.limitacoes_operacionais || existingQualif?.limitacoesOperacionais,
+      bloqueiaOperacaoSeVencida: licenca.bloqueia_operacao_se_vencida !== undefined ? licenca.bloqueia_operacao_se_vencida : (existingQualif?.bloqueiaOperacaoSeVencida ?? true),
+      documentoComprobatorioId: licenca.documento_comprobatorio_id || existingQualif?.documentoComprobatorioId,
       documentoComprobatorioNome: existingQualif?.documentoComprobatorioNome,
       responsavelValidacaoUid: existingQualif?.responsavelValidacaoUid || 'admin-sgq',
-      responsavelValidacaoNome: existingQualif?.responsavelValidacaoNome || usuarioNome,
+      responsavelValidacaoNome: licenca.responsavel_validacao_nome || existingQualif?.responsavelValidacaoNome || usuarioNome,
       dataValidacao: existingQualif?.dataValidacao || now,
-      observacoes: existingQualif?.observacoes,
+      observacoes: licenca.observacoes || existingQualif?.observacoes,
       createdAt: existingQualif?.createdAt || licenca.criado_em || now,
       updatedAt: now,
     };
@@ -847,25 +893,29 @@ export class FirestoreAdapter implements StorageAdapter {
     const existingCourse = this.canonicalCoursesMap.get(curso.id);
     const isFrota = curso.grupo === 'Frota';
 
+    const hasPeriodicidade = curso.periodicidade_meses !== undefined ? (curso.periodicidade_meses > 0) : (curso.validade_dias > 0 && !curso.sem_validade);
+    const periodicidadeMeses = curso.periodicidade_meses !== undefined ? (curso.periodicidade_meses > 0 ? curso.periodicidade_meses : undefined) : (hasPeriodicidade ? Math.round(curso.validade_dias / 30) : existingCourse?.periodicidadeMeses);
+    const isRecorrente = curso.recorrente !== undefined ? curso.recorrente : (existingCourse !== undefined ? existingCourse.recorrente : hasPeriodicidade);
+
     const trainingCourseDoc: CursoTreinamento = {
       id: curso.id,
       organizationId: this.orgId,
-      codigo: existingCourse?.codigo || curso.id,
+      codigo: curso.codigo || existingCourse?.codigo || curso.id,
       titulo: curso.curso,
-      tipo: existingCourse?.tipo || (isFrota ? 'RECORRENTE' : 'INICIAL'),
-      modalidade: existingCourse?.modalidade || 'PRESENCIAL',
-      cargaHorariaHoras: existingCourse?.cargaHorariaHoras || 8,
-      ementa: existingCourse?.ementa || `Curso homologado ${curso.grupo} - ${curso.curso}`,
-      recorrente: existingCourse !== undefined ? existingCourse.recorrente : true,
-      origemPrazo: existingCourse?.origemPrazo || 'REGULAMENTO',
+      tipo: (curso.tipo as any) || existingCourse?.tipo || (isFrota ? 'RECORRENTE' : 'INICIAL'),
+      modalidade: (curso.modalidade as any) || existingCourse?.modalidade || 'PRESENCIAL',
+      cargaHorariaHoras: curso.carga_horaria_horas || existingCourse?.cargaHorariaHoras || 8,
+      ementa: curso.ementa || existingCourse?.ementa || `Curso homologado ${curso.grupo} - ${curso.curso}`,
+      recorrente: isRecorrente,
+      origemPrazo: (curso.origem_prazo as any) || existingCourse?.origemPrazo || 'REGULAMENTO',
       competenciasDesenvolvidasIds: existingCourse?.competenciasDesenvolvidasIds || [],
-      periodicidadeMeses: Math.round((curso.validade_dias || 730) / 30),
+      periodicidadeMeses,
       status: curso.ativo ? 'ATIVO' : 'INATIVO',
       frotaOuFamilia: curso.frota || existingCourse?.frotaOuFamilia || 'Geral',
       variantesAplicabilidade: curso.variante
         ? curso.variante.split(',').map((v) => v.trim()).filter(Boolean)
         : existingCourse?.variantesAplicabilidade || [],
-      nivelOuModulo: existingCourse?.nivelOuModulo,
+      nivelOuModulo: curso.nivel_ou_modulo || existingCourse?.nivelOuModulo,
       niveisDisponiveis: existingCourse?.niveisDisponiveis,
       exigeReciclagem: existingCourse?.exigeReciclagem,
       cursoOrigemReciclagemId: existingCourse?.cursoOrigemReciclagemId,
@@ -973,14 +1023,13 @@ export class FirestoreAdapter implements StorageAdapter {
       colaboradorMatricula: personRef?.canac || personRef?.id || existingRecord?.colaboradorMatricula || '',
       dataRealizacao: treinamento.data_execucao,
       dataConclusao: treinamento.data_execucao,
-      dataValidade,
-      cargaHoraria: (cursoRef as any)?.cargaHorariaHoras || existingRecord?.cargaHoraria || 8,
-      instrutor: existingRecord?.instrutor || usuarioNome,
-      entidadeInstrutora: existingRecord?.entidadeInstrutora,
-      resultado: existingRecord?.resultado || 'APROVADO',
+      dataValidade: treinamento.data_validade || dataValidade,
+      cargaHoraria: treinamento.carga_horaria || (cursoRef as any)?.cargaHorariaHoras || existingRecord?.cargaHoraria || 8,
+      instrutor: treinamento.instrutor || existingRecord?.instrutor || usuarioNome,
+      resultado: (treinamento.resultado === 'EM_ANDAMENTO' || treinamento.resultado === 'REPROVADO' ? treinamento.resultado : (existingRecord?.resultado || 'APROVADO')),
       aproveitamentoPercentual: existingRecord?.aproveitamentoPercentual,
       documentoCertificadoId: existingRecord?.documentoCertificadoId,
-      numeroCertificado: existingRecord?.numeroCertificado,
+      numeroCertificado: treinamento.numero_certificado || existingRecord?.numeroCertificado,
       observacoes: treinamento.observacao || existingRecord?.observacoes || '',
       validadoPorSGQUid: existingRecord?.validadoPorSGQUid,
       validadoPorSGQNome: existingRecord?.validadoPorSGQNome,
@@ -989,8 +1038,9 @@ export class FirestoreAdapter implements StorageAdapter {
       varianteAplicabilidade:
         (cursoRef as any)?.variantesAplicabilidade?.[0] || existingRecord?.varianteAplicabilidade,
       nivelOuModulo: (cursoRef as any)?.nivelOuModulo || existingRecord?.nivelOuModulo,
-      ehReciclagem: existingRecord?.ehReciclagem,
-      registroTreinamentoOrigemId: existingRecord?.registroTreinamentoOrigemId,
+      ehReciclagem: Boolean(treinamento.registro_treinamento_origem_id || existingRecord?.ehReciclagem),
+      registroTreinamentoOrigemId: treinamento.registro_treinamento_origem_id || existingRecord?.registroTreinamentoOrigemId,
+      substituidoPor: (treinamento.substituido_por as any) || (existingRecord as any)?.substituidoPor,
       historicoCorrecoes: existingRecord?.historicoCorrecoes || [],
       createdAt: existingRecord?.createdAt || treinamento.criado_em || now,
       updatedAt: now,

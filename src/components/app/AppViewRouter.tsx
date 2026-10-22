@@ -548,6 +548,22 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       );
 
     case 'rooster-mro':
+    case 'rooster-pessoas':
+    case 'rooster-ficha':
+    case 'rooster-catalogo':
+    case 'rooster-treinamentos':
+    case 'rooster-licencas': {
+      const roosterTab =
+        activeTab === 'rooster-catalogo'
+          ? 'catalogo'
+          : activeTab === 'rooster-treinamentos'
+          ? 'treinamentos'
+          : activeTab === 'rooster-licencas'
+          ? 'licencas'
+          : activeTab === 'rooster-ficha'
+          ? 'ficha'
+          : 'pessoas';
+
       return (
         <PersonsCompetenciesView
           organizationId={props.activeOrgId}
@@ -564,11 +580,13 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           bases={props.basesOperacionais}
           initialStatusFilter={props.initialPersonStatusFilter}
           initialSubTab="ROOSTER_MRO"
+          initialRoosterTab={roosterTab}
           onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
           onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
           onNavigateToImport={() => setActiveTab('importacao-inteligente')}
         />
       );
+    }
 
     case 'treinamentos-qualificacoes':
     case 'cht-qualificacoes':
@@ -583,6 +601,13 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           documents={props.personDocuments}
           initialTab={activeTab === 'cht-qualificacoes' ? 'QUALIFICACOES' : 'CURSOS'}
           onNavigateToImport={() => setActiveTab('importacao-inteligente')}
+          onNavigateToRooster={(roosterTab) => {
+            if (roosterTab === 'catalogo') setActiveTab('rooster-catalogo');
+            else if (roosterTab === 'treinamentos') setActiveTab('rooster-treinamentos');
+            else if (roosterTab === 'licencas') setActiveTab('rooster-licencas');
+            else if (roosterTab === 'ficha') setActiveTab('rooster-ficha');
+            else setActiveTab('rooster-mro');
+          }}
           onRegistrosRemovidos={(ids) =>
             props.setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))
           }

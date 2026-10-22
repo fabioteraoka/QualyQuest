@@ -36,6 +36,15 @@ export const PessoasView: React.FC = () => {
   const [basePrincipalId, setBasePrincipalId] = useState('GRU');
   const [clienteOuArea, setClienteOuArea] = useState('');
   const [canac, setCanac] = useState('');
+  const [matricula, setMatricula] = useState('');
+  const [setor, setSetor] = useState('');
+  const [funcao, setFuncao] = useState('');
+  const [cargoOperacional, setCargoOperacional] = useState('');
+  const [dataAdmissao, setDataAdmissao] = useState('');
+  const [contatoCorporativo, setContatoCorporativo] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+  const [possuiRestricao, setPossuiRestricao] = useState(false);
+  const [motivoRestricao, setMotivoRestricao] = useState('');
 
   // Undo delete
   const [deletedPessoaBackup, setDeletedPessoaBackup] = useState<Pessoa | null>(null);
@@ -70,6 +79,15 @@ export const PessoasView: React.FC = () => {
     setBasePrincipalId('GRU');
     setClienteOuArea('');
     setCanac('');
+    setMatricula('');
+    setSetor('Manutenção de Linha');
+    setFuncao('Mecânico de Manutenção');
+    setCargoOperacional('Mecânico de Linha');
+    setDataAdmissao('');
+    setContatoCorporativo('');
+    setObservacoes('');
+    setPossuiRestricao(false);
+    setMotivoRestricao('');
     setModalOpen(true);
   };
 
@@ -82,6 +100,15 @@ export const PessoasView: React.FC = () => {
     setBasePrincipalId(p.base_principal_id);
     setClienteOuArea(p.cliente_ou_area || '');
     setCanac(p.canac || '');
+    setMatricula(p.matricula || p.canac || '');
+    setSetor(p.setor || p.cliente_ou_area || 'Manutenção');
+    setFuncao(p.funcao || '');
+    setCargoOperacional(p.cargo_operacional || '');
+    setDataAdmissao(p.data_admissao || '');
+    setContatoCorporativo(p.contato_corporativo || '');
+    setObservacoes(p.observacoes || '');
+    setPossuiRestricao(Boolean(p.restricao_operacional?.possuiRestricao));
+    setMotivoRestricao(p.restricao_operacional?.motivo || '');
     setModalOpen(true);
   };
 
@@ -101,6 +128,20 @@ export const PessoasView: React.FC = () => {
         base_principal_id: basePrincipalId,
         cliente_ou_area: clienteOuArea.trim(),
         canac: canac.trim(),
+        matricula: matricula.trim() || canac.trim() || id.trim(),
+        setor: setor.trim() || 'Manutenção',
+        funcao: funcao.trim(),
+        cargo_operacional: cargoOperacional.trim(),
+        data_admissao: dataAdmissao || undefined,
+        contato_corporativo: contatoCorporativo.trim() || undefined,
+        observacoes: observacoes.trim() || undefined,
+        restricao_operacional: {
+          possuiRestricao,
+          motivo: possuiRestricao ? motivoRestricao.trim() : undefined,
+          impedeExecucao: possuiRestricao,
+          registradoPor: currentUser.nome,
+          registradoEm: new Date().toISOString(),
+        },
         criado_em: editingPessoa?.criado_em || new Date().toISOString(),
         atualizado_em: new Date().toISOString(),
         atualizado_por: currentUser.nome,
@@ -347,24 +388,29 @@ export const PessoasView: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <form
             onSubmit={handleSave}
-            className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-4"
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-              <h3 className="font-bold text-slate-900 text-sm">
-                {editingPessoa ? 'Editar Colaborador' : 'Novo Colaborador'}
-              </h3>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {editingPessoa ? 'Editar Colaborador (Cadastro Mestre Rooster)' : 'Novo Colaborador (Cadastro Mestre Rooster)'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Os dados salvos aqui são a fonte canônica oficial consumida em tempo real por todo o ecossistema QualyQuest.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 text-sm"
               >
                 ✕
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">ID (PK):</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">ID Único (PK):</label>
                 <input
                   type="text"
                   required
@@ -376,12 +422,23 @@ export const PessoasView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">CANAC (6 dígitos):</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">CANAC (ANAC):</label>
                 <input
                   type="text"
                   placeholder="Ex.: 105420"
                   value={canac}
                   onChange={(e) => setCanac(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Matrícula Funcional:</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: MAT-4420"
+                  value={matricula}
+                  onChange={(e) => setMatricula(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
                 />
               </div>
@@ -398,7 +455,7 @@ export const PessoasView: React.FC = () => {
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">Categoria:</label>
                 <select
@@ -420,14 +477,14 @@ export const PessoasView: React.FC = () => {
                 >
                   {db.bases.map((b) => (
                     <option key={b.id} value={b.id}>
-                      {b.id}
+                      {b.id} - {b.nome}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Situação:</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Situação / Vínculo:</label>
                 <select
                   value={situacao}
                   onChange={(e) => setSituacao(e.target.value as any)}
@@ -439,8 +496,66 @@ export const PessoasView: React.FC = () => {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Setor / Lotação:</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: Hangar GRU / Linha"
+                  value={setor}
+                  onChange={(e) => setSetor(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Função:</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: Mecânico de Manutenção"
+                  value={funcao}
+                  onChange={(e) => setFuncao(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Cargo Operacional:</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: Mecânico Pleno B737"
+                  value={cargoOperacional}
+                  onChange={(e) => setCargoOperacional(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Data de Admissão:</label>
+                <input
+                  type="date"
+                  value={dataAdmissao}
+                  onChange={(e) => setDataAdmissao(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Contato Corporativo (E-mail / Tel):</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: nome@impacto.aero | (11) 98765-4321"
+                  value={contatoCorporativo}
+                  onChange={(e) => setContatoCorporativo(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+                />
+              </div>
+            </div>
+
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Cliente / Área:</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Cliente / Área de Atuação:</label>
               <input
                 type="text"
                 placeholder="Ex.: EuroAtlantic, Atlas/Kalitta, Diretoria"
@@ -450,7 +565,45 @@ export const PessoasView: React.FC = () => {
               />
             </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+            {/* Restrição Operacional */}
+            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={possuiRestricao}
+                  onChange={(e) => setPossuiRestricao(e.target.checked)}
+                  className="rounded text-amber-600 focus:ring-amber-500"
+                />
+                <span className="text-xs font-bold text-amber-900">Possui Restrição Operacional ou Médica</span>
+              </label>
+
+              {possuiRestricao && (
+                <div>
+                  <label className="text-[11px] font-semibold text-amber-900 block mb-1">Motivo / Descrição da Restrição:</label>
+                  <input
+                    type="text"
+                    required={possuiRestricao}
+                    placeholder="Ex.: Apto com restrição para trabalho em altura / Aguardando cheque"
+                    value={motivoRestricao}
+                    onChange={(e) => setMotivoRestricao(e.target.value)}
+                    className="w-full text-xs p-2 bg-white border border-amber-300 rounded text-slate-800"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Observações Gerais / SGQ:</label>
+              <textarea
+                rows={2}
+                placeholder="Histórico técnico, observações relevantes ou anotações SGQ..."
+                value={observacoes}
+                onChange={(e) => setObservacoes(e.target.value)}
+                className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
@@ -460,9 +613,10 @@ export const PessoasView: React.FC = () => {
               </button>
               <button
                 type="submit"
-                className="px-4 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer"
+                disabled={isSubmitting}
+                className="px-4 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer disabled:opacity-50"
               >
-                Salvar Colaborador
+                {isSubmitting ? 'Salvando...' : 'Salvar no Cadastro Mestre'}
               </button>
             </div>
           </form>

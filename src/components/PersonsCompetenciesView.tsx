@@ -93,6 +93,7 @@ interface PersonsCompetenciesViewProps {
   bases?: BaseEstacaoOperacao[];
   initialStatusFilter?: string;
   initialSubTab?: 'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA';
+  initialRoosterTab?: RoosterActiveTab;
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
   onNavigateToImport?: () => void;
@@ -113,6 +114,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   bases = [],
   initialStatusFilter,
   initialSubTab,
+  initialRoosterTab,
   onNavigateToTrainings,
   onNavigateToExpirations,
   onNavigateToImport,
@@ -120,7 +122,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [activeSubTab, setActiveSubTab] = useState<
     'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA'
   >(initialSubTab || 'COLABORADORES');
-  const [roosterInitialTab, setRoosterInitialTab] = useState<RoosterActiveTab>('pessoas');
+  const [roosterInitialTab, setRoosterInitialTab] = useState<RoosterActiveTab>(initialRoosterTab || 'pessoas');
   const [roosterInitialPessoaId, setRoosterInitialPessoaId] = useState<string | null>(null);
   const [modoMatriz, setModoMatriz] = useState<'FROTA_NIVEIS' | 'GRADE_GERAL'>('FROTA_NIVEIS');
   const [searchTerm, setSearchTerm] = useState('');
@@ -130,16 +132,22 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [filterRestricao, setFilterRestricao] = useState(false);
 
   useEffect(() => {
-    if (initialStatusFilter) {
-      setSelectedStatus(initialStatusFilter);
+    if (initialRoosterTab) {
+      setRoosterInitialTab(initialRoosterTab);
     }
-  }, [initialStatusFilter]);
+  }, [initialRoosterTab]);
 
   useEffect(() => {
     if (initialSubTab) {
       setActiveSubTab(initialSubTab);
     }
   }, [initialSubTab]);
+
+  useEffect(() => {
+    if (initialStatusFilter) {
+      setSelectedStatus(initialStatusFilter);
+    }
+  }, [initialStatusFilter]);
 
   // Colaborador Selecionado para Visão 360°
   const [selectedColaborador, setSelectedColaborador] = useState<ColaboradorPessoa | null>(null);
@@ -704,12 +712,13 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
           )}
           <button
             onClick={() => {
-              setColaboradorParaEditar(null);
-              setModalColaboradorOpen(true);
+              setRoosterInitialTab('pessoas');
+              setActiveSubTab('ROOSTER_MRO');
             }}
             className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
+            title="Abrir Cadastro Mestre Oficial no Rooster MRO"
           >
-            <Plus className="w-4 h-4" /> Novo Colaborador
+            <Plus className="w-4 h-4" /> Novo Colaborador (Mestre Rooster)
           </button>
           <button
             onClick={() => {
@@ -832,7 +841,30 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       {/* ABA 1: LISTAGEM DE COLABORADORES & VISÃO 360°                             */}
       {/* ========================================================================= */}
       {activeSubTab === 'COLABORADORES' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="space-y-4">
+          <div className="bg-sky-50 border border-sky-200 p-3 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-sky-950">
+            <div className="flex items-center gap-2">
+              <span className="bg-sky-200 text-sky-900 font-bold px-2 py-0.5 rounded text-[10px] uppercase">
+                Sistema Mestre: Rooster MRO
+              </span>
+              <span>
+                O <strong>Rooster MRO</strong> é o sistema oficial de cadastro mestre de Pessoas, Treinamentos e Habilitações. O SGQ consome e reflete esses dados em tempo real.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setRoosterInitialTab('pessoas');
+                setActiveSubTab('ROOSTER_MRO');
+              }}
+              className="px-3 py-1.5 bg-sky-900 text-white font-semibold rounded-lg hover:bg-sky-800 transition flex items-center gap-1.5 shadow-2xs"
+            >
+              <Plane className="w-3.5 h-3.5" />
+              <span>Gerenciar no Rooster MRO</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Coluna da Esquerda: Lista de Colaboradores */}
           <div className={`${selectedColaborador ? 'lg:col-span-5' : 'lg:col-span-12'} space-y-4`}>
             {/* Filtros e Busca */}
@@ -1289,13 +1321,15 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                         <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={() => {
-                              setColaboradorParaEditar(colab);
-                              setModalColaboradorOpen(true);
+                              setRoosterInitialTab('ficha');
+                              setRoosterInitialPessoaId(colab.id);
+                              setActiveSubTab('ROOSTER_MRO');
                             }}
-                            className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded transition"
-                            title="Editar Cadastro"
+                            className="p-1 text-slate-500 hover:text-sky-700 hover:bg-sky-50 rounded transition flex items-center gap-1 text-[11px]"
+                            title="Abrir Dossiê & Editar no Cadastro Mestre Rooster MRO"
                           >
-                            <Edit className="w-3.5 h-3.5" />
+                            <Edit className="w-3.5 h-3.5 text-sky-700" />
+                            <span className="text-[10px] text-sky-800 font-semibold hidden sm:inline">Mestre Rooster</span>
                           </button>
 
                           {colab.status === 'INATIVO' || colab.status === 'DESLIGADO' ? (
@@ -2140,7 +2174,8 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
             </div>
           )}
         </div>
-      )}
+      </div>
+    )}
 
       {/* ========================================================================= */}
       {/* ABA 2: MATRIZ DE COMPETÊNCIAS & QUALIFICAÇÃO TÉCNICA POR FROTA            */}

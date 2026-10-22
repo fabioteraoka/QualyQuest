@@ -9,6 +9,24 @@ export interface Pessoa {
   base_principal_id: string;
   cliente_ou_area: string;
   canac: string;
+  matricula?: string;
+  setor?: string;
+  funcao?: string;
+  cargo_operacional?: string;
+  data_admissao?: string;
+  contato_corporativo?: string;
+  observacoes?: string;
+  status_customizado?: string;
+  restricao_operacional?: {
+    possuiRestricao: boolean;
+    motivo?: string;
+    dataInicio?: string;
+    dataFim?: string;
+    impedeExecucao?: boolean;
+    apenasAlerta?: boolean;
+    registradoPor?: string;
+    registradoEm?: string;
+  };
   criado_em: string;
   atualizado_em: string;
   atualizado_por: string;
@@ -33,6 +51,13 @@ export interface Licenca {
   numero: string;
   data_vencimento: string | null; // ISO YYYY-MM-DD
   data_expedicao: string | null; // ISO YYYY-MM-DD
+  status?: 'VALIDA' | 'VENCIDA' | 'SUSPENSA' | 'REVOGADA';
+  escopo?: string;
+  limitacoes_operacionais?: string;
+  bloqueia_operacao_se_vencida?: boolean;
+  documento_comprobatorio_id?: string;
+  responsavel_validacao_nome?: string;
+  observacoes?: string;
   criado_em: string;
   atualizado_em: string;
   atualizado_por: string;
@@ -48,6 +73,16 @@ export interface CursoCatalogo {
   curso: string; // Familiarization, Ramp & Transit, Line & Base, Refreshment, etc.
   validade_dias: number;
   ativo: boolean;
+  codigo?: string;
+  tipo?: 'INICIAL' | 'RECORRENTE' | 'ATUALIZACAO' | 'QUALIFICACAO_ESPECIAL' | 'OJT' | 'DIALOGO_SEGURANCA' | string;
+  modalidade?: 'PRESENCIAL' | 'EAD' | 'HIBRIDO' | 'PRATICO_HANGAR' | string;
+  carga_horaria_horas?: number;
+  ementa?: string;
+  recorrente?: boolean;
+  periodicidade_meses?: number;
+  origem_prazo?: 'REGULAMENTO' | 'FABRICANTE' | 'SGQ_INTERNO' | 'CLIENTE' | string;
+  nivel_ou_modulo?: string;
+  sem_validade?: boolean;
 }
 
 export interface Treinamento {
@@ -58,6 +93,12 @@ export interface Treinamento {
   validade_dias_override?: number | null;
   motor_original?: string;
   observacao?: string;
+  resultado?: 'APROVADO' | 'REPROVADO' | 'PENDENTE' | 'EM_ANDAMENTO';
+  instrutor?: string;
+  carga_horaria?: number;
+  numero_certificado?: string;
+  registro_treinamento_origem_id?: string;
+  data_validade?: string;
   substituido_por?: string | null; // ID of replacing training record
   criado_em: string;
   atualizado_em: string;

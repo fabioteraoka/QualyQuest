@@ -71,6 +71,7 @@ interface TrainingsQualificationsViewProps {
   documents: DocumentoEvidenciaPessoa[];
   initialTab?: 'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS';
   onNavigateToImport?: () => void;
+  onNavigateToRooster?: (roosterTab?: 'pessoas' | 'ficha' | 'catalogo' | 'treinamentos' | 'licencas') => void;
   onRegistrosRemovidos?: (ids: string[]) => void;
 }
 
@@ -84,6 +85,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
   documents = [],
   initialTab = 'QUALIFICACOES',
   onNavigateToImport,
+  onNavigateToRooster,
   onRegistrosRemovidos,
 }) => {
   const [activeTab, setActiveTab] = useState<'QUALIFICACOES' | 'TREINAMENTOS_HISTORICO' | 'CURSOS' | 'DOCUMENTOS'>(initialTab);
@@ -670,10 +672,31 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
               <UploadCloud className="w-4 h-4 text-sky-600" /> Importação de Dados
             </button>
           )}
+          {onNavigateToRooster && (
+            <button
+              onClick={() =>
+                onNavigateToRooster(
+                  activeTab === 'CURSOS'
+                    ? 'catalogo'
+                    : activeTab === 'TREINAMENTOS_HISTORICO'
+                    ? 'treinamentos'
+                    : 'licencas'
+                )
+              }
+              className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition shadow-xs cursor-pointer"
+              title="Abrir módulo oficial Rooster MRO para manutenção mestre"
+            >
+              <Plane className="w-4 h-4" /> Mestre: Rooster MRO
+            </button>
+          )}
           <button
             onClick={() => {
-              setQualifParaEditar(null);
-              setModalQualifOpen(true);
+              if (onNavigateToRooster) {
+                onNavigateToRooster('licencas');
+              } else {
+                setQualifParaEditar(null);
+                setModalQualifOpen(true);
+              }
             }}
             className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
           >
@@ -681,8 +704,12 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
           </button>
           <button
             onClick={() => {
-              setTreinoParaEditar(null);
-              setModalTreinoOpen(true);
+              if (onNavigateToRooster) {
+                onNavigateToRooster('treinamentos');
+              } else {
+                setTreinoParaEditar(null);
+                setModalTreinoOpen(true);
+              }
             }}
             className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
           >
@@ -740,6 +767,27 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       {/* ========================================================================= */}
       {activeTab === 'QUALIFICACOES' && (
         <div className="space-y-4">
+          {/* Banner Sistema Mestre Rooster MRO */}
+          <div className="bg-sky-50 border border-sky-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-sky-900 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <Shield className="w-5 h-5 text-sky-600 shrink-0" />
+              <div>
+                <span className="font-bold">Sistema Mestre Oficial: Rooster MRO (Módulo Licenças e Habilitações)</span>
+                <p className="text-sky-700 text-[11px] mt-0.5">
+                  CHTs, CCTs e autorizações internas (RTS, RII, NDT) possuem manutenção oficial no Rooster MRO. Dados sincronizados em tempo real no Firestore.
+                </p>
+              </div>
+            </div>
+            {onNavigateToRooster && (
+              <button
+                onClick={() => onNavigateToRooster('licencas')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold text-xs transition shrink-0 cursor-pointer"
+              >
+                <Plane className="w-3.5 h-3.5" /> Abrir Licenças no Rooster &rarr;
+              </button>
+            )}
+          </div>
+
           {/* Filtros */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
             <div className="relative flex-1 min-w-[240px]">
@@ -873,7 +921,16 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
 
                     <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
                       <span className="text-[11px]">Validado por SGQ</span>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
+                        {onNavigateToRooster && (
+                          <button
+                            onClick={() => onNavigateToRooster('licencas')}
+                            className="px-2 py-0.5 text-[11px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded flex items-center gap-1 transition"
+                            title="Editar no módulo mestre Rooster MRO"
+                          >
+                            <Plane className="w-3 h-3 text-indigo-600" /> Rooster
+                          </button>
+                        )}
                         <button
                           onClick={() => {
                             setQualifParaEditar(qual);
@@ -906,6 +963,26 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       {/* ========================================================================= */}
       {activeTab === 'TREINAMENTOS_HISTORICO' && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-4">
+          {/* Banner Sistema Mestre Rooster MRO */}
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-emerald-900 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <GraduationCap className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <span className="font-bold">Sistema Mestre Oficial: Rooster MRO (Lançamento e Renovação de Treinamentos)</span>
+                <p className="text-emerald-700 text-[11px] mt-0.5">
+                  Registros de treinamentos, renovações com rastreabilidade histórica e lançamentos individuais ou em lote são centralizados no Rooster MRO.
+                </p>
+              </div>
+            </div>
+            {onNavigateToRooster && (
+              <button
+                onClick={() => onNavigateToRooster('treinamentos')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-xs transition shrink-0 cursor-pointer"
+              >
+                <Plane className="w-3.5 h-3.5" /> Lançar / Renovar no Rooster &rarr;
+              </button>
+            )}
+          </div>
           {/* Barra Flutuante de Ações em Lote */}
           {selectedRecordIds.length > 0 && (
             <div className="bg-slate-900 border border-slate-800 text-white p-3.5 rounded-xl shadow-lg flex flex-wrap items-center justify-between gap-3 animate-in fade-in">
@@ -1210,6 +1287,15 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                         {/* Ações */}
                         <td className="p-3 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1">
+                            {onNavigateToRooster && (
+                              <button
+                                onClick={() => onNavigateToRooster('treinamentos')}
+                                className="p-1.5 text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition"
+                                title="Abrir no Rooster MRO (Mestre Oficial de Treinamentos)"
+                              >
+                                <Plane className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             {/* Botão de Edição Rastreável */}
                             <button
                               onClick={() => {
@@ -1248,22 +1334,53 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
       {/* ========================================================================= */}
       {activeTab === 'CURSOS' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          {/* Banner Sistema Mestre Rooster MRO */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-amber-900 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <Award className="w-5 h-5 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-bold">Sistema Mestre Oficial: Rooster MRO (Catálogo Oficial de Treinamentos)</span>
+                <p className="text-amber-700 text-[11px] mt-0.5">
+                  Cursos, cargas horárias, frotas e regras de validade são cadastrados oficialmente no Rooster MRO e compartilhados em tempo real com o QualyQuest.
+                </p>
+              </div>
+            </div>
+            {onNavigateToRooster && (
+              <button
+                onClick={() => onNavigateToRooster('catalogo')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold text-xs transition shrink-0 cursor-pointer"
+              >
+                <Plane className="w-3.5 h-3.5" /> Abrir Catálogo no Rooster &rarr;
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-slate-900">Catálogo de Cursos & Grade Regulamentar</h2>
               <p className="text-sm text-slate-600">
                 Grade de treinamentos obrigatórios conforme RBAC 145 e requisitos de SGQ interno.
               </p>
             </div>
-            <button
-              onClick={() => {
-                setCursoParaEditar(null);
-                setModalCursoOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
-            >
-              <Plus className="w-3.5 h-3.5" /> Novo Curso no Catálogo
-            </button>
+            <div className="flex items-center gap-2">
+              {onNavigateToRooster && (
+                <button
+                  onClick={() => onNavigateToRooster('catalogo')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  <Plane className="w-3.5 h-3.5" /> + Novo Curso no Rooster
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setCursoParaEditar(null);
+                  setModalCursoOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
+              >
+                <Plus className="w-3.5 h-3.5" /> Novo Curso Local
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1329,24 +1446,38 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   </div>
                 </div>
 
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-end gap-2 text-slate-400">
-                  <button
-                    onClick={() => {
-                      setCursoParaEditar(curso);
-                      setModalCursoOpen(true);
-                    }}
-                    className="p-1 hover:text-blue-600 rounded"
-                    title="Editar Curso"
-                  >
-                    <Edit className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteCurso(curso.id)}
-                    className="p-1 hover:text-rose-600 rounded"
-                    title="Excluir Curso"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+                  <span className="text-[11px] font-mono text-slate-500">
+                    {curso.status === 'ATIVO' ? '🟢 Ativo' : '⚪ Inativo'}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {onNavigateToRooster && (
+                      <button
+                        onClick={() => onNavigateToRooster('catalogo')}
+                        className="px-2 py-0.5 text-[11px] font-semibold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded flex items-center gap-1 transition"
+                        title="Editar Curso no Rooster MRO"
+                      >
+                        <Plane className="w-3 h-3 text-amber-600" /> Rooster
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setCursoParaEditar(curso);
+                        setModalCursoOpen(true);
+                      }}
+                      className="p-1 hover:text-blue-600 rounded"
+                      title="Editar Curso"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCurso(curso.id)}
+                      className="p-1 hover:text-rose-600 rounded"
+                      title="Excluir Curso"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );

@@ -31,7 +31,21 @@ export const TreinamentosView: React.FC = () => {
 
   // Modals
   const [modalLoteOpen, setModalLoteOpen] = useState(false);
+  const [modalIndividualOpen, setModalIndividualOpen] = useState(false);
+  const [editingTrn, setEditingTrn] = useState<Treinamento | null>(null);
   const [modalRenovar, setModalRenovar] = useState<{ id: string; cursoNome: string; pessoaNome: string } | null>(null);
+
+  // Individual Form State
+  const [indPessoaId, setIndPessoaId] = useState('');
+  const [indCursoId, setIndCursoId] = useState('');
+  const [indDataExec, setIndDataExec] = useState(dataReferencia);
+  const [indDataValidade, setIndDataValidade] = useState('');
+  const [indResultado, setIndResultado] = useState<'APROVADO' | 'REPROVADO' | 'PENDENTE' | 'EM_ANDAMENTO'>('APROVADO');
+  const [indInstrutor, setIndInstrutor] = useState('');
+  const [indCargaHoraria, setIndCargaHoraria] = useState<number>(8);
+  const [indNumeroCertificado, setIndNumeroCertificado] = useState('');
+  const [indMotoresIds, setIndMotoresIds] = useState<string[]>([]);
+  const [indObs, setIndObs] = useState('');
 
   // Batch Form State
   const [loteCursoId, setLoteCursoId] = useState('');
@@ -42,6 +56,72 @@ export const TreinamentosView: React.FC = () => {
 
   // Renewal Form State
   const [renovacaoData, setRenovacaoData] = useState(dataReferencia);
+
+  const handleOpenNewIndividual = () => {
+    setEditingTrn(null);
+    setIndPessoaId(db.pessoas[0]?.id || '');
+    setIndCursoId(db.cursosCatalogo[0]?.id || '');
+    setIndDataExec(dataReferencia);
+    setIndDataValidade('');
+    setIndResultado('APROVADO');
+    setIndInstrutor(currentUser.nome);
+    setIndCargaHoraria(8);
+    setIndNumeroCertificado('');
+    setIndMotoresIds([]);
+    setIndObs('');
+    setModalIndividualOpen(true);
+  };
+
+  const handleEditIndividual = (t: Treinamento) => {
+    setEditingTrn(t);
+    setIndPessoaId(t.pessoa_id);
+    setIndCursoId(t.curso_id);
+    setIndDataExec(t.data_execucao);
+    setIndDataValidade(t.data_validade || '');
+    setIndResultado(t.resultado || 'APROVADO');
+    setIndInstrutor(t.instrutor || '');
+    setIndCargaHoraria(t.carga_horaria || 8);
+    setIndNumeroCertificado(t.numero_certificado || '');
+    const mIds = db.treinamentosMotor.filter((tm) => tm.treinamento_id === t.id).map((tm) => tm.motor_id);
+    setIndMotoresIds(mIds);
+    setIndObs(t.observacao || '');
+    setModalIndividualOpen(true);
+  };
+
+  const handleSaveIndividual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!indPessoaId || !indCursoId || !indDataExec) {
+      alert('Selecione o colaborador, o curso e a data de realização.');
+      return;
+    }
+
+    const trnId = editingTrn?.id || `TRN-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const trn: Treinamento = {
+      id: trnId,
+      pessoa_id: indPessoaId,
+      curso_id: indCursoId,
+      data_execucao: indDataExec,
+      data_validade: indDataValidade || undefined,
+      resultado: indResultado,
+      instrutor: indInstrutor.trim() || currentUser.nome,
+      carga_horaria: Number(indCargaHoraria) || 8,
+      numero_certificado: indNumeroCertificado.trim() || undefined,
+      observacao: indObs.trim() || undefined,
+      substituido_por: editingTrn?.substituido_por || null,
+      registro_treinamento_origem_id: editingTrn?.registro_treinamento_origem_id,
+      criado_em: editingTrn?.criado_em || new Date().toISOString(),
+      atualizado_em: new Date().toISOString(),
+      atualizado_por: currentUser.nome,
+    };
+
+    try {
+      await repository.saveTreinamento(trn, indMotoresIds, currentUser.nome);
+      setModalIndividualOpen(false);
+      showToast('Registro de treinamento salvo com sucesso no Firestore!');
+    } catch (err: any) {
+      showToast(`Erro ao salvar treinamento: ${err?.message || err}`);
+    }
+  };
 
   const cursosMap = useMemo(() => {
     const map = new Map<string, CursoCatalogo>();
@@ -202,13 +282,22 @@ export const TreinamentosView: React.FC = () => {
           </label>
 
           {currentUser.perfil !== 'Leitor' && (
-            <button
-              onClick={() => setModalLoteOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer shadow-xs"
-            >
-              <Users className="w-3.5 h-3.5" />
-              <span>Lançamento em Lote (Turma)</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleOpenNewIndividual}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 text-white rounded text-xs font-semibold hover:bg-blue-800 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Lançamento Individual</span>
+              </button>
+              <button
+                onClick={() => setModalLoteOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer shadow-xs"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>Lançamento em Lote</span>
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -320,6 +409,13 @@ export const TreinamentosView: React.FC = () => {
                       <td className="py-2.5 px-3 text-right">
                         {!isSubstituido && currentUser.perfil !== 'Leitor' && (
                           <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleEditIndividual(t)}
+                              className="text-slate-500 hover:text-sky-700 p-1 cursor-pointer"
+                              title="Editar registro de treinamento"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() =>
                                 setModalRenovar({
@@ -570,6 +666,201 @@ export const TreinamentosView: React.FC = () => {
                 className="px-4 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer"
               >
                 Confirmar Renovação
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {/* Modal: Lançamento Individual / Edição */}
+      {modalIndividualOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSaveIndividual}
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {editingTrn ? 'Editar Treinamento (Cadastro Mestre Rooster)' : 'Novo Treinamento Individual (Cadastro Mestre Rooster)'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Registro oficial com rastreabilidade de validade, evidência e motores habilitados.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalIndividualOpen(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Colaborador / Mecânico:</label>
+                <select
+                  value={indPessoaId}
+                  onChange={(e) => setIndPessoaId(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
+                  required
+                >
+                  <option value="">Selecione o Colaborador...</option>
+                  {db.pessoas.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome} {p.canac ? `(CANAC: ${p.canac})` : `(${p.id})`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Curso do Catálogo:</label>
+                <select
+                  value={indCursoId}
+                  onChange={(e) => setIndCursoId(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
+                  required
+                >
+                  <option value="">Selecione o Curso...</option>
+                  {db.cursosCatalogo.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      [{c.grupo}] {c.curso} {c.frota ? `— ${c.frota}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Data de Realização:</label>
+                <input
+                  type="date"
+                  required
+                  value={indDataExec}
+                  onChange={(e) => setIndDataExec(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Data de Validade (Opcional):
+                </label>
+                <input
+                  type="date"
+                  value={indDataValidade}
+                  onChange={(e) => setIndDataValidade(e.target.value)}
+                  placeholder="Automático pelo catálogo se vazio"
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Resultado:</label>
+                <select
+                  value={indResultado}
+                  onChange={(e) => setIndResultado(e.target.value as any)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
+                >
+                  <option value="APROVADO">Aprovado</option>
+                  <option value="PENDENTE">Pendente</option>
+                  <option value="EM_ANDAMENTO">Em Andamento</option>
+                  <option value="REPROVADO">Reprovado</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Instrutor / Entidade:</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: Impacto Aviation Training / Eng. Marcus"
+                  value={indInstrutor}
+                  onChange={(e) => setIndInstrutor(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Carga Horária (Horas):</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={indCargaHoraria}
+                  onChange={(e) => setIndCargaHoraria(parseInt(e.target.value) || 8)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Número do Certificado:</label>
+                <input
+                  type="text"
+                  placeholder="Ex.: CERT-2026-0042"
+                  value={indNumeroCertificado}
+                  onChange={(e) => setIndNumeroCertificado(e.target.value)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
+                />
+              </div>
+            </div>
+
+            {/* Motores Habilitados */}
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">
+                Motores Habilitados por este Curso (Opcional):
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-32 overflow-y-auto p-2 border border-slate-200 rounded text-xs bg-slate-50">
+                {db.motoresCatalogo.map((m) => {
+                  const checked = indMotoresIds.includes(m.id);
+                  return (
+                    <label
+                      key={m.id}
+                      className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) setIndMotoresIds([...indMotoresIds, m.id]);
+                          else setIndMotoresIds(indMotoresIds.filter((id) => id !== m.id));
+                        }}
+                      />
+                      <span className="font-mono text-[11px]">
+                        {m.fabricante} {m.modelo}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Observações do Treinamento:</label>
+              <textarea
+                rows={2}
+                placeholder="Evidência física arquivada, aproveitamento, observações SGQ..."
+                value={indObs}
+                onChange={(e) => setIndObs(e.target.value)}
+                className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setModalIndividualOpen(false)}
+                className="px-3 py-1.5 border border-slate-300 rounded text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer"
+              >
+                Salvar Registro Mestre
               </button>
             </div>
           </form>

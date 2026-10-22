@@ -1,50 +1,58 @@
-# Rooster MRO — Gestão Operacional de Mecânicos, Habilitações e Frotas
-## Módulo Especializado MRO Integrado com QualyQuest SGQ
+# Rooster MRO — Sistema Mestre de Pessoas, Treinamentos e Habilitações
+## Módulo Mestre Operacional MRO Integrado ao Ecossistema QualyQuest SGQ
 
 ---
 
-### 1. Visão Geral e Princípio Arquitetural
-O **Rooster MRO** é a interface especializada de operações de hangar e linha, projetada para acompanhamento rápido de efetivo técnico, fichas de mecânicos, matrizes de cursos por frotas de aeronaves (Boeing, Airbus, Embraer, ATR) e motores (CFM56, LEAP, GE90, PW1000G, Trent).
+### 1. Princípio Arquitetural Fundamental
 
-A partir da **Fase Corretiva Definitiva**, o Rooster **não mantém cadastros paralelos**. Ele consome e atualiza diretamente as coleções canônicas do **QualyQuest** no Cloud Firestore.
+> **ROOSTER COMO MESTRE. QUALYQUEST COMO ECOSSISTEMA INTEGRADO.**
 
----
+O **Rooster MRO** é o **sistema mestre de cadastro, criação e manutenção oficial** das seguintes entidades corporativas:
 
-### 2. Mapa das Entidades e Coleções Canônicas
+1. **Pessoas / Colaboradores Técnicos** (`organizations/{orgId}/persons`)
+2. **Catálogo de Treinamentos** (`organizations/{orgId}/trainingCourses`)
+3. **Registros de Treinamentos Realizados** (`organizations/{orgId}/trainingRecords`)
+4. **Habilitações, Licenças e Qualificações Técnicas** (`organizations/{orgId}/qualifications`)
+5. **Relações Operacionais entre Colaborador, Treinamento, Habilitação e Motores**
+6. **Histórico Rastreável de Validade, Renovação e Substituição de Registros**
 
-| Entidade Rooster | Entidade Canônica QualyQuest | Caminho no Firestore |
-| :--- | :--- | :--- |
-| `Pessoa` | `ColaboradorPessoa` | `organizations/{orgId}/persons/{personId}` |
-| `CursoCatalogo` | `CursoTreinamento` | `organizations/{orgId}/trainingCourses/{courseId}` |
-| `Treinamento` | `RegistroTreinamentoColaborador` | `organizations/{orgId}/trainingRecords/{trainingRecordId}` |
-| `Licenca` | `QualificacaoColaborador` | `organizations/{orgId}/qualifications/{qualificationId}` |
-| `Base` | `OperationalBase` | `organizations/{orgId}/operational_bases/{baseId}` |
-| `MotorCatalogo` | Vínculos MRO | `organizations/{orgId}/roster_motores/{motorId}` |
-| `TreinamentoMotor` | Vínculos N:N | `organizations/{orgId}/roster_treinamentos_motor/{trnId__motorId}` |
-| `DesignacaoPessoa` | Atribuições MRO | `organizations/{orgId}/roster_designacoes_pessoa/{pessoaId}` |
-| `DesignacaoBase` | Alocação de Estações | `organizations/{orgId}/roster_designacoes_base/{pessoaId__baseId}` |
-| `DesignacaoFuncao` | Matriz de Funções | `organizations/{orgId}/roster_designacoes_funcao/{pessoaId__funcao}` |
-| `DesignacaoAeronave` | Matriz de Frotas | `organizations/{orgId}/roster_designacoes_aeronave/{pessoaId__aero}` |
-| `Configuracao` | Parâmetros MRO | `organizations/{orgId}/roster_configuracao/geral` |
+Os demais módulos do QualyQuest consomem e exibem essas informações em tempo real via listeners `onSnapshot` do Cloud Firestore, delegando as operações oficiais de criação e edição ao Rooster MRO para evitar concorrência ou divergência cadastral.
 
 ---
 
-### 3. Garantias de Integridade de Dados
+### 2. Mapa das Entidades Canônicas e Formulários Mestres
 
-1. **Identidade Estável:** Nenhum vínculo é estabelecido puramente por nome ou texto livre. Os registros utilizam o ID canônico imutável (`personId`, `courseId`, `trainingRecordId`).
-2. **Preservação Não-Destrutiva:** A edição de um colaborador pelo Rooster (`savePessoa`) recupera a entidade canônica completa em memória e mescla os dados, garantindo que campos SGQ (data de admissão, ramais corporativos, cargo operacional, observações e restrições) permaneçam intactos.
-3. **Persistência Assíncrona com Confirmação:** Todos os métodos do `repository` retornam `Promise<void>`, aguardando confirmação explícita de gravação do Firestore antes de emitir feedback ao usuário.
-4. **Histórico e Encadeamento de Renovação:** Ao renovar um treinamento, o registro anterior é marcado com `substituidoPor` e o novo registro aponta para `registroTreinamentoOrigemId`.
-5. **Bloqueio de Coleções Raiz:** Novas gravações nas coleções globais legadas (`/pessoa`, `/licenca`, `/treinamento`, etc.) foram bloqueadas em `firestore.rules`, garantindo isolamento multi-tenant absoluto.
+| Entidade | Formulário Oficial no Rooster | Coleção Canônica no Firestore | Consumo no QualyQuest |
+| :--- | :--- | :--- | :--- |
+| **Colaborador / Mecânico** | `PessoasView.tsx` / `FichaMecanicoView.tsx` | `organizations/{orgId}/persons/{personId}` | `PersonsCompetenciesView.tsx` (Dossiê e Matriz) |
+| **Catálogo de Cursos** | `CatalogoView.tsx` | `organizations/{orgId}/trainingCourses/{courseId}` | `TrainingsQualificationsView.tsx` (Grade Regulamentar) |
+| **Treinamentos Realizados** | `TreinamentosView.tsx` (Individual e em Lote) | `organizations/{orgId}/trainingRecords/{recordId}` | `TrainingsQualificationsView.tsx` (Histórico e Auditoria) |
+| **Licenças / CHTs** | `LicencasView.tsx` | `organizations/{orgId}/qualifications/{qualificationId}` | `TrainingsQualificationsView.tsx` (CHTs e Autorizações) |
+| **Estações / Bases** | `BasesView.tsx` | `organizations/{orgId}/operational_bases/{baseId}` | `OperationalBasesView.tsx` |
+| **Catálogo de Motores** | `CatalogoView.tsx` (Aba Motores) | `organizations/{orgId}/roster_motores/{motorId}` | Roster & Fichas Técnicas |
+| **Vínculos Treino-Motor** | `TreinamentosView.tsx` | `organizations/{orgId}/roster_treinamentos_motor` | Ficha do Mecânico & Roster |
+| **Designações de Frota/Função** | `DesignacoesView.tsx` | `organizations/{orgId}/roster_designacoes_*` | Aptidão Operacional & Roster |
 
 ---
 
-### 4. Execução de Testes e Homologação
-Para rodar a bateria de testes de integração:
+### 3. Regras de Ouro de Integridade & Não-Divergência
+
+1. **Identidade Estável:** Chaves primárias UUID/CUID imutáveis (`personId`, `courseId`, `trainingRecordId`). Nenhuma fusão ou relacionamento é estabelecido por nome textual de colaborador.
+2. **Preservação de 100% dos Campos SGQ:** Ao cadastrar ou editar mecânicos no Rooster, todos os atributos canônicos são mantidos: matrícula, setor, cargo operacional, data de admissão, contatos corporativos (ramais), observações e restrições operacionais.
+3. **Cálculo Rigoroso de Validade (Sem Prazos Presumidos):** Treinamentos ou cursos sem periodicidade explícita são gravados com `sem_validade: true` e `validade_dias: 0`, sem atribuição arbitrária de prazos (ex: 5 anos ou 730 dias).
+4. **Encadeamento de Renovação Auditado:** A renovação de um treinamento gera um novo registro com `registroTreinamentoOrigemId` e vincula o registro anterior via `substituidoPor`, preservando o histórico de auditoria.
+5. **Isolamento Multi-Tenant Estrito:** Todas as operações operam exclusivamente no escopo da organização (`organizations/{organizationId}/*`), com regras em `firestore.rules` que bloqueiam gravações em coleções legadas de raiz.
+
+---
+
+### 4. Suíte Automatizada de Homologação (55 Testes)
+
+Para validar a integridade de todas as dimensões de integração:
 ```bash
-npm run test:integration
+npx tsx scripts/test_integration_qualyquest_rooster.ts
 ```
-Para verificar a integridade de compilação TypeScript:
+
+Verificação de código e compilação:
 ```bash
 npm run lint
 npm run build

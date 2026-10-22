@@ -1896,6 +1896,7 @@ export interface RegistroTreinamentoColaborador {
   nivelOuModulo?: string; // Ex: 'Ramp & Transit'
   ehReciclagem?: boolean;
   registroTreinamentoOrigemId?: string; // Vínculo ao treinamento inicial correspondente
+  substituidoPor?: string; // Vínculo ao registro de treinamento substituto (revalidação)
   // Auditoria e rastreabilidade de correções
   importadoAutomaticamente?: boolean;
   origemImportacao?: string;

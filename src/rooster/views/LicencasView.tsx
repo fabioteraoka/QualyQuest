@@ -32,6 +32,11 @@ export const LicencasView: React.FC = () => {
   const [numero, setNumero] = useState('');
   const [dataVencimento, setDataVencimento] = useState('');
   const [dataExpedicao, setDataExpedicao] = useState('');
+  const [status, setStatus] = useState<'VALIDA' | 'VENCIDA' | 'SUSPENSA' | 'REVOGADA'>('VALIDA');
+  const [escopo, setEscopo] = useState('');
+  const [limitacoesOperacionais, setLimitacoesOperacionais] = useState('');
+  const [bloqueiaOperacaoSeVencida, setBloqueiaOperacaoSeVencida] = useState(true);
+  const [observacoes, setObservacoes] = useState('');
 
   const pessoasMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -68,6 +73,11 @@ export const LicencasView: React.FC = () => {
     setNumero('');
     setDataVencimento('');
     setDataExpedicao('');
+    setStatus('VALIDA');
+    setEscopo('');
+    setLimitacoesOperacionais('');
+    setBloqueiaOperacaoSeVencida(true);
+    setObservacoes('');
     setModalOpen(true);
   };
 
@@ -80,6 +90,11 @@ export const LicencasView: React.FC = () => {
     setNumero(lic.numero);
     setDataVencimento(lic.data_vencimento || '');
     setDataExpedicao(lic.data_expedicao || '');
+    setStatus(lic.status || 'VALIDA');
+    setEscopo(lic.escopo || '');
+    setLimitacoesOperacionais(lic.limitacoes_operacionais || '');
+    setBloqueiaOperacaoSeVencida(lic.bloqueia_operacao_se_vencida !== false);
+    setObservacoes(lic.observacoes || '');
     setModalOpen(true);
   };
 
@@ -100,6 +115,11 @@ export const LicencasView: React.FC = () => {
         numero: numero.trim(),
         data_vencimento: tipo === 'CHT' ? dataVencimento || null : null,
         data_expedicao: tipo === 'AMP' ? dataExpedicao || null : null,
+        status,
+        escopo: escopo.trim() || undefined,
+        limitacoes_operacionais: limitacoesOperacionais.trim() || undefined,
+        bloqueia_operacao_se_vencida: bloqueiaOperacaoSeVencida,
+        observacoes: observacoes.trim() || undefined,
         criado_em: editingLicenca?.criado_em || new Date().toISOString(),
         atualizado_em: new Date().toISOString(),
         atualizado_por: currentUser.nome,
@@ -107,7 +127,7 @@ export const LicencasView: React.FC = () => {
 
       await repository.saveLicenca(licData, currentUser.nome);
       setModalOpen(false);
-      showToast(`Licença ${licData.numero} salva com sucesso no Firestore!`);
+      showToast(`Licença ${licData.numero} salva com sucesso no cadastro mestre do Firestore!`);
     } catch (err: any) {
       showToast(`Erro ao salvar licença no Firestore: ${err?.message || err}`);
     }
@@ -360,23 +380,28 @@ export const LicencasView: React.FC = () => {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <form
             onSubmit={handleSave}
-            className="bg-white rounded-lg shadow-xl max-w-md w-full p-5 space-y-4"
+            className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto"
           >
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-              <h3 className="font-bold text-slate-900 text-sm">
-                {editingLicenca ? 'Editar Licença' : 'Cadastrar Nova Licença'}
-              </h3>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">
+                  {editingLicenca ? 'Editar Habilitação / Licença (Cadastro Mestre Rooster)' : 'Cadastrar Nova Habilitação / Licença (Cadastro Mestre Rooster)'}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Cadastro oficial de CHT, CCT, AMP e qualificações aeronáuticas com validação de status técnico.
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 text-sm"
               >
                 ✕
               </button>
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-slate-700 block mb-1">Mecânico:</label>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Mecânico / Colaborador:</label>
               <select
                 required
                 value={pessoaId}
@@ -385,27 +410,27 @@ export const LicencasView: React.FC = () => {
               >
                 {db.pessoas.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.id} — {p.nome}
+                    {p.id} — {p.nome} {p.canac ? `(CANAC: ${p.canac})` : ''}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Órgão:</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Autoridade / Órgão:</label>
                 <select
                   value={orgao}
                   onChange={(e) => setOrgao(e.target.value as any)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
                 >
-                  <option value="ANAC">ANAC</option>
-                  <option value="FAA">FAA</option>
+                  <option value="ANAC">ANAC (Brasil)</option>
+                  <option value="FAA">FAA (EUA)</option>
                 </select>
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Tipo:</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Tipo de Habilitação:</label>
                 <select
                   value={tipo}
                   onChange={(e) => setTipo(e.target.value as any)}
@@ -416,11 +441,9 @@ export const LicencasView: React.FC = () => {
                   <option value="AMP">FAA AMP</option>
                 </select>
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Habilitação:</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Habilitação Técnica:</label>
                 <select
                   value={habilitacao}
                   onChange={(e) => setHabilitacao(e.target.value as any)}
@@ -429,54 +452,103 @@ export const LicencasView: React.FC = () => {
                   <option value="CEL">CEL (Célula)</option>
                   <option value="GMP">GMP (Grupo Motopropulsor)</option>
                   <option value="AVI">AVI (Aviônicos)</option>
-                  <option value="">Vazio (AMP)</option>
+                  <option value="">Vazio / Outra</option>
                 </select>
               </div>
+            </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Número da Licença:</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Número da Licença / Registro:</label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex.: 06403"
+                  placeholder="Ex.: 06403 ou 123456"
                   value={numero}
                   onChange={(e) => setNumero(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono font-semibold"
                 />
               </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">Situação / Status:</label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as any)}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
+                >
+                  <option value="VALIDA">Válida / Regular</option>
+                  <option value="VENCIDA">Vencida</option>
+                  <option value="SUSPENSA">Suspensa</option>
+                  <option value="REVOGADA">Revogada</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  {tipo === 'CHT' ? 'Data de Vencimento:' : 'Data de Expedição:'}
+                </label>
+                <input
+                  type="date"
+                  required={tipo === 'CHT'}
+                  value={tipo === 'CHT' ? dataVencimento : dataExpedicao}
+                  onChange={(e) => {
+                    if (tipo === 'CHT') setDataVencimento(e.target.value);
+                    else setDataExpedicao(e.target.value);
+                  }}
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono font-bold"
+                />
+              </div>
             </div>
 
-            {tipo === 'CHT' && (
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Data de Vencimento:
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={dataVencimento}
-                  onChange={(e) => setDataVencimento(e.target.value)}
-                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
-                />
-              </div>
-            )}
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Escopo Técnico Oficial:</label>
+              <input
+                type="text"
+                placeholder="Ex.: Manutenção de Célula e Sistemas Mecânicos B737 / A320"
+                value={escopo}
+                onChange={(e) => setEscopo(e.target.value)}
+                className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+              />
+            </div>
 
-            {tipo === 'AMP' && (
-              <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">
-                  Data de Expedição:
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={dataExpedicao}
-                  onChange={(e) => setDataExpedicao(e.target.value)}
-                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
-                />
-              </div>
-            )}
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Limitações Operacionais (se houver):</label>
+              <input
+                type="text"
+                placeholder="Ex.: Não autorizado para inspeção boroscópica / Apenas com óculos"
+                value={limitacoesOperacionais}
+                onChange={(e) => setLimitacoesOperacionais(e.target.value)}
+                className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+              />
+            </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200">
+            <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={bloqueiaOperacaoSeVencida}
+                  onChange={(e) => setBloqueiaOperacaoSeVencida(e.target.checked)}
+                  className="rounded text-red-600 focus:ring-red-500"
+                />
+                <span className="text-xs font-bold text-slate-800">
+                  Bloquear Liberação Técnica / APRS se esta Habilitação Estiver Vencida
+                </span>
+              </label>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-slate-700 block mb-1">Observações da Habilitação:</label>
+              <textarea
+                rows={2}
+                placeholder="Evidência comprobatória, portaria ANAC ou detalhes SGQ..."
+                value={observacoes}
+                onChange={(e) => setObservacoes(e.target.value)}
+                className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
@@ -488,7 +560,7 @@ export const LicencasView: React.FC = () => {
                 type="submit"
                 className="px-4 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer"
               >
-                Salvar Licença
+                Salvar Habilitação Mestre
               </button>
             </div>
           </form>
