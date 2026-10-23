@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Download,
   Edit2,
   ExternalLink,
@@ -13,7 +14,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { repository } from '../services/storage';
+import { recordAudit, repository } from '../services/storage';
 import { CategoriaPessoa, Pessoa, SituacaoPessoa } from '../types';
 import { formatarDataBr } from '../utils/businessRules';
 
@@ -33,7 +34,7 @@ export const PessoasView: React.FC = () => {
   const [nome, setNome] = useState('');
   const [categoria, setCategoria] = useState<CategoriaPessoa>('Mecânico');
   const [situacao, setSituacao] = useState<SituacaoPessoa>('Ativo');
-  const [basePrincipalId, setBasePrincipalId] = useState('GRU');
+  const [basePrincipalId, setBasePrincipalId] = useState('');
   const [clienteOuArea, setClienteOuArea] = useState('');
   const [canac, setCanac] = useState('');
   const [matricula, setMatricula] = useState('');
@@ -49,11 +50,28 @@ export const PessoasView: React.FC = () => {
   // Undo delete
   const [deletedPessoaBackup, setDeletedPessoaBackup] = useState<Pessoa | null>(null);
 
+  // Mapeamento de bases para verificação de integridade
+  const basesMap = useMemo(() => {
+    const map = new Map<string, { id: string; sigla: string; nome: string; ativa: boolean; tipo?: string }>();
+    db.bases.forEach((b) => {
+      map.set(b.id.toUpperCase(), b);
+      if (b.sigla) map.set(b.sigla.toUpperCase(), b);
+    });
+    return map;
+  }, [db.bases]);
+
   const pessoasFiltradas = useMemo(() => {
     return db.pessoas.filter((p) => {
       if (filtroCategoria !== 'TODOS' && p.categoria !== filtroCategoria) return false;
       if (filtroSituacao !== 'TODOS' && p.situacao !== filtroSituacao) return false;
-      if (filtroBase !== 'TODAS' && p.base_principal_id !== filtroBase) return false;
+
+      if (filtroBase === 'PENDENTES_REGULARIZACAO') {
+        const bId = (p.base_principal_id || '').trim().toUpperCase();
+        const baseObj = basesMap.get(bId);
+        if (bId && baseObj && baseObj.ativa) return false;
+      } else if (filtroBase !== 'TODAS' && (p.base_principal_id || '').toUpperCase() !== filtroBase.toUpperCase()) {
+        return false;
+      }
 
       if (busca.trim()) {
         const q = busca.toLowerCase();
@@ -61,13 +79,14 @@ export const PessoasView: React.FC = () => {
           p.nome.toLowerCase().includes(q) ||
           p.id.toLowerCase().includes(q) ||
           p.canac.includes(q) ||
-          p.cliente_ou_area.toLowerCase().includes(q);
+          p.cliente_ou_area.toLowerCase().includes(q) ||
+          (p.base_principal_id && p.base_principal_id.toLowerCase().includes(q));
         if (!matches) return false;
       }
 
       return true;
     });
-  }, [db.pessoas, filtroCategoria, filtroSituacao, filtroBase, busca]);
+  }, [db.pessoas, filtroCategoria, filtroSituacao, filtroBase, busca, basesMap]);
 
   const handleOpenNew = () => {
     setEditingPessoa(null);
@@ -76,7 +95,9 @@ export const PessoasView: React.FC = () => {
     setNome('');
     setCategoria('Mecânico');
     setSituacao('Ativo');
-    setBasePrincipalId('GRU');
+    // Não força valor automático de GRU ou REC
+    const basesAtivas = db.bases.filter((b) => b.ativa);
+    setBasePrincipalId(basesAtivas.length === 1 ? basesAtivas[0].id : '');
     setClienteOuArea('');
     setCanac('');
     setMatricula('');
@@ -146,6 +167,19 @@ export const PessoasView: React.FC = () => {
         atualizado_em: new Date().toISOString(),
         atualizado_por: currentUser.nome,
       };
+
+      // Se houver alteração de base principal em relação ao registro anterior, registra explicitamente no histórico
+      if (editingPessoa && editingPessoa.base_principal_id !== basePrincipalId) {
+        await recordAudit(
+          'EDITAR',
+          'pessoa',
+          id.trim(),
+          `Alteração da base principal do colaborador ${nome.trim()} de "${editingPessoa.base_principal_id || 'SEM BASE'}" para "${basePrincipalId || 'SEM BASE'}"`,
+          { base_anterior: editingPessoa.base_principal_id },
+          { base_nova: basePrincipalId },
+          currentUser.nome
+        );
+      }
 
       await repository.savePessoa(pessoaData, currentUser.nome);
 
@@ -242,9 +276,10 @@ export const PessoasView: React.FC = () => {
             className="text-xs p-1.5 bg-slate-50 border border-slate-300 rounded font-semibold text-slate-800"
           >
             <option value="TODAS">Todas as Bases</option>
+            <option value="PENDENTES_REGULARIZACAO">⚠️ Bases Pendentes / Não Cadastradas</option>
             {db.bases.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.id}
+                {b.sigla || b.id} - {b.nome} {!b.ativa ? '(Inativa)' : ''}
               </option>
             ))}
           </select>
@@ -329,8 +364,57 @@ export const PessoasView: React.FC = () => {
                         {p.categoria}
                       </span>
                     </td>
-                    <td className="py-2.5 px-2 font-mono font-bold text-slate-800">
-                      {p.base_principal_id}
+                    <td className="py-2.5 px-2 font-mono text-xs">
+                      {(() => {
+                        const rawBase = (p.base_principal_id || '').trim();
+                        if (!rawBase) {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold">
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              Base não informada — necessária regularização
+                            </span>
+                          );
+                        }
+                        const baseObj = basesMap.get(rawBase.toUpperCase());
+                        if (!baseObj) {
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold text-red-950 font-mono">{rawBase}</span>
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100 text-red-900 border border-red-300 text-[10px] font-bold"
+                                title={`O registro original preserva o valor "${rawBase}", que não consta na tabela oficial de bases operacionais.`}
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                                Base não cadastrada — necessária regularização
+                              </span>
+                            </div>
+                          );
+                        }
+                        if (!baseObj.ativa) {
+                          return (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold text-slate-700 font-mono">{baseObj.sigla || baseObj.id}</span>
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-bold"
+                                title="A base operacional está inativa no sistema, preservando o histórico do colaborador."
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
+                                Base inativa (Histórico preservado)
+                              </span>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center gap-1 font-bold text-slate-900">
+                            <span className="px-1.5 py-0.2 bg-slate-100 border border-slate-200 rounded text-sky-950 font-mono">
+                              {baseObj.sigla || baseObj.id}
+                            </span>
+                            <span className="text-[11px] font-normal text-slate-600 truncate max-w-[140px]" title={baseObj.nome}>
+                              {baseObj.nome}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="py-2.5 px-3 text-slate-600">{p.cliente_ou_area || '-'}</td>
                     <td className="py-2.5 px-3 text-center font-mono tabular-nums text-slate-800">
@@ -469,18 +553,38 @@ export const PessoasView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-xs font-semibold text-slate-700 block mb-1">Base Principal:</label>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Base Principal Oficial:
+                </label>
                 <select
                   value={basePrincipalId}
                   onChange={(e) => setBasePrincipalId(e.target.value)}
-                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-bold"
+                  className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-bold text-slate-900"
                 >
-                  {db.bases.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.id} - {b.nome}
-                    </option>
-                  ))}
+                  <option value="">-- Selecione uma Base Operacional Ativa --</option>
+                  {/* Preserva opção não cadastrada ou inativa se já estiver vinculada historicamente */}
+                  {basePrincipalId &&
+                    !db.bases.some((b) => b.ativa && b.id.toUpperCase() === basePrincipalId.toUpperCase()) && (
+                      <option value={basePrincipalId} className="text-red-700 font-bold bg-red-50">
+                        ⚠️ {basePrincipalId} (Base não cadastrada ou inativa - Histórico Preservado)
+                      </option>
+                    )}
+                  {db.bases
+                    .filter((b) => b.ativa)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.sigla || b.id} - {b.nome} {b.cidade ? `(${b.cidade}/${b.estado})` : ''}
+                      </option>
+                    ))}
                 </select>
+                {basePrincipalId &&
+                  !db.bases.some((b) => b.ativa && b.id.toUpperCase() === basePrincipalId.toUpperCase()) && (
+                    <div className="mt-1.5 p-2 bg-amber-50 border border-amber-300 rounded text-[11px] text-amber-900 font-medium">
+                      ⚠️ <strong>Base não cadastrada — necessária regularização.</strong>
+                      <br />
+                      O registro preserva o valor histórico &quot;{basePrincipalId}&quot;. Para regularizar, escolha uma base ativa cadastrada ou inclua a nova localidade em <em>Cadastros Mestres → Bases e Locais Operacionais</em>.
+                    </div>
+                  )}
               </div>
 
               <div>

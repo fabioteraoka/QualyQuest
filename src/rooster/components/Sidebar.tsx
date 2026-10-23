@@ -16,6 +16,7 @@ import {
   HelpCircle,
   History,
   LayoutDashboard,
+  MapPin,
   Plane,
   Settings,
   UserCheck,
@@ -48,12 +49,14 @@ export const Sidebar: React.FC = () => {
     { id: 'conferencia', label: 'Conferência de Frota', icon: AlertTriangle },
   ];
 
-  const managementItems: NavItem[] = [
-    { id: 'pessoas', label: 'Pessoas & Mecânicos', icon: Users },
+  const cadastrosMestresItems: NavItem[] = [
+    { id: 'pessoas', label: 'Pessoas & Colaboradores', icon: Users },
+    { id: 'bases', label: 'Bases & Locais Operacionais', icon: MapPin, highlight: true },
     { id: 'ficha', label: 'Ficha do Mecânico', icon: UserCheck },
-    { id: 'licencas', label: 'Licenças (ANAC/FAA)', icon: Award },
-    { id: 'treinamentos', label: 'Treinamentos', icon: BookOpen },
-    { id: 'motores', label: 'Motores Habilitados', icon: Wrench },
+    { id: 'licencas', label: 'Habilitações & Licenças', icon: Award },
+    { id: 'catalogo', label: 'Catálogo de Treinamentos', icon: BookOpen },
+    { id: 'treinamentos', label: 'Treinamentos Realizados', icon: CalendarCheck },
+    { id: 'motores', label: 'Motores & Frota', icon: Wrench },
   ];
 
   const analysisItems: NavItem[] = [
@@ -62,7 +65,6 @@ export const Sidebar: React.FC = () => {
   ];
 
   const systemItems: NavItem[] = [
-    { id: 'catalogo', label: 'Catálogo de Cursos', icon: BookOpen },
     { id: 'designacoes_crud', label: 'Designações (Tabelas)', icon: Plane },
     { id: 'importar', label: 'Importar / Exportar Excel', icon: Database },
     { id: 'configuracoes', label: 'Configurações', icon: Settings },
@@ -125,9 +127,9 @@ export const Sidebar: React.FC = () => {
     <aside className="no-print w-64 bg-white border-r border-slate-200 shrink-0 flex flex-col justify-between overflow-y-auto h-[calc(100vh-73px)] p-3">
       <div>
         {renderNavGroup('Relatórios & Dashboard', primaryItems)}
-        {renderNavGroup('Gestão de Pessoal', managementItems)}
-        {renderNavGroup('Análise & Auditoria', analysisItems)}
-        {renderNavGroup('Parâmetros & Dados', systemItems)}
+        {renderNavGroup('Cadastros Mestres', cadastrosMestresItems)}
+        {renderNavGroup('Análise & Qualidade', analysisItems)}
+        {renderNavGroup('Sistema & Governança', systemItems)}
       </div>
 
       {/* Footer Info & Connection Status */}

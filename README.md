@@ -278,6 +278,7 @@ O QualiGest SGQ possui um manual técnico de **35 capítulos completos** diretam
 - Auditorias de Clientes com Resolução por Exceção (Kalitta QA-14 / EASA / ANAC);
 - System Designer Permanente e Catálogo Oficial de ADRs;
 - Motor de Importação Inteligente em 4 Etapas com Reconciliação e Desfazer (Undo);
+- Cadastros Mestres Oficiais (Rooster MRO): Bases e Locais Operacionais (`organizations/{orgId}/operational_bases`), Distinção de Hubs vs Estações de Linha vs Sites de Atendimento, Eliminação de restrições fixas e Rastreabilidade Completa (Audit Trail).
 - Simuladores interativos de fluxo operacional e checklist de 12 passos para novos usuários.
 
 ---

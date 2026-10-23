@@ -79,13 +79,65 @@ export class LocalAdapter implements StorageAdapter {
   async saveBase(base: Base, usuarioNome: string): Promise<void> {
     const db = loadDatabase();
     const idx = db.bases.findIndex((b) => b.id === base.id);
+    const now = new Date().toISOString();
+    const baseRecord: Base = {
+      ...base,
+      sigla: (base.sigla || base.id).toUpperCase(),
+      criado_em: base.criado_em || (idx >= 0 ? db.bases[idx].criado_em : now),
+      atualizado_em: now,
+      atualizado_por: usuarioNome,
+    };
     if (idx >= 0) {
-      db.bases[idx] = base;
+      db.bases[idx] = baseRecord;
     } else {
-      db.bases.push(base);
+      db.bases.push(baseRecord);
     }
     persistDatabase(db);
-    recordAudit('EDITAR', 'base', base.id, `Salva base ${base.id} - ${base.nome}`, null, base, usuarioNome);
+    recordAudit('EDITAR', 'base', base.id, `Salva base operacional ${base.sigla || base.id} - ${base.nome}`, null, baseRecord, usuarioNome);
+  }
+
+  async inativarBase(id: string, motivo: string, usuarioNome: string): Promise<void> {
+    const db = loadDatabase();
+    const idx = db.bases.findIndex((b) => b.id === id);
+    if (idx < 0) throw new Error(`Base ${id} não encontrada.`);
+    const existing = db.bases[idx];
+    const updated: Base = {
+      ...existing,
+      ativa: false,
+      observacoes: motivo ? `${existing.observacoes || ''}\n[INATIVAÇÃO]: ${motivo}`.trim() : existing.observacoes,
+      atualizado_em: new Date().toISOString(),
+      atualizado_por: usuarioNome,
+    };
+    db.bases[idx] = updated;
+    persistDatabase(db);
+    recordAudit('EDITAR', 'base', id, `Inativou base operacional ${id}. Motivo: ${motivo}`, existing, updated, usuarioNome);
+  }
+
+  async reativarBase(id: string, usuarioNome: string): Promise<void> {
+    const db = loadDatabase();
+    const idx = db.bases.findIndex((b) => b.id === id);
+    if (idx < 0) throw new Error(`Base ${id} não encontrada.`);
+    const existing = db.bases[idx];
+    const updated: Base = {
+      ...existing,
+      ativa: true,
+      atualizado_em: new Date().toISOString(),
+      atualizado_por: usuarioNome,
+    };
+    db.bases[idx] = updated;
+    persistDatabase(db);
+    recordAudit('EDITAR', 'base', id, `Reativou base operacional ${id}`, existing, updated, usuarioNome);
+  }
+
+  async deleteBase(id: string, usuarioNome: string): Promise<Base | null> {
+    const db = loadDatabase();
+    const idx = db.bases.findIndex((b) => b.id === id);
+    if (idx < 0) return null;
+    const removed = db.bases[idx];
+    db.bases.splice(idx, 1);
+    persistDatabase(db);
+    recordAudit('EXCLUIR', 'base', id, `Excluiu base operacional ${removed.id} - ${removed.nome}`, removed, null, usuarioNome);
+    return removed;
   }
 
   async saveLicenca(licenca: Licenca, usuarioNome: string): Promise<void> {

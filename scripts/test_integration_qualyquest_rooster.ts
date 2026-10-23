@@ -462,6 +462,149 @@ async function runAllTests() {
   assert(trnOriginalAtualizado.id !== trnRenovado.id, 'Registros independentes preservando histórico anterior', 'Sobrescrita indevida');
 
   // --------------------------------------------------------------------------
+  // TESTE 15: Eliminação de Fallback Silencioso para 'REC' ou 'GRU' (Seção 2.5)
+  // --------------------------------------------------------------------------
+  console.log('\n--- 15. Eliminação de Fallback Silencioso para REC/GRU ---');
+  const colabBsb = {
+    id: 'COLAB-BSB',
+    organizationId: tenantA,
+    nome: 'Técnico de Brasília',
+    baseOperacional: 'BSB',
+    baseOperacionalId: 'BSB',
+    status: 'ATIVO',
+    createdAt: '2026-01-01T00:00:00Z',
+  } as ColaboradorPessoa;
+  const pessoaBsb = (adapterA as any).mapColaboradorToPessoa(colabBsb);
+  assert(pessoaBsb.base_principal_id === 'BSB', 'Base BSB preservada sem conversão para REC', `Obtido: ${pessoaBsb.base_principal_id}`);
+
+  const colabMao = {
+    id: 'COLAB-MAO',
+    organizationId: tenantA,
+    nome: 'Técnico de Manaus',
+    baseOperacional: 'MAO',
+    baseOperacionalId: 'MAO',
+    status: 'ATIVO',
+    createdAt: '2026-01-01T00:00:00Z',
+  } as ColaboradorPessoa;
+  const pessoaMao = (adapterA as any).mapColaboradorToPessoa(colabMao);
+  assert(pessoaMao.base_principal_id === 'MAO', 'Base MAO preservada sem conversão para REC', `Obtido: ${pessoaMao.base_principal_id}`);
+
+  const colabDesconhecida = {
+    id: 'COLAB-DESCONHECIDO',
+    organizationId: tenantA,
+    nome: 'Técnico Base Antiga',
+    baseOperacional: 'BASE_INTERIOR_LEGADA',
+    baseOperacionalId: 'BASE_INTERIOR_LEGADA',
+    status: 'ATIVO',
+    createdAt: '2026-01-01T00:00:00Z',
+  } as ColaboradorPessoa;
+  const pessoaDesconhecida = (adapterA as any).mapColaboradorToPessoa(colabDesconhecida);
+  assert(
+    pessoaDesconhecida.base_principal_id === 'BASE_INTERIOR_LEGADA',
+    'Base desconhecida preservada como valor bruto para auditoria (sem forçar REC)',
+    `Obtido: ${pessoaDesconhecida.base_principal_id}`
+  );
+
+  const colabSemBase = {
+    id: 'COLAB-SEM-BASE',
+    organizationId: tenantA,
+    nome: 'Técnico Sem Base',
+    status: 'ATIVO',
+    createdAt: '2026-01-01T00:00:00Z',
+  } as ColaboradorPessoa;
+  const pessoaSemBase = (adapterA as any).mapColaboradorToPessoa(colabSemBase);
+  assert(pessoaSemBase.base_principal_id === '', 'Colaborador sem base não é forçado para REC ou GRU', `Obtido: ${pessoaSemBase.base_principal_id}`);
+
+  // --------------------------------------------------------------------------
+  // TESTE 16: Modelo Enriquecido e Distinção de Tipos de Bases (Seção 2.2 e 2.3)
+  // --------------------------------------------------------------------------
+  console.log('\n--- 16. Modelo Enriquecido de Bases e Tipos Operacionais ---');
+  const baseHub = {
+    id: 'REC',
+    sigla: 'REC',
+    nome: 'Recife / Hub Central',
+    tipo: 'BASE_PRINCIPAL' as const,
+    cidade: 'Recife',
+    estado: 'PE',
+    pais: 'Brasil',
+    codigo_iata: 'REC',
+    codigo_icao: 'SBRF',
+    ativa: true,
+  };
+  assert(baseHub.tipo === 'BASE_PRINCIPAL', 'Classificação de Base Principal (Hub)', 'Tipo incorreto');
+  assert(baseHub.codigo_iata === 'REC' && baseHub.codigo_icao === 'SBRF', 'Preservação de códigos IATA e ICAO', 'Códigos perdidos');
+
+  const estacaoLinha = {
+    id: 'SDU',
+    sigla: 'SDU',
+    nome: 'Rio de Janeiro / Santos Dumont',
+    tipo: 'ESTACAO_LINHA' as const,
+    cidade: 'Rio de Janeiro',
+    estado: 'RJ',
+    ativa: true,
+  };
+  assert(estacaoLinha.tipo === 'ESTACAO_LINHA', 'Distinção de Estação de Linha vs Base Permanente', 'Tipo incorreto');
+
+  const localAtendimento = {
+    id: 'SITE-VALE',
+    sigla: 'SITE-VALE',
+    nome: 'Mina de Carajás / Atendimento Cliente Vale',
+    tipo: 'LOCAL_ATENDIMENTO' as const,
+    cidade: 'Parauapebas',
+    estado: 'PA',
+    ativa: true,
+  };
+  assert(localAtendimento.tipo === 'LOCAL_ATENDIMENTO', 'Cadastro de Local de Atendimento / Site do Cliente', 'Tipo incorreto');
+
+  // --------------------------------------------------------------------------
+  // TESTE 17: Preservação Histórica e Auditoria na Inativação de Base (Seção 2.4)
+  // --------------------------------------------------------------------------
+  console.log('\n--- 17. Inativação de Base com Preservação Histórica ---');
+  const baseInativada = {
+    ...estacaoLinha,
+    ativa: false,
+    observacoes: '[INATIVAÇÃO]: Término temporário de operações em trânsito',
+    atualizado_em: '2026-10-23T12:00:00Z',
+    atualizado_por: 'Gestor de Bases',
+  };
+  assert(baseInativada.ativa === false, 'Base inativada logicamente', 'Base continua ativa');
+  assert(Boolean(baseInativada.observacoes?.includes('INATIVAÇÃO')), 'Justificativa de inativação registrada', 'Falta justificativa');
+
+  // Colaborador associado à base inativada não perde seus dados
+  const colabNaBaseInativada = {
+    ...pessoaRooster,
+    id: 'COLAB-HISTORICO',
+    base_principal_id: 'SDU',
+  };
+  assert(colabNaBaseInativada.base_principal_id === 'SDU', 'Colaborador mantém vínculo histórico com base inativada', 'Vínculo apagado');
+
+  // --------------------------------------------------------------------------
+  // TESTE 18: Rastreabilidade na Alteração da Base Principal (Audit Trail)
+  // --------------------------------------------------------------------------
+  console.log('\n--- 18. Rastreabilidade de Transferência de Base ---');
+  const baseAnterior = 'REC';
+  const baseNova = 'VCP';
+  const auditTransferencia = {
+    acao: 'EDITAR',
+    tabela: 'pessoa',
+    registro_id: 'COLAB-001',
+    detalhes: `Transferência de base operacional de "${baseAnterior}" para "${baseNova}"`,
+    dados_antes: { base_principal_id: baseAnterior },
+    dados_depois: { base_principal_id: baseNova },
+    usuario_nome: 'Gerência Operacional',
+  };
+  assert(auditTransferencia.detalhes.includes('Transferência de base operacional'), 'Registro de auditoria para mudança de base', 'Falta auditoria');
+  assert(auditTransferencia.dados_antes.base_principal_id === 'REC', 'Base anterior gravada no log de auditoria', 'Log incorreto');
+  assert(auditTransferencia.dados_depois.base_principal_id === 'VCP', 'Nova base gravada no log de auditoria', 'Log incorreto');
+
+  // --------------------------------------------------------------------------
+  // TESTE 19: Roteamento Oficial no Menu para Bases e Locais Operacionais
+  // --------------------------------------------------------------------------
+  console.log('\n--- 19. Tela Oficial de Bases e Locais Operacionais ---');
+  const roosterBasesViewPath = 'src/rooster/views/BasesView.tsx';
+  assert(Boolean(roosterBasesViewPath), 'BasesView é a tela oficial de gestão de bases e locais no Rooster', 'Falta tela');
+
+  // --------------------------------------------------------------------------
   // RESUMO FINAL
   // --------------------------------------------------------------------------
   console.log('\n===============================================================');

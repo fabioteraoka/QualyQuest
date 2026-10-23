@@ -15,11 +15,12 @@ import {
 } from '../types';
 
 export const INITIAL_BASES: Base[] = [
-  { id: 'CNF', nome: 'Belo Horizonte / Confins', ativa: true },
-  { id: 'GIG', nome: 'Rio de Janeiro / Galeão', ativa: true },
-  { id: 'GRU', nome: 'São Paulo / Guarulhos', ativa: true },
-  { id: 'REC', nome: 'Recife / Guararapes', ativa: true },
-  { id: 'VCP', nome: 'Campinas / Viracopos', ativa: true },
+  { id: 'CNF', sigla: 'CNF', nome: 'Belo Horizonte / Confins', tipo: 'ESTACAO_LINHA', cidade: 'Confins', estado: 'MG', ativa: true },
+  { id: 'GIG', sigla: 'GIG', nome: 'Rio de Janeiro / Galeão', tipo: 'ESTACAO_LINHA', cidade: 'Rio de Janeiro', estado: 'RJ', ativa: true },
+  { id: 'GRU', sigla: 'GRU', nome: 'São Paulo / Guarulhos', tipo: 'SUB_BASE', cidade: 'Guarulhos', estado: 'SP', ativa: true },
+  { id: 'REC', sigla: 'REC', nome: 'Recife / Hub Central', tipo: 'BASE_PRINCIPAL', cidade: 'Recife', estado: 'PE', ativa: true },
+  { id: 'VCP', sigla: 'VCP', nome: 'Campinas / Viracopos', tipo: 'SUB_BASE', cidade: 'Campinas', estado: 'SP', ativa: true },
+  { id: 'SOD', sigla: 'SOD', nome: 'Sorocaba / Hangar Manutenção', tipo: 'HANGAR', cidade: 'Sorocaba', estado: 'SP', ativa: true },
 ];
 
 export const INITIAL_MOTORES: MotorCatalogo[] = [

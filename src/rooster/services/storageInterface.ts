@@ -31,6 +31,9 @@ export interface StorageAdapter {
 
   // Base CRUD
   saveBase(base: Base, usuarioNome: string): Promise<void>;
+  deleteBase(id: string, usuarioNome: string): Promise<Base | null>;
+  inativarBase(id: string, motivo: string, usuarioNome: string): Promise<void>;
+  reativarBase(id: string, usuarioNome: string): Promise<void>;
 
   // License CRUD
   saveLicenca(licenca: Licenca, usuarioNome: string): Promise<void>;

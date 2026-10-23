@@ -15,9 +15,22 @@ export interface Pessoa {
 }
 
 export interface BaseRoster {
-  id: string; // CNF, GIG, GRU, REC, VCP
+  id: string; // ID estável / Sigla
+  sigla?: string;
   nome: string;
+  tipo?: string;
+  cidade?: string;
+  estado?: string;
+  pais?: string;
+  endereco?: string;
+  codigo_iata?: string;
+  codigo_icao?: string;
   ativa: boolean;
+  observacoes?: string;
+  responsavel?: string;
+  criado_em?: string;
+  atualizado_em?: string;
+  atualizado_por?: string;
 }
 
 export type OrgaoLicenca = 'ANAC' | 'FAA';

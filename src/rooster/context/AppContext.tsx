@@ -19,6 +19,7 @@ export type ActiveTab =
   | 'roster'
   | 'conferencia'
   | 'pessoas'
+  | 'bases'
   | 'ficha'
   | 'licencas'
   | 'treinamentos'

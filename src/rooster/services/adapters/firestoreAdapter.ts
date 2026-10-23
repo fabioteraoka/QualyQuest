@@ -141,11 +141,11 @@ export class FirestoreAdapter implements StorageAdapter {
     const categoria =
       c.camposCustomizados?.categoria ||
       ((c.funcao || '').toLowerCase().includes('adm') ? 'Administrativo' : 'Mecânico');
-    const baseRaw = (c.baseOperacionalId || c.baseOperacional || 'REC')
+    // Preserva a base operacional original do colaborador sem fallback silencioso para REC ou GRU
+    const baseFinal = (c.baseOperacionalId || c.baseOperacional || '')
       .split(' - ')[0]
       .trim()
       .toUpperCase();
-    const baseFinal = ['CNF', 'GIG', 'GRU', 'REC', 'VCP', 'SOD'].includes(baseRaw) ? baseRaw : 'REC';
     const situacao = c.status === 'INATIVO' || c.status === 'DESLIGADO' ? 'Inativo' : 'Ativo';
     const clienteOuArea =
       c.camposCustomizados?.clienteOuArea || c.setor || c.cargoOperacional || 'Manutenção Aeronáutica';
@@ -289,23 +289,35 @@ export class FirestoreAdapter implements StorageAdapter {
         (snap) => {
           this.memoryDb.bases = snap.docs.map((d) => {
             const b = d.data();
+            const rawId = (b.id || d.id || b.sigla || b.codigo || '').trim();
+            const sigla = (b.sigla || b.codigo || rawId).trim().toUpperCase();
+            const ativa =
+              b.ativa !== undefined
+                ? Boolean(b.ativa)
+                : b.ativo !== undefined
+                ? Boolean(b.ativo)
+                : b.status !== 'INATIVO';
+
             return {
-              id: (b.sigla || b.id || d.id).toUpperCase(),
-              nome: b.nome || b.descricao || d.id,
-              ativa: b.status !== 'INATIVO',
+              id: rawId || sigla,
+              sigla: sigla,
+              nome: b.nome || b.descricao || sigla,
+              tipo: b.tipo || 'ESTACAO_LINHA',
+              cidade: b.cidade || '',
+              estado: b.estado || b.uf || '',
+              pais: b.pais || 'Brasil',
+              endereco: b.endereco || '',
+              codigo_iata: b.codigo_iata || b.codigoIata || (sigla.length === 3 ? sigla : undefined),
+              codigo_icao: b.codigo_icao || b.codigoIcao || undefined,
+              ativa,
+              observacoes: b.observacoes || b.observacoesInativacao || '',
+              responsavel: b.responsavel || '',
+              contato: b.contatoTelefoneEmail || b.contato || '',
+              criado_em: b.criado_em || b.createdAt || '',
+              atualizado_em: b.atualizado_em || b.updatedAt || '',
+              atualizado_por: b.atualizado_por || b.updatedBy || '',
             } as Base;
           });
-          if (this.memoryDb.bases.length === 0) {
-            // Padrão mínimo oficial Impacto MRO se vazio
-            this.memoryDb.bases = [
-              { id: 'REC', nome: 'Recife / Hub Central', ativa: true },
-              { id: 'CNF', nome: 'Belo Horizonte / Confins', ativa: true },
-              { id: 'GIG', nome: 'Rio de Janeiro / Galeão', ativa: true },
-              { id: 'GRU', nome: 'São Paulo / Guarulhos', ativa: true },
-              { id: 'VCP', nome: 'Campinas / Viracopos', ativa: true },
-              { id: 'SOD', nome: 'Sorocaba / Hangar Manutenção', ativa: true },
-            ];
-          }
           this.notify();
         },
         (err) => console.warn('Erro ao escutar operational_bases:', err)
@@ -767,26 +779,195 @@ export class FirestoreAdapter implements StorageAdapter {
     if (!db) throw new Error('Firestore não inicializado.');
     const now = new Date().toISOString();
 
-    const idx = this.memoryDb.bases.findIndex((b) => b.id === base.id);
-    if (idx >= 0) this.memoryDb.bases[idx] = base;
-    else this.memoryDb.bases.push(base);
+    const baseId = (base.id || base.sigla || `BASE-${Date.now()}`).trim();
+    const sigla = (base.sigla || base.id || '').trim().toUpperCase();
+    const isEdit = this.memoryDb.bases.some((b) => b.id === baseId);
+    const existing = this.memoryDb.bases.find((b) => b.id === baseId);
+
+    const baseRecord: Base = {
+      ...base,
+      id: baseId,
+      sigla: sigla || baseId,
+      nome: base.nome.trim(),
+      tipo: base.tipo || 'ESTACAO_LINHA',
+      cidade: base.cidade || '',
+      estado: (base.estado || '').toUpperCase(),
+      pais: base.pais || 'Brasil',
+      endereco: base.endereco || '',
+      codigo_iata: base.codigo_iata ? base.codigo_iata.trim().toUpperCase() : undefined,
+      codigo_icao: base.codigo_icao ? base.codigo_icao.trim().toUpperCase() : undefined,
+      ativa: base.ativa !== undefined ? base.ativa : true,
+      observacoes: base.observacoes || '',
+      responsavel: base.responsavel || '',
+      contato: base.contato || '',
+      criado_em: existing?.criado_em || base.criado_em || now,
+      atualizado_em: now,
+      atualizado_por: usuarioNome,
+    };
+
+    const idx = this.memoryDb.bases.findIndex((b) => b.id === baseRecord.id);
+    if (idx >= 0) this.memoryDb.bases[idx] = baseRecord;
+    else this.memoryDb.bases.push(baseRecord);
     this.notify();
 
-    const baseDoc = {
-      id: base.id,
-      sigla: base.id,
-      nome: base.nome,
-      status: base.ativa ? 'ATIVO' : 'INATIVO',
+    // Payload canônico compatível com Firestore QualyQuest BaseEstacaoOperacao
+    const firestorePayload = {
+      id: baseRecord.id,
+      organizationId: this.orgId,
+      codigo: baseRecord.sigla,
+      sigla: baseRecord.sigla,
+      nome: baseRecord.nome,
+      tipo: baseRecord.tipo,
+      cidade: baseRecord.cidade,
+      estado: baseRecord.estado,
+      uf: baseRecord.estado,
+      pais: baseRecord.pais,
+      endereco: baseRecord.endereco,
+      codigoIata: baseRecord.codigo_iata,
+      codigo_iata: baseRecord.codigo_iata,
+      codigoIcao: baseRecord.codigo_icao,
+      codigo_icao: baseRecord.codigo_icao,
+      responsavel: baseRecord.responsavel,
+      contatoTelefoneEmail: baseRecord.contato,
+      contato: baseRecord.contato,
+      observacoes: baseRecord.observacoes,
+      ativo: baseRecord.ativa,
+      ativa: baseRecord.ativa,
+      status: baseRecord.ativa ? 'ATIVO' : 'INATIVO',
+      createdAt: baseRecord.criado_em,
+      criado_em: baseRecord.criado_em,
       updatedAt: now,
+      atualizado_em: now,
+      atualizado_por: usuarioNome,
     };
 
     await setDoc(
-      doc(db, 'organizations', this.orgId, 'operational_bases', base.id),
-      sanitizeForFirestore(baseDoc),
+      doc(db, 'organizations', this.orgId, 'operational_bases', baseRecord.id),
+      sanitizeForFirestore(firestorePayload),
       { merge: true }
     );
 
-    await this.recordAudit('EDITAR', 'base', base.id, `Salva base ${base.id} - ${base.nome}`, null, base, usuarioNome);
+    await this.recordAudit(
+      isEdit ? 'EDITAR' : 'CRIAR',
+      'base',
+      baseRecord.id,
+      `${isEdit ? 'Atualizou' : 'Cadastrou'} base/local operacional ${baseRecord.sigla} - ${baseRecord.nome} (${baseRecord.tipo})`,
+      existing || null,
+      baseRecord,
+      usuarioNome
+    );
+  }
+
+  async inativarBase(id: string, motivo: string, usuarioNome: string): Promise<void> {
+    const db = getFirestoreDb();
+    if (!db) throw new Error('Firestore não inicializado.');
+    const existing = this.memoryDb.bases.find((b) => b.id === id);
+    if (!existing) throw new Error(`Base operacional ${id} não encontrada.`);
+
+    const now = new Date().toISOString();
+    const updated: Base = {
+      ...existing,
+      ativa: false,
+      observacoes: motivo
+        ? `${existing.observacoes || ''}\n[INATIVAÇÃO]: ${motivo}`.trim()
+        : existing.observacoes,
+      atualizado_em: now,
+      atualizado_por: usuarioNome,
+    };
+
+    const idx = this.memoryDb.bases.findIndex((b) => b.id === id);
+    if (idx >= 0) this.memoryDb.bases[idx] = updated;
+    this.notify();
+
+    await setDoc(
+      doc(db, 'organizations', this.orgId, 'operational_bases', id),
+      {
+        ativo: false,
+        ativa: false,
+        status: 'INATIVO',
+        observacoesInativacao: motivo,
+        updatedAt: now,
+        atualizado_em: now,
+        atualizado_por: usuarioNome,
+      },
+      { merge: true }
+    );
+
+    await this.recordAudit(
+      'EDITAR',
+      'base',
+      id,
+      `Inativou base operacional ${existing.sigla || existing.id} - ${existing.nome}. Motivo: ${motivo || 'Operacional'}`,
+      existing,
+      updated,
+      usuarioNome
+    );
+  }
+
+  async reativarBase(id: string, usuarioNome: string): Promise<void> {
+    const db = getFirestoreDb();
+    if (!db) throw new Error('Firestore não inicializado.');
+    const existing = this.memoryDb.bases.find((b) => b.id === id);
+    if (!existing) throw new Error(`Base operacional ${id} não encontrada.`);
+
+    const now = new Date().toISOString();
+    const updated: Base = {
+      ...existing,
+      ativa: true,
+      atualizado_em: now,
+      atualizado_por: usuarioNome,
+    };
+
+    const idx = this.memoryDb.bases.findIndex((b) => b.id === id);
+    if (idx >= 0) this.memoryDb.bases[idx] = updated;
+    this.notify();
+
+    await setDoc(
+      doc(db, 'organizations', this.orgId, 'operational_bases', id),
+      {
+        ativo: true,
+        ativa: true,
+        status: 'ATIVO',
+        updatedAt: now,
+        atualizado_em: now,
+        atualizado_por: usuarioNome,
+      },
+      { merge: true }
+    );
+
+    await this.recordAudit(
+      'EDITAR',
+      'base',
+      id,
+      `Reativou base operacional ${existing.sigla || existing.id} - ${existing.nome}`,
+      existing,
+      updated,
+      usuarioNome
+    );
+  }
+
+  async deleteBase(id: string, usuarioNome: string): Promise<Base | null> {
+    const db = getFirestoreDb();
+    if (!db) throw new Error('Firestore não inicializado.');
+    const existing = this.memoryDb.bases.find((b) => b.id === id) || null;
+
+    this.memoryDb.bases = this.memoryDb.bases.filter((b) => b.id !== id);
+    this.notify();
+
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'operational_bases', id));
+
+    if (existing) {
+      await this.recordAudit(
+        'EXCLUIR',
+        'base',
+        id,
+        `Excluiu base operacional ${existing.sigla || existing.id} - ${existing.nome}`,
+        existing,
+        null,
+        usuarioNome
+      );
+    }
+    return existing;
   }
 
   /**

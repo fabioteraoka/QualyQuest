@@ -32,10 +32,31 @@ export interface Pessoa {
   atualizado_por: string;
 }
 
+export type TipoBaseOperacional =
+  | 'BASE_PRINCIPAL'
+  | 'SUB_BASE'
+  | 'ESTACAO_LINHA'
+  | 'LOCAL_ATENDIMENTO'
+  | 'HANGAR';
+
 export interface Base {
-  id: string; // CNF, GIG, GRU, REC, VCP
-  nome: string;
+  id: string; // ID estável / Sigla (ex: REC, GRU, VCP, SDU, BSB, MAO, SSA, etc.)
+  sigla: string; // Sigla ou código oficial
+  nome: string; // Nome da base ou estação
+  tipo: TipoBaseOperacional; // Distinção entre Base Permanente, Sub-Base, Estação/Linha, Local de Atendimento, Hangar
+  cidade: string;
+  estado: string; // UF
+  pais?: string;
+  endereco?: string;
+  codigo_iata?: string;
+  codigo_icao?: string;
   ativa: boolean;
+  observacoes?: string;
+  responsavel?: string;
+  contato?: string;
+  criado_em?: string;
+  atualizado_em?: string;
+  atualizado_por?: string;
 }
 
 export type OrgaoLicenca = 'ANAC' | 'FAA';

@@ -1132,8 +1132,25 @@ export function commitImportPayload(
       const nome = parseTextString(r.nome || id);
       const ativa = parseBoolean(r.ativa, true);
       if (!id) continue;
+      const sigla = parseTextString((r as any).sigla || id).toUpperCase();
+      const tipo = ((r as any).tipo || 'ESTACAO_LINHA') as any;
+      const cidade = parseTextString((r as any).cidade || '');
+      const estado = parseTextString((r as any).estado || '').toUpperCase();
       const idx = newDb.bases.findIndex((b) => b.id === id);
-      const item: Base = { id, nome, ativa };
+      const item: Base = {
+        id,
+        sigla,
+        nome,
+        tipo,
+        cidade,
+        estado,
+        pais: parseTextString((r as any).pais || 'Brasil'),
+        endereco: parseTextString((r as any).endereco || ''),
+        codigo_iata: parseTextString((r as any).codigo_iata || ''),
+        codigo_icao: parseTextString((r as any).codigo_icao || ''),
+        ativa,
+        observacoes: parseTextString((r as any).observacoes || ''),
+      };
       if (idx >= 0) newDb.bases[idx] = item;
       else newDb.bases.push(item);
     }
@@ -1930,15 +1947,27 @@ export const repository = {
       await activeAdapter.saveBase(base, usuarioNome);
       return;
     }
-    const db = loadDatabase();
-    const idx = db.bases.findIndex((b) => b.id === base.id);
-    if (idx >= 0) {
-      db.bases[idx] = base;
-    } else {
-      db.bases.push(base);
+    await (activeAdapter as any).saveBase(base, usuarioNome);
+  },
+  inativarBase: async (id: string, motivo: string, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await (activeAdapter as any).inativarBase(id, motivo, usuarioNome);
+      return;
     }
-    persistDatabase(db);
-    recordAudit('EDITAR', 'base', base.id, `Salva base ${base.id} - ${base.nome}`, null, base, usuarioNome);
+    await (activeAdapter as any).inativarBase(id, motivo, usuarioNome);
+  },
+  reativarBase: async (id: string, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await (activeAdapter as any).reativarBase(id, usuarioNome);
+      return;
+    }
+    await (activeAdapter as any).reativarBase(id, usuarioNome);
+  },
+  deleteBase: async (id: string, usuarioNome = 'Admin'): Promise<Base | null> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      return await (activeAdapter as any).deleteBase(id, usuarioNome);
+    }
+    return await (activeAdapter as any).deleteBase(id, usuarioNome);
   },
 
   // Licencas

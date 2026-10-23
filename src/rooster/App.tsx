@@ -12,6 +12,7 @@ import { Sidebar } from './components/Sidebar';
 import { TopBar } from './components/TopBar';
 import { AppProvider, useApp } from './context/AppContext';
 import { AuditoriaView } from './views/AuditoriaView';
+import { BasesView } from './views/BasesView';
 import { CatalogoView } from './views/CatalogoView';
 import { ConferenciaView } from './views/ConferenciaView';
 import { ConfiguracoesView } from './views/ConfiguracoesView';
@@ -79,6 +80,8 @@ const AppContent: React.FC = () => {
         return <ConferenciaView />;
       case 'pessoas':
         return <PessoasView />;
+      case 'bases':
+        return <BasesView />;
       case 'ficha':
         return <FichaMecanicoView />;
       case 'licencas':
