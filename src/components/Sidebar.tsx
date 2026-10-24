@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -11,7 +11,6 @@ import {
   Activity,
   LogIn,
   X,
-  Scale,
   CheckSquare,
   Award,
   Presentation,
@@ -19,23 +18,57 @@ import {
   Building2,
   Sliders,
   FileCheck2,
-  Lightbulb,
   Users,
   GraduationCap,
   Clock,
   History,
-  Globe,
   Layers,
-  ClipboardCheck,
   UploadCloud,
   ChevronDown,
   ChevronRight,
   FolderTree,
-  Archive,
   Plane,
+  MapPin,
+  Wrench,
+  Grid,
+  FileSpreadsheet,
+  AlertTriangle,
+  AlertCircle,
+  Shield,
+  PanelLeftClose,
+  PanelLeftOpen,
+  UserCheck,
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
+
+export interface NavSubItem {
+  id: string;
+  label: string;
+  aliases?: string[];
+  badge?: string | number;
+  badgeColor?: string;
+  adminOnly?: boolean;
+}
+
+export interface NavItemDef {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  aliases?: string[];
+  badge?: string | number;
+  badgeColor?: string;
+  adminOnly?: boolean;
+  subItems?: NavSubItem[];
+}
+
+export interface NavGroupDef {
+  id: string;
+  label: string;
+  icon?: React.ReactNode;
+  items: NavItemDef[];
+  adminOnly?: boolean;
+}
 
 interface SidebarProps {
   activeTab: string;
@@ -70,33 +103,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user, userProfile } = useAuth();
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [isCompact, setIsCompact] = useState<boolean>(false);
 
   const alertasCriticos = (alertas || []).filter(
     (a) => a.tipoAlerta === 'VENCIDA' || a.tipoAlerta === 'VENCE_HOJE' || a.tipoAlerta === 'VENCE_7_DIAS'
   );
-
-  const toggleGroup = (groupId: string) => {
-    setCollapsedGroups((prev) => ({
-      ...prev,
-      [groupId]: !prev[groupId],
-    }));
-  };
-
-  const handleItemClick = (tabId: string) => {
-    // Normalização de atalhos seletivos
-    const targetTab = tabId === 'knowledgeBase-melhoria' ? 'knowledgeBase' : tabId;
-    setActiveTab(targetTab);
-    if (onCloseMobile) onCloseMobile();
-  };
-
-  const handleNewNCClick = () => {
-    onNewNC();
-    if (onCloseMobile) onCloseMobile();
-  };
-
-  const orgSigla = activeOrganization?.configuration?.identidadeVisual?.siglaAeronautica || 
-                   (activeOrganization?.name ? activeOrganization.name.substring(0, 3).toUpperCase() : 'SGQ');
-  const orgName = activeOrganization?.name || 'QualiGest SGQ';
 
   // Perfil administrativo / permissão de sistema
   const isAdminOrGestor = !userProfile || 
@@ -104,22 +115,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           userProfile.role === 'ADMINISTRADOR' || 
                           userProfile.role === 'GESTOR_SGQ';
 
+  const orgSigla = activeOrganization?.configuration?.identidadeVisual?.siglaAeronautica || 
+                   (activeOrganization?.name ? activeOrganization.name.substring(0, 3).toUpperCase() : 'SGQ');
+  const orgName = activeOrganization?.name || 'QualiGest SGQ';
+
   /**
-   * NOVA ARQUITETURA DEFINITIVA DE NAVEGAÇÃO DO QUALIGEST
-   * Estruturada estritamente conforme as 8 seções mandatadas:
-   * 1. INÍCIO
-   * 2. QUALIDADE
-   * 3. AUDITORIAS & CLIENTES
-   * 4. PESSOAS & COMPETÊNCIAS
-   * 5. DOCUMENTOS
-   * 6. RECURSOS & CONTROLES
-   * 7. CONHECIMENTO & MELHORIA
-   * 8. ADMINISTRAÇÃO
+   * ESTRUTURA GLOBAL PADRONIZADA DE NAVEGAÇÃO LATERAL (QUALYQUEST / ROOSTER)
+   * Domínios canônicos mandatados:
+   * 1. Painel
+   * 2. Pessoas e Colaboradores
+   * 3. Treinamentos
+   * 4. Cadastros Mestres (Bases & Locais Operacionais, Motores & Frota, Controles)
+   * 5. Qualidade e Controles
+   * 6. Relatórios
+   * 7. Administração e Segurança
+   * 8. Auditoria e Histórico
+   * 9. Configurações e Ferramentas
    */
-  const navGroups = [
+  const navGroups: NavGroupDef[] = [
     {
-      id: 'inicio',
-      label: 'INÍCIO',
+      id: 'painel',
+      label: 'Painel',
       items: [
         {
           id: 'dashboard',
@@ -127,16 +143,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: <LayoutDashboard className="w-4 h-4 text-blue-400" />,
         },
         {
+          id: 'saudeSGQ',
+          label: 'Saúde do SGQ',
+          aliases: ['visao-evolucao'],
+          icon: <Activity className="w-4 h-4 text-emerald-400" />,
+        },
+        {
           id: 'alertas',
           label: 'Pendências & Alertas',
           icon: <Bell className="w-4 h-4 text-rose-400" />,
           badge: alertasCriticos.length > 0 ? alertasCriticos.length : undefined,
-          badgeColor: 'bg-rose-600 text-white',
-        },
-        {
-          id: 'saudeSGQ',
-          label: 'Saúde do SGQ',
-          icon: <Activity className="w-4 h-4 text-emerald-400" />,
+          badgeColor: 'bg-rose-600 text-white animate-pulse',
         },
         {
           id: 'apresentacao',
@@ -146,12 +163,106 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      id: 'qualidade',
-      label: 'QUALIDADE',
+      id: 'pessoas-colaboradores',
+      label: 'Pessoas e Colaboradores',
+      items: [
+        {
+          id: 'pessoas-competencias',
+          label: 'Colaboradores',
+          aliases: ['pessoas-colaboradores', 'rooster-pessoas'],
+          icon: <Users className="w-4 h-4 text-emerald-400" />,
+        },
+        {
+          id: 'rooster-ficha',
+          label: 'Dossiê do Mecânico',
+          aliases: ['ficha'],
+          icon: <UserCheck className="w-4 h-4 text-sky-400" />,
+        },
+        {
+          id: 'rooster-designacao',
+          label: 'Bases & Designações',
+          aliases: ['designacao'],
+          icon: <FileCheck2 className="w-4 h-4 text-indigo-400" />,
+          badge: 'A4',
+          badgeColor: 'bg-indigo-900/60 text-indigo-300 border border-indigo-700/50',
+        },
+        {
+          id: 'cht-qualificacoes',
+          label: 'Habilitações & Licenças',
+          aliases: ['rooster-licencas'],
+          icon: <Award className="w-4 h-4 text-amber-400" />,
+        },
+        {
+          id: 'competencias-dashboard',
+          label: 'Painel de Competências',
+          icon: <Activity className="w-4 h-4 text-teal-400" />,
+        },
+      ],
+    },
+    {
+      id: 'treinamentos',
+      label: 'Treinamentos',
+      items: [
+        {
+          id: 'rooster-catalogo',
+          label: 'Catálogo de Cursos',
+          aliases: ['catalogo'],
+          icon: <BookOpen className="w-4 h-4 text-sky-400" />,
+        },
+        {
+          id: 'treinamentos-qualificacoes',
+          label: 'Treinamentos Realizados',
+          aliases: ['rooster-treinamentos'],
+          icon: <GraduationCap className="w-4 h-4 text-emerald-400" />,
+        },
+        {
+          id: 'central-vencimentos-gaps',
+          label: 'Validades & Vencimentos',
+          aliases: ['rooster-vencimentos'],
+          icon: <Clock className="w-4 h-4 text-rose-400" />,
+        },
+        {
+          id: 'rooster-matrizes',
+          label: 'Matriz de Treinamentos',
+          aliases: ['aptidao-operacional', 'matrizes'],
+          icon: <Grid className="w-4 h-4 text-purple-400" />,
+        },
+      ],
+    },
+    {
+      id: 'cadastros-mestres',
+      label: 'Cadastros Mestres',
+      items: [
+        {
+          id: 'cadastros-bases',
+          label: 'Bases & Locais Operacionais',
+          aliases: ['rooster-bases', 'bases'],
+          icon: <MapPin className="w-4 h-4 text-rose-400" />,
+          badge: 'Mestre',
+          badgeColor: 'bg-rose-900/60 text-rose-300 border border-rose-700/50',
+        },
+        {
+          id: 'rooster-motores',
+          label: 'Motores & Frota',
+          aliases: ['motores', 'empresas-frotas', 'documentos-empresas-frotas'],
+          icon: <Wrench className="w-4 h-4 text-amber-400" />,
+        },
+        {
+          id: 'outros-controles',
+          label: 'Controles Centrais SGQ',
+          aliases: ['clientes-matriz', 'clientes-cockpit'],
+          icon: <Layers className="w-4 h-4 text-sky-400" />,
+        },
+      ],
+    },
+    {
+      id: 'qualidade-controles',
+      label: 'Qualidade e Controles',
       items: [
         {
           id: 'relatorio',
-          label: 'Não Conformidades',
+          label: 'Não Conformidades (RNC)',
+          aliases: ['formulario'],
           icon: <FileText className="w-4 h-4 text-blue-400" />,
         },
         {
@@ -165,149 +276,139 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: <CheckSquare className="w-4 h-4 text-amber-400" />,
         },
         {
-          id: 'knowledgeBase',
-          label: 'Base de Conhecimento',
-          icon: <Award className="w-4 h-4 text-emerald-400" />,
-        },
-      ],
-    },
-    {
-      id: 'auditorias-clientes',
-      label: 'AUDITORIAS & CLIENTES',
-      items: [
-        {
           id: 'auditorias-gestao',
-          label: 'Auditorias',
+          label: 'Auditorias Internas & Externas',
+          aliases: ['auditorias-dashboard', 'clientes-cronograma'],
           icon: <ShieldCheck className="w-4 h-4 text-amber-400" />,
         },
         {
-          id: 'clientes-requisitos',
-          label: 'Clientes & Requisitos',
-          icon: <ClipboardCheck className="w-4 h-4 text-sky-400" />,
-        },
-        {
           id: 'smart-audit',
-          label: 'Auditoria Inteligente',
+          label: 'Auditoria Inteligente & Clientes',
+          aliases: ['clientes-requisitos'],
           icon: <Sparkles className="w-4 h-4 text-purple-400" />,
         },
         {
-          id: 'clientes-cronograma',
-          label: 'Calendário de Auditorias',
-          icon: <Clock className="w-4 h-4 text-emerald-400" />,
-        },
-      ],
-    },
-    {
-      id: 'pessoas-competencias-group',
-      label: 'PESSOAS & COMPETÊNCIAS',
-      items: [
-        {
-          id: 'pessoas-competencias',
-          label: 'Colaboradores',
-          icon: <Users className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'rooster-mro',
-          label: 'Roster & Mecânicos (MRO)',
-          icon: <Plane className="w-4 h-4 text-sky-400" />,
-        },
-        {
-          id: 'treinamentos-qualificacoes',
-          label: 'Treinamentos',
-          icon: <GraduationCap className="w-4 h-4 text-sky-400" />,
-        },
-        {
-          id: 'cht-qualificacoes',
-          label: 'CHTs & Qualificações',
-          icon: <Award className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'central-vencimentos-gaps',
-          label: 'Vencimentos & Gaps',
-          icon: <Clock className="w-4 h-4 text-rose-400" />,
-        },
-        {
-          id: 'aptidao-operacional',
-          label: 'Aptidão Operacional',
-          icon: <Activity className="w-4 h-4 text-indigo-400" />,
-        },
-      ],
-    },
-    {
-      id: 'documentos-group',
-      label: 'DOCUMENTOS',
-      items: [
-        {
           id: 'manuais',
           label: 'Banco de Manuais (IA)',
-          icon: <BookOpen className="w-4 h-4 text-purple-400" />,
+          icon: <BookOpen className="w-4 h-4 text-indigo-400" />,
         },
         {
           id: 'controle-documental',
           label: 'Acervo & Revisões (SGQ)',
+          aliases: ['verificacao-controle', 'documentos-inativos'],
           icon: <FolderTree className="w-4 h-4 text-sky-400" />,
         },
-        {
-          id: 'verificacao-controle',
-          label: 'Verificação & Controle',
-          icon: <ShieldCheck className="w-4 h-4 text-indigo-400" />,
-        },
-        {
-          id: 'historico-relatorios',
-          label: 'Histórico & Relatórios',
-          icon: <History className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'documentos-inativos',
-          label: 'Manuais Inativos & Arquivo',
-          icon: <Archive className="w-4 h-4 text-slate-400" />,
-        },
-      ],
-    },
-    {
-      id: 'recursos-controles',
-      label: 'RECURSOS & CONTROLES',
-      items: [
         {
           id: 'ferramentas-metrologia',
           label: 'Ferramentas & Metrologia',
           icon: <Sliders className="w-4 h-4 text-amber-400" />,
         },
+      ],
+    },
+    {
+      id: 'relatorios',
+      label: 'Relatórios',
+      items: [
         {
-          id: 'importacao-inteligente',
-          label: 'Importação de Dados',
-          icon: <UploadCloud className="w-4 h-4 text-sky-400" />,
+          id: 'rooster-relatorio',
+          label: 'Relatório do Roster',
+          aliases: ['rooster-roster', 'rooster'],
+          icon: <FileSpreadsheet className="w-4 h-4 text-emerald-400" />,
+          badge: 'A4 / Excel',
+          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
         },
         {
-          id: 'outros-controles',
-          label: 'Outros Controles',
-          icon: <Layers className="w-4 h-4 text-emerald-400" />,
+          id: 'oficial',
+          label: 'Dossiê Oficial F 001-29',
+          icon: <FileCheck2 className="w-4 h-4 text-blue-400" />,
+        },
+        {
+          id: 'historico-relatorios',
+          label: 'Histórico & Documentos',
+          icon: <History className="w-4 h-4 text-purple-400" />,
+        },
+        {
+          id: 'auditorias-constatacoes',
+          label: 'Constatações de Auditoria',
+          icon: <AlertCircle className="w-4 h-4 text-rose-400" />,
+        },
+        {
+          id: 'rooster-conferencia',
+          label: 'Conferência de Frota & Turno',
+          aliases: ['conferencia'],
+          icon: <AlertTriangle className="w-4 h-4 text-amber-400" />,
         },
       ],
     },
     {
-      id: 'conhecimento-melhoria',
-      label: 'CONHECIMENTO & MELHORIA',
+      id: 'administracao-seguranca',
+      label: 'Administração e Segurança',
+      adminOnly: true,
       items: [
         {
-          id: 'knowledgeBase-melhoria',
-          label: 'Base de Conhecimento',
-          icon: <Award className="w-4 h-4 text-emerald-400" />,
+          id: 'admin-central',
+          label: 'Usuários & Permissões (RBAC)',
+          icon: <Shield className="w-4 h-4 text-indigo-400" />,
+          adminOnly: true,
         },
         {
-          id: 'auditorias-licoes',
-          label: 'Lições Aprendidas',
-          icon: <Lightbulb className="w-4 h-4 text-amber-400" />,
+          id: 'configuracoes-org',
+          label: 'Configurações Organizacionais',
+          icon: <Building2 className="w-4 h-4 text-blue-400" />,
+          adminOnly: true,
         },
         {
-          id: 'comparacaoRNC',
-          label: 'Soluções Validadas',
-          icon: <CheckSquare className="w-4 h-4 text-cyan-400" />,
+          id: 'system-designer',
+          label: 'System Designer (ADRs)',
+          icon: <Cpu className="w-4 h-4 text-slate-400" />,
+          adminOnly: true,
+        },
+        {
+          id: 'diagnosticos-tecnicos',
+          label: 'Diagnósticos Técnicos',
+          icon: <Activity className="w-4 h-4 text-teal-400" />,
+          adminOnly: true,
+        },
+        {
+          id: 'onboarding-novo-cliente',
+          label: 'Implantação & Onboarding',
+          icon: <CheckSquare className="w-4 h-4 text-emerald-400" />,
+          adminOnly: true,
+        },
+      ],
+    },
+    {
+      id: 'auditoria-historico',
+      label: 'Auditoria e Histórico',
+      items: [
+        {
+          id: 'admin-audit-trail',
+          label: 'Audit Trail do Sistema',
+          icon: <History className="w-4 h-4 text-amber-400" />,
+          badge: 'Auditável',
+          badgeColor: 'bg-amber-900/60 text-amber-300 border border-amber-700/50',
+        },
+      ],
+    },
+    {
+      id: 'configuracoes-ferramentas',
+      label: 'Configurações e Ferramentas',
+      items: [
+        {
+          id: 'importacao-inteligente',
+          label: 'Importação Inteligente',
+          icon: <UploadCloud className="w-4 h-4 text-sky-400" />,
         },
         {
           id: 'extrator',
           label: 'Extrator de NCs com IA',
           icon: <Sparkles className="w-4 h-4 text-purple-400" />,
+        },
+        {
+          id: 'knowledgeBase',
+          label: 'Base de Conhecimento SGQ',
+          aliases: ['comparacaoRNC', 'knowledgeBase-melhoria'],
+          icon: <Award className="w-4 h-4 text-emerald-400" />,
         },
         {
           id: 'manual-utilizacao',
@@ -316,57 +417,87 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
       ],
     },
-    {
-      id: 'administracao',
-      label: 'ADMINISTRAÇÃO',
-      items: [
-        {
-          id: 'configuracoes-org',
-          label: 'Organização',
-          icon: <Building2 className="w-4 h-4 text-blue-400" />,
-        },
-        {
-          id: 'admin-central',
-          label: 'Usuários & Permissões',
-          icon: <ShieldCheck className="w-4 h-4 text-indigo-400" />,
-        },
-        {
-          id: 'admin-audit-trail',
-          label: 'Auditoria do Sistema',
-          icon: <History className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'onboarding-novo-cliente',
-          label: 'Implantação e Onboarding',
-          icon: <CheckSquare className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'diagnosticos-tecnicos',
-          label: 'Diagnósticos Técnicos',
-          icon: <Cpu className="w-4 h-4 text-slate-400" />,
-        },
-      ],
-    },
   ];
+
+  // Regra fundamental: A categoria que contém a página atual deverá permanecer expandida
+  useEffect(() => {
+    const activeGroup = navGroups.find((g) =>
+      g.items.some(
+        (item) =>
+          item.id === activeTab ||
+          item.aliases?.includes(activeTab) ||
+          (item.id === 'relatorio' && (activeTab === 'formulario' || activeTab === 'oficial')) ||
+          (item.id === 'knowledgeBase' && activeTab === 'knowledgeBase-melhoria')
+      )
+    );
+    if (activeGroup) {
+      setCollapsedGroups((prev) => {
+        if (prev[activeGroup.id]) {
+          return { ...prev, [activeGroup.id]: false };
+        }
+        return prev;
+      });
+    }
+  }, [activeTab]);
+
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [groupId]: !prev[groupId],
+    }));
+  };
+
+  const handleItemClick = (tabId: string) => {
+    // Normalização canônica de atalhos e aliases
+    const targetTab = tabId === 'knowledgeBase-melhoria' ? 'knowledgeBase' : tabId;
+    setActiveTab(targetTab);
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  const handleNewNCClick = () => {
+    onNewNC();
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  // Verifica se um item é ativo com base no activeTab ou seus aliases
+  const isItemActive = (item: NavItemDef) => {
+    if (activeTab === item.id) return true;
+    if (item.aliases?.includes(activeTab)) return true;
+    if (item.id === 'relatorio' && (activeTab === 'formulario' || activeTab === 'oficial')) return true;
+    if (item.id === 'knowledgeBase' && activeTab === 'knowledgeBase-melhoria') return true;
+    return false;
+  };
 
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300">
-      {/* Brand & Close Button for Mobile */}
-      <div className="h-16 px-4 sm:px-5 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/40 shrink-0">
+      {/* Brand & Desktop Compact Toggle & Close Button for Mobile */}
+      <div className="h-16 px-4 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/40 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-[8px] bg-slate-800 border border-slate-700/80 flex items-center justify-center text-white shadow-xs shrink-0">
             <Building2 className="w-5 h-5 text-blue-400" />
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="font-bold text-sm tracking-tight text-white">QUALIGEST</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-blue-900/60 text-blue-300 border border-blue-700/50 uppercase">
-                {orgSigla}
-              </span>
+          {!isCompact && (
+            <div className="min-w-0 transition-opacity duration-200">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-sm tracking-tight text-white">QUALIGEST</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-blue-900/60 text-blue-300 border border-blue-700/50 uppercase">
+                  {orgSigla}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-tight truncate">{orgName}</p>
             </div>
-            <p className="text-[10px] text-slate-400 leading-tight truncate">{orgName}</p>
-          </div>
+          )}
         </div>
+
+        {/* Compact Mode Toggle (Desktop only) */}
+        <button
+          onClick={() => setIsCompact(!isCompact)}
+          className="hidden lg:flex p-1.5 rounded-[6px] hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+          title={isCompact ? 'Expandir Menu Lateral' : 'Recolher Menu Lateral'}
+          aria-label={isCompact ? 'Expandir Menu Lateral' : 'Recolher Menu Lateral'}
+        >
+          {isCompact ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+        </button>
 
         {/* Mobile Close Button */}
         {onCloseMobile && (
@@ -381,60 +512,87 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Prominent Action Button: + Nova NC */}
-      <div className="p-3.5 sm:p-4 border-b border-slate-800/60 shrink-0">
+      <div className="p-3 border-b border-slate-800/60 shrink-0">
         <button
           onClick={handleNewNCClick}
-          className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold rounded-[8px] transition-all shadow-xs cursor-pointer"
+          title="+ Nova Não Conformidade"
+          className={`w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold rounded-[8px] transition-all shadow-xs cursor-pointer ${
+            isCompact ? 'px-2' : 'px-4'
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          <span>+ Nova Não Conformidade</span>
+          <Plus className="w-4 h-4 shrink-0" />
+          {!isCompact && <span>+ Nova Não Conformidade</span>}
         </button>
       </div>
 
-      {/* Navigation Groups (8 Consolidated Blocks) */}
-      <nav className="flex-1 px-3 py-3 space-y-4 overflow-y-auto">
+      {/* Unified Navigation Categories and Submenus */}
+      <nav
+        aria-label="Navegação Principal do Sistema"
+        className="flex-1 px-2.5 py-3 space-y-3.5 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-900"
+      >
         {navGroups.map((group) => {
-          const isCollapsed = !!collapsedGroups[group.id];
+          // RBAC: Se o grupo inteiro for restrito a admin e o usuário for apenas consulta/colaborador, ocultar
+          if (group.adminOnly && !isAdminOrGestor) {
+            return null;
+          }
+
+          const isCollapsed = !isCompact && !!collapsedGroups[group.id];
+          const hasActiveItem = group.items.some(isItemActive);
 
           return (
             <div key={group.id} className="space-y-1">
-              <button
-                type="button"
-                onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-200 cursor-pointer select-none transition-colors"
-              >
-                <span>{group.label}</span>
-                <span className="text-slate-500">
-                  {isCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                </span>
-              </button>
+              {!isCompact ? (
+                /* Cabeçalho de Categoria Expansível / Recolhível */
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(group.id)}
+                  aria-expanded={!isCollapsed}
+                  className={`w-full flex items-center justify-between px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider rounded transition-colors cursor-pointer select-none text-left ${
+                    hasActiveItem
+                      ? 'text-blue-300 font-extrabold bg-blue-950/20'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                  }`}
+                >
+                  <span className="truncate">{group.label}</span>
+                  <span className="text-slate-500 ml-1 shrink-0">
+                    {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                  </span>
+                </button>
+              ) : (
+                /* Linha divisora minimalista no modo compacto */
+                <div className="h-px bg-slate-800 my-2 mx-1" title={group.label} />
+              )}
 
-              {!isCollapsed && (
+              {(!isCollapsed || isCompact) && (
                 <div className="space-y-0.5">
                   {group.items.map((item) => {
-                    const isActive = 
-                      activeTab === item.id || 
-                      (item.id === 'knowledgeBase-melhoria' && activeTab === 'knowledgeBase') ||
-                      (item.id === 'relatorio' && (activeTab === 'oficial' || activeTab === 'formulario'));
+                    // RBAC para itens individuais
+                    if (item.adminOnly && !isAdminOrGestor) {
+                      return null;
+                    }
+
+                    const isActive = isItemActive(item);
 
                     return (
                       <button
                         key={item.id}
+                        type="button"
                         onClick={() => handleItemClick(item.id)}
-                        className={`w-full flex items-center justify-between px-3 py-2 rounded-[7px] text-xs font-medium transition-colors cursor-pointer ${
+                        title={isCompact ? item.label : undefined}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.75 rounded-[7px] text-xs font-medium transition-all cursor-pointer text-left focus:outline-none focus:ring-1 focus:ring-blue-500 ${
                           isActive
-                            ? 'bg-slate-800 text-white font-semibold shadow-xs border border-slate-700/80'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
-                        }`}
+                            ? 'bg-slate-800 text-white font-semibold shadow-xs border border-slate-700/90 ring-1 ring-blue-500/30'
+                            : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
+                        } ${isCompact ? 'justify-center px-2 py-2' : ''}`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className={`shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-400'}`}>
                             {item.icon}
                           </span>
-                          <span className="truncate">{item.label}</span>
+                          {!isCompact && <span className="truncate">{item.label}</span>}
                         </div>
 
-                        {item.badge !== undefined && (
+                        {!isCompact && item.badge !== undefined && (
                           <span
                             className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ml-1.5 ${
                               item.badgeColor || 'bg-slate-700 text-white'
@@ -467,14 +625,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="w-7 h-7 rounded-full bg-indigo-600 border border-indigo-500 flex items-center justify-center text-white font-bold text-xs uppercase shrink-0">
               {user.email ? user.email.substring(0, 2) : 'US'}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-slate-200 truncate">
-                {userProfile?.displayName || user.email?.split('@')[0] || 'Usuário SGQ'}
-              </p>
-              <p className="text-[10px] text-indigo-400 truncate">
-                {userProfile?.role || 'AUDITOR'} • {orgName}
-              </p>
-            </div>
+            {!isCompact && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-slate-200 truncate">
+                  {userProfile?.displayName || user.email?.split('@')[0] || 'Usuário SGQ'}
+                </p>
+                <p className="text-[10px] text-indigo-400 truncate">
+                  {userProfile?.role || 'AUDITOR'} • {orgName}
+                </p>
+              </div>
+            )}
           </div>
         ) : (
           <div
@@ -489,15 +649,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 font-bold text-xs shrink-0 uppercase">
                 {orgSigla.substring(0, 3)}
               </div>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-300 truncate">{orgName}</p>
-                <p className="text-[10px] text-slate-500 truncate">Sessão Local</p>
-              </div>
+              {!isCompact && (
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-slate-300 truncate">{orgName}</p>
+                  <p className="text-[10px] text-slate-500 truncate">Sessão Local</p>
+                </div>
+              )}
             </div>
-            <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-semibold flex items-center gap-1 border border-slate-700 shrink-0 ml-2">
-              <LogIn className="w-3 h-3 text-indigo-400" />
-              Entrar
-            </span>
+            {!isCompact && (
+              <span className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded font-semibold flex items-center gap-1 border border-slate-700 shrink-0 ml-2">
+                <LogIn className="w-3 h-3 text-indigo-400" />
+                Entrar
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -506,8 +670,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* 1. Desktop Persistent Sidebar */}
-      <aside className="hidden lg:flex w-64 bg-slate-900 text-slate-300 flex-col shrink-0 border-r border-slate-800 selection:bg-blue-600 selection:text-white h-screen sticky top-0">
+      {/* 1. Desktop Persistent Sidebar with smooth collapse support */}
+      <aside
+        className={`hidden lg:flex ${
+          isCompact ? 'w-18' : 'w-64'
+        } bg-slate-900 text-slate-300 flex-col shrink-0 border-r border-slate-800 selection:bg-blue-600 selection:text-white h-screen sticky top-0 transition-all duration-200`}
+      >
         {sidebarContent}
       </aside>
 

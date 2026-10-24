@@ -552,7 +552,16 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
     case 'rooster-ficha':
     case 'rooster-catalogo':
     case 'rooster-treinamentos':
-    case 'rooster-licencas': {
+    case 'rooster-licencas':
+    case 'cadastros-bases':
+    case 'rooster-bases':
+    case 'rooster-designacao':
+    case 'rooster-conferencia':
+    case 'rooster-relatorio':
+    case 'rooster-roster':
+    case 'rooster-motores':
+    case 'rooster-matrizes':
+    case 'rooster-vencimentos': {
       const roosterTab =
         activeTab === 'rooster-catalogo'
           ? 'catalogo'
@@ -562,6 +571,20 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           ? 'licencas'
           : activeTab === 'rooster-ficha'
           ? 'ficha'
+          : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases'
+          ? 'bases'
+          : activeTab === 'rooster-designacao'
+          ? 'designacao'
+          : activeTab === 'rooster-conferencia'
+          ? 'conferencia'
+          : activeTab === 'rooster-relatorio' || activeTab === 'rooster-roster'
+          ? 'roster'
+          : activeTab === 'rooster-motores'
+          ? 'motores'
+          : activeTab === 'rooster-matrizes'
+          ? 'matrizes'
+          : activeTab === 'rooster-vencimentos'
+          ? 'vencimentos'
           : 'pessoas';
 
       return (

@@ -154,59 +154,64 @@ O plano de evolução do QualiGest é estruturado em **4 Horizontes de Inovaçã
 
 ---
 
-## 🧩 Arquitetura de Navegação em 8 Blocos Operacionais
+## 🧩 Arquitetura de Navegação Padronizada Global (QualyQuest / Rooster)
 
-A navegação do QualiGest é estruturada em torno do ciclo real de trabalho de uma organização de manutenção aeronáutica (RBAC 145 / EASA Part-145):
+A navegação do sistema é unificada em torno de um componente de menu lateral persistente e responsivo com submenus expansíveis/recolhíveis, auto-expansão da categoria ativa, alternância de modo compacto (desktop) e controle de acesso RBAC:
 
 ```
-QualiGest SGQ Enterprise
+QualiGest SGQ + Rooster MRO Enterprise
 ├── [+ Nova Não Conformidade] (Ação Primária Instantânea)
-├── 1. INÍCIO
+├── 1. PAINEL
 │   ├── Dashboard Executivo
-│   ├── Pendências & Alertas Críticos
 │   ├── Saúde do SGQ (Maturidade RBAC 145)
+│   ├── Pendências & Alertas Críticos (com contador pulsante)
 │   └── Apresentação Gerencial (SSoT 20 Slides 70/30)
-├── 2. QUALIDADE
-│   ├── Não Conformidades (Tabela Dinâmica & Kanban)
+├── 2. PESSOAS E COLABORADORES
+│   ├── Colaboradores (Cadastro & Visão 360°)
+│   ├── Dossiê do Mecânico (Ficha Técnica Roster)
+│   ├── Bases & Designações (Lista Oficial A4)
+│   ├── Habilitações & Licenças (CHTs ANAC/FAA)
+│   └── Painel de Competências Técnicas
+├── 3. TREINAMENTOS
+│   ├── Catálogo de Cursos (Recorrência & Validades)
+│   ├── Treinamentos Realizados (Histórico & Evidências)
+│   ├── Validades & Vencimentos (Controle Preditivo)
+│   └── Matriz de Treinamentos & Frota (Mapas de Calor)
+├── 4. CADASTROS MESTRES (Rooster MRO como Fonte Canônica)
+│   ├── Bases & Locais Operacionais (Firestore Canonical / Status / Vínculos)
+│   ├── Motores & Frota (Habilitações por Modelo / CFM56, V2500, Trent)
+│   └── Controles Centrais SGQ (Clientes, Programas & Cockpit)
+├── 5. QUALIDADE E CONTROLES
+│   ├── Não Conformidades (RNC F 001-29 / 5 Porquês + Ishikawa 6M)
 │   ├── Análise & Indicadores (Pareto 80/20 & ATA 100)
-│   ├── Validação & Aprovação (Fila N1-N5)
-│   └── Base de Conhecimento Homologada
-├── 3. AUDITORIAS & CLIENTES
-│   ├── Auditorias Regulatórias & Clientes
-│   ├── Clientes & Requisitos ("Um Controle, Vários Requisitos")
-│   ├── Auditoria Inteligente com IA
-│   └── Calendário e Cronograma de Auditorias
-├── 4. PESSOAS & COMPETÊNCIAS
-│   ├── Colaboradores & Dossiê Técnico
-│   ├── Treinamentos & Cursos Regulamentares
-│   ├── Carteiras CHT (CEL / GMP / AVI) & Qualificações
-│   ├── Central Preditiva de Vencimentos & Gaps
-│   └── Simulador de Aptidão Operacional
-├── 5. DOCUMENTOS
-│   ├── Acervo Documental (AMM, CMM, MOE, POP)
-│   ├── Revisões Vigentes & Histórico Imutável
-│   ├── Conhecimento Temporal na Data da OS
-│   ├── Monitoramento de Fontes Oficiais (ANAC, FAA, EASA, OEMs)
-│   ├── Solicitações de Revisão de Clientes
-│   ├── Comparador Visual de Revisões
-│   └── Indicadores de Gestão Documental
-├── 6. RECURSOS & CONTROLES
-│   ├── Ferramentas & Metrologia Calibrada
-│   ├── Importação Inteligente de Dados (Wizard)
-│   └── Outros Controles Centrais SGQ
-├── 7. CONHECIMENTO & MELHORIA
-│   ├── Base de Conhecimento e Padrões
-│   ├── Lições Aprendidas de Auditorias
-│   ├── Soluções Validadas (Comparador de RNCs)
-│   ├── Extrator de Documentos com IA
-│   └── Manual Oficial de Utilização
-└── 8. ADMINISTRAÇÃO
-    ├── Parâmetros da Organização (Tenant)
-    ├── Gestão de Usuários & Permissões (RBAC)
-    ├── Trilha de Auditoria do Sistema (Audit Trail)
-    ├── Implantação e Onboarding de Clientes
-    └── Centro de Diagnósticos Técnicos (Arquitetura, ADRs, Firebase & Infra)
+│   ├── Validação & Aprovação (Fila de Maturação N1-N5)
+│   ├── Auditorias Internas & Externas (Regulatórias & Clientes)
+│   ├── Auditoria Inteligente & Clientes (Smart Audit)
+│   ├── Banco de Manuais Técnicos (IA)
+│   ├── Acervo & Revisões (SGQ / Consulta Temporal)
+│   └── Ferramentas & Metrologia Calibrada RBC
+├── 6. RELATÓRIOS
+│   ├── Relatório do Roster (Exportação Oficial A4 / Excel)
+│   ├── Dossiê Oficial F 001-29 (Ficha Técnica para Auditoria)
+│   ├── Histórico & Relatórios Documentais
+│   ├── Constatações de Auditoria
+│   └── Conferência de Frota & Pré-Turno
+├── 7. ADMINISTRAÇÃO E SEGURANÇA (RBAC Restrito)
+│   ├── Usuários & Permissões RBAC (Super Admin, Gestor, Auditor, Colaborador)
+│   ├── Configurações Organizacionais (Tenant, Identidade Visual)
+│   ├── System Designer Permanente (Catálogo Oficial de ADRs)
+│   ├── Diagnósticos Técnicos (Arquitetura, Health Check & Infra)
+│   └── Implantação & Onboarding de Clientes
+├── 8. AUDITORIA E HISTÓRICO
+│   └── Audit Trail do Sistema (Rastreabilidade Integral de Alterações)
+└── 9. CONFIGURAÇÕES E FERRAMENTAS
+    ├── Importação Inteligente de Dados (Wizard em 4 Etapas)
+    ├── Extrator de NCs com IA
+    ├── Base de Conhecimento SGQ & Soluções Validadas
+    └── Manual de Utilização (35 Capítulos Oficiais)
 ```
+
+> **Garantia de Navegação sem Fim Morto:** Toda rota resolve para um módulo oficial sem descontextualização de organização ou perfil. A categoria da página ativa permanece expandida automaticamente, e o Rooster MRO opera como fonte mestre única de Pessoas, Treinamentos, Licenças e Bases Operacionais.
 
 > **Jornada Operacional Padronizada:** A navegação obedece ao fluxo: **Módulo → Registro → Abas e Ações Relacionadas → Evidências → Histórico**. Ações de saída como a *Ficha Oficial F 001-29* são acionadas contextualmente em cada registro, eliminando poluição visual no menu permanente.
 

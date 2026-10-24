@@ -23,6 +23,7 @@ import {
   HelpCircle,
   Maximize2,
   Minimize2,
+  MapPin,
 } from 'lucide-react';
 import { AppProvider, useApp, ActiveTab } from '../rooster/context/AppContext';
 import { AccessGateModal } from '../rooster/components/AccessGateModal';
@@ -33,6 +34,7 @@ import { Sidebar as RoosterSidebar } from '../rooster/components/Sidebar';
 
 // Views
 import { AuditoriaView } from '../rooster/views/AuditoriaView';
+import { BasesView } from '../rooster/views/BasesView';
 import { CatalogoView } from '../rooster/views/CatalogoView';
 import { ConferenciaView } from '../rooster/views/ConferenciaView';
 import { ConfiguracoesView } from '../rooster/views/ConfiguracoesView';
@@ -180,6 +182,8 @@ const RoosterInternalWorkspace: React.FC<{
         return <ConferenciaView />;
       case 'pessoas':
         return <PessoasView />;
+      case 'bases':
+        return <BasesView />;
       case 'ficha':
         return <FichaMecanicoView />;
       case 'licencas':
@@ -214,6 +218,7 @@ const RoosterInternalWorkspace: React.FC<{
   // Primary navigation tabs for embedded / quick mode
   const quickTabs: Array<{ id: ActiveTab; label: string; icon: React.ElementType; badge?: string }> = [
     { id: 'pessoas', label: 'Pessoas & Mecânicos', icon: Users, badge: `${db.pessoas.length}` },
+    { id: 'bases', label: 'Bases & Locais Operacionais', icon: MapPin, badge: `${db.bases.length}` },
     { id: 'ficha', label: 'Ficha do Mecânico (Dossiê)', icon: UserCheck },
     { id: 'designacao', label: 'Lista de Designação', icon: FileCheck2, badge: 'A4' },
     { id: 'conferencia', label: 'Conferência de Frota', icon: AlertTriangle },

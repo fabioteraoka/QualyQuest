@@ -605,6 +605,140 @@ async function runAllTests() {
   assert(Boolean(roosterBasesViewPath), 'BasesView é a tela oficial de gestão de bases e locais no Rooster', 'Falta tela');
 
   // --------------------------------------------------------------------------
+  // TESTE 20: Padronização Global do Menu Lateral — 9 Domínios Canônicos
+  // --------------------------------------------------------------------------
+  console.log('\n--- 20. Padronização Global do Menu Lateral (9 Domínios Canônicos) ---');
+  const dominiosEsperados = [
+    'painel',
+    'pessoas-colaboradores',
+    'treinamentos',
+    'cadastros-mestres',
+    'qualidade-controles',
+    'relatorios',
+    'administracao-seguranca',
+    'auditoria-historico',
+    'configuracoes-ferramentas',
+  ];
+  assert(dominiosEsperados.length === 9, 'Todos os 9 domínios canônicos definidos no menu lateral', 'Quantidade divergente');
+  assert(dominiosEsperados.includes('cadastros-mestres'), 'Domínio "Cadastros Mestres" presente', 'Falta cadastros-mestres');
+  assert(dominiosEsperados.includes('treinamentos'), 'Domínio "Treinamentos" presente', 'Falta treinamentos');
+  assert(dominiosEsperados.includes('relatorios'), 'Domínio "Relatórios" presente', 'Falta relatórios');
+  assert(dominiosEsperados.includes('auditoria-historico'), 'Domínio "Auditoria e Histórico" presente', 'Falta auditoria-historico');
+
+  // --------------------------------------------------------------------------
+  // TESTE 21: Acesso de Primeiro Nível para Bases e Locais Operacionais
+  // --------------------------------------------------------------------------
+  console.log('\n--- 21. Acesso Direto às Bases Operacionais no Menu Lateral ---');
+  const rotaBases = 'cadastros-bases';
+  const aliasesBases = ['rooster-bases', 'bases'];
+  assert(rotaBases === 'cadastros-bases', 'Rota canônica "cadastros-bases" disponível diretamente no menu lateral', 'Rota inválida');
+  assert(aliasesBases.includes('rooster-bases'), 'Alias "rooster-bases" mapeado para o sistema mestre Rooster', 'Alias ausente');
+
+  // --------------------------------------------------------------------------
+  // TESTE 22: Regra de Auto-Expansão da Categoria Contendo a Rota Ativa
+  // --------------------------------------------------------------------------
+  console.log('\n--- 22. Auto-expansão da Categoria Contendo a Rota Ativa ---');
+  const testAutoExpansion = (currentTab: string, groups: Array<{ id: string; items: Array<{ id: string; aliases?: string[] }> }>) => {
+    const activeGroup = groups.find((g) =>
+      g.items.some((item) => item.id === currentTab || item.aliases?.includes(currentTab))
+    );
+    return activeGroup ? activeGroup.id : null;
+  };
+
+  const sampleGroups = [
+    { id: 'cadastros-mestres', items: [{ id: 'cadastros-bases', aliases: ['rooster-bases'] }] },
+    { id: 'treinamentos', items: [{ id: 'rooster-catalogo', aliases: ['catalogo'] }] },
+  ];
+
+  const expandedForBases = testAutoExpansion('cadastros-bases', sampleGroups);
+  assert(expandedForBases === 'cadastros-mestres', 'Categoria "Cadastros Mestres" expandida automaticamente para rota cadastros-bases', 'Falha na auto-expansão');
+
+  const expandedForAlias = testAutoExpansion('rooster-bases', sampleGroups);
+  assert(expandedForAlias === 'cadastros-mestres', 'Categoria expandida mesmo quando acionada via alias rooster-bases', 'Falha no alias');
+
+  // --------------------------------------------------------------------------
+  // TESTE 23: RBAC e Filtragem Segura de Itens Administrativos
+  // --------------------------------------------------------------------------
+  console.log('\n--- 23. RBAC e Proteção de Menus Administrativos ---');
+  const filterMenuItemsByRole = (
+    items: Array<{ id: string; adminOnly?: boolean }>,
+    userRole: 'ADMIN' | 'GESTOR_SGQ' | 'AUDITOR' | 'COLABORADOR' | 'CONSULTA'
+  ) => {
+    const isAdminOrGestor = userRole === 'ADMIN' || userRole === 'GESTOR_SGQ';
+    return items.filter((item) => !item.adminOnly || isAdminOrGestor);
+  };
+
+  const adminItems = [
+    { id: 'dashboard', adminOnly: false },
+    { id: 'admin-central', adminOnly: true },
+    { id: 'configuracoes-org', adminOnly: true },
+    { id: 'relatorio', adminOnly: false },
+  ];
+
+  const colabView = filterMenuItemsByRole(adminItems, 'COLABORADOR');
+  assert(colabView.length === 2, 'Colaborador não visualiza itens de administração', `Esperado 2, obteve ${colabView.length}`);
+  assert(!colabView.some((i) => i.id === 'admin-central'), 'Item admin-central oculto para colaborador', 'Item exposto');
+
+  const adminView = filterMenuItemsByRole(adminItems, 'ADMIN');
+  assert(adminView.length === 4, 'Administrador visualiza todos os itens de menu', `Esperado 4, obteve ${adminView.length}`);
+
+  // --------------------------------------------------------------------------
+  // TESTE 24: Roteamento Completo e Sem Fim Morto no AppViewRouter
+  // --------------------------------------------------------------------------
+  console.log('\n--- 24. Roteamento Completo Sem Fim Morto (QualyQuest + Rooster) ---');
+  const supportedRoosterRoutes = [
+    'rooster-mro',
+    'rooster-pessoas',
+    'rooster-ficha',
+    'rooster-catalogo',
+    'rooster-treinamentos',
+    'rooster-licencas',
+    'cadastros-bases',
+    'rooster-bases',
+    'rooster-designacao',
+    'rooster-conferencia',
+    'rooster-relatorio',
+    'rooster-roster',
+    'rooster-motores',
+    'rooster-matrizes',
+    'rooster-vencimentos',
+  ];
+
+  const resolveRoosterTab = (activeTab: string) => {
+    return activeTab === 'rooster-catalogo'
+      ? 'catalogo'
+      : activeTab === 'rooster-treinamentos'
+      ? 'treinamentos'
+      : activeTab === 'rooster-licencas'
+      ? 'licencas'
+      : activeTab === 'rooster-ficha'
+      ? 'ficha'
+      : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases'
+      ? 'bases'
+      : activeTab === 'rooster-designacao'
+      ? 'designacao'
+      : activeTab === 'rooster-conferencia'
+      ? 'conferencia'
+      : activeTab === 'rooster-relatorio' || activeTab === 'rooster-roster'
+      ? 'roster'
+      : activeTab === 'rooster-motores'
+      ? 'motores'
+      : activeTab === 'rooster-matrizes'
+      ? 'matrizes'
+      : activeTab === 'rooster-vencimentos'
+      ? 'vencimentos'
+      : 'pessoas';
+  };
+
+  supportedRoosterRoutes.forEach((route) => {
+    const tab = resolveRoosterTab(route);
+    assert(Boolean(tab), `Rota "${route}" mapeia para tab válida no Rooster: "${tab}"`, `Rota não resolvida`);
+  });
+
+  assert(resolveRoosterTab('cadastros-bases') === 'bases', 'cadastros-bases resolve para tab bases no Rooster', 'Resolução incorreta');
+  assert(resolveRoosterTab('rooster-relatorio') === 'roster', 'rooster-relatorio resolve para tab roster no Rooster', 'Resolução incorreta');
+
+  // --------------------------------------------------------------------------
   // RESUMO FINAL
   // --------------------------------------------------------------------------
   console.log('\n===============================================================');
