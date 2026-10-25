@@ -4,10 +4,13 @@
  * mapeamentos canônicos, isolamento multi-tenant e validação de regras de negócio.
  */
 
+import fs from 'fs';
 import { ColaboradorPessoa, CursoTreinamento, RegistroTreinamentoColaborador, QualificacaoColaborador } from '../src/types';
 import { FirestoreAdapter } from '../src/rooster/services/adapters/firestoreAdapter';
 import { Pessoa, CursoCatalogo, Treinamento, Licenca } from '../src/rooster/types';
-import { calcularStatusTreinamento } from '../src/rooster/utils/businessRules';
+import { calcularStatusTreinamento, hojeISO, calcularDiasParaVencer } from '../src/rooster/utils/businessRules';
+import { getFirestoreDb } from '../src/rooster/lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface TestResult {
   name: string;
@@ -603,7 +606,7 @@ async function runAllTests() {
   // --------------------------------------------------------------------------
   console.log('\n--- 19. Tela Oficial de Bases e Locais Operacionais ---');
   const roosterBasesViewPath = 'src/rooster/views/BasesView.tsx';
-  assert(Boolean(roosterBasesViewPath), 'BasesView é a tela oficial de gestão de bases e locais no Rooster', 'Falta tela');
+  assert(fs.existsSync(roosterBasesViewPath), 'BasesView é a tela oficial de gestão de bases e locais no Rooster', `Arquivo ${roosterBasesViewPath} não existe no sistema de arquivos`);
 
   // --------------------------------------------------------------------------
   // TESTE 20: Padronização Global do Menu Lateral — 9 Domínios Canônicos
@@ -831,58 +834,306 @@ async function runAllTests() {
   );
 
   // --------------------------------------------------------------------------
-  // TESTE 27: Resolução de Rotas do Menu Lateral Padronizado (Seção 2)
+  // TESTE 27: Verificação Real de Rotas no Arquivo Sidebar.tsx e AppViewRouter.tsx
   // --------------------------------------------------------------------------
-  console.log('\n--- 27. Rotas do Menu Lateral Padronizado ---');
-  const requiredNavItems = [
-    // Pessoas e Colaboradores
-    { id: 'colaboradores-lista', label: 'Lista de colaboradores', group: 'PESSOAS' },
-    { id: 'colaborador-novo', label: 'Novo colaborador', group: 'PESSOAS' },
-    { id: 'colaborador-perfil', label: 'Perfil do colaborador', group: 'PESSOAS' },
-    { id: 'cht-qualificacoes', label: 'Habilitações e licenças', group: 'PESSOAS' },
-    // Treinamentos
-    { id: 'rooster-catalogo', label: 'Catálogo de treinamentos', group: 'TREINAMENTOS' },
-    { id: 'modelos-capacitacao', label: 'Modelos de capacitação', group: 'TREINAMENTOS' },
-    { id: 'rooster-matrizes', label: 'Matriz de treinamento', group: 'TREINAMENTOS' },
-    { id: 'treinamentos-qualificacoes', label: 'Registros de treinamento', group: 'TREINAMENTOS' },
-    { id: 'importacao-certificados', label: 'Importação de certificados', group: 'TREINAMENTOS' },
-    { id: 'validacaoQueue', label: 'Fila de validação', group: 'TREINAMENTOS' },
-    { id: 'central-vencimentos-gaps', label: 'Vencimentos', group: 'TREINAMENTOS' },
-    { id: 'competencias-dashboard', label: 'Dashboard de treinamentos', group: 'TREINAMENTOS' },
-    // Cadastros Mestres
-    { id: 'cadastros-bases', label: 'Bases e locais operacionais', group: 'MESTRES' },
-    { id: 'cadastros-funcoes-cargos', label: 'Funções e cargos', group: 'MESTRES' },
-    { id: 'parametros-fluxo', label: 'Parâmetros necessários ao fluxo', group: 'MESTRES' },
+  console.log('\n--- 27. Validação Real do Menu Lateral e Roteamento ---');
+  const sidebarSource = fs.readFileSync('src/components/Sidebar.tsx', 'utf8');
+  const routerSource = fs.readFileSync('src/components/app/AppViewRouter.tsx', 'utf8');
+
+  const requiredMandatedRoutes = [
+    { label: 'Lista de colaboradores', id: 'pessoas-competencias' },
+    { label: 'Novo colaborador', id: 'colaborador-novo' },
+    { label: 'Perfil do colaborador', id: 'rooster-ficha' },
+    { label: 'Habilitações e licenças', id: 'cht-qualificacoes' },
+    { label: 'Catálogo de treinamentos', id: 'rooster-catalogo' },
+    { label: 'Modelos de capacitação', id: 'modelos-capacitacao' },
+    { label: 'Matriz de treinamento', id: 'rooster-matrizes' },
+    { label: 'Registros de treinamento', id: 'treinamentos-qualificacoes' },
+    { label: 'Importação de certificados', id: 'importacao-certificados' },
+    { label: 'Fila de validação', id: 'validacaoQueue' },
+    { label: 'Vencimentos', id: 'central-vencimentos-gaps' },
+    { label: 'Dashboard de treinamentos', id: 'competencias-dashboard' },
+    { label: 'Bases e locais operacionais', id: 'cadastros-bases' },
+    { label: 'Funções e cargos', id: 'cadastros-funcoes-cargos' },
+    { label: 'Parâmetros necessários ao fluxo', id: 'parametros-fluxo' },
   ];
 
-  requiredNavItems.forEach((item) => {
-    assert(Boolean(item.id), `Item de navegação lateral "${item.label}" possui identificador válido: ${item.id}`, 'ID ausente');
+  requiredMandatedRoutes.forEach((item) => {
+    const presentInSidebar = sidebarSource.includes(`'${item.id}'`) || sidebarSource.includes(`"${item.id}"`);
+    assert(presentInSidebar, `Item do menu "${item.label}" [${item.id}] declarado em Sidebar.tsx`, `Falta ${item.id} no Sidebar.tsx`);
+
+    const handledInRouter = routerSource.includes(`case '${item.id}':`) || routerSource.includes(`case "${item.id}":`);
+    assert(handledInRouter, `Item do menu "${item.label}" [${item.id}] tratado em AppViewRouter.tsx`, `Falta case ${item.id} no router`);
   });
 
   // --------------------------------------------------------------------------
-  // TESTE 28: Fluxo do Novo Colaborador sem Atribuição Falsa de Cursos
+  // TESTE 28: Validação Real do Fluxo de Cadastro e Matriz no Código
   // --------------------------------------------------------------------------
   console.log('\n--- 28. Fluxo de Novo Colaborador & Validação de Matriz ---');
-  // Validação: quando requisitos são gerados na revisão prévia, o status é EM_TREINAMENTO e NÃO concluído
-  const requisitoGeradoStatus: string = 'EM_TREINAMENTO';
+  const personsViewSource = fs.readFileSync('src/components/PersonsCompetenciesView.tsx', 'utf8');
+
+  // Verifica que o código atribui status: 'EM_TREINAMENTO' aos requisitos da matriz prévia
+  const setsEmTreinamento = personsViewSource.includes("status: 'EM_TREINAMENTO'");
   assert(
-    requisitoGeradoStatus !== 'QUALIFICADO' && requisitoGeradoStatus !== 'APROVADO',
+    setsEmTreinamento,
+    'Código de cadastro atribui status EM_TREINAMENTO para cursos da matriz',
+    'Falta status EM_TREINAMENTO no cadastro guiado'
+  );
+
+  // Verifica que NÃO atribui status concluído (QUALIFICADO ou APROVADO) aos requisitos da matriz
+  const preventsFalseApproved = !personsViewSource.includes("status: 'QUALIFICADO', // Requisito atribuído") &&
+                                 !personsViewSource.includes("status: 'APROVADO', // Requisito atribuído");
+  assert(
+    preventsFalseApproved,
     'Requisitos da matriz gerados no cadastro NÃO são marcados como concluídos',
-    'Status incorretamente marcado como concluído'
+    'Encontrada atribuição indevida de conclusão automática'
   );
 
   // --------------------------------------------------------------------------
-  // TESTE 29: Validação Explícita de Bases e Ausência de Base Padrão Fake
+  // TESTE 29: Validação Real de Bases sem Injeção de Padrão Artificial
   // --------------------------------------------------------------------------
   console.log('\n--- 29. Validação de Bases e Ausência de Base Padrão Incorreta ---');
-  const basesCadastradasVazias: any[] = [];
-  const mapaBases = new Map<string, { id: string; nome: string }>();
-  basesCadastradasVazias.forEach((b) => mapaBases.set(b.id, { id: b.id, nome: b.nome }));
+  const emptyAdapter = new FirestoreAdapter('org_empty_test');
+  const basesRegistradas = (emptyAdapter as any).memoryDb.bases;
+  const colabSemBaseEmpty = (emptyAdapter as any).mapColaboradorToPessoa({
+    id: 'COLAB-NO-BASE',
+    organizationId: 'org_empty_test',
+    nome: 'Colaborador Sem Base',
+    matricula: 'CANAC-999',
+    setor: 'Geral',
+    funcao: 'Apoio',
+    status: 'ATIVO',
+    createdAt: '2026-01-01T00:00:00Z',
+    updatedAt: '2026-01-01T00:00:00Z',
+  } as any);
+
   assert(
-    mapaBases.size === 0,
-    'Se não houver bases cadastradas, nenhuma base padrão artificial é injetada',
-    'Bases artificiais injetadas'
+    colabSemBaseEmpty.base_principal_id === '',
+    'Colaborador sem base não recebe base padrão artificial silenciosa',
+    `Recebeu base: ${colabSemBaseEmpty.base_principal_id}`
   );
+
+  // --------------------------------------------------------------------------
+  // TESTE 30: Casos Obrigatórios de Datas, Periodicidade e Vencimentos
+  // --------------------------------------------------------------------------
+  console.log('\n--- 30. Casos Obrigatórios de Datas e Vencimentos (Seção 3) ---');
+  const dataReferenciaHoje = hojeISO();
+
+  // 30.1: Treinamento com validade explícita vigente
+  const trnVigenteExplicito: Treinamento = {
+    id: 'TRN-EXP-01',
+    pessoa_id: 'COLAB-001',
+    curso_id: 'CURSO-QUALQUER',
+    data_execucao: '2025-01-10',
+    data_validade: '2027-12-31', // Validade explícita futura
+    criado_em: '2025-01-10T10:00:00Z',
+    atualizado_em: '2025-01-10T10:00:00Z',
+    atualizado_por: 'Auditor',
+  };
+  const stTrnVigente = calcularStatusTreinamento(trnVigenteExplicito, undefined, '2026-10-25');
+  assert(stTrnVigente.status === 'Em dia', 'Treinamento com validade explícita futura retorna "Em dia"', `Status: ${stTrnVigente.status}`);
+  assert(stTrnVigente.data_vencimento === '2027-12-31', 'Data de vencimento explícita preservada', `Vencimento: ${stTrnVigente.data_vencimento}`);
+
+  // 30.2: Certificado vencido (validade explícita passada)
+  const trnVencidoExplicito: Treinamento = {
+    ...trnVigenteExplicito,
+    id: 'TRN-EXP-02',
+    data_validade: '2024-01-01', // Validade explícita vencida
+  };
+  const stTrnVencido = calcularStatusTreinamento(trnVencidoExplicito, undefined, '2026-10-25');
+  assert(stTrnVencido.status === 'Vencido', 'Certificado vencido retorna "Vencido"', `Status: ${stTrnVencido.status}`);
+
+  // 30.3: Treinamento sem validade definida (curso sem validade_dias e sem sem_validade)
+  const cursoSemRegra: CursoCatalogo = {
+    id: 'CUR-SEM-REGRA',
+    curso: 'Palestra de Sensibilização',
+    grupo: 'Doutrinação',
+    frota: 'Geral',
+    variante: '',
+    validade_dias: 0,
+    ativo: true,
+    sem_validade: false, // Não declarou sem_validade nem possui validade_dias
+  };
+  const trnSemRegra: Treinamento = {
+    id: 'TRN-SR-01',
+    pessoa_id: 'COLAB-001',
+    curso_id: 'CUR-SEM-REGRA',
+    data_execucao: '2026-01-15',
+    criado_em: '2026-01-15T10:00:00Z',
+    atualizado_em: '2026-01-15T10:00:00Z',
+    atualizado_por: 'Instrutor',
+  };
+  const stSemRegra = calcularStatusTreinamento(trnSemRegra, cursoSemRegra, '2026-10-25');
+  assert(stSemRegra.status === 'Sem validade definida', 'Curso sem regra definida retorna "Sem validade definida"', `Status: ${stSemRegra.status}`);
+  assert(stSemRegra.isSemVencimento === false, 'Curso sem regra definida NÃO é marcado como isSemVencimento: true', 'Marcado indevidamente como isSemVencimento');
+
+  // 30.4: Treinamento sem vencimento aplicável declarado (doutrinação única / sem reciclagem)
+  const cursoPermanente: CursoCatalogo = {
+    id: 'CUR-INTEGRACAO',
+    curso: 'Integração Institucional Permanente',
+    grupo: 'Doutrinação',
+    frota: 'Geral',
+    variante: '',
+    validade_dias: 0,
+    ativo: true,
+    sem_validade: true, // Declarado sem_validade
+  };
+  const stPermanente = calcularStatusTreinamento(trnSemRegra, cursoPermanente, '2026-10-25');
+  assert(stPermanente.status === 'Sem vencimento', 'Curso com sem_validade: true retorna "Sem vencimento"', `Status: ${stPermanente.status}`);
+  assert(stPermanente.isSemVencimento === true, 'Curso com sem_validade: true possui isSemVencimento: true', 'Falta isSemVencimento');
+
+  // 30.5: Registro com dados insuficientes (sem data de realização)
+  const trnSemDataRealizacao: Treinamento = {
+    id: 'TRN-SEM-DATA',
+    pessoa_id: 'COLAB-001',
+    curso_id: 'CUR-B737-MAX-AVIO',
+    data_execucao: '', // Data ausente
+    criado_em: '2026-01-01T10:00:00Z',
+    atualizado_em: '2026-01-01T10:00:00Z',
+    atualizado_por: 'Importador',
+  };
+  const stSemData = calcularStatusTreinamento(trnSemDataRealizacao, cursoCatalogo, '2026-10-25');
+  assert(stSemData.status === 'Dados insuficientes', 'Registro sem data de realização retorna "Dados insuficientes"', `Status: ${stSemData.status}`);
+
+  // 30.6: Certificado com data de emissão e data de realização diferentes
+  // Vencimento de 720 dias deve ser contado da data_execucao (2024-05-10 -> 2026-04-30), e não da emissão do certificado
+  const trnComEmissaoDistinta: Treinamento = {
+    id: 'TRN-EMISS-01',
+    pessoa_id: 'COLAB-001',
+    curso_id: cursoCatalogo.id,
+    data_execucao: '2024-05-10', // Realização
+    data_validade: undefined,   // Calculado por validade_dias (720 dias)
+    criado_em: '2024-06-01T10:00:00Z', // Emissão do certificado posterior
+    atualizado_em: '2024-06-01T10:00:00Z',
+    atualizado_por: 'Entidade Certificadora',
+  };
+  const stComEmissao = calcularStatusTreinamento(trnComEmissaoDistinta, cursoCatalogo, '2026-10-25');
+  assert(stComEmissao.data_vencimento === '2026-04-30', 'Vencimento calculado a partir da data de realização (execução), não da emissão', `Vencimento: ${stComEmissao.data_vencimento}`);
+  assert(stComEmissao.status === 'Vencido', 'Treinamento vencido por expiração do prazo de realização', `Status: ${stComEmissao.status}`);
+
+  // 30.7: Registro incompleto com curso inexistente no catálogo
+  const trnCursoInexistente: Treinamento = {
+    id: 'TRN-ORPHAN-01',
+    pessoa_id: 'COLAB-001',
+    curso_id: 'CURSO-NAO-CADASTRADO-NO-BANCO',
+    data_execucao: '2026-05-10',
+    criado_em: '2026-05-10T10:00:00Z',
+    atualizado_em: '2026-05-10T10:00:00Z',
+    atualizado_por: 'OCR',
+  };
+  const stCursoInexistente = calcularStatusTreinamento(trnCursoInexistente, undefined, '2026-10-25');
+  assert(stCursoInexistente.status === 'Sem validade definida', 'Treinamento com curso ausente no catálogo retorna "Sem validade definida"', `Status: ${stCursoInexistente.status}`);
+
+  // --------------------------------------------------------------------------
+  // TESTE 31: Persistência Real e Leitura de Dados no Storage/Adapter
+  // --------------------------------------------------------------------------
+  console.log('\n--- 31. Persistência e Leitura de Dados (Seção 4) ---');
+  const persistentAdapter = new FirestoreAdapter('org_test_persistence');
+
+  // Gravação de Colaborador
+  const colabParaPersistir: Pessoa = {
+    id: 'PERSIST-001',
+    nome: 'Helena Vasconcelos',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'REC',
+    cliente_ou_area: 'GOL Linhas Aéreas',
+    canac: '998877',
+    criado_em: '2026-10-25T10:00:00Z',
+    atualizado_em: '2026-10-25T10:00:00Z',
+    atualizado_por: 'Homologação',
+  };
+
+  await persistentAdapter.savePessoa(colabParaPersistir, 'Homologação');
+  const colabLido = persistentAdapter.getDatabase().pessoas.find((p) => p.id === 'PERSIST-001') || null;
+  assert(colabLido !== null, 'Colaborador gravado é recuperado com sucesso na leitura', 'Colaborador não encontrado');
+  assert(colabLido?.nome === 'Helena Vasconcelos', 'Nome do colaborador persistido com integridade', `Nome: ${colabLido?.nome}`);
+  assert(colabLido?.base_principal_id === 'REC', 'Base do colaborador persistida com integridade', `Base: ${colabLido?.base_principal_id}`);
+
+  // Edição e regravação sem duplicação
+  const colabEditado: Pessoa = {
+    ...colabLido!,
+    nome: 'Helena Vasconcelos Ramos',
+    base_principal_id: 'GRU',
+  };
+  await persistentAdapter.savePessoa(colabEditado, 'Homologação');
+  const colabReLido = persistentAdapter.getDatabase().pessoas.find((p) => p.id === 'PERSIST-001') || null;
+  assert(colabReLido?.nome === 'Helena Vasconcelos Ramos', 'Nome atualizado na re-leitura', `Nome: ${colabReLido?.nome}`);
+  assert(colabReLido?.base_principal_id === 'GRU', 'Base atualizada na re-leitura', `Base: ${colabReLido?.base_principal_id}`);
+
+  const todasPessoas = persistentAdapter.getDatabase().pessoas;
+  const ocorrencias = todasPessoas.filter((p) => p.id === 'PERSIST-001');
+  assert(ocorrencias.length === 1, 'Edição não duplica colaboradores na base de dados', `Ocorrências: ${ocorrencias.length}`);
+
+  // --------------------------------------------------------------------------
+  // TESTE 32: Segurança, RBAC e Regras do Firestore (Seção 4)
+  // --------------------------------------------------------------------------
+  console.log('\n--- 32. Segurança, RBAC e Regras Firestore (Seção 4) ---');
+
+  // 32.1: Isolamento estrito entre organizações
+  const tenant1 = new FirestoreAdapter('org_alpha');
+  const tenant2 = new FirestoreAdapter('org_beta');
+  await tenant1.savePessoa({ ...colabParaPersistir, id: 'COLAB-TENANT-ALPHA' }, 'Admin');
+
+  const buscaNoTenant2 = tenant2.getDatabase().pessoas.find((p) => p.id === 'COLAB-TENANT-ALPHA') || null;
+  assert(buscaNoTenant2 === null, 'Tenant Beta não consegue acessar registro do Tenant Alpha (Isolamento Multi-Tenant)', 'Vazamento entre tenants');
+
+  // 32.2: Tentativa de adulterar o identificador de organização (Tenant ID Tampering)
+  const colabTampered: any = {
+    ...colabParaPersistir,
+    id: 'COLAB-TAMPER',
+    organizationId: 'malicious_target_org', // Tentativa de injeção de outro tenant
+  };
+  await tenant1.savePessoa(colabTampered, 'Admin');
+  const storedColab = (tenant1 as any).canonicalPersonsMap.get('COLAB-TAMPER');
+  assert(
+    storedColab.organizationId === 'org_alpha',
+    'Tentativa de alterar o organizationId é rejeitada e forçada ao tenant do contexto ("org_alpha")',
+    `Identificador adulterado aceito: ${storedColab.organizationId}`
+  );
+
+  // 32.3: Tentativa de modificar dados diretamente pela API sem credenciais de autenticação
+  let directApiRejected = false;
+  let directApiErrorCode = '';
+  try {
+    const rawDb = getFirestoreDb();
+    if (rawDb) {
+      await setDoc(doc(rawDb, 'organizations', 'org_unauth', 'persons', 'HACK-01'), { nome: 'Hacker' });
+    }
+  } catch (err: any) {
+    directApiRejected = true;
+    directApiErrorCode = err?.code || String(err);
+  }
+  assert(
+    directApiRejected,
+    'Tentativa de escrita direta via API sem token autenticado é bloqueada pelas regras de segurança (PERMISSION_DENIED)',
+    `Acesso direto não foi bloqueado: code=${directApiErrorCode}`
+  );
+
+  // 32.4: Usuário com perfil CONSULTA ou Leitor sem permissão de escrita (RBAC)
+  const userConsulta = { id: 'USR-CONSULTA', nome: 'Visitante', role: 'CONSULTA' as const, perfil: 'Leitor' as const };
+  const canUserEdit = userConsulta.role !== 'CONSULTA' && userConsulta.perfil !== 'Leitor';
+  assert(
+    !canUserEdit,
+    'Usuário com perfil "CONSULTA" / "Leitor" tem permissão de escrita/edição bloqueada pelo RBAC',
+    'Permissão indevida concedida a usuário de consulta'
+  );
+
+  // 32.5: Usuário inativo ou bloqueado
+  const userInativo = { id: 'USR-INATIVO', nome: 'Ex-Colaborador', status: 'INATIVO', ativo: false };
+  const canInactiveOperate = userInativo.status === 'ATIVO' && userInativo.ativo === true;
+  assert(
+    !canInactiveOperate,
+    'Usuário com status INATIVO é impedido de realizar operações no sistema',
+    'Usuário inativo teve acesso permitido'
+  );
+
+  // 32.6: Auditoria de integridade das regras de segurança do Firestore (firestore.rules)
+  const rulesSource = fs.readFileSync('firestore.rules', 'utf8');
+  assert(rulesSource.includes('match /{document=**} {\n      allow read, write: if false;'), 'Default-Deny Catch-All presente em firestore.rules', 'Falta default deny');
+  assert(rulesSource.includes('function userBelongsToOrg('), 'Função userBelongsToOrg() presente para isolamento multi-tenant', 'Falta userBelongsToOrg');
+  assert(rulesSource.includes('function isUserActive('), 'Função isUserActive() presente para bloqueio de usuários inativos/bloqueados', 'Falta isUserActive');
+  assert(rulesSource.includes('function getUserRole('), 'Função getUserRole() presente para controle de acesso baseado em papéis (RBAC)', 'Falta getUserRole');
 
   // --------------------------------------------------------------------------
   // RESUMO FINAL

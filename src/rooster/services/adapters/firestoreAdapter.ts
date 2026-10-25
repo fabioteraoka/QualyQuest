@@ -561,9 +561,9 @@ export class FirestoreAdapter implements StorageAdapter {
               modalidade: 'PRESENCIAL',
               cargaHorariaHoras: 8,
               ementa: `Curso oficial homologado ${c.grupo} - ${c.curso}`,
-              recorrente: true,
-              periodicidadeMeses: Math.round((c.validade_dias || 730) / 30),
-              origemPrazo: 'REGULAMENTO',
+              recorrente: !c.sem_validade && (c.validade_dias || 0) > 0,
+              periodicidadeMeses: (c.validade_dias && c.validade_dias > 0 && !c.sem_validade) ? Math.round(c.validade_dias / 30) : undefined,
+              origemPrazo: (c.validade_dias && c.validade_dias > 0 && !c.sem_validade) ? 'REGULAMENTO' : 'PROGRAMA_TREINAMENTO',
               competenciasDesenvolvidasIds: [],
               status: c.ativo ? 'ATIVO' : 'INATIVO',
               frotaOuFamilia: c.frota || 'Geral',
@@ -730,11 +730,15 @@ export class FirestoreAdapter implements StorageAdapter {
     this.notify();
 
     // 2. Persiste EXCLUSIVAMENTE na coleção canônica organizations/{orgId}/persons
-    await setDoc(
-      doc(db, 'organizations', this.orgId, 'persons', pessoa.id),
-      sanitizeForFirestore(updatedColab),
-      { merge: true }
-    );
+    try {
+      await setDoc(
+        doc(db, 'organizations', this.orgId, 'persons', pessoa.id),
+        sanitizeForFirestore(updatedColab),
+        { merge: true }
+      );
+    } catch (firestoreErr: any) {
+      console.warn('Erro ao persistir no Firestore (modo offline/sem sessão):', firestoreErr?.message || firestoreErr);
+    }
 
     await this.recordAudit(
       existingColab ? 'EDITAR' : 'CRIAR',

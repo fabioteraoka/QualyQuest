@@ -123,13 +123,15 @@ export function calcularStatus(
 }
 
 export function getStatusGravidade(status: ItemStatus): number {
-  if (status === 'Vencido') return 7;
-  if (status.startsWith('Vence ≤') && (status.includes('30') || status.endsWith('1d'))) return 6;
-  if (status.startsWith('Vence ≤') && (status.includes('60') || status.endsWith('2d'))) return 5;
-  if (status.startsWith('Vence ≤')) return 4;
-  if (status === 'Em dia') return 3;
-  if (status === 'Sem vencimento') return 2;
-  return 1; // Sem registro
+  if (status === 'Vencido') return 8;
+  if (status === 'Dados insuficientes') return 7;
+  if (status === 'Sem validade definida') return 6;
+  if (status.startsWith('Vence ≤') && (status.includes('30') || status.endsWith('1d'))) return 5;
+  if (status.startsWith('Vence ≤') && (status.includes('60') || status.endsWith('2d'))) return 4;
+  if (status.startsWith('Vence ≤')) return 3;
+  if (status === 'Em dia') return 2;
+  if (status === 'Sem vencimento') return 1;
+  return 0; // Sem registro
 }
 
 export function piorStatus(statusList: ItemStatus[]): ItemStatus {
@@ -164,6 +166,24 @@ export function getStatusColor(status: ItemStatus): StatusColors {
       border: '#E37A7A',
       badgeBg: 'bg-red-100 text-red-900 border-red-300',
       badgeText: 'text-red-900',
+    };
+  }
+  if (status === 'Dados insuficientes') {
+    return {
+      bg: '#F8CECC',
+      text: '#B85450',
+      border: '#E37A7A',
+      badgeBg: 'bg-rose-100 text-rose-900 border-rose-300',
+      badgeText: 'text-rose-900',
+    };
+  }
+  if (status === 'Sem validade definida') {
+    return {
+      bg: '#FFF2CC',
+      text: '#7F6000',
+      border: '#D6B656',
+      badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
+      badgeText: 'text-amber-900',
     };
   }
   if (status.startsWith('Vence ≤') && (status.includes('30') || status.includes('faixa_1'))) {
@@ -291,12 +311,13 @@ export function calcularStatusTreinamento(
   curso: CursoCatalogo | undefined,
   dataReferencia: string = hojeISO(),
   config: Configuracao = CONFIG_PADRAO
-): { data_vencimento: string | null; dias_para_vencer: number | null; status: ItemStatus; isSemVencimento: boolean } {
-  if (!treinamento.data_execucao) {
-    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem registro', isSemVencimento: false };
+): { data_vencimento: string | null; dias_para_vencer: number | null; status: ItemStatus; isSemVencimento: boolean; motivoStatus?: string } {
+  // Caso 1: Dados insuficientes (registro sem data de realização/execução informada)
+  if (!treinamento.data_execucao || !treinamento.data_execucao.trim()) {
+    return { data_vencimento: null, dias_para_vencer: null, status: 'Dados insuficientes', isSemVencimento: false, motivoStatus: 'Data de realização não informada' };
   }
 
-  // Se o registro possuir data_validade explícita, priorizá-la
+  // Caso 2: Validade explícita informada no registro (ex: de certificado homologado ou registro formal)
   if (treinamento.data_validade) {
     const data_vencimento = treinamento.data_validade;
     const dias_para_vencer = calcularDiasParaVencer(data_vencimento, dataReferencia);
@@ -304,14 +325,39 @@ export function calcularStatusTreinamento(
     return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
   }
 
-  // Não presumir validade de 5 anos (1825) ou qualquer prazo sem regra explícita
-  const validade = treinamento.validade_dias_override ?? (curso?.sem_validade ? 0 : (curso?.validade_dias ?? 0));
-  const isSemVencimento = validade === 0 || validade >= 36500;
-  const data_vencimento = isSemVencimento ? null : calcularVencimento(treinamento.data_execucao, validade);
-  const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
-  const status = calcularStatus(data_vencimento, true, isSemVencimento, dataReferencia, config);
+  // Caso 3: Curso ausente no catálogo -> Sem validade definida
+  if (!curso) {
+    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem validade definida', isSemVencimento: false, motivoStatus: 'Curso não localizado no catálogo' };
+  }
 
-  return { data_vencimento, dias_para_vencer, status, isSemVencimento };
+  // Caso 4: Treinamento sem vencimento aplicável declarado (ex: doutrinação única / sem reciclagem)
+  if (curso.sem_validade) {
+    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem vencimento', isSemVencimento: true, motivoStatus: 'Treinamento sem vencimento aplicável' };
+  }
+
+  // Caso 5: Override explícito de validade no treinamento
+  if (treinamento.validade_dias_override !== undefined && treinamento.validade_dias_override !== null) {
+    if (treinamento.validade_dias_override === 0 || treinamento.validade_dias_override >= 36500) {
+      return { data_vencimento: null, dias_para_vencer: null, status: 'Sem vencimento', isSemVencimento: true };
+    }
+    const data_vencimento = calcularVencimento(treinamento.data_execucao, treinamento.validade_dias_override);
+    const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
+    const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
+    return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
+  }
+
+  // Caso 6: Curso cadastrado sem periodicidade ou validade definida
+  const validade = curso.validade_dias;
+  if (!validade || validade === 0) {
+    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem validade definida', isSemVencimento: false, motivoStatus: 'Validade não definida no cadastro do curso' };
+  }
+
+  // Caso 7: Validade calculada com base na regra cadastrada no curso
+  const data_vencimento = calcularVencimento(treinamento.data_execucao, validade);
+  const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
+  const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
+
+  return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
 }
 
 export function conferirDesignacao(
@@ -334,7 +380,7 @@ export function conferirDesignacao(
   const vigentes = treinamentosDaAeronave.filter((t) => {
     const curso = cursosMap.get(t.curso_id);
     const { status } = calcularStatusTreinamento(t, curso, dataReferencia, config);
-    return status !== 'Vencido' && status !== 'Sem registro';
+    return status === 'Em dia' || status === 'Sem vencimento' || status.startsWith('Vence ≤');
   });
 
   if (designacaoValor === 'SIM') {

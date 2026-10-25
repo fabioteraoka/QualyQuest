@@ -554,44 +554,55 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       );
 
     case 'rooster-mro':
+    case 'rooster':
     case 'rooster-pessoas':
+    case 'pessoas':
     case 'rooster-ficha':
+    case 'ficha':
     case 'colaborador-perfil':
     case 'rooster-catalogo':
+    case 'catalogo':
+    case 'treinamentos-catalogo':
     case 'rooster-treinamentos':
     case 'rooster-licencas':
+    case 'licencas':
     case 'cadastros-bases':
     case 'rooster-bases':
+    case 'bases':
     case 'rooster-designacao':
     case 'rooster-conferencia':
+    case 'conferencia':
     case 'rooster-relatorio':
     case 'rooster-roster':
     case 'rooster-motores':
     case 'rooster-matrizes':
+    case 'matrizes':
+    case 'matriz-competencias':
     case 'modelos-capacitacao':
-    case 'rooster-vencimentos': {
+    case 'rooster-vencimentos':
+    case 'vencimentos': {
       const roosterTab =
-        activeTab === 'rooster-catalogo'
+        activeTab === 'rooster-catalogo' || activeTab === 'catalogo' || activeTab === 'treinamentos-catalogo'
           ? 'catalogo'
           : activeTab === 'rooster-treinamentos'
           ? 'treinamentos'
-          : activeTab === 'rooster-licencas'
+          : activeTab === 'rooster-licencas' || activeTab === 'licencas'
           ? 'licencas'
-          : activeTab === 'rooster-ficha' || activeTab === 'colaborador-perfil'
+          : activeTab === 'rooster-ficha' || activeTab === 'colaborador-perfil' || activeTab === 'ficha'
           ? 'ficha'
-          : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases'
+          : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases' || activeTab === 'bases'
           ? 'bases'
           : activeTab === 'rooster-designacao'
           ? 'designacao'
-          : activeTab === 'rooster-conferencia'
+          : activeTab === 'rooster-conferencia' || activeTab === 'conferencia'
           ? 'conferencia'
           : activeTab === 'rooster-relatorio' || activeTab === 'rooster-roster'
           ? 'roster'
           : activeTab === 'rooster-motores'
           ? 'motores'
-          : activeTab === 'rooster-matrizes' || activeTab === 'modelos-capacitacao'
+          : activeTab === 'rooster-matrizes' || activeTab === 'modelos-capacitacao' || activeTab === 'matrizes' || activeTab === 'matriz-competencias'
           ? 'matrizes'
-          : activeTab === 'rooster-vencimentos'
+          : activeTab === 'rooster-vencimentos' || activeTab === 'vencimentos'
           ? 'vencimentos'
           : 'pessoas';
 
@@ -887,6 +898,28 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       return <SystemDesignerOfficialView />;
 
     default:
-      return null;
+      console.warn(`[AppViewRouter] Rota não reconhecida: "${activeTab}". Redirecionando para Dashboard.`);
+      return (
+        <DashboardView
+          records={props.records}
+          manuals={props.manuals}
+          alertas={props.alertas}
+          userProfile={props.userProfile}
+          organization={props.activeOrganization}
+          onNavigateToReport={props.handleOpenReportWithFilter}
+          onNavigateToForm={props.handleNewNC}
+          onNavigateToManuals={() => setActiveTab('manuais')}
+          onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
+          onNavigateToAnalytics={() => setActiveTab('incidencias')}
+          onNavigateToKnowledge={() => setActiveTab('knowledgeBase')}
+          onNavigateToAudits={() => setActiveTab('auditorias-gestao')}
+          onNavigateToPersons={() => setActiveTab('pessoas-competencias')}
+          onNavigateToDocControl={() => setActiveTab('controle-documental')}
+          onNavigateToClientAudits={() => setActiveTab('clientes-requisitos')}
+          onNavigateToTechnicalDiagnostics={() => props.setIsDiagnosticsModalOpen(true)}
+          onNavigateToTour={() => setActiveTab('tour-interativo')}
+          onOpenChecklistModal={() => props.setIsChecklistModalOpen(true)}
+        />
+      );
   }
 };

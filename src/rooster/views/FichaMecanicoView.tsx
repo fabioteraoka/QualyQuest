@@ -145,7 +145,7 @@ export const FichaMecanicoView: React.FC = () => {
       const hasVigente = trnsComMotor.some((t) => {
         const c = cursosMap.get(t.curso_id);
         const { status } = calcularStatusTreinamento(t, c, dataReferencia, db.configuracao);
-        return status !== 'Vencido' && status !== 'Sem registro';
+        return status === 'Em dia' || status === 'Sem vencimento' || status.startsWith('Vence ≤');
       });
 
       resultados.push({

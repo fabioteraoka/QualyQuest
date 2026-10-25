@@ -213,6 +213,8 @@ export type ItemStatus =
   | 'Vence ≤90d'
   | 'Em dia'
   | 'Sem vencimento'
+  | 'Sem validade definida'
+  | 'Dados insuficientes'
   | 'Sem registro';
 
 export interface CalculoVencimentoResult {
