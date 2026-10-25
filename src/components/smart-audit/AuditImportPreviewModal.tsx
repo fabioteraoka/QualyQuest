@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CheckCircle2,
   AlertCircle,
@@ -39,9 +39,7 @@ export const AuditImportPreviewModal: React.FC<AuditImportPreviewModalProps> = (
   onConfirmImport,
   loadingGravacao = false,
 }) => {
-  if (!isOpen || !extracao) return null;
-
-  const [itens, setItens] = useState(extracao.itens || []);
+  const [itens, setItens] = useState(extracao?.itens || []);
   const [selectedSecao, setSelectedSecao] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
@@ -55,9 +53,18 @@ export const AuditImportPreviewModal: React.FC<AuditImportPreviewModalProps> = (
   const [editCrit, setEditCrit] = useState<'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA'>('ALTA');
 
   // Metadados da Auditoria Extraída
-  const [metaCliente, setMetaCliente] = useState<string>(extracao.clienteDetectado || 'Cliente / Autoridade Externa');
-  const [metaCodigo, setMetaCodigo] = useState<string>(extracao.codigoChecklist || 'CHK-AUDITORIA');
-  const [metaRevisao, setMetaRevisao] = useState<string>(extracao.revisaoChecklist || 'Rev. 01');
+  const [metaCliente, setMetaCliente] = useState<string>(extracao?.clienteDetectado || 'Cliente / Autoridade Externa');
+  const [metaCodigo, setMetaCodigo] = useState<string>(extracao?.codigoChecklist || 'CHK-AUDITORIA');
+  const [metaRevisao, setMetaRevisao] = useState<string>(extracao?.revisaoChecklist || 'Rev. 01');
+
+  useEffect(() => {
+    if (extracao) {
+      setItens(extracao.itens || []);
+      setMetaCliente(extracao.clienteDetectado || 'Cliente / Autoridade Externa');
+      setMetaCodigo(extracao.codigoChecklist || 'CHK-AUDITORIA');
+      setMetaRevisao(extracao.revisaoChecklist || 'Rev. 01');
+    }
+  }, [extracao]);
 
   // Lista única de seções
   const secoesDisponiveis = Array.from(new Set(itens.map((it) => it.capituloOuSecao || 'Geral')));
@@ -174,6 +181,8 @@ export const AuditImportPreviewModal: React.FC<AuditImportPreviewModalProps> = (
     };
     await onConfirmImport(revisado);
   };
+
+  if (!isOpen || !extracao) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">

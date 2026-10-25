@@ -76,6 +76,18 @@ export const FichaMecanicoView: React.FC = () => {
 
   const [renovacaoData, setRenovacaoData] = useState(dataReferencia);
 
+  // State for editing mechanic / person data (placed at top level to satisfy Rules of Hooks)
+  const [modalEditarPessoa, setModalEditarPessoa] = useState(false);
+  const [editNome, setEditNome] = useState('');
+  const [editCanac, setEditCanac] = useState('');
+  const [editCategoria, setEditCategoria] = useState<CategoriaPessoa>('Mecânico');
+  const [editSituacao, setEditSituacao] = useState<SituacaoPessoa>('Ativo');
+  const [editBasePrincipal, setEditBasePrincipal] = useState('REC');
+  const [editClienteOuArea, setEditClienteOuArea] = useState('');
+  const [editImp, setEditImp] = useState('');
+  const [editEasaType, setEditEasaType] = useState<EasaType>('N/A');
+  const [editBasesDesignadas, setEditBasesDesignadas] = useState<string[]>([]);
+
   const pessoa = useMemo(() => {
     return db.pessoas.find((p) => p.id === selectedPessoaId) || db.pessoas[0];
   }, [db.pessoas, selectedPessoaId]);
@@ -175,14 +187,10 @@ export const FichaMecanicoView: React.FC = () => {
     });
   }, [db.designacoesAeronave, db.treinamentos, cursosMap, dataReferencia, db.configuracao, pessoa]);
 
-  if (!pessoa) {
-    return <div className="p-8 text-center text-slate-500">Nenhum mecânico selecionado.</div>;
-  }
-
   // Handle Save New Training
   const handleSaveTreinamento = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novoTrnCursoId || !novoTrnDataExec) return;
+    if (!pessoa || !novoTrnCursoId || !novoTrnDataExec) return;
 
     const trnId = `TRN-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const novo: Treinamento = {
@@ -213,7 +221,7 @@ export const FichaMecanicoView: React.FC = () => {
   // Handle Save New License
   const handleSaveLicenca = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novaLicNumero) return;
+    if (!pessoa || !novaLicNumero) return;
 
     const licId = `LIC-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const nova: Licenca = {
@@ -278,18 +286,7 @@ export const FichaMecanicoView: React.FC = () => {
     }
   };
 
-  // State and Handlers for editing mechanic / person data
-  const [modalEditarPessoa, setModalEditarPessoa] = useState(false);
-  const [editNome, setEditNome] = useState('');
-  const [editCanac, setEditCanac] = useState('');
-  const [editCategoria, setEditCategoria] = useState<CategoriaPessoa>('Mecânico');
-  const [editSituacao, setEditSituacao] = useState<SituacaoPessoa>('Ativo');
-  const [editBasePrincipal, setEditBasePrincipal] = useState('REC');
-  const [editClienteOuArea, setEditClienteOuArea] = useState('');
-  const [editImp, setEditImp] = useState('');
-  const [editEasaType, setEditEasaType] = useState<EasaType>('N/A');
-  const [editBasesDesignadas, setEditBasesDesignadas] = useState<string[]>([]);
-
+  // Handlers for editing mechanic / person data
   const handleOpenEditarPessoa = () => {
     if (!pessoa) return;
     setEditNome(pessoa.nome);

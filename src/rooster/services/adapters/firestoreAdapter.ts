@@ -180,7 +180,8 @@ export class FirestoreAdapter implements StorageAdapter {
     const frota = c.frotaOuFamilia || '';
     const isFrota = frota && frota !== 'Geral' && frota !== 'Doutrinação';
     const hasPeriodicidade = typeof c.periodicidadeMeses === 'number' && c.periodicidadeMeses > 0;
-    const validadeDias = hasPeriodicidade ? c.periodicidadeMeses! * 30 : (c.recorrente ? 730 : 0);
+    // Não presumir validade de 2 anos (730 dias) ou qualquer prazo sem fonte explícita
+    const validadeDias = hasPeriodicidade ? c.periodicidadeMeses! * 30 : 0;
 
     return {
       id: c.id,
@@ -199,7 +200,7 @@ export class FirestoreAdapter implements StorageAdapter {
       periodicidade_meses: c.periodicidadeMeses,
       origem_prazo: c.origemPrazo,
       nivel_ou_modulo: c.nivelOuModulo,
-      sem_validade: !c.recorrente && !hasPeriodicidade,
+      sem_validade: !hasPeriodicidade,
     };
   }
 
@@ -207,14 +208,14 @@ export class FirestoreAdapter implements StorageAdapter {
    * Converte RegistroTreinamentoColaborador canônico em Treinamento (modelo de apresentação do Rooster)
    */
   private mapRegistroTreinamentoToTreinamento(t: RegistroTreinamentoColaborador): Treinamento {
+    // Não utilizar a data de criação do registro como data de realização sem evidência
+    const dataExecucao = t.dataRealizacao || t.dataConclusao || '';
+
     return {
       id: t.id,
       pessoa_id: t.colaboradorId,
       curso_id: t.treinamentoId || t.treinamentoCodigo || '',
-      data_execucao:
-        t.dataRealizacao ||
-        t.dataConclusao ||
-        (t.createdAt ? t.createdAt.split('T')[0] : new Date().toISOString().split('T')[0]),
+      data_execucao: dataExecucao,
       observacao: t.observacoes || '',
       resultado: t.resultado as any,
       instrutor: t.instrutor,

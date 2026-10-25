@@ -33,6 +33,10 @@ export function formatarDataBr(dataIso: string | null | undefined): string {
   }
 }
 
+export function hojeISO(): string {
+  return format(new Date(), 'yyyy-MM-dd');
+}
+
 export function parseDataBrParaIso(dataBr: string): string | null {
   if (!dataBr || !dataBr.trim()) return null;
   const limpo = dataBr.trim();
@@ -272,23 +276,42 @@ export function calcularStatusLicenca(licenca: Licenca, dataReferencia: string, 
   );
 }
 
+export const CONFIG_PADRAO: Configuracao = {
+  faixa_1: 30,
+  faixa_2: 60,
+  faixa_3: 90,
+  data_referencia: format(new Date(), 'yyyy-MM-dd'),
+  responsavel_tecnico: 'Responsável Técnico SGQ',
+  destacar_vencimentos_padrao: true,
+  limite_linhas_pagina: 25,
+};
+
 export function calcularStatusTreinamento(
   treinamento: Treinamento,
   curso: CursoCatalogo | undefined,
-  dataReferencia: string,
-  config: Configuracao
-): { data_vencimento: string | null; dias_para_vencer: number | null; status: ItemStatus } {
+  dataReferencia: string = hojeISO(),
+  config: Configuracao = CONFIG_PADRAO
+): { data_vencimento: string | null; dias_para_vencer: number | null; status: ItemStatus; isSemVencimento: boolean } {
   if (!treinamento.data_execucao) {
-    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem registro' };
+    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem registro', isSemVencimento: false };
   }
 
-  const validade = treinamento.validade_dias_override ?? curso?.validade_dias ?? 1825;
-  const isSemVencimento = validade >= 36500;
-  const data_vencimento = calcularVencimento(treinamento.data_execucao, validade);
-  const dias_para_vencer = calcularDiasParaVencer(data_vencimento, dataReferencia);
+  // Se o registro possuir data_validade explícita, priorizá-la
+  if (treinamento.data_validade) {
+    const data_vencimento = treinamento.data_validade;
+    const dias_para_vencer = calcularDiasParaVencer(data_vencimento, dataReferencia);
+    const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
+    return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
+  }
+
+  // Não presumir validade de 5 anos (1825) ou qualquer prazo sem regra explícita
+  const validade = treinamento.validade_dias_override ?? (curso?.sem_validade ? 0 : (curso?.validade_dias ?? 0));
+  const isSemVencimento = validade === 0 || validade >= 36500;
+  const data_vencimento = isSemVencimento ? null : calcularVencimento(treinamento.data_execucao, validade);
+  const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
   const status = calcularStatus(data_vencimento, true, isSemVencimento, dataReferencia, config);
 
-  return { data_vencimento, dias_para_vencer, status };
+  return { data_vencimento, dias_para_vencer, status, isSemVencimento };
 }
 
 export function conferirDesignacao(

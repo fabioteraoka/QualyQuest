@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -68,43 +68,67 @@ export const AuditRequirementDetailModal: React.FC<AuditRequirementDetailModalPr
   onCriarRNC,
   onNavigateToTab,
 }) => {
-  if (!isOpen || !requisito) return null;
-
   const [activeTab, setActiveTab] = useState<'avaliacao' | 'decisao' | 'resposta' | 'evidencias' | 'historico'>('avaliacao');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Estados editáveis
-  const [situacao, setSituacao] = useState<SituacaoAtendimentoRequisito>(requisito.situacaoAtendimento);
-  const [estado, setEstado] = useState<EstadoAcompanhamentoRequisito>(requisito.estadoAcompanhamento);
-  const [prioridade, setPrioridade] = useState(requisito.prioridade || 'ALTA');
-  const [setor, setSetor] = useState(requisito.setorResponsavel || 'Garantia da Qualidade / SGQ');
-  const [responsavel, setResponsavel] = useState(requisito.responsavelInterno || userProfile?.displayName || '');
-  const [prazo, setPrazo] = useState(requisito.prazo || '');
-  const [acoes, setAcoes] = useState(requisito.acoesNecessarias || '');
+  const [situacao, setSituacao] = useState<SituacaoAtendimentoRequisito>(requisito?.situacaoAtendimento || 'PENDENTE_RESPOSTA');
+  const [estado, setEstado] = useState<EstadoAcompanhamentoRequisito>(requisito?.estadoAcompanhamento || 'NAO_INICIADO');
+  const [prioridade, setPrioridade] = useState(requisito?.prioridade || 'ALTA');
+  const [setor, setSetor] = useState(requisito?.setorResponsavel || 'Garantia da Qualidade / SGQ');
+  const [responsavel, setResponsavel] = useState(requisito?.responsavelInterno || userProfile?.displayName || '');
+  const [prazo, setPrazo] = useState(requisito?.prazo || '');
+  const [acoes, setAcoes] = useState(requisito?.acoesNecessarias || '');
 
   // Decisão Organizacional
-  const [decisao, setDecisao] = useState<DecisaoOrganizacionalRequisito | undefined>(requisito.decisaoOrganizacional);
-  const [justificativaDecisao, setJustificativaDecisao] = useState(requisito.justificativaDecisao || '');
-  const [responsavelDecisao, setResponsavelDecisao] = useState(requisito.responsavelDecisao || userProfile?.displayName || '');
-  const [impactoEsperado, setImpactoEsperado] = useState(requisito.impactosDecisao?.custoOuRecursoEstimado || '');
-  const [reqRevisaoProc, setReqRevisaoProc] = useState(requisito.impactosDecisao?.requerRevisaoProcedimento || false);
-  const [reqTreinamento, setReqTreinamento] = useState(requisito.impactosDecisao?.requerTreinamento || false);
-  const [reqRecurso, setReqRecurso] = useState(requisito.impactosDecisao?.requerAquisicaoRecurso || false);
-  const [reqRNC, setReqRNC] = useState(requisito.impactosDecisao?.requerRNC || false);
-  const [reqAuditoriaInterna, setReqAuditoriaInterna] = useState(requisito.impactosDecisao?.requerAuditoriaInterna || false);
+  const [decisao, setDecisao] = useState<DecisaoOrganizacionalRequisito | undefined>(requisito?.decisaoOrganizacional);
+  const [justificativaDecisao, setJustificativaDecisao] = useState(requisito?.justificativaDecisao || '');
+  const [responsavelDecisao, setResponsavelDecisao] = useState(requisito?.responsavelDecisao || userProfile?.displayName || '');
+  const [impactoEsperado, setImpactoEsperado] = useState(requisito?.impactosDecisao?.custoOuRecursoEstimado || '');
+  const [reqRevisaoProc, setReqRevisaoProc] = useState(requisito?.impactosDecisao?.requerRevisaoProcedimento || false);
+  const [reqTreinamento, setReqTreinamento] = useState(requisito?.impactosDecisao?.requerTreinamento || false);
+  const [reqRecurso, setReqRecurso] = useState(requisito?.impactosDecisao?.requerAquisicaoRecurso || false);
+  const [reqRNC, setReqRNC] = useState(requisito?.impactosDecisao?.requerRNC || false);
+  const [reqAuditoriaInterna, setReqAuditoriaInterna] = useState(requisito?.impactosDecisao?.requerAuditoriaInterna || false);
 
   // Resposta Oficial
-  const [respostaOficial, setRespostaOficial] = useState(requisito.respostaOficialEnviada || '');
-  const [statusAceitacao, setStatusAceitacao] = useState(requisito.statusAceitacaoAuditor || 'PENDENTE');
-  const [parecerAuditor, setParecerAuditor] = useState(requisito.parecerAuditorExterno || '');
+  const [respostaOficial, setRespostaOficial] = useState(requisito?.respostaOficialEnviada || '');
+  const [statusAceitacao, setStatusAceitacao] = useState(requisito?.statusAceitacaoAuditor || 'PENDENTE');
+  const [parecerAuditor, setParecerAuditor] = useState(requisito?.parecerAuditorExterno || '');
 
   // Assistência IA
   const [loadingAi, setLoadingAi] = useState(false);
-  const [aiSugestao, setAiSugestao] = useState<SugestaoRespostaRequisitoIA | null>(requisito.sugestaoRespostaIA || null);
+  const [aiSugestao, setAiSugestao] = useState<SugestaoRespostaRequisitoIA | null>(requisito?.sugestaoRespostaIA || null);
 
   // Vínculo com RNC
-  const [selectedRncId, setSelectedRncId] = useState(requisito.rncId || '');
+  const [selectedRncId, setSelectedRncId] = useState(requisito?.rncId || '');
+
+  useEffect(() => {
+    if (requisito) {
+      setSituacao(requisito.situacaoAtendimento);
+      setEstado(requisito.estadoAcompanhamento);
+      setPrioridade(requisito.prioridade || 'ALTA');
+      setSetor(requisito.setorResponsavel || 'Garantia da Qualidade / SGQ');
+      setResponsavel(requisito.responsavelInterno || userProfile?.displayName || '');
+      setPrazo(requisito.prazo || '');
+      setAcoes(requisito.acoesNecessarias || '');
+      setDecisao(requisito.decisaoOrganizacional);
+      setJustificativaDecisao(requisito.justificativaDecisao || '');
+      setResponsavelDecisao(requisito.responsavelDecisao || userProfile?.displayName || '');
+      setImpactoEsperado(requisito.impactosDecisao?.custoOuRecursoEstimado || '');
+      setReqRevisaoProc(requisito.impactosDecisao?.requerRevisaoProcedimento || false);
+      setReqTreinamento(requisito.impactosDecisao?.requerTreinamento || false);
+      setReqRecurso(requisito.impactosDecisao?.requerAquisicaoRecurso || false);
+      setReqRNC(requisito.impactosDecisao?.requerRNC || false);
+      setReqAuditoriaInterna(requisito.impactosDecisao?.requerAuditoriaInterna || false);
+      setRespostaOficial(requisito.respostaOficialEnviada || '');
+      setStatusAceitacao(requisito.statusAceitacaoAuditor || 'PENDENTE');
+      setParecerAuditor(requisito.parecerAuditorExterno || '');
+      setAiSugestao(requisito.sugestaoRespostaIA || null);
+      setSelectedRncId(requisito.rncId || '');
+    }
+  }, [requisito, userProfile]);
 
   const showToast = (type: 'success' | 'error', message: string) => {
     setFeedback({ type, message });
@@ -113,6 +137,7 @@ export const AuditRequirementDetailModal: React.FC<AuditRequirementDetailModalPr
 
   // Consultar Assistente IA via Endpoint
   const handleConsultarIA = async () => {
+    if (!requisito) return;
     setLoadingAi(true);
     const targetOrg = auditoria?.organizationId || (auditoria as any)?.orgId || 'org_impacto_aviation';
     const cacheKey = geminiClientCache.generateKey({
@@ -185,6 +210,7 @@ export const AuditRequirementDetailModal: React.FC<AuditRequirementDetailModalPr
 
   // Salvar Alterações na Ficha do Requisito
   const handleSave = async () => {
+    if (!requisito) return;
     setSaving(true);
     try {
       const agora = new Date().toISOString();
@@ -247,7 +273,7 @@ export const AuditRequirementDetailModal: React.FC<AuditRequirementDetailModalPr
 
   // Abrir criação de RNC a partir do requisito
   const handleOpenRncCreation = () => {
-    if (!onCriarRNC) return;
+    if (!requisito || !onCriarRNC) return;
     onCriarRNC({
       origemDetectada: 'AUDITORIA_EXTERNA',
       processoSetor: setor || 'Manutenção e Operações',
@@ -257,6 +283,8 @@ export const AuditRequirementDetailModal: React.FC<AuditRequirementDetailModalPr
     });
     showToast('success', 'Formulário de RNC aberto com os dados do requisito pré-preenchidos.');
   };
+
+  if (!isOpen || !requisito) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">

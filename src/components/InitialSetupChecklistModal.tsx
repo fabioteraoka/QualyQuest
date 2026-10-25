@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CheckSquare, 
   Square, 
@@ -38,8 +38,6 @@ export const InitialSetupChecklistModal: React.FC<InitialSetupChecklistModalProp
   onNavigateToTab,
   onUpdateOrganization,
 }) => {
-  if (!isOpen) return null;
-
   const currentChecklist: OrganizationChecklistConfig = organization?.configuration?.checklistConfiguracao || {
     organizacaoConfigurada: true,
     identidadeVisualConfigurada: false,
@@ -54,6 +52,12 @@ export const InitialSetupChecklistModal: React.FC<InitialSetupChecklistModalProp
 
   const [checklist, setChecklist] = useState<OrganizationChecklistConfig>(currentChecklist);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  useEffect(() => {
+    if (organization?.configuration?.checklistConfiguracao) {
+      setChecklist(organization.configuration.checklistConfiguracao);
+    }
+  }, [organization?.configuration?.checklistConfiguracao]);
 
   const checklistItems: ChecklistItemDefinition[] = [
     {
@@ -157,6 +161,8 @@ export const InitialSetupChecklistModal: React.FC<InitialSetupChecklistModalProp
       setIsUpdating(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">

@@ -33,7 +33,11 @@ import {
   UploadCloud,
   MapPin,
   Plane,
-  FileCheck2,
+  CheckSquare,
+  Square,
+  ArrowRight,
+  ArrowLeft,
+  Briefcase,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -58,6 +62,7 @@ import {
   verificarDependenciasPessoa,
   saveCompetency,
   savePersonCompetency,
+  saveQualification,
 } from '../services/firebase/competenciesFirestore';
 import {
   verificarPodeExecutarAtividade,
@@ -92,8 +97,9 @@ interface PersonsCompetenciesViewProps {
   nonConformities?: any[];
   bases?: BaseEstacaoOperacao[];
   initialStatusFilter?: string;
-  initialSubTab?: 'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA';
+  initialSubTab?: 'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA' | 'FUNCOES_CARGOS';
   initialRoosterTab?: RoosterActiveTab;
+  initialOpenNovoColaborador?: boolean;
   onNavigateToTrainings?: () => void;
   onNavigateToExpirations?: () => void;
   onNavigateToImport?: () => void;
@@ -115,12 +121,13 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   initialStatusFilter,
   initialSubTab,
   initialRoosterTab,
+  initialOpenNovoColaborador,
   onNavigateToTrainings,
   onNavigateToExpirations,
   onNavigateToImport,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA'
+    'COLABORADORES' | 'MATRIZ' | 'CATALOGO' | 'BASES' | 'ROOSTER_MRO' | 'ROOSTER_DESIGNACAO' | 'ROOSTER_CONFERENCIA' | 'FUNCOES_CARGOS'
   >(initialSubTab || 'COLABORADORES');
   const [roosterInitialTab, setRoosterInitialTab] = useState<RoosterActiveTab>(initialRoosterTab || 'pessoas');
   const [roosterInitialPessoaId, setRoosterInitialPessoaId] = useState<string | null>(null);
@@ -130,6 +137,75 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [selectedBase, setSelectedBase] = useState('TODAS');
   const [selectedStatus, setSelectedStatus] = useState<string>(initialStatusFilter || 'TODOS');
   const [filterRestricao, setFilterRestricao] = useState(false);
+
+  // Estado do Wizard de Cadastro de Novo Colaborador (Passos 1, 2 e 3)
+  const [novoColabPasso, setNovoColabPasso] = useState<1 | 2 | 3>(1);
+  const [erroValidacaoNovoColab, setErroValidacaoNovoColab] = useState<string | null>(null);
+  const [novoColabForm, setNovoColabForm] = useState({
+    nome: '',
+    matricula: '',
+    setor: 'Operações de Manutenção',
+    baseOperacional: '',
+    funcao: 'Mecânico',
+    cargoOperacional: '',
+    status: 'ATIVO' as StatusColaborador,
+    statusCustomizado: '',
+    dataAdmissao: '',
+    contatoCorporativo: '',
+    observacoes: '',
+    possuiRestricao: false,
+    motivoRestricao: '',
+    dataInicioRestricao: '',
+    dataFimRestricao: '',
+    impedeExecucao: false,
+  });
+  const [novoColabLicenca, setNovoColabLicenca] = useState({
+    possuiLicenca: false,
+    tipo: 'CHT',
+    numero: '',
+    orgaoEmissor: 'ANAC - Brasil',
+    categorias: '',
+    validadeCMA: '',
+    validadeCHT: '',
+  });
+  const [cursosSelecionadosRequisitos, setCursosSelecionadosRequisitos] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (initialOpenNovoColaborador) {
+      setColaboradorParaEditar(null);
+      setNovoColabPasso(1);
+      setErroValidacaoNovoColab(null);
+      setNovoColabForm({
+        nome: '',
+        matricula: '',
+        setor: 'Operações de Manutenção',
+        baseOperacional: '',
+        funcao: 'Mecânico',
+        cargoOperacional: '',
+        status: 'ATIVO',
+        statusCustomizado: '',
+        dataAdmissao: '',
+        contatoCorporativo: '',
+        observacoes: '',
+        possuiRestricao: false,
+        motivoRestricao: '',
+        dataInicioRestricao: '',
+        dataFimRestricao: '',
+        impedeExecucao: false,
+      });
+      setNovoColabLicenca({
+        possuiLicenca: false,
+        tipo: 'CHT',
+        numero: '',
+        orgaoEmissor: 'ANAC - Brasil',
+        categorias: '',
+        validadeCMA: '',
+        validadeCHT: '',
+      });
+      setCursosSelecionadosRequisitos([]);
+      setModalColaboradorOpen(true);
+    }
+  }, [initialOpenNovoColaborador]);
 
   useEffect(() => {
     if (initialRoosterTab) {
@@ -224,14 +300,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       const label = b.codigo ? `${b.codigo} - ${b.nome}` : b.nome;
       mapa.set(b.id, { id: b.id, nome: label });
     });
-    // Padrões de bases do SGQ caso nenhuma tenha sido criada ainda
-    if (mapa.size === 0) {
-      mapa.set('base-rec-hub', { id: 'base-rec-hub', nome: 'REC - Recife / Hub Central' });
-      mapa.set('BASE-SOD', { id: 'BASE-SOD', nome: 'SOD - Sorocaba / Base Principal' });
-      mapa.set('BASE-GRU', { id: 'BASE-GRU', nome: 'GRU - Guarulhos / Estação de Linha' });
-      mapa.set('BASE-VCP', { id: 'BASE-VCP', nome: 'VCP - Campinas / Viracopos' });
-      mapa.set('BASE-GIG', { id: 'BASE-GIG', nome: 'GIG - Rio de Janeiro / Galeão' });
-    }
+    // Bases derivadas exclusivamente dos cadastros oficiais e dos colaboradores reais
     persons.forEach((p) => {
       if (p.baseOperacional) {
         const jaExiste = Array.from(mapa.values()).some((item) => item.nome === p.baseOperacional);
@@ -412,6 +481,128 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       }
     } catch (err: any) {
       alert(`Erro ao salvar colaborador: ${err.message}`);
+    }
+  };
+
+  // Concluir cadastro guiado de novo colaborador (Passo 3 do Wizard)
+  const handleConcluirNovoColaborador = async () => {
+    if (
+      !novoColabForm.nome.trim() ||
+      !novoColabForm.matricula.trim() ||
+      !novoColabForm.baseOperacional ||
+      !novoColabForm.funcao
+    ) {
+      setErroValidacaoNovoColab(
+        'Dados obrigatórios faltando: Nome, Matrícula, Base Operacional e Função são obrigatórios.'
+      );
+      setNovoColabPasso(1);
+      return;
+    }
+
+    const novoId = `colab-${Date.now()}`;
+    const baseSel = basesDisponiveis.find((b) => b.nome === novoColabForm.baseOperacional);
+
+    const colab: ColaboradorPessoa = {
+      id: novoId,
+      organizationId,
+      nome: novoColabForm.nome.trim(),
+      matricula: novoColabForm.matricula.trim().toUpperCase(),
+      setor: novoColabForm.setor.trim(),
+      baseOperacional: novoColabForm.baseOperacional.trim(),
+      baseOperacionalId: baseSel?.id || undefined,
+      funcao: novoColabForm.funcao.trim(),
+      cargoOperacional: novoColabForm.cargoOperacional.trim() || novoColabForm.funcao.trim(),
+      status: novoColabForm.status,
+      statusCustomizado: novoColabForm.statusCustomizado.trim() || undefined,
+      dataAdmissao: novoColabForm.dataAdmissao || undefined,
+      contatoCorporativo: novoColabForm.contatoCorporativo.trim() || undefined,
+      observacoes: novoColabForm.observacoes.trim() || undefined,
+      restricaoOperacional: {
+        possuiRestricao: novoColabForm.possuiRestricao,
+        motivo: novoColabForm.possuiRestricao ? novoColabForm.motivoRestricao.trim() : undefined,
+        dataInicio: novoColabForm.possuiRestricao ? novoColabForm.dataInicioRestricao : undefined,
+        dataFim: novoColabForm.possuiRestricao ? novoColabForm.dataFimRestricao : undefined,
+        impedeExecucao: novoColabForm.possuiRestricao ? novoColabForm.impedeExecucao : false,
+        apenasAlerta: novoColabForm.possuiRestricao ? !novoColabForm.impedeExecucao : false,
+        registradoPor: userProfile?.displayName || 'SGQ',
+        registradoEm: new Date().toISOString(),
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      criadoPor: userProfile?.displayName || 'SGQ',
+      criadoPorUid: userProfile?.uid || 'sgq',
+    };
+
+    try {
+      // 1. Salvar novo colaborador oficial
+      await savePerson(organizationId, colab, userProfile);
+
+      // 2. Se informou CHT ou licença, salvar qualificação
+      if (novoColabLicenca.possuiLicenca && novoColabLicenca.numero.trim()) {
+        const qual: QualificacaoColaborador = {
+          id: `qual-${colab.id}-${Date.now()}`,
+          organizationId,
+          colaboradorId: colab.id,
+          colaboradorNome: colab.nome,
+          colaboradorMatricula: colab.matricula,
+          tipo: 'CHT_ANAC',
+          titulo: 'CHT ANAC - Habilitação Técnica',
+          escopo: novoColabLicenca.categorias || 'Manutenção Aeronáutica',
+          numeroRegistro: novoColabLicenca.numero.trim().toUpperCase(),
+          emissor: novoColabLicenca.orgaoEmissor.trim() || 'ANAC',
+          dataEmissao: new Date().toISOString().split('T')[0],
+          dataValidade: novoColabLicenca.validadeCHT || undefined,
+          possuiValidade: !!novoColabLicenca.validadeCHT,
+          status: 'VALIDA',
+          bloqueiaOperacaoSeVencida: true,
+          responsavelValidacaoUid: userProfile?.uid || 'sgq',
+          responsavelValidacaoNome: userProfile?.displayName || 'SGQ',
+          dataValidacao: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await saveQualification(organizationId, qual, userProfile);
+      }
+
+      // 3. Salvar cursos selecionados na matriz como REQUISITOS PENDENTES (evitando duplicidades)
+      if (cursosSelecionadosRequisitos.length > 0) {
+        for (const cursoId of cursosSelecionadosRequisitos) {
+          const curso = (trainingCourses || []).find((c) => c.id === cursoId);
+          if (curso) {
+            const jaExiste = personCompetencies.some(
+              (pc) => pc.colaboradorId === colab.id && pc.competenciaId === curso.id
+            );
+            if (!jaExiste) {
+              const reqComp: CompetenciaColaborador = {
+                id: `pc-${colab.id}-${curso.id}`,
+                organizationId,
+                colaboradorId: colab.id,
+                colaboradorNome: colab.nome,
+                colaboradorMatricula: colab.matricula,
+                setor: colab.setor,
+                competenciaId: curso.id,
+                competenciaCodigo: curso.codigo,
+                competenciaNome: curso.titulo,
+                nivelAtual: 1,
+                status: 'EM_TREINAMENTO', // Requisito atribuído, NÃO concluído
+                responsavelValidacaoNome: userProfile?.displayName || 'SGQ',
+                responsavelValidacaoUid: userProfile?.uid || 'sgq',
+                observacoes: `Requisito da matriz (${colab.funcao}) — pendente de execução e certificado oficial`,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              await savePersonCompetency(organizationId, reqComp, userProfile);
+            }
+          }
+        }
+      }
+
+      // 4. Fechar modal, abrir o perfil 360 completo imediatamente
+      setModalColaboradorOpen(false);
+      setSelectedColaborador(colab);
+      setAba360('GERAL');
+    } catch (err: any) {
+      alert(`Erro ao cadastrar novo colaborador: ${err.message}`);
     }
   };
 
@@ -712,13 +903,43 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
           )}
           <button
             onClick={() => {
-              setRoosterInitialTab('pessoas');
-              setActiveSubTab('ROOSTER_MRO');
+              setColaboradorParaEditar(null);
+              setNovoColabPasso(1);
+              setErroValidacaoNovoColab(null);
+              setNovoColabForm({
+                nome: '',
+                matricula: '',
+                setor: 'Operações de Manutenção',
+                baseOperacional: '',
+                funcao: 'Mecânico',
+                cargoOperacional: '',
+                status: 'ATIVO',
+                statusCustomizado: '',
+                dataAdmissao: '',
+                contatoCorporativo: '',
+                observacoes: '',
+                possuiRestricao: false,
+                motivoRestricao: '',
+                dataInicioRestricao: '',
+                dataFimRestricao: '',
+                impedeExecucao: false,
+              });
+              setNovoColabLicenca({
+                possuiLicenca: false,
+                tipo: 'CHT',
+                numero: '',
+                orgaoEmissor: 'ANAC - Brasil',
+                categorias: '',
+                validadeCMA: '',
+                validadeCHT: '',
+              });
+              setCursosSelecionadosRequisitos([]);
+              setModalColaboradorOpen(true);
             }}
             className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition shadow-sm"
-            title="Abrir Cadastro Mestre Oficial no Rooster MRO"
+            title="Cadastrar Novo Colaborador no Mestre Oficial"
           >
-            <Plus className="w-4 h-4" /> Novo Colaborador (Mestre Rooster)
+            <Plus className="w-4 h-4" /> Novo Colaborador
           </button>
           <button
             onClick={() => {
@@ -730,111 +951,6 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
             <Award className="w-4 h-4 text-emerald-600" /> Nova Competência
           </button>
         </div>
-      </div>
-
-      {/* Sub-navegação em Abas Integradas de Pessoas & Competências */}
-      <div className="flex border-b border-slate-200 gap-2 overflow-x-auto pb-0.5 scrollbar-thin">
-        <button
-          onClick={() => setActiveSubTab('COLABORADORES')}
-          className={`pb-3 px-3 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-            activeSubTab === 'COLABORADORES'
-              ? 'border-blue-600 text-blue-700 bg-blue-50/50 rounded-t-lg'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Users className="w-4 h-4 text-blue-600" />
-          <span>Colaboradores Cadastrados</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded-full font-mono bg-blue-100 text-blue-800">
-            {persons.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => {
-            setRoosterInitialTab('pessoas');
-            setActiveSubTab('ROOSTER_MRO');
-          }}
-          className={`pb-3 px-3 text-xs md:text-sm font-bold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-            activeSubTab === 'ROOSTER_MRO'
-              ? 'border-sky-600 text-sky-900 bg-sky-50/80 rounded-t-lg shadow-2xs'
-              : 'border-transparent text-sky-800 hover:text-sky-950 hover:bg-sky-50/40 rounded-t-lg'
-          }`}
-        >
-          <Plane className="w-4 h-4 text-sky-600" />
-          <span>Roster &amp; Mecânicos (MRO)</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-100 text-sky-900 font-bold uppercase border border-sky-200">
-            ANAC / EASA
-          </span>
-        </button>
-
-        <button
-          onClick={() => {
-            setRoosterInitialTab('designacao');
-            setActiveSubTab('ROOSTER_DESIGNACAO');
-          }}
-          className={`pb-3 px-3 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-            activeSubTab === 'ROOSTER_DESIGNACAO'
-              ? 'border-sky-600 text-sky-900 bg-sky-50/80 rounded-t-lg'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <FileCheck2 className="w-4 h-4 text-emerald-600" />
-          <span>Lista Oficial de Designação</span>
-          <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-emerald-100 text-emerald-800">
-            A4
-          </span>
-        </button>
-
-        <button
-          onClick={() => {
-            setRoosterInitialTab('conferencia');
-            setActiveSubTab('ROOSTER_CONFERENCIA');
-          }}
-          className={`pb-3 px-3 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-            activeSubTab === 'ROOSTER_CONFERENCIA'
-              ? 'border-sky-600 text-sky-900 bg-sky-50/80 rounded-t-lg'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <AlertTriangle className="w-4 h-4 text-amber-500" />
-          <span>Conferência &amp; Pré-Turno</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('MATRIZ')}
-          className={`pb-3 px-3 text-xs md:text-sm font-medium border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-            activeSubTab === 'MATRIZ'
-              ? 'border-blue-600 text-blue-600 bg-blue-50/40 rounded-t-lg'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Activity className="w-4 h-4 text-emerald-600" />
-          <span>Matriz de Competências</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('CATALOGO')}
-          className={`pb-3 px-3 text-xs md:text-sm font-medium border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-            activeSubTab === 'CATALOGO'
-              ? 'border-blue-600 text-blue-600 bg-blue-50/40 rounded-t-lg'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <Award className="w-4 h-4 text-purple-600" />
-          <span>Catálogo de Competências ({competencies.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveSubTab('BASES')}
-          className={`pb-3 px-3 text-xs md:text-sm font-medium border-b-2 flex items-center gap-1.5 transition whitespace-nowrap cursor-pointer ${
-            activeSubTab === 'BASES'
-              ? 'border-blue-600 text-blue-600 bg-blue-50/40 rounded-t-lg'
-              : 'border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-          }`}
-        >
-          <MapPin className="w-4 h-4 text-sky-600" />
-          <span>Bases Operacionais ({bases.length})</span>
-        </button>
       </div>
 
       {/* ========================================================================= */}
@@ -2518,15 +2634,167 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL: NOVO / EDITAR COLABORADOR                                          */}
+      {/* CADASTROS MESTRES: FUNÇÕES E CARGOS                                       */}
+      {/* ========================================================================= */}
+      {activeSubTab === 'FUNCOES_CARGOS' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+          <div className="border-b border-slate-200 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 text-xs font-semibold rounded bg-sky-100 text-sky-800 uppercase tracking-wider">
+                  Cadastros Mestres SGQ / Rooster
+                </span>
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 mt-1 flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-sky-600" />
+                Funções &amp; Cargos Operacionais
+              </h2>
+              <p className="text-xs text-slate-600">
+                Catálogo mestre de funções técnicas, habilitações mandatórias (RBAC 65 / RBAC 145) e matriz de qualificação aplicável.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                setColaboradorParaEditar(null);
+                setNovoColabPasso(1);
+                setErroValidacaoNovoColab(null);
+                setModalColaboradorOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-sm self-start"
+            >
+              <Plus className="w-4 h-4" /> Novo Colaborador
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[
+              {
+                titulo: 'Mecânico de Linha (LMA)',
+                setor: 'Operações de Manutenção',
+                cht: 'CHT CEL / GMP / AVI',
+                descricao: 'Execução e liberação de manutenção de linha (pré-voo, trânsito e pernoite) em aeronaves sob RBAC 145.',
+                cursosMandatorios: ['SGQ Básico', 'Fatores Humanos', 'Segurança de Pátio', 'RII Requisitos'],
+              },
+              {
+                titulo: 'Mecânico de Hangar / Base',
+                setor: 'Operações de Manutenção',
+                cht: 'CHT CEL / GMP',
+                descricao: 'Manutenção programada pesada, inspeções de checks periódicos e modificações estruturais.',
+                cursosMandatorios: ['SGQ Básico', 'Fatores Humanos', 'EWIS', 'Combustível Fuel Tank Safety'],
+              },
+              {
+                titulo: 'Inspetor de Manutenção / Qualidade (RII)',
+                setor: 'Qualidade',
+                cht: 'CHT Plena + Designação RII',
+                descricao: 'Inspeção independente de itens críticos de segurança (Required Inspection Items) e auditorias de conformidade.',
+                cursosMandatorios: ['SGQ Avançado', 'Legislação RBAC 145', 'Auditoria Interna', 'RII Homologação'],
+              },
+              {
+                titulo: 'Técnico de Aviônica (AVI)',
+                setor: 'Operações de Manutenção',
+                cht: 'CHT AVI',
+                descricao: 'Sistemas elétricos, eletrônicos, navegação, comunicação e instrumentos de bordo.',
+                cursosMandatorios: ['EWIS Grupo 1 e 2', 'Fatores Humanos', 'Sistemas Aviônicos Digitais'],
+              },
+              {
+                titulo: 'Supervisor de Manutenção',
+                setor: 'Operações de Manutenção',
+                cht: 'CHT Plena',
+                descricao: 'Coordenação operacional de equipes de turno, conferência pré-turno e liberação técnica de voo.',
+                cursosMandatorios: ['Liderança Operacional', 'Fatores Humanos Supervisão', 'SGSO / SMS'],
+              },
+              {
+                titulo: 'Almoxarife Técnico de Peças',
+                setor: 'Suprimentos / Almoxarifado',
+                cht: 'Não aplicável (Técnico)',
+                descricao: 'Recebimento de materiais aeronáuticos, conferência de rastreabilidade (Form 1 / 8130-3 / EASA Form 1) e quarentena.',
+                cursosMandatorios: ['Controle de Peças Suspeitas (SUP)', 'ESD Eletrostática', 'SGQ Almoxarifado'],
+              },
+              {
+                titulo: 'Engenheiro de Suporte / Publicações',
+                setor: 'Engenharia / Publicações Técnicas',
+                cht: 'CREA / CFT',
+                descricao: 'Controle de diretrizes de aeronavegabilidade (ADs/DA), boletins de serviço (SB) e controle documental.',
+                cursosMandatorios: ['Controle de Manuais Técnicos', 'Rastreabilidade de Diretrizes', 'SGQ Engenharia'],
+              },
+              {
+                titulo: 'Coordenador de Treinamento / SGQ',
+                setor: 'Treinamento / RH Operacional',
+                cht: 'Instrutor Homologado',
+                descricao: 'Gestão da matriz de capacitação, programação de reciclagens periódicas e validação de certificados.',
+                cursosMandatorios: ['Didática de Instrução', 'Gestão de Matrizes de Treinamento', 'SGQ Auditorias'],
+              },
+            ].map((funcao, idx) => {
+              const totalColabs = persons.filter(
+                (p) =>
+                  (p.funcao || '').toLowerCase() === funcao.titulo.toLowerCase() ||
+                  (p.cargoOperacional || '').toLowerCase().includes(funcao.titulo.toLowerCase().split(' ')[0])
+              ).length;
+              return (
+                <div
+                  key={idx}
+                  className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 hover:border-sky-300 transition space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-sky-100 text-sky-800">
+                        {funcao.setor}
+                      </span>
+                      <h3 className="font-bold text-slate-900 text-sm mt-1.5">{funcao.titulo}</h3>
+                    </div>
+                    <span
+                      className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700"
+                      title="Colaboradores cadastrados nesta função"
+                    >
+                      {totalColabs} colab.
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-600 leading-relaxed">{funcao.descricao}</p>
+
+                  <div className="pt-2 border-t border-slate-200/60 space-y-1.5 text-xs">
+                    <p className="text-slate-700">
+                      <strong>Habilitação / CHT:</strong>{' '}
+                      <span className="text-emerald-700 font-medium">{funcao.cht}</span>
+                    </p>
+                    <div>
+                      <strong className="text-slate-700">Cursos Mandatórios Recomendados:</strong>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {funcao.cursosMandatorios.map((c, cIdx) => (
+                          <span
+                            key={cIdx}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700"
+                          >
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: NOVO (WIZARD 3 ETAPAS) OU EDITAR COLABORADOR                       */}
       {/* ========================================================================= */}
       {modalColaboradorOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-5 my-8">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-xl space-y-5 my-8">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-bold text-slate-900">
-                {colaboradorParaEditar ? 'Editar Colaborador' : 'Novo Colaborador (SGQ Pessoas)'}
-              </h3>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  {colaboradorParaEditar ? 'Editar Colaborador' : 'Novo Colaborador — Cadastro Guiado'}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  {colaboradorParaEditar
+                    ? 'Atualize os dados do colaborador no cadastro mestre oficial.'
+                    : 'Fluxo guiado em 3 passos: Dados Cadastrais, Habilitações e Revisão da Matriz de Capacitação.'}
+                </p>
+              </div>
               <button
                 onClick={() => setModalColaboradorOpen(false)}
                 className="text-slate-400 hover:text-slate-600 p-1"
@@ -2535,237 +2803,689 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
               </button>
             </div>
 
-            <form onSubmit={handleSaveColaborador} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Nome Completo *</label>
-                  <input
-                    type="text"
-                    name="nome"
-                    required
-                    defaultValue={colaboradorParaEditar?.nome || ''}
-                    placeholder="Ex: Carlos Eduardo Silva"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Matrícula Interna *</label>
-                  <input
-                    type="text"
-                    name="matricula"
-                    required
-                    defaultValue={colaboradorParaEditar?.matricula || ''}
-                    placeholder="Ex: IMP-1042"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Setor Operacional *</label>
-                  <select
-                    name="setor"
-                    required
-                    defaultValue={colaboradorParaEditar?.setor || 'Operações de Manutenção'}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="Operações de Manutenção">Operações de Manutenção</option>
-                    <option value="Qualidade">Qualidade</option>
-                    <option value="Suprimentos / Almoxarifado">Suprimentos / Almoxarifado</option>
-                    <option value="Engenharia / Publicações Técnicas">Engenharia / Publicações Técnicas</option>
-                    <option value="REC - Manutenção / Calibração">REC - Manutenção / Calibração</option>
-                    <option value="Treinamento / RH Operacional">Treinamento / RH Operacional</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Base Operacional / Estação *</label>
-                  <select
-                    name="baseOperacional"
-                    defaultValue={colaboradorParaEditar?.baseOperacional || basesDisponiveis[0]?.nome || 'REC - Recife / Hub Central'}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    {basesDisponiveis.map((b) => (
-                      <option key={b.id} value={b.nome}>
-                        📍 {b.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Função Primária *</label>
-                  <select
-                    name="funcao"
-                    required
-                    defaultValue={colaboradorParaEditar?.funcao || 'Mecânico'}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="Mecânico">Mecânico</option>
-                    <option value="Inspetor de Qualidade">Inspetor de Qualidade</option>
-                    <option value="Inspetor">Inspetor</option>
-                    <option value="Técnico">Técnico</option>
-                    <option value="Supervisor">Supervisor</option>
-                    <option value="Almoxarife">Almoxarife</option>
-                    <option value="Técnico de Planejamento">Técnico de Planejamento</option>
-                    <option value="Especialista">Especialista</option>
-                    <option value="Instrutor">Instrutor</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Cargo / Especialidade Técnica</label>
-                  <input
-                    type="text"
-                    name="cargoOperacional"
-                    defaultValue={colaboradorParaEditar?.cargoOperacional || ''}
-                    placeholder="Ex: Mecânico de Célula e GMP"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Status do Colaborador *</label>
-                  <select
-                    name="status"
-                    required
-                    defaultValue={colaboradorParaEditar?.status || 'STATUS_NAO_INFORMADO'}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="STATUS_NAO_INFORMADO">⚠️ NÃO INFORMADO (Pendente de classificação cadastral)</option>
-                    <option value="ATIVO">🟢 ATIVO (Disponível para escalas e manutenção)</option>
-                    <option value="EM_TREINAMENTO">🔵 EM TREINAMENTO (Capacitação / Formação)</option>
-                    <option value="RESTRITO">🟡 RESTRITO (Restrição médica ou técnica ativa)</option>
-                    <option value="SUSPENSO">🔴 SUSPENSO (Bloqueio cautelar imediato)</option>
-                    <option value="AFASTADO">🟣 AFASTADO (Licença / Atestado / INSS)</option>
-                    <option value="INATIVO">🔘 INATIVO (Fora de operação com histórico)</option>
-                    <option value="DESLIGADO">⚫ DESLIGADO (Inativo / Histórico preservado)</option>
-                    <option value="OUTRO">⚪ OUTRO (Especificar abaixo)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Status Customizado / Detalhamento</label>
-                  <input
-                    type="text"
-                    name="statusCustomizado"
-                    defaultValue={colaboradorParaEditar?.statusCustomizado || ''}
-                    placeholder="Ex: Em processo de homologação, Cedido, etc."
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">Data de Admissão</label>
-                  <input
-                    type="date"
-                    name="dataAdmissao"
-                    defaultValue={colaboradorParaEditar?.dataAdmissao || ''}
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-slate-700 block mb-1">E-mail / Contato Corporativo</label>
-                  <input
-                    type="email"
-                    name="contatoCorporativo"
-                    defaultValue={colaboradorParaEditar?.contatoCorporativo || ''}
-                    placeholder="carlos.silva@impactoaviation.com.br"
-                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Seção de Restrição Operacional */}
-              <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="possuiRestricao"
-                    name="possuiRestricao"
-                    defaultChecked={colaboradorParaEditar?.restricaoOperacional?.possuiRestricao || false}
-                    className="rounded text-amber-600 focus:ring-amber-500"
-                  />
-                  <label htmlFor="possuiRestricao" className="font-bold text-amber-900 cursor-pointer">
-                    Colaborador com Restrição Operacional Ativa
-                  </label>
-                </div>
-
-                <div className="space-y-2 pt-2 border-t border-amber-200/60">
+            {/* SE ESTIVER EDITANDO: FORMULÁRIO DIRETO COM SELEÇÃO EXPLÍCITA DE BASE */}
+            {colaboradorParaEditar ? (
+              <form onSubmit={handleSaveColaborador} className="space-y-4 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="font-semibold text-slate-700 block mb-1">Motivo da Restrição</label>
+                    <label className="font-semibold text-slate-700 block mb-1">Nome Completo *</label>
                     <input
                       type="text"
-                      name="motivoRestricao"
-                      defaultValue={colaboradorParaEditar?.restricaoOperacional?.motivo || ''}
-                      placeholder="Ex: Licença médica temporária, restrição para trabalho em altura, etc."
-                      className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                      name="nome"
+                      required
+                      defaultValue={colaboradorParaEditar?.nome || ''}
+                      placeholder="Ex: Carlos Eduardo Silva"
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="font-semibold text-slate-700 block mb-1">Início da Restrição</label>
-                      <input
-                        type="date"
-                        name="dataInicioRestricao"
-                        defaultValue={colaboradorParaEditar?.restricaoOperacional?.dataInicio || ''}
-                        className="w-full p-2 border border-slate-300 rounded-lg bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="font-semibold text-slate-700 block mb-1">Término Previsto</label>
-                      <input
-                        type="date"
-                        name="dataFimRestricao"
-                        defaultValue={colaboradorParaEditar?.restricaoOperacional?.dataFim || ''}
-                        className="w-full p-2 border border-slate-300 rounded-lg bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Matrícula Interna *</label>
                     <input
-                      type="checkbox"
-                      id="impedeExecucao"
-                      name="impedeExecucao"
-                      defaultChecked={colaboradorParaEditar?.restricaoOperacional?.impedeExecucao || false}
-                      className="rounded text-rose-600 focus:ring-rose-500"
+                      type="text"
+                      name="matricula"
+                      required
+                      defaultValue={colaboradorParaEditar?.matricula || ''}
+                      placeholder="Ex: IMP-1042"
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono"
                     />
-                    <label htmlFor="impedeExecucao" className="font-semibold text-rose-900 cursor-pointer">
-                      BLOQUEIO OPERACIONAL — Esta restrição IMPEDE a execução/assinatura de atividades técnicas
-                    </label>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Setor Operacional *</label>
+                    <select
+                      name="setor"
+                      required
+                      defaultValue={colaboradorParaEditar?.setor || 'Operações de Manutenção'}
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="Operações de Manutenção">Operações de Manutenção</option>
+                      <option value="Qualidade">Qualidade</option>
+                      <option value="Suprimentos / Almoxarifado">Suprimentos / Almoxarifado</option>
+                      <option value="Engenharia / Publicações Técnicas">Engenharia / Publicações Técnicas</option>
+                      <option value="REC - Manutenção / Calibração">REC - Manutenção / Calibração</option>
+                      <option value="Treinamento / RH Operacional">Treinamento / RH Operacional</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Base Operacional / Estação *</label>
+                    <select
+                      name="baseOperacional"
+                      required
+                      defaultValue={colaboradorParaEditar?.baseOperacional || ''}
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="">-- Selecione uma base operacional cadastrada * --</option>
+                      {basesDisponiveis.map((b) => (
+                        <option key={b.id} value={b.nome}>
+                          📍 {b.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Função Primária *</label>
+                    <select
+                      name="funcao"
+                      required
+                      defaultValue={colaboradorParaEditar?.funcao || 'Mecânico'}
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="Mecânico">Mecânico</option>
+                      <option value="Inspetor de Qualidade">Inspetor de Qualidade</option>
+                      <option value="Inspetor">Inspetor</option>
+                      <option value="Técnico">Técnico</option>
+                      <option value="Supervisor">Supervisor</option>
+                      <option value="Almoxarife">Almoxarife</option>
+                      <option value="Técnico de Planejamento">Técnico de Planejamento</option>
+                      <option value="Especialista">Especialista</option>
+                      <option value="Instrutor">Instrutor</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Cargo / Especialidade Técnica</label>
+                    <input
+                      type="text"
+                      name="cargoOperacional"
+                      defaultValue={colaboradorParaEditar?.cargoOperacional || ''}
+                      placeholder="Ex: Mecânico de Célula e GMP"
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Status do Colaborador *</label>
+                    <select
+                      name="status"
+                      required
+                      defaultValue={colaboradorParaEditar?.status || 'STATUS_NAO_INFORMADO'}
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                    >
+                      <option value="STATUS_NAO_INFORMADO">⚠️ NÃO INFORMADO</option>
+                      <option value="ATIVO">🟢 ATIVO</option>
+                      <option value="EM_TREINAMENTO">🔵 EM TREINAMENTO</option>
+                      <option value="RESTRITO">🟡 RESTRITO</option>
+                      <option value="SUSPENSO">🔴 SUSPENSO</option>
+                      <option value="AFASTADO">🟣 AFASTADO</option>
+                      <option value="INATIVO">🔘 INATIVO</option>
+                      <option value="DESLIGADO">⚫ DESLIGADO</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">Data de Admissão</label>
+                    <input
+                      type="date"
+                      name="dataAdmissao"
+                      defaultValue={colaboradorParaEditar?.dataAdmissao || ''}
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-slate-700 block mb-1">E-mail / Contato Corporativo</label>
+                    <input
+                      type="email"
+                      name="contatoCorporativo"
+                      defaultValue={colaboradorParaEditar?.contatoCorporativo || ''}
+                      placeholder="carlos.silva@impactoaviation.com.br"
+                      className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
                 </div>
-              </div>
 
-              <div>
-                <label className="font-semibold text-slate-700 block mb-1">Observações Gerais</label>
-                <textarea
-                  name="observacoes"
-                  rows={2}
-                  defaultValue={colaboradorParaEditar?.observacoes || ''}
-                  className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Observações Gerais</label>
+                  <textarea
+                    name="observacoes"
+                    rows={2}
+                    defaultValue={colaboradorParaEditar?.observacoes || ''}
+                    className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setModalColaboradorOpen(false)}
-                  className="px-4 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm"
-                >
-                  Salvar Colaborador
-                </button>
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setModalColaboradorOpen(false)}
+                    className="px-4 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* SE FOR NOVO COLABORADOR: WIZARD EM 3 ETAPAS */
+              <div className="space-y-4">
+                {/* Stepper Indicator */}
+                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                  <div
+                    className={`flex items-center gap-2 cursor-pointer ${
+                      novoColabPasso === 1 ? 'text-blue-600 font-bold' : 'text-slate-400'
+                    }`}
+                    onClick={() => setNovoColabPasso(1)}
+                  >
+                    <span
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                        novoColabPasso === 1
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      1
+                    </span>
+                    <span className="text-xs">Dados Cadastrais &amp; Base</span>
+                  </div>
+
+                  <ArrowRight className="w-4 h-4 text-slate-300" />
+
+                  <div
+                    className={`flex items-center gap-2 cursor-pointer ${
+                      novoColabPasso === 2 ? 'text-blue-600 font-bold' : 'text-slate-400'
+                    }`}
+                    onClick={() => {
+                      if (novoColabForm.nome && novoColabForm.matricula && novoColabForm.baseOperacional) {
+                        setNovoColabPasso(2);
+                      }
+                    }}
+                  >
+                    <span
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                        novoColabPasso === 2
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      2
+                    </span>
+                    <span className="text-xs">Habilitações &amp; Licenças</span>
+                  </div>
+
+                  <ArrowRight className="w-4 h-4 text-slate-300" />
+
+                  <div
+                    className={`flex items-center gap-2 cursor-pointer ${
+                      novoColabPasso === 3 ? 'text-blue-600 font-bold' : 'text-slate-400'
+                    }`}
+                  >
+                    <span
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
+                        novoColabPasso === 3
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      3
+                    </span>
+                    <span className="text-xs">Revisão da Matriz</span>
+                  </div>
+                </div>
+
+                {erroValidacaoNovoColab && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-lg text-xs flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{erroValidacaoNovoColab}</span>
+                  </div>
+                )}
+
+                {/* PASSO 1: DADOS CADASTRAIS & BASE */}
+                {novoColabPasso === 1 && (
+                  <div className="space-y-4 text-xs">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Nome Completo *</label>
+                        <input
+                          type="text"
+                          value={novoColabForm.nome}
+                          onChange={(e) => {
+                            setNovoColabForm({ ...novoColabForm, nome: e.target.value });
+                            setErroValidacaoNovoColab(null);
+                          }}
+                          placeholder="Ex: Carlos Eduardo Silva"
+                          className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Matrícula Interna *</label>
+                        <input
+                          type="text"
+                          value={novoColabForm.matricula}
+                          onChange={(e) => {
+                            setNovoColabForm({ ...novoColabForm, matricula: e.target.value });
+                            setErroValidacaoNovoColab(null);
+                          }}
+                          placeholder="Ex: IMP-1042"
+                          className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono uppercase"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Setor Operacional *</label>
+                        <select
+                          value={novoColabForm.setor}
+                          onChange={(e) => setNovoColabForm({ ...novoColabForm, setor: e.target.value })}
+                          className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="Operações de Manutenção">Operações de Manutenção</option>
+                          <option value="Qualidade">Qualidade</option>
+                          <option value="Suprimentos / Almoxarifado">Suprimentos / Almoxarifado</option>
+                          <option value="Engenharia / Publicações Técnicas">Engenharia / Publicações Técnicas</option>
+                          <option value="REC - Manutenção / Calibração">REC - Manutenção / Calibração</option>
+                          <option value="Treinamento / RH Operacional">Treinamento / RH Operacional</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">
+                          Base Operacional / Estação *
+                        </label>
+                        <select
+                          value={novoColabForm.baseOperacional}
+                          onChange={(e) => {
+                            setNovoColabForm({ ...novoColabForm, baseOperacional: e.target.value });
+                            setErroValidacaoNovoColab(null);
+                          }}
+                          className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white ${
+                            !novoColabForm.baseOperacional ? 'border-amber-300 bg-amber-50/30' : 'border-slate-300'
+                          }`}
+                        >
+                          <option value="">-- Selecione uma base operacional cadastrada * --</option>
+                          {basesDisponiveis.map((b) => (
+                            <option key={b.id} value={b.nome}>
+                              📍 {b.nome}
+                            </option>
+                          ))}
+                        </select>
+                        {basesDisponiveis.length === 0 && (
+                          <p className="text-[11px] text-amber-700 mt-1">
+                            Nenhuma base cadastrada. Cadastre em Cadastros Mestres &gt; Bases e locais operacionais.
+                          </p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Função Primária *</label>
+                        <select
+                          value={novoColabForm.funcao}
+                          onChange={(e) => setNovoColabForm({ ...novoColabForm, funcao: e.target.value })}
+                          className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                        >
+                          <option value="Mecânico">Mecânico</option>
+                          <option value="Inspetor de Qualidade">Inspetor de Qualidade</option>
+                          <option value="Inspetor">Inspetor</option>
+                          <option value="Técnico">Técnico</option>
+                          <option value="Supervisor">Supervisor</option>
+                          <option value="Almoxarife">Almoxarife</option>
+                          <option value="Técnico de Planejamento">Técnico de Planejamento</option>
+                          <option value="Especialista">Especialista</option>
+                          <option value="Instrutor">Instrutor</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Cargo / Especialidade Técnica</label>
+                        <input
+                          type="text"
+                          value={novoColabForm.cargoOperacional}
+                          onChange={(e) => setNovoColabForm({ ...novoColabForm, cargoOperacional: e.target.value })}
+                          placeholder="Ex: Mecânico de Célula e GMP"
+                          className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Data de Admissão</label>
+                        <input
+                          type="date"
+                          value={novoColabForm.dataAdmissao}
+                          onChange={(e) => setNovoColabForm({ ...novoColabForm, dataAdmissao: e.target.value })}
+                          className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="font-semibold text-slate-700 block mb-1">Contato Corporativo</label>
+                        <input
+                          type="email"
+                          value={novoColabForm.contatoCorporativo}
+                          onChange={(e) => setNovoColabForm({ ...novoColabForm, contatoCorporativo: e.target.value })}
+                          placeholder="carlos.silva@empresa.com.br"
+                          className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-slate-700 block mb-1">Observações Gerais</label>
+                      <textarea
+                        value={novoColabForm.observacoes}
+                        onChange={(e) => setNovoColabForm({ ...novoColabForm, observacoes: e.target.value })}
+                        rows={2}
+                        className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setModalColaboradorOpen(false)}
+                        className="px-4 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!novoColabForm.nome.trim() || !novoColabForm.matricula.trim()) {
+                            setErroValidacaoNovoColab('Informe o Nome Completo e a Matrícula do colaborador.');
+                            return;
+                          }
+                          if (!novoColabForm.baseOperacional) {
+                            setErroValidacaoNovoColab('Selecione uma Base Operacional cadastrada.');
+                            return;
+                          }
+                          setErroValidacaoNovoColab(null);
+                          setNovoColabPasso(2);
+                        }}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5"
+                      >
+                        <span>Avançar para Habilitações &amp; Licenças</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* PASSO 2: HABILITAÇÕES E LICENÇAS */}
+                {novoColabPasso === 2 && (
+                  <div className="space-y-4 text-xs">
+                    <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-sky-950 flex items-center gap-2">
+                      <Award className="w-5 h-5 text-sky-600 shrink-0" />
+                      <div>
+                        <strong>Registro de Habilitações Aeronáuticas:</strong>
+                        <p className="text-[11px] text-sky-800">
+                          Registre as CHTs e licenças emitidas pela ANAC ou autoridades internacionais. Se o colaborador não possuir licença (ex: aprendiz/suporte), marque a opção abaixo.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                      <input
+                        type="checkbox"
+                        id="possuiLicenca"
+                        checked={novoColabLicenca.possuiLicenca}
+                        onChange={(e) =>
+                          setNovoColabLicenca({ ...novoColabLicenca, possuiLicenca: e.target.checked })
+                        }
+                        className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                      />
+                      <label htmlFor="possuiLicenca" className="font-semibold text-slate-800 cursor-pointer">
+                        Colaborador possui CHT ou Licença Aeronáutica ativa (ANAC / EASA / FAA)
+                      </label>
+                    </div>
+
+                    {novoColabLicenca.possuiLicenca && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 border border-slate-200 rounded-xl bg-white space-y-2 md:space-y-0">
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">Tipo de Licença *</label>
+                          <select
+                            value={novoColabLicenca.tipo}
+                            onChange={(e) =>
+                              setNovoColabLicenca({ ...novoColabLicenca, tipo: e.target.value })
+                            }
+                            className="w-full p-2 border border-slate-300 rounded-lg bg-white"
+                          >
+                            <option value="CHT">CHT (Certificado de Habilitação Técnica)</option>
+                            <option value="RTS">RTS (Return to Service / Autorização de Liberação)</option>
+                            <option value="RII">RII (Required Inspection Item / Inspetor)</option>
+                            <option value="NDT">NDT (Ensaios Não Destrutivos)</option>
+                            <option value="OUTRA">Outra Licença / Qualificação</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">Número da CHT / Licença *</label>
+                          <input
+                            type="text"
+                            value={novoColabLicenca.numero}
+                            onChange={(e) =>
+                              setNovoColabLicenca({ ...novoColabLicenca, numero: e.target.value })
+                            }
+                            placeholder="Ex: ANAC 128490"
+                            className="w-full p-2 border border-slate-300 rounded-lg font-mono uppercase"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">Órgão Emissor</label>
+                          <input
+                            type="text"
+                            value={novoColabLicenca.orgaoEmissor}
+                            onChange={(e) =>
+                              setNovoColabLicenca({ ...novoColabLicenca, orgaoEmissor: e.target.value })
+                            }
+                            placeholder="ANAC - Brasil"
+                            className="w-full p-2 border border-slate-300 rounded-lg"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">Habilitações / Categorias</label>
+                          <input
+                            type="text"
+                            value={novoColabLicenca.categorias}
+                            onChange={(e) =>
+                              setNovoColabLicenca({ ...novoColabLicenca, categorias: e.target.value })
+                            }
+                            placeholder="Ex: CEL, GMP, AVI"
+                            className="w-full p-2 border border-slate-300 rounded-lg font-mono"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">Data de Validade da CHT</label>
+                          <input
+                            type="date"
+                            value={novoColabLicenca.validadeCHT}
+                            onChange={(e) =>
+                              setNovoColabLicenca({ ...novoColabLicenca, validadeCHT: e.target.value })
+                            }
+                            className="w-full p-2 border border-slate-300 rounded-lg"
+                          />
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Opcional. Sem presunção de 2 anos ou 5 anos se não houver validade explícita.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="font-semibold text-slate-700 block mb-1">Validade do CMA</label>
+                          <input
+                            type="date"
+                            value={novoColabLicenca.validadeCMA}
+                            onChange={(e) =>
+                              setNovoColabLicenca({ ...novoColabLicenca, validadeCMA: e.target.value })
+                            }
+                            className="w-full p-2 border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setNovoColabPasso(1)}
+                        className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 flex items-center gap-1.5"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Voltar aos Dados Cadastrais</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (novoColabLicenca.possuiLicenca && !novoColabLicenca.numero.trim()) {
+                            setErroValidacaoNovoColab('Informe o número da CHT/Licença ou desmarque a opção.');
+                            return;
+                          }
+                          setErroValidacaoNovoColab(null);
+                          // Inicializar seleção recomendada se ainda vazio
+                          if (cursosSelecionadosRequisitos.length === 0 && (trainingCourses || []).length > 0) {
+                            const recomendados = (trainingCourses || []).slice(0, 4).map((c) => c.id);
+                            setCursosSelecionadosRequisitos(recomendados);
+                          }
+                          setNovoColabPasso(3);
+                        }}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5"
+                      >
+                        <span>Avançar para Revisão da Matriz</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* PASSO 3: MATRIZ DE TREINAMENTOS APLICÁVEL (REVISÃO PRÉVIA) */}
+                {novoColabPasso === 3 && (
+                  <div className="space-y-4 text-xs">
+                    <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                        <h4 className="font-bold text-emerald-950 text-sm">
+                          Revisão Prévia da Matriz de Capacitação — {novoColabForm.nome}
+                        </h4>
+                      </div>
+                      <p className="text-emerald-900 text-xs leading-relaxed">
+                        Função: <strong>{novoColabForm.funcao}</strong> | Base:{' '}
+                        <strong>{novoColabForm.baseOperacional}</strong> | Setor:{' '}
+                        <strong>{novoColabForm.setor}</strong>
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-950 text-xs flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Regra SGQ Mandatória:</strong> Os cursos selecionados abaixo serão registrados como{' '}
+                        <span className="font-bold text-amber-900">REQUISITOS PENDENTES</span> na matriz do colaborador.
+                        Nenhum curso será marcado como concluído automaticamente. A comprovação exige execução e certificado homologado.
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-bold text-slate-800">
+                          Cursos Aplicáveis no Catálogo SGQ ({cursosSelecionadosRequisitos.length} selecionados):
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCursosSelecionadosRequisitos((trainingCourses || []).map((c) => c.id))
+                            }
+                            className="text-blue-600 hover:underline text-[11px]"
+                          >
+                            Selecionar Todos
+                          </button>
+                          <span>|</span>
+                          <button
+                            type="button"
+                            onClick={() => setCursosSelecionadosRequisitos([])}
+                            className="text-slate-500 hover:underline text-[11px]"
+                          >
+                            Desmarcar Todos
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50">
+                        {(trainingCourses || []).length === 0 ? (
+                          <p className="text-slate-500 italic text-center py-4">
+                            Nenhum curso cadastrado no Catálogo SGQ. O colaborador será cadastrado sem requisitos prévios.
+                          </p>
+                        ) : (
+                          (trainingCourses || []).map((curso) => {
+                            const isSelected = cursosSelecionadosRequisitos.includes(curso.id);
+                            return (
+                              <div
+                                key={curso.id}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setCursosSelecionadosRequisitos(
+                                      cursosSelecionadosRequisitos.filter((id) => id !== curso.id)
+                                    );
+                                  } else {
+                                    setCursosSelecionadosRequisitos([
+                                      ...cursosSelecionadosRequisitos,
+                                      curso.id,
+                                    ]);
+                                  }
+                                }}
+                                className={`p-2.5 rounded-lg border transition cursor-pointer flex items-center justify-between gap-3 ${
+                                  isSelected
+                                    ? 'bg-blue-50/80 border-blue-300 text-blue-950'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => {}}
+                                    className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                                  />
+                                  <div>
+                                    <div className="font-bold flex items-center gap-2">
+                                      <span className="font-mono text-[10px] px-1.5 py-0.2 bg-slate-200 rounded text-slate-800">
+                                        {curso.codigo}
+                                      </span>
+                                      <span>{curso.titulo}</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 line-clamp-1">{curso.descricao}</p>
+                                  </div>
+                                </div>
+                                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold shrink-0">
+                                  {curso.periodicidadeMeses ? `${curso.periodicidadeMeses}m` : 'Sem reciclagem'}
+                                </span>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setNovoColabPasso(2)}
+                        className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold hover:bg-slate-50 flex items-center gap-1.5"
+                      >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span>Voltar às Habilitações</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleConcluirNovoColaborador}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Confirmar Cadastro &amp; Abrir Perfil 360°</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </form>
+            )}
           </div>
         </div>
       )}

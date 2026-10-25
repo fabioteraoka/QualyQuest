@@ -423,6 +423,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       );
 
     case 'configuracoes-org':
+    case 'parametros-fluxo':
       return (
         <OrganizationSettingsView
           organization={props.activeOrganization}
@@ -525,6 +526,9 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
+    case 'colaboradores-lista':
+    case 'colaborador-novo':
+    case 'cadastros-funcoes-cargos':
     case 'pessoas-competencias':
       return (
         <PersonsCompetenciesView
@@ -541,15 +545,18 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           nonConformities={props.records}
           bases={props.basesOperacionais}
           initialStatusFilter={props.initialPersonStatusFilter}
+          initialSubTab={activeTab === 'cadastros-funcoes-cargos' ? 'FUNCOES_CARGOS' : 'COLABORADORES'}
+          initialOpenNovoColaborador={activeTab === 'colaborador-novo'}
           onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
           onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
-          onNavigateToImport={() => setActiveTab('importacao-inteligente')}
+          onNavigateToImport={() => setActiveTab('importacao-certificados')}
         />
       );
 
     case 'rooster-mro':
     case 'rooster-pessoas':
     case 'rooster-ficha':
+    case 'colaborador-perfil':
     case 'rooster-catalogo':
     case 'rooster-treinamentos':
     case 'rooster-licencas':
@@ -561,6 +568,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
     case 'rooster-roster':
     case 'rooster-motores':
     case 'rooster-matrizes':
+    case 'modelos-capacitacao':
     case 'rooster-vencimentos': {
       const roosterTab =
         activeTab === 'rooster-catalogo'
@@ -569,7 +577,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           ? 'treinamentos'
           : activeTab === 'rooster-licencas'
           ? 'licencas'
-          : activeTab === 'rooster-ficha'
+          : activeTab === 'rooster-ficha' || activeTab === 'colaborador-perfil'
           ? 'ficha'
           : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases'
           ? 'bases'
@@ -581,7 +589,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           ? 'roster'
           : activeTab === 'rooster-motores'
           ? 'motores'
-          : activeTab === 'rooster-matrizes'
+          : activeTab === 'rooster-matrizes' || activeTab === 'modelos-capacitacao'
           ? 'matrizes'
           : activeTab === 'rooster-vencimentos'
           ? 'vencimentos'
@@ -606,7 +614,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           initialRoosterTab={roosterTab}
           onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
           onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
-          onNavigateToImport={() => setActiveTab('importacao-inteligente')}
+          onNavigateToImport={() => setActiveTab('importacao-certificados')}
         />
       );
     }
@@ -782,6 +790,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       );
 
     case 'importacao-inteligente':
+    case 'importacao-certificados':
       return (
         <SmartImportMigrationView
           organization={props.activeOrganization}

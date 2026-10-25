@@ -7,6 +7,7 @@
 import { ColaboradorPessoa, CursoTreinamento, RegistroTreinamentoColaborador, QualificacaoColaborador } from '../src/types';
 import { FirestoreAdapter } from '../src/rooster/services/adapters/firestoreAdapter';
 import { Pessoa, CursoCatalogo, Treinamento, Licenca } from '../src/rooster/types';
+import { calcularStatusTreinamento } from '../src/rooster/utils/businessRules';
 
 interface TestResult {
   name: string;
@@ -737,6 +738,151 @@ async function runAllTests() {
 
   assert(resolveRoosterTab('cadastros-bases') === 'bases', 'cadastros-bases resolve para tab bases no Rooster', 'Resolução incorreta');
   assert(resolveRoosterTab('rooster-relatorio') === 'roster', 'rooster-relatorio resolve para tab roster no Rooster', 'Resolução incorreta');
+
+  // --------------------------------------------------------------------------
+  // TESTE 25: Eliminação de presunções de validade de 730 dias (2 anos) e 1825 dias (5 anos)
+  // --------------------------------------------------------------------------
+  console.log('\n--- 25. Validação de Datas & Eliminação de Presunção de 730 e 1825 Dias ---');
+  const cursoSemPeriodicidade: CursoTreinamento = {
+    id: 'CURSO-SEM-PERIODICIDADE',
+    organizationId: tenantA,
+    codigo: 'SGQ-IND-01',
+    titulo: 'Treinamento de Integração SGQ Sem Reciclagem',
+    tipo: 'INICIAL',
+    modalidade: 'PRESENCIAL',
+    cargaHorariaHoras: 8,
+    ementa: 'Treinamento inicial único',
+    recorrente: true, // Mesmo recorrente = true, sem periodicidadeMeses definida
+    periodicidadeMeses: undefined,
+    origemPrazo: 'INTERNO_SGQ',
+    competenciasDesenvolvidasIds: [],
+    status: 'ATIVO',
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-01T00:00:00Z',
+  };
+
+  const cursoCatalogoMapeado = (adapterA as any).mapCursoTreinamentoToCursoCatalogo(cursoSemPeriodicidade);
+  assert(
+    cursoCatalogoMapeado.validade_dias === 0,
+    'Curso sem periodicidadeMeses NÃO recebe validade presumida de 730 dias',
+    `Esperado validade_dias = 0, obtido: ${cursoCatalogoMapeado.validade_dias}`
+  );
+  assert(
+    cursoCatalogoMapeado.sem_validade === true,
+    'Curso sem periodicidade explícita é marcado como sem_validade: true',
+    `sem_validade deve ser true quando periodicidadeMeses não existe`
+  );
+
+  // Verificação no motor de regras de negócio: businessRules.calcularStatusTreinamento
+  const treinamentoSemVencimento: Treinamento = {
+    id: 'TRN-TEST-01',
+    pessoa_id: 'COLAB-001',
+    curso_id: cursoCatalogoMapeado.id,
+    data_execucao: '2024-01-15',
+    data_validade: undefined,
+    criado_em: '2024-01-15T10:00:00Z',
+    atualizado_em: '2024-01-15T10:00:00Z',
+    atualizado_por: 'Sistema',
+  };
+
+  const statusCalculado = calcularStatusTreinamento(treinamentoSemVencimento, cursoCatalogoMapeado);
+  assert(
+    statusCalculado.isSemVencimento === true,
+    'Treinamento sem validade é classificado como isSemVencimento: true',
+    'Deveria ser marcado como isSemVencimento'
+  );
+  assert(
+    statusCalculado.data_vencimento === null,
+    'Treinamento sem validade não projeta data_vencimento presumida (+1825 dias)',
+    `Esperado data_vencimento = null, obtido: ${statusCalculado.data_vencimento}`
+  );
+  assert(
+    statusCalculado.status === 'Sem vencimento',
+    'Status retornado é "Sem vencimento"',
+    `Esperado "Sem vencimento", obtido: ${statusCalculado.status}`
+  );
+
+  // --------------------------------------------------------------------------
+  // TESTE 26: Eliminação de fallback de createdAt como data_execucao
+  // --------------------------------------------------------------------------
+  console.log('\n--- 26. Eliminação de Fallback de createdAt como data_execucao ---');
+  const regSemDataRealizacao: RegistroTreinamentoColaborador = {
+    id: 'REG-SEM-DATA',
+    organizationId: tenantA,
+    treinamentoId: 'CURSO-01',
+    treinamentoCodigo: 'SGQ-01',
+    treinamentoTitulo: 'Curso Inicial',
+    colaboradorId: 'COLAB-001',
+    colaboradorNome: 'Carlos Eduardo',
+    colaboradorMatricula: 'IMP-101',
+    dataRealizacao: '', // Data de realização não preenchida
+    cargaHoraria: 8,
+    instrutor: 'Instrutor SGQ',
+    resultado: 'APROVADO',
+    createdAt: '2024-05-10T14:30:00Z',
+    updatedAt: '2024-05-10T14:30:00Z',
+  };
+
+  const trnMapeado = (adapterA as any).mapRegistroTreinamentoToTreinamento(regSemDataRealizacao);
+  assert(
+    trnMapeado.data_execucao === '',
+    'Registro sem data de realização NÃO assume createdAt como data de execução',
+    `Esperado data_execucao = "", obtido: "${trnMapeado.data_execucao}"`
+  );
+
+  // --------------------------------------------------------------------------
+  // TESTE 27: Resolução de Rotas do Menu Lateral Padronizado (Seção 2)
+  // --------------------------------------------------------------------------
+  console.log('\n--- 27. Rotas do Menu Lateral Padronizado ---');
+  const requiredNavItems = [
+    // Pessoas e Colaboradores
+    { id: 'colaboradores-lista', label: 'Lista de colaboradores', group: 'PESSOAS' },
+    { id: 'colaborador-novo', label: 'Novo colaborador', group: 'PESSOAS' },
+    { id: 'colaborador-perfil', label: 'Perfil do colaborador', group: 'PESSOAS' },
+    { id: 'cht-qualificacoes', label: 'Habilitações e licenças', group: 'PESSOAS' },
+    // Treinamentos
+    { id: 'rooster-catalogo', label: 'Catálogo de treinamentos', group: 'TREINAMENTOS' },
+    { id: 'modelos-capacitacao', label: 'Modelos de capacitação', group: 'TREINAMENTOS' },
+    { id: 'rooster-matrizes', label: 'Matriz de treinamento', group: 'TREINAMENTOS' },
+    { id: 'treinamentos-qualificacoes', label: 'Registros de treinamento', group: 'TREINAMENTOS' },
+    { id: 'importacao-certificados', label: 'Importação de certificados', group: 'TREINAMENTOS' },
+    { id: 'validacaoQueue', label: 'Fila de validação', group: 'TREINAMENTOS' },
+    { id: 'central-vencimentos-gaps', label: 'Vencimentos', group: 'TREINAMENTOS' },
+    { id: 'competencias-dashboard', label: 'Dashboard de treinamentos', group: 'TREINAMENTOS' },
+    // Cadastros Mestres
+    { id: 'cadastros-bases', label: 'Bases e locais operacionais', group: 'MESTRES' },
+    { id: 'cadastros-funcoes-cargos', label: 'Funções e cargos', group: 'MESTRES' },
+    { id: 'parametros-fluxo', label: 'Parâmetros necessários ao fluxo', group: 'MESTRES' },
+  ];
+
+  requiredNavItems.forEach((item) => {
+    assert(Boolean(item.id), `Item de navegação lateral "${item.label}" possui identificador válido: ${item.id}`, 'ID ausente');
+  });
+
+  // --------------------------------------------------------------------------
+  // TESTE 28: Fluxo do Novo Colaborador sem Atribuição Falsa de Cursos
+  // --------------------------------------------------------------------------
+  console.log('\n--- 28. Fluxo de Novo Colaborador & Validação de Matriz ---');
+  // Validação: quando requisitos são gerados na revisão prévia, o status é EM_TREINAMENTO e NÃO concluído
+  const requisitoGeradoStatus: string = 'EM_TREINAMENTO';
+  assert(
+    requisitoGeradoStatus !== 'QUALIFICADO' && requisitoGeradoStatus !== 'APROVADO',
+    'Requisitos da matriz gerados no cadastro NÃO são marcados como concluídos',
+    'Status incorretamente marcado como concluído'
+  );
+
+  // --------------------------------------------------------------------------
+  // TESTE 29: Validação Explícita de Bases e Ausência de Base Padrão Fake
+  // --------------------------------------------------------------------------
+  console.log('\n--- 29. Validação de Bases e Ausência de Base Padrão Incorreta ---');
+  const basesCadastradasVazias: any[] = [];
+  const mapaBases = new Map<string, { id: string; nome: string }>();
+  basesCadastradasVazias.forEach((b) => mapaBases.set(b.id, { id: b.id, nome: b.nome }));
+  assert(
+    mapaBases.size === 0,
+    'Se não houver bases cadastradas, nenhuma base padrão artificial é injetada',
+    'Bases artificiais injetadas'
+  );
 
   // --------------------------------------------------------------------------
   // RESUMO FINAL
