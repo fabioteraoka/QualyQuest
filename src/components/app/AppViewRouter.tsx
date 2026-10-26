@@ -391,7 +391,9 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
+    case 'validacao-qualidade':
     case 'validacaoQueue':
+    case 'aprovacao-qualidade':
       return (
         <ValidationQueueView
           organizationId={props.activeOrgId}
@@ -399,6 +401,45 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           records={props.records}
           onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
           onNavigateToRecord={props.handleViewOfficial}
+        />
+      );
+
+    case 'validacao-treinamentos':
+    case 'validacaoQueue-treinamentos':
+    case 'fila-certificados':
+      return (
+        <SmartImportMigrationView
+          organization={props.activeOrganization}
+          user={props.userProfile}
+          pessoas={props.persons}
+          treinamentos={props.trainingCourses}
+          registrosTreinamento={props.trainingRecords}
+          documentos={props.documentosControlados}
+          ferramentasCalibradas={props.ferramentasCalibradas}
+          smartImports={props.smartImports}
+          templatesAprovados={props.templatesAprovados}
+          onRemoverTemplate={(id) => props.setTemplatesAprovados((prev) => prev.filter((t) => t.id !== id))}
+          onSalvarTemplate={(tpl) =>
+            props.setTemplatesAprovados((prev) => [tpl, ...prev.filter((t) => t.id !== tpl.id)])
+          }
+          initialTab="HISTORICO"
+          onNavigateToTab={(tab) => setActiveTab(tab as any)}
+          onAdicionarPessoa={(p) => props.setPersons((prev) => [p, ...prev.filter((x) => x.id !== p.id)])}
+          onAdicionarCurso={(c) =>
+            props.setTrainingCourses((prev) => [c, ...prev.filter((x) => x.id !== c.id)])
+          }
+          onAdicionarRegistroTreinamento={(r) =>
+            props.setTrainingRecords((prev) => [r, ...prev.filter((x) => x.id !== r.id)])
+          }
+          onAdicionarFerramenta={(f) =>
+            props.setFerramentasCalibradas((prev) => [f, ...prev.filter((x) => x.id !== f.id)])
+          }
+          onRemoverFerramenta={(toolId) =>
+            props.setFerramentasCalibradas((prev) => prev.filter((x) => x.id !== toolId))
+          }
+          onRemoverRegistroTreinamento={(recordId) =>
+            props.setTrainingRecords((prev) => prev.filter((r) => r.id !== recordId))
+          }
         />
       );
 

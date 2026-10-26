@@ -26,20 +26,33 @@ service cloud.firestore {
       return resource.data;
     }
 
+    function isSuperPlatformAdmin() {
+      return isSignedIn() && ('email' in request.auth.token) && request.auth.token.email.lower() == 'fteraoka@gmail.com';
+    }
+
+    function hasValidProfile() {
+      return isSignedIn() && (
+        isSuperPlatformAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         ('organizationId' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId != '')
+      );
+    }
+
     function getUserRole() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-        : (isSignedIn() && request.auth.token.email == 'fteraoka@gmail.com' ? 'ADMIN' : 'CONSULTA');
+      return isSuperPlatformAdmin()
+        ? 'ADMIN'
+        : (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && ('role' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+            : 'CONSULTA');
     }
 
     function getUserOrgId() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId
-        : '';
-    }
-
-    function isSuperPlatformAdmin() {
-      return isSignedIn() && ('email' in request.auth.token) && request.auth.token.email.lower() == 'fteraoka@gmail.com';
+      return isSuperPlatformAdmin()
+        ? 'org_impacto_aviation'
+        : (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && ('organizationId' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data)
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organizationId
+            : '');
     }
 
     function isSystemAdmin() {
@@ -68,27 +81,23 @@ service cloud.firestore {
     function isUserActive() {
       return isSignedIn() && (
         isSuperPlatformAdmin() ||
-        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
-        ((!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
-          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INATIVO' &&
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'BLOQUEADO')) &&
-         (!('ativo' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ativo != false))
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         ((!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+           (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INATIVO' &&
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'BLOQUEADO')) &&
+          (!('ativo' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.ativo != false))
       );
     }
 
     function userBelongsToOrg(orgId) {
       return isSignedIn() && (
         isSuperPlatformAdmin() ||
-        (isUserActive() && (
-          (getUserOrgId() != '' && orgId != '' && (
-            getUserOrgId() == orgId ||
-            (getUserOrgId() == 'org-impacto-aviation' && orgId == 'org_impacto_aviation') ||
-            (getUserOrgId() == 'org_impacto_aviation' && orgId == 'org-impacto-aviation')
-          )) ||
-          ((getUserOrgId() == '' || getUserOrgId() == 'org_impacto_aviation' || getUserOrgId() == 'org-impacto-aviation') &&
-           (orgId == 'org_impacto_aviation' || orgId == 'org-impacto-aviation'))
+        (isUserActive() && hasValidProfile() && orgId != '' && getUserOrgId() != '' && (
+          getUserOrgId() == orgId ||
+          (getUserOrgId() == 'org-impacto-aviation' && orgId == 'org_impacto_aviation') ||
+          (getUserOrgId() == 'org_impacto_aviation' && orgId == 'org-impacto-aviation')
         ))
       );
     }
@@ -101,14 +110,14 @@ service cloud.firestore {
       allow get: if isSignedIn() && (
         request.auth.uid == userId || 
         isSuperPlatformAdmin() || 
-        isGestorSGQ()
+        (isGestorSGQ() && isUserActive() && resource.data.organizationId == getUserOrgId())
       );
-      allow list: if isSignedIn();
+      allow list: if isSuperPlatformAdmin() || (isGestorSGQ() && isUserActive() && resource.data.organizationId == getUserOrgId());
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow update: if isSignedIn() && (
         isSuperPlatformAdmin() || 
-        (isGestorSGQ() && isUserActive()) ||
-        request.auth.uid == userId
+        (isGestorSGQ() && isUserActive() && resource.data.organizationId == getUserOrgId()) ||
+        (request.auth.uid == userId && incoming().organizationId == existing().organizationId && incoming().role == existing().role)
       );
       allow delete: if (isSuperPlatformAdmin() || (isSystemAdmin() && isUserActive() && getUserOrgId() == resource.data.organizationId)) && isValidId(userId);
     }
@@ -118,8 +127,8 @@ service cloud.firestore {
     // Bridging multi-user linking to organizations safely
     // ----------------------------------------------------
     match /userInvitations/{invitationId} {
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
+      allow get: if isSuperPlatformAdmin() || (isSignedIn() && isUserActive() && userBelongsToOrg(resource.data.organizationId));
+      allow list: if isSuperPlatformAdmin() || (isSignedIn() && isUserActive() && userBelongsToOrg(resource.data.organizationId) && (isGestorSGQ() || isSystemAdmin()));
       allow create: if isSignedIn() && (
         isSuperPlatformAdmin() ||
         (userBelongsToOrg(request.resource.data.organizationId) && isGestorSGQ())
@@ -139,8 +148,8 @@ service cloud.firestore {
     // Organizations Collection (organizations/{organizationId})
     // ----------------------------------------------------
     match /organizations/{organizationId} {
-      allow get: if isSignedIn();
-      allow list: if isSuperPlatformAdmin() || (isGestorSGQ() && isUserActive());
+      allow get: if isSuperPlatformAdmin() || userBelongsToOrg(organizationId);
+      allow list: if isSuperPlatformAdmin() || (isGestorSGQ() && isUserActive() && userBelongsToOrg(resource.data.id));
       allow create: if isSignedIn() && isUserActive() && (
         isSuperPlatformAdmin() || 
         (organizationId != 'org_impacto_aviation' && request.resource.data.createdByUserUid == request.auth.uid)
@@ -587,66 +596,52 @@ service cloud.firestore {
     // System Diagnostics Collection (systemDiagnostics/{diagnosticId})
     // ----------------------------------------------------
     match /systemDiagnostics/{diagnosticId} {
-      allow get, list: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidId(diagnosticId);
-      allow delete: if isSystemAdmin() && isValidId(diagnosticId);
+      allow get, list: if isSuperPlatformAdmin() || (isSystemAdmin() && isUserActive());
+      allow create, update: if isSuperPlatformAdmin() || (isSystemAdmin() && isUserActive() && isValidId(diagnosticId));
+      allow delete: if isSuperPlatformAdmin() && isValidId(diagnosticId);
     }
 
     // ----------------------------------------------------
-    // Roster MRO Coleções Globais / Compatibilidade
+    // Roster MRO Coleções Globais / Descontinuadas (Canônico: organizations/{orgId}/*)
     // ----------------------------------------------------
     match /base/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && (isGestorSGQ() || isSystemAdmin());
+      allow read, write: if isSuperPlatformAdmin();
     }
     match /pessoa/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/persons
+      allow read, write: if false;
     }
     match /licenca/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/qualifications
+      allow read, write: if false;
     }
     match /curso_catalogo/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/trainingCourses
+      allow read, write: if false;
     }
     match /treinamento/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/trainingRecords
+      allow read, write: if false;
     }
     match /motor_catalogo/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSystemAdmin(); // Canônico: organizations/{organizationId}/roster_motores
+      allow read, write: if false;
     }
     match /treinamento_motor/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_treinamentos_motor
+      allow read, write: if false;
     }
     match /designacao_pessoa/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_pessoa
+      allow read, write: if false;
     }
     match /designacao_base/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_base
+      allow read, write: if false;
     }
     match /designacao_funcao/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_funcao
+      allow read, write: if false;
     }
     match /designacao_aeronave/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if false; // Canônico: organizations/{organizationId}/roster_designacoes_aeronave
+      allow read, write: if false;
     }
     match /configuracao/{id} {
-      allow get, list: if isSignedIn();
-      allow create, update, delete: if isSystemAdmin(); // Canônico: organizations/{organizationId}/roster_configuracao
+      allow read, write: if isSuperPlatformAdmin();
     }
     match /auditoria/{id} {
-      allow get, list: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update, delete: if isSystemAdmin();
+      allow read, write: if isSuperPlatformAdmin();
     }
   }
 }

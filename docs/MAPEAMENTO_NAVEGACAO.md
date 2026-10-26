@@ -81,14 +81,18 @@ A navegação obedece à lógica operacional:
 | **INÍCIO** | Apresentação Gerencial | `apresentacao` | `QualityPresentationGeneratorView` | SSoT 20 Slides (70/30) |
 | **QUALIDADE** | Não Conformidades | `relatorio` | `ReportListView` | Tabela dinâmica & Kanban |
 | **QUALIDADE** | Análise & Indicadores | `incidencias` | `IncidenceAnalyticsView` | Pareto 80/20 & Incidências |
-| **QUALIDADE** | Validação & Aprovação | `validacaoQueue` | `ValidationQueueView` | Fila de homologação N1-N5 |
+| **QUALIDADE** | Validação & Aprovação (RNCs) | `validacao-qualidade` (alias: `validacaoQueue`) | `ValidationQueueView` | Fila de homologação N1-N5 |
 | **QUALIDADE** | Base de Conhecimento | `knowledgeBase` | `KnowledgeBaseView` | Soluções homologadas |
 | **AUDITORIAS** | Auditorias | `auditorias-gestao` | `AuditsManagementView` | Auditorias ANAC/EASA/Clientes |
 | **AUDITORIAS** | Clientes & Requisitos | `clientes-requisitos`| `ClientAuditsManagementView` | Requisitos & "1 Controle, N Req" |
 | **AUDITORIAS** | Auditoria Inteligente | `smart-audit` | `SmartAuditView` | Resolução por exceção & IA |
 | **AUDITORIAS** | Calendário de Auditorias | `clientes-cronograma`| `ClientAuditsManagementView` | `initialTab="cronograma"` |
 | **PESSOAS** | Colaboradores | `pessoas-competencias`| `PersonsCompetenciesView` | Cadastro técnico & postos |
-| **PESSOAS** | Treinamentos | `treinamentos-qualificacoes` | `TrainingsQualificationsView` | `initialTab="CURSOS"` |
+| **PESSOAS** | Catálogo de Treinamentos | `rooster-catalogo` | `PersonsCompetenciesView` | `initialRoosterTab="catalogo"` |
+| **PESSOAS** | Modelos de Capacitação | `modelos-capacitacao` | `PersonsCompetenciesView` | `initialRoosterTab="matrizes"` (Requisitos por Cargo/Função) |
+| **PESSOAS** | Matriz de Treinamentos | `rooster-matrizes` | `PersonsCompetenciesView` | `initialRoosterTab="matrizes"` |
+| **PESSOAS** | Registros de Treinamento | `treinamentos-qualificacoes` | `TrainingsQualificationsView` | `initialTab="CURSOS"` |
+| **PESSOAS** | Fila de Validação (Certificados)| `validacao-treinamentos` | `SmartImportMigrationView` | `initialTab="HISTORICO"` (Validação de Evidências) |
 | **PESSOAS** | CHTs & Qualificações | `cht-qualificacoes` | `TrainingsQualificationsView` | `initialTab="QUALIFICACOES"` |
 | **PESSOAS** | Vencimentos & Gaps | `central-vencimentos-gaps` | `ExpirationsGapsCenterView` | `initialSubTab="VENCIMENTOS"` |
 | **PESSOAS** | Aptidão Operacional | `aptidao-operacional`| `ExpirationsGapsCenterView` | `initialSubTab="SIMULADOR"` |

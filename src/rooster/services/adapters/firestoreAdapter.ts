@@ -180,8 +180,16 @@ export class FirestoreAdapter implements StorageAdapter {
     const frota = c.frotaOuFamilia || '';
     const isFrota = frota && frota !== 'Geral' && frota !== 'Doutrinação';
     const hasPeriodicidade = typeof c.periodicidadeMeses === 'number' && c.periodicidadeMeses > 0;
-    // Não presumir validade de 2 anos (730 dias) ou qualquer prazo sem fonte explícita
-    const validadeDias = hasPeriodicidade ? c.periodicidadeMeses! * 30 : 0;
+
+    // Regra estrita:
+    // Sem vencimento aplicável APENAS se explicitamente confirmado por regra cadastrada.
+    // A ausência de periodicidade NÃO pode ser interpretada automaticamente como ausência de vencimento!
+    const semValidadeConfirmada = (c as any).sem_validade === true || (c as any).semVencimento === true;
+
+    // Preservar periodicidade em meses exata sem converter para dias arbitrários (* 30)
+    const validadeDias = typeof (c as any).validade_dias === 'number' && (c as any).validade_dias > 0
+      ? (c as any).validade_dias
+      : 0;
 
     return {
       id: c.id,
@@ -197,10 +205,10 @@ export class FirestoreAdapter implements StorageAdapter {
       carga_horaria_horas: c.cargaHorariaHoras,
       ementa: c.ementa,
       recorrente: c.recorrente,
-      periodicidade_meses: c.periodicidadeMeses,
+      periodicidade_meses: hasPeriodicidade ? c.periodicidadeMeses : undefined,
       origem_prazo: c.origemPrazo,
       nivel_ou_modulo: c.nivelOuModulo,
-      sem_validade: !hasPeriodicidade,
+      sem_validade: semValidadeConfirmada,
     };
   }
 
@@ -721,7 +729,15 @@ export class FirestoreAdapter implements StorageAdapter {
       criadoPorUid: existingColab?.criadoPorUid || 'rooster-mro',
     };
 
-    // 1. Atualiza cache em memória
+    // 1. Persiste EXCLUSIVAMENTE na coleção canônica organizations/{orgId}/persons
+    // NÃO simula sucesso: se o Firestore falhar (permissão, validação, etc.), a operação lança erro e não altera o estado local
+    await setDoc(
+      doc(db, 'organizations', this.orgId, 'persons', pessoa.id),
+      sanitizeForFirestore(updatedColab),
+      { merge: true }
+    );
+
+    // 2. Apenas após confirmação de sucesso na persistência remota, atualiza o cache canônico em memória
     this.canonicalPersonsMap.set(pessoa.id, updatedColab);
     const updatedPessoa = this.mapColaboradorToPessoa(updatedColab);
     const idx = this.memoryDb.pessoas.findIndex((p) => p.id === pessoa.id);
@@ -729,17 +745,7 @@ export class FirestoreAdapter implements StorageAdapter {
     else this.memoryDb.pessoas.push(updatedPessoa);
     this.notify();
 
-    // 2. Persiste EXCLUSIVAMENTE na coleção canônica organizations/{orgId}/persons
-    try {
-      await setDoc(
-        doc(db, 'organizations', this.orgId, 'persons', pessoa.id),
-        sanitizeForFirestore(updatedColab),
-        { merge: true }
-      );
-    } catch (firestoreErr: any) {
-      console.warn('Erro ao persistir no Firestore (modo offline/sem sessão):', firestoreErr?.message || firestoreErr);
-    }
-
+    // 3. Registra auditoria com o resultado real confirmado
     await this.recordAudit(
       existingColab ? 'EDITAR' : 'CRIAR',
       'colaborador_pessoa',
@@ -757,7 +763,10 @@ export class FirestoreAdapter implements StorageAdapter {
     const existing = this.memoryDb.pessoas.find((p) => p.id === id) || null;
     const existingColab = this.canonicalPersonsMap.get(id);
 
-    // Remove do cache
+    // 1. Persiste exclusão remota primeiro
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'persons', id));
+
+    // 2. Remove do cache local apenas após confirmação
     this.memoryDb.pessoas = this.memoryDb.pessoas.filter((p) => p.id !== id);
     this.canonicalPersonsMap.delete(id);
     this.notify();
@@ -880,10 +889,7 @@ export class FirestoreAdapter implements StorageAdapter {
       atualizado_por: usuarioNome,
     };
 
-    const idx = this.memoryDb.bases.findIndex((b) => b.id === id);
-    if (idx >= 0) this.memoryDb.bases[idx] = updated;
-    this.notify();
-
+    // 1. Persiste no Firestore primeiro
     await setDoc(
       doc(db, 'organizations', this.orgId, 'operational_bases', id),
       {
@@ -897,6 +903,11 @@ export class FirestoreAdapter implements StorageAdapter {
       },
       { merge: true }
     );
+
+    // 2. Apenas após persistência confirmada, atualiza estado em memória
+    const idx = this.memoryDb.bases.findIndex((b) => b.id === id);
+    if (idx >= 0) this.memoryDb.bases[idx] = updated;
+    this.notify();
 
     await this.recordAudit(
       'EDITAR',
@@ -923,10 +934,7 @@ export class FirestoreAdapter implements StorageAdapter {
       atualizado_por: usuarioNome,
     };
 
-    const idx = this.memoryDb.bases.findIndex((b) => b.id === id);
-    if (idx >= 0) this.memoryDb.bases[idx] = updated;
-    this.notify();
-
+    // 1. Persiste no Firestore primeiro
     await setDoc(
       doc(db, 'organizations', this.orgId, 'operational_bases', id),
       {
@@ -939,6 +947,11 @@ export class FirestoreAdapter implements StorageAdapter {
       },
       { merge: true }
     );
+
+    // 2. Apenas após persistência confirmada, atualiza estado em memória
+    const idx = this.memoryDb.bases.findIndex((b) => b.id === id);
+    if (idx >= 0) this.memoryDb.bases[idx] = updated;
+    this.notify();
 
     await this.recordAudit(
       'EDITAR',
@@ -956,10 +969,12 @@ export class FirestoreAdapter implements StorageAdapter {
     if (!db) throw new Error('Firestore não inicializado.');
     const existing = this.memoryDb.bases.find((b) => b.id === id) || null;
 
+    // Persiste exclusão remota primeiro
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'operational_bases', id));
+
+    // Apenas após confirmação, atualiza cache em memória
     this.memoryDb.bases = this.memoryDb.bases.filter((b) => b.id !== id);
     this.notify();
-
-    await deleteDoc(doc(db, 'organizations', this.orgId, 'operational_bases', id));
 
     if (existing) {
       await this.recordAudit(
@@ -1016,19 +1031,20 @@ export class FirestoreAdapter implements StorageAdapter {
       updatedAt: now,
     };
 
+    // Persiste EXCLUSIVAMENTE na coleção canônica primeiro
+    await setDoc(
+      doc(db, 'organizations', this.orgId, 'qualifications', licenca.id),
+      sanitizeForFirestore(qualifDoc),
+      { merge: true }
+    );
+
+    // Apenas após persistência confirmada, atualiza cache local
     this.canonicalQualificationsMap.set(licenca.id, qualifDoc);
     const updatedLicenca = this.mapQualificacaoToLicenca(qualifDoc);
     const idx = this.memoryDb.licencas.findIndex((l) => l.id === licenca.id);
     if (idx >= 0) this.memoryDb.licencas[idx] = updatedLicenca;
     else this.memoryDb.licencas.push(updatedLicenca);
     this.notify();
-
-    // Persiste EXCLUSIVAMENTE na coleção canônica
-    await setDoc(
-      doc(db, 'organizations', this.orgId, 'qualifications', licenca.id),
-      sanitizeForFirestore(qualifDoc),
-      { merge: true }
-    );
 
     await this.recordAudit(
       existingQualif ? 'EDITAR' : 'CRIAR',
@@ -1047,12 +1063,13 @@ export class FirestoreAdapter implements StorageAdapter {
     const existing = this.memoryDb.licencas.find((l) => l.id === id) || null;
     const existingQualif = this.canonicalQualificationsMap.get(id);
 
+    // Exclui EXCLUSIVAMENTE da coleção canônica primeiro
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'qualifications', id));
+
+    // Apenas após confirmação remota, atualiza cache local
     this.memoryDb.licencas = this.memoryDb.licencas.filter((l) => l.id !== id);
     this.canonicalQualificationsMap.delete(id);
     this.notify();
-
-    // Exclui EXCLUSIVAMENTE da coleção canônica
-    await deleteDoc(doc(db, 'organizations', this.orgId, 'qualifications', id));
 
     if (existing) {
       await this.recordAudit(
@@ -1079,8 +1096,8 @@ export class FirestoreAdapter implements StorageAdapter {
     const existingCourse = this.canonicalCoursesMap.get(curso.id);
     const isFrota = curso.grupo === 'Frota';
 
-    const hasPeriodicidade = curso.periodicidade_meses !== undefined ? (curso.periodicidade_meses > 0) : (curso.validade_dias > 0 && !curso.sem_validade);
-    const periodicidadeMeses = curso.periodicidade_meses !== undefined ? (curso.periodicidade_meses > 0 ? curso.periodicidade_meses : undefined) : (hasPeriodicidade ? Math.round(curso.validade_dias / 30) : existingCourse?.periodicidadeMeses);
+    const hasPeriodicidade = typeof curso.periodicidade_meses === 'number' && curso.periodicidade_meses > 0;
+    const periodicidadeMeses = hasPeriodicidade ? curso.periodicidade_meses : existingCourse?.periodicidadeMeses;
     const isRecorrente = curso.recorrente !== undefined ? curso.recorrente : (existingCourse !== undefined ? existingCourse.recorrente : hasPeriodicidade);
 
     const trainingCourseDoc: CursoTreinamento = {
@@ -1113,19 +1130,20 @@ export class FirestoreAdapter implements StorageAdapter {
       criadoPorUid: existingCourse?.criadoPorUid || 'rooster-mro',
     };
 
+    // Persiste EXCLUSIVAMENTE na coleção canônica primeiro
+    await setDoc(
+      doc(db, 'organizations', this.orgId, 'trainingCourses', curso.id),
+      sanitizeForFirestore(trainingCourseDoc),
+      { merge: true }
+    );
+
+    // Apenas após confirmação de sucesso na persistência, atualiza cache local
     this.canonicalCoursesMap.set(curso.id, trainingCourseDoc);
     const updatedCurso = this.mapCursoTreinamentoToCursoCatalogo(trainingCourseDoc);
     const idx = this.memoryDb.cursosCatalogo.findIndex((c) => c.id === curso.id);
     if (idx >= 0) this.memoryDb.cursosCatalogo[idx] = updatedCurso;
     else this.memoryDb.cursosCatalogo.push(updatedCurso);
     this.notify();
-
-    // Persiste EXCLUSIVAMENTE na coleção canônica
-    await setDoc(
-      doc(db, 'organizations', this.orgId, 'trainingCourses', curso.id),
-      sanitizeForFirestore(trainingCourseDoc),
-      { merge: true }
-    );
 
     await this.recordAudit(
       existingCourse ? 'EDITAR' : 'CRIAR',
@@ -1137,19 +1155,19 @@ export class FirestoreAdapter implements StorageAdapter {
       usuarioNome
     );
   }
-
   async deleteCurso(id: string, usuarioNome: string): Promise<CursoCatalogo | null> {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const existing = this.memoryDb.cursosCatalogo.find((c) => c.id === id) || null;
     const existingCourse = this.canonicalCoursesMap.get(id);
 
+    // Exclui EXCLUSIVAMENTE da coleção canônica no Firestore PRIMEIRO
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'trainingCourses', id));
+
+    // Apenas após persistência confirmada atualiza cache em memória
     this.memoryDb.cursosCatalogo = this.memoryDb.cursosCatalogo.filter((c) => c.id !== id);
     this.canonicalCoursesMap.delete(id);
     this.notify();
-
-    // Exclui EXCLUSIVAMENTE da coleção canônica
-    await deleteDoc(doc(db, 'organizations', this.orgId, 'trainingCourses', id));
 
     if (existing) {
       await this.recordAudit(
@@ -1232,15 +1250,7 @@ export class FirestoreAdapter implements StorageAdapter {
       updatedAt: now,
     };
 
-    // Atualiza cache em memória
-    this.canonicalTrainingRecordsMap.set(treinamento.id, trainingRecordDoc);
-    const updatedTreinamento = this.mapRegistroTreinamentoToTreinamento(trainingRecordDoc);
-    const idx = this.memoryDb.treinamentos.findIndex((t) => t.id === treinamento.id);
-    if (idx >= 0) this.memoryDb.treinamentos[idx] = updatedTreinamento;
-    else this.memoryDb.treinamentos.push(updatedTreinamento);
-    this.notify();
-
-    // Persiste na coleção canônica de treinamentos e vincula motores
+    // 1. Persiste na coleção canônica de treinamentos e vincula motores primeiro via batch
     const batch = writeBatch(db);
     batch.set(
       doc(db, 'organizations', this.orgId, 'trainingRecords', treinamento.id),
@@ -1255,18 +1265,30 @@ export class FirestoreAdapter implements StorageAdapter {
         doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', `${om.treinamento_id}__${om.motor_id}`)
       );
     }
-    this.memoryDb.treinamentosMotor = this.memoryDb.treinamentosMotor.filter(
-      (tm) => tm.treinamento_id !== treinamento.id
-    );
 
+    const newMotorEntries = [];
     for (const mId of motoresIds) {
       const key = `${treinamento.id}__${mId}`;
       const motorEntry = { treinamento_id: treinamento.id, motor_id: mId };
-      this.memoryDb.treinamentosMotor.push(motorEntry);
+      newMotorEntries.push(motorEntry);
       batch.set(doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', key), motorEntry);
     }
 
+    // Persistência confirmada no Firestore primeiro
     await batch.commit();
+
+    // 2. Apenas após confirmação, atualiza cache canônico em memória
+    this.canonicalTrainingRecordsMap.set(treinamento.id, trainingRecordDoc);
+    const updatedTreinamento = this.mapRegistroTreinamentoToTreinamento(trainingRecordDoc);
+    const idx = this.memoryDb.treinamentos.findIndex((t) => t.id === treinamento.id);
+    if (idx >= 0) this.memoryDb.treinamentos[idx] = updatedTreinamento;
+    else this.memoryDb.treinamentos.push(updatedTreinamento);
+
+    this.memoryDb.treinamentosMotor = [
+      ...this.memoryDb.treinamentosMotor.filter((tm) => tm.treinamento_id !== treinamento.id),
+      ...newMotorEntries,
+    ];
+    this.notify();
 
     await this.recordAudit(
       existingRecord ? 'EDITAR' : 'CRIAR',
@@ -1285,10 +1307,7 @@ export class FirestoreAdapter implements StorageAdapter {
     const existing = this.memoryDb.treinamentos.find((t) => t.id === id) || null;
     const existingRecord = this.canonicalTrainingRecordsMap.get(id);
 
-    this.memoryDb.treinamentos = this.memoryDb.treinamentos.filter((t) => t.id !== id);
-    this.canonicalTrainingRecordsMap.delete(id);
-    this.notify();
-
+    // 1. Persiste exclusão remota via batch primeiro
     const batch = writeBatch(db);
     batch.delete(doc(db, 'organizations', this.orgId, 'trainingRecords', id));
 
@@ -1298,9 +1317,13 @@ export class FirestoreAdapter implements StorageAdapter {
         doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', `${m.treinamento_id}__${m.motor_id}`)
       );
     }
-    this.memoryDb.treinamentosMotor = this.memoryDb.treinamentosMotor.filter((tm) => tm.treinamento_id !== id);
-
     await batch.commit();
+
+    // 2. Apenas após confirmação remota, atualiza cache em memória
+    this.memoryDb.treinamentos = this.memoryDb.treinamentos.filter((t) => t.id !== id);
+    this.canonicalTrainingRecordsMap.delete(id);
+    this.memoryDb.treinamentosMotor = this.memoryDb.treinamentosMotor.filter((tm) => tm.treinamento_id !== id);
+    this.notify();
 
     if (existing) {
       await this.recordAudit(

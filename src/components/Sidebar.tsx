@@ -227,8 +227,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: <UploadCloud className="w-4 h-4 text-teal-400" />,
         },
         {
-          id: 'validacaoQueue',
+          id: 'validacao-treinamentos',
           label: 'Fila de validação',
+          aliases: ['validacaoQueue-treinamentos', 'fila-certificados'],
           icon: <CheckSquare className="w-4 h-4 text-amber-400" />,
         },
         {
@@ -285,8 +286,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: <BarChart3 className="w-4 h-4 text-indigo-400" />,
         },
         {
-          id: 'validacaoQueue',
+          id: 'validacao-qualidade',
           label: 'Validação & Aprovação',
+          aliases: ['validacaoQueue', 'aprovacao-qualidade'],
           icon: <CheckSquare className="w-4 h-4 text-amber-400" />,
         },
         {

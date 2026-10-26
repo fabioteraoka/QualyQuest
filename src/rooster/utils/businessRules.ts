@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, format, isValid, parse, parseISO } from 'date-fns';
+import { addDays, addMonths, differenceInCalendarDays, format, isValid, parse, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   AeronaveDesignacao,
@@ -55,14 +55,29 @@ export function parseDataBrParaIso(dataBr: string): string | null {
   return null;
 }
 
-export function calcularVencimento(dataExecucao: string | null | undefined, validadeDias: number): string | null {
-  if (!dataExecucao) return null;
-  if (validadeDias >= 36500) return null; // Sem vencimento
+export function calcularVencimento(
+  dataExecucao: string | null | undefined,
+  validadeDias?: number | null,
+  periodicidadeMeses?: number | null
+): string | null {
+  if (!dataExecucao || !dataExecucao.trim()) return null;
+  if (validadeDias !== undefined && validadeDias !== null && validadeDias >= 36500) return null; // Sem vencimento
   try {
     const dataExec = parseISO(dataExecucao);
     if (!isValid(dataExec)) return null;
-    const dataVenc = addDays(dataExec, validadeDias);
-    return format(dataVenc, 'yyyy-MM-dd');
+    
+    // Adição de meses de calendário real (RBAC 121/145), sem aproximações arbitrárias de 30 dias
+    if (typeof periodicidadeMeses === 'number' && periodicidadeMeses > 0) {
+      const dataVenc = addMonths(dataExec, periodicidadeMeses);
+      return format(dataVenc, 'yyyy-MM-dd');
+    }
+
+    if (typeof validadeDias === 'number' && validadeDias > 0) {
+      const dataVenc = addDays(dataExec, validadeDias);
+      return format(dataVenc, 'yyyy-MM-dd');
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -318,8 +333,8 @@ export function calcularStatusTreinamento(
   }
 
   // Caso 2: Validade explícita informada no registro (ex: de certificado homologado ou registro formal)
-  if (treinamento.data_validade) {
-    const data_vencimento = treinamento.data_validade;
+  if (treinamento.data_validade && treinamento.data_validade.trim()) {
+    const data_vencimento = treinamento.data_validade.trim();
     const dias_para_vencer = calcularDiasParaVencer(data_vencimento, dataReferencia);
     const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
     return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
@@ -330,34 +345,44 @@ export function calcularStatusTreinamento(
     return { data_vencimento: null, dias_para_vencer: null, status: 'Sem validade definida', isSemVencimento: false, motivoStatus: 'Curso não localizado no catálogo' };
   }
 
-  // Caso 4: Treinamento sem vencimento aplicável declarado (ex: doutrinação única / sem reciclagem)
-  if (curso.sem_validade) {
-    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem vencimento', isSemVencimento: true, motivoStatus: 'Treinamento sem vencimento aplicável' };
+  // Caso 4: Sem vencimento aplicável, confirmado por regra cadastrada
+  if (curso.sem_validade === true || (treinamento.validade_dias_override !== undefined && treinamento.validade_dias_override !== null && treinamento.validade_dias_override >= 36500)) {
+    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem vencimento', isSemVencimento: true, motivoStatus: 'Sem vencimento aplicável, confirmado por regra cadastrada' };
   }
 
-  // Caso 5: Override explícito de validade no treinamento
-  if (treinamento.validade_dias_override !== undefined && treinamento.validade_dias_override !== null) {
-    if (treinamento.validade_dias_override === 0 || treinamento.validade_dias_override >= 36500) {
-      return { data_vencimento: null, dias_para_vencer: null, status: 'Sem vencimento', isSemVencimento: true };
-    }
+  // Caso 5: Override explícito de validade no treinamento (dias)
+  if (treinamento.validade_dias_override !== undefined && treinamento.validade_dias_override !== null && treinamento.validade_dias_override > 0) {
     const data_vencimento = calcularVencimento(treinamento.data_execucao, treinamento.validade_dias_override);
     const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
     const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
     return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
   }
 
-  // Caso 6: Curso cadastrado sem periodicidade ou validade definida
-  const validade = curso.validade_dias;
-  if (!validade || validade === 0) {
-    return { data_vencimento: null, dias_para_vencer: null, status: 'Sem validade definida', isSemVencimento: false, motivoStatus: 'Validade não definida no cadastro do curso' };
+  // Caso 6: Regra de periodicidade por meses cadastrada no curso (ex: 12, 24, 36 meses - calendário real)
+  if (typeof curso.periodicidade_meses === 'number' && curso.periodicidade_meses > 0) {
+    const data_vencimento = calcularVencimento(treinamento.data_execucao, null, curso.periodicidade_meses);
+    const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
+    const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
+    return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
   }
 
-  // Caso 7: Validade calculada com base na regra cadastrada no curso
-  const data_vencimento = calcularVencimento(treinamento.data_execucao, validade);
-  const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
-  const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
+  // Caso 7: Validade em dias cadastrada no curso
+  if (typeof curso.validade_dias === 'number' && curso.validade_dias > 0) {
+    const data_vencimento = calcularVencimento(treinamento.data_execucao, curso.validade_dias);
+    const dias_para_vencer = data_vencimento ? calcularDiasParaVencer(data_vencimento, dataReferencia) : null;
+    const status = calcularStatus(data_vencimento, true, false, dataReferencia, config);
+    return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
+  }
 
-  return { data_vencimento, dias_para_vencer, status, isSemVencimento: false };
+  // Caso 8: Curso sem periodicidade e sem regra de validade definida
+  // A ausência de periodicidade NÃO pode ser interpretada automaticamente como ausência de vencimento!
+  return {
+    data_vencimento: null,
+    dias_para_vencer: null,
+    status: 'Sem validade definida',
+    isSemVencimento: false,
+    motivoStatus: 'Sem periodicidade ou validade definida no catálogo',
+  };
 }
 
 export function conferirDesignacao(
