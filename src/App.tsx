@@ -83,7 +83,32 @@ export default function App() {
   } = useAppSubscriptions({ user, userProfile, authLoading, activeOrgId });
 
   // Active Tab navigation
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('tab');
+      if (p) return p;
+      if (window.location.hash) return window.location.hash.replace('#', '');
+    }
+    return 'dashboard';
+  });
+
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const p = new URLSearchParams(window.location.search).get('tab');
+      if (p) {
+        setActiveTab(p);
+      } else if (window.location.hash) {
+        const hashTab = window.location.hash.replace('#', '');
+        if (hashTab) setActiveTab(hashTab);
+      }
+    };
+    window.addEventListener('popstate', handleUrlChange);
+    window.addEventListener('hashchange', handleUrlChange);
+    return () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      window.removeEventListener('hashchange', handleUrlChange);
+    };
+  }, []);
 
   // Multi-Tenant Setup Checklist Modal & Welcome Banner State
   const [isChecklistModalOpen, setIsChecklistModalOpen] = useState(false);

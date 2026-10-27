@@ -462,36 +462,31 @@ export function gerarSlidesApresentacao(
     return ca.saldoDiasCredito - cb.saldoDiasCredito;
   });
 
-  const linhasTabelaMetrologia: (string | number)[][] = (
-    ferramentasOrdenadas.length > 0 ? ferramentasOrdenadas.slice(0, 8) : [
-      { codigoPatrimonio: 'TQ-023', modelo: 'STAHLWILLE 730N/20', descricao: 'Torquímetro de Estalo 20-100 Nm', laboratorioCalibrador: 'LabMetrologia RBC nº 0124', dataProximaCalibracao: '2026-11-15', frequenciaMeses: 12, dataUltimaCalibracao: '2025-11-15', numeroCertificado: 'CERT-RBC-2025/1102' },
-      { codigoPatrimonio: 'MULT-004', modelo: 'FLUKE 87V', descricao: 'Multímetro Digital True-RMS', laboratorioCalibrador: 'Calibrar RBC nº 0233', dataProximaCalibracao: '2026-12-10', frequenciaMeses: 12, dataUltimaCalibracao: '2025-12-10', numeroCertificado: 'CERT-RBC-2025/1245' },
-      { codigoPatrimonio: 'MAN-012', modelo: 'WIKA 232.50', descricao: 'Manômetro de Pressão Hidráulica', laboratorioCalibrador: 'LabMetrologia RBC nº 0124', dataProximaCalibracao: '2026-10-28', frequenciaMeses: 6, dataUltimaCalibracao: '2026-04-28', numeroCertificado: 'CERT-RBC-2026/0488' },
-      { codigoPatrimonio: 'PAQ-001', modelo: 'MITUTOYO 500-196', descricao: 'Paquímetro Digital 150mm', laboratorioCalibrador: 'Inmetro RBC nº 0089', dataProximaCalibracao: '2027-01-20', frequenciaMeses: 12, dataUltimaCalibracao: '2026-01-20', numeroCertificado: 'CERT-RBC-2026/0112' },
-      { codigoPatrimonio: 'MIC-003', modelo: 'MITUTOYO 293-240', descricao: 'Micrômetro Externo 0-25mm', laboratorioCalibrador: 'Inmetro RBC nº 0089', dataProximaCalibracao: '2026-10-05', frequenciaMeses: 12, dataUltimaCalibracao: '2025-10-05', numeroCertificado: 'CERT-RBC-2025/1033' },
-      { codigoPatrimonio: 'TORQ-009', modelo: 'SNAP-ON QD3RN350', descricao: 'Torquímetro de Estalo 70-350 Nm', laboratorioCalibrador: 'LabMetrologia RBC nº 0124', dataProximaCalibracao: '2026-09-15', frequenciaMeses: 12, dataUltimaCalibracao: '2025-09-15', numeroCertificado: 'CERT-RBC-2025/0912', status: 'VENCIDA' },
-    ]
-  ).map((f: any) => {
-    const conta = calcularContaCreditoFerramenta(f);
-    let situacaoFormatada = '✅ Em Dia (Apta)';
-    if (conta.statusCredito === 'ESGOTADO' || conta.saldoDiasCredito <= 0 || f.status === 'VENCIDA') {
-      situacaoFormatada = '🚨 Vencida (Segregada)';
-    } else if (conta.statusCredito === 'CRITICO' || conta.saldoDiasCredito <= 30) {
-      situacaoFormatada = '⚠️ A Vencer (≤30d)';
-    } else if (conta.statusCredito === 'ATENCAO') {
-      situacaoFormatada = '🟡 Atenção (≤60d)';
-    }
+  const linhasTabelaMetrologia: (string | number)[][] = ferramentasOrdenadas.length > 0
+    ? ferramentasOrdenadas.slice(0, 8).map((f: any) => {
+        const conta = calcularContaCreditoFerramenta(f);
+        let situacaoFormatada = '✅ Em Dia (Apta)';
+        if (conta.statusCredito === 'ESGOTADO' || conta.saldoDiasCredito <= 0 || f.status === 'VENCIDA') {
+          situacaoFormatada = '🚨 Vencida (Segregada)';
+        } else if (conta.statusCredito === 'CRITICO' || conta.saldoDiasCredito <= 30) {
+          situacaoFormatada = '⚠️ A Vencer (≤30d)';
+        } else if (conta.statusCredito === 'ATENCAO') {
+          situacaoFormatada = '🟡 Atenção (≤60d)';
+        }
 
-    return [
-      f.codigoPatrimonio || 'SEM-PAT',
-      f.modelo || '—',
-      (f.descricao && f.descricao.length > 32 ? f.descricao.substring(0, 30) + '...' : f.descricao) || 'Instrumento de Medição',
-      f.dataProximaCalibracao || '—',
-      conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d (${conta.percentualRestante}%)` : `${conta.saldoDiasCredito}d (Vencida - Bloqueada)`,
-      conta.temCertificadoAnexo ? '📎 Anexo RBC' : (f.numeroCertificado || 'Laudo Pendente'),
-      situacaoFormatada,
-    ];
-  });
+        return [
+          f.codigoPatrimonio || 'SEM-PAT',
+          f.modelo || '—',
+          (f.descricao && f.descricao.length > 32 ? f.descricao.substring(0, 30) + '...' : f.descricao) || 'Instrumento de Medição',
+          f.dataProximaCalibracao || '—',
+          conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d (${conta.percentualRestante}%)` : `${conta.saldoDiasCredito}d (Vencida - Bloqueada)`,
+          conta.temCertificadoAnexo ? '📎 Anexo RBC' : (f.numeroCertificado || 'Laudo Pendente'),
+          situacaoFormatada,
+        ];
+      })
+    : [
+        ['—', '—', 'Nenhum instrumento cadastrado na base', '—', '—', '—', 'Sem dados']
+      ];
 
   // CONSTRUÇÃO ESTRUTURADA E DINÂMICA DOS SLIDES (SEM LIMITE RÍGIDO DE 20 SLIDES)
   const slides: SlideApresentacao[] = [
@@ -589,7 +584,7 @@ export function gerarSlidesApresentacao(
       categoria: 'Processo Operacional',
       bloco: 'GRAFICOS_DASHBOARD',
       tipoVisualizacao: 'grafico-barras',
-      imagemDestaque: '/public/screenshots/rnc_report_preview.jpg',
+      imagemDestaque: '/screenshots/relatorio_rnc.jpg',
       metricasPrincipais: [
         { rotulo: 'Total de RNCs', valor: totalRNCs, status: 'normal' },
         { rotulo: 'Em Investigação', valor: emAnalise, status: emAnalise > 5 ? 'alerta' : 'normal' },
@@ -907,7 +902,7 @@ export function gerarSlidesApresentacao(
       bloco: 'CAUSALIDADE',
       tipoVisualizacao: 'grafico-barras',
       metricasPrincipais: [
-        { rotulo: 'Causas Mapeadas', valor: totalCausasMapeadas > 0 ? totalCausasMapeadas : '100% Concluído', status: 'normal' },
+        { rotulo: 'Causas Mapeadas', valor: totalCausasMapeadas, status: 'normal' },
         { rotulo: 'Família Método', valor: `${ishikawaContagem['Método']}`, subtitulo: 'Processos e instruções', status: 'normal' },
         { rotulo: 'Família Mão de Obra', valor: `${ishikawaContagem['Mão de Obra']}`, subtitulo: 'Treinamento e atenção', status: 'normal' },
         { rotulo: 'Máquina & Material', valor: `${ishikawaContagem['Máquina'] + ishikawaContagem['Material']}`, subtitulo: 'Ferramental e insumos', status: 'normal' },
@@ -921,11 +916,11 @@ export function gerarSlidesApresentacao(
       tabelaDados: {
         colunas: ['Família do 6M', 'Causas Identificadas', '% Representação', 'Foco de Bloqueio Recomendado'],
         linhas: [
-          ['Método (Processo / Instrução)', `${ishikawaContagem['Método']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Método'] / totalCausasMapeadas) * 100) : 38}%`, 'Revisão de cartas de trabalho e procedimentos'],
-          ['Mão de Obra (Capacitação / Fator Humano)', `${ishikawaContagem['Mão de Obra']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Mão de Obra'] / totalCausasMapeadas) * 100) : 29}%`, 'Reciclagem técnica e treinamento em Fatores Humanos'],
-          ['Máquina (Ferramenta / Equipamento)', `${ishikawaContagem['Máquina']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Máquina'] / totalCausasMapeadas) * 100) : 14}%`, 'Plano de calibração e manutenção preventiva'],
-          ['Material (Peças / Insumos)', `${ishikawaContagem['Material']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Material'] / totalCausasMapeadas) * 100) : 10}%`, 'Qualificação de fornecedores e controle de recebimento'],
-          ['Meio Ambiente & Medição', `${ishikawaContagem['Meio Ambiente'] + ishikawaContagem['Medição']}`, `${totalCausasMapeadas > 0 ? Math.round(((ishikawaContagem['Meio Ambiente'] + ishikawaContagem['Medição']) / totalCausasMapeadas) * 100) : 9}%`, 'Iluminação, organização e instrumentos aferidos'],
+          ['Método (Processo / Instrução)', `${ishikawaContagem['Método']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Método'] / totalCausasMapeadas) * 100) : 0}%`, 'Revisão de cartas de trabalho e procedimentos'],
+          ['Mão de Obra (Capacitação / Fator Humano)', `${ishikawaContagem['Mão de Obra']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Mão de Obra'] / totalCausasMapeadas) * 100) : 0}%`, 'Reciclagem técnica e treinamento em Fatores Humanos'],
+          ['Máquina (Ferramenta / Equipamento)', `${ishikawaContagem['Máquina']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Máquina'] / totalCausasMapeadas) * 100) : 0}%`, 'Plano de calibração e manutenção preventiva'],
+          ['Material (Peças / Insumos)', `${ishikawaContagem['Material']}`, `${totalCausasMapeadas > 0 ? Math.round((ishikawaContagem['Material'] / totalCausasMapeadas) * 100) : 0}%`, 'Qualificação de fornecedores e controle de recebimento'],
+          ['Meio Ambiente & Medição', `${ishikawaContagem['Meio Ambiente'] + ishikawaContagem['Medição']}`, `${totalCausasMapeadas > 0 ? Math.round(((ishikawaContagem['Meio Ambiente'] + ishikawaContagem['Medição']) / totalCausasMapeadas) * 100) : 0}%`, 'Iluminação, organização e instrumentos aferidos'],
         ],
       },
       graficoDados: {
@@ -1108,7 +1103,7 @@ export function gerarSlidesApresentacao(
       categoria: 'Competências & Efetivo',
       bloco: 'PESSOAS_COMPETENCIAS',
       tipoVisualizacao: 'tabela-executiva',
-      imagemDestaque: '/public/screenshots/competency_matrix.jpg',
+      imagemDestaque: '/screenshots/colaboradores_lista.jpg',
       metricasPrincipais: [
         { 
           rotulo: 'Total de Colaboradores', 
@@ -1203,13 +1198,13 @@ export function gerarSlidesApresentacao(
       metricasPrincipais: [
         { 
           rotulo: 'Especialidades Mapeadas', 
-          valor: funcoesEstatisticas.length > 0 ? `${funcoesEstatisticas.length} Áreas` : '5 Áreas', 
+          valor: funcoesEstatisticas.length > 0 ? `${funcoesEstatisticas.length} Especialidades` : '0 Especialidades', 
           subtitulo: 'Estratificação técnica',
           status: 'normal' as const 
         },
         { 
           rotulo: 'Prontidão Operacional Geral', 
-          valor: `${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 85}%`, 
+          valor: `${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 0}%`, 
           subtitulo: `${personsAtivos.length} técnicos ativos para liberação`,
           status: 'sucesso' as const 
         },
@@ -1228,7 +1223,7 @@ export function gerarSlidesApresentacao(
       ],
       pontosChave: [
         `Efetivo técnico monitorado estruturado em ${funcoesEstatisticas.length} especialidades operacionais com rastreabilidade formal.`,
-        `Taxa global de prontidão técnica de ${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 85}%, garantindo cobertura contínua dos turnos de manutenção.`,
+        `Taxa global de prontidão técnica de ${persons.length > 0 ? Math.round((personsAtivos.length / persons.length) * 100) : 0}%, garantindo cobertura contínua dos turnos de manutenção.`,
         personsEmTreinamento.length > 0
           ? `${personsEmTreinamento.length} profissional(is) em capacitação técnica formal supervisionada (on-the-job training).`
           : 'Totalidade do corpo técnico plenamente qualificado nas tarefas atribuídas.',
@@ -1278,7 +1273,7 @@ export function gerarSlidesApresentacao(
       metricasPrincipais: [
         { 
           rotulo: 'Habilitações Válidas', 
-          valor: totalHabilitacoesValidas > 0 ? totalHabilitacoesValidas : 72, 
+          valor: totalHabilitacoesValidas, 
           subtitulo: 'CHTs e Treinamentos vigentes',
           status: 'sucesso' 
         },
@@ -1307,7 +1302,7 @@ export function gerarSlidesApresentacao(
           ? `ALERTA OPERACIONAL: ${totalHabilitacoesVencidas} curso(s) ou CHT(s) encontram-se vencidos, exigindo reciclagem/renovação mandatória.`
           : 'Zero habilitações ou treinamentos regulatórios vencidos na equipe técnica e de qualidade.',
         `${totalHabilitacoesVencendo30d} item(ns) com vencimento programado para os próximos 30 dias — turmas de reciclagem programadas.`,
-        'A blindagem de aptidão do QualiGest impede a liberação de aeronaves por mecânicos com CHT vencida.',
+        'A blindagem de aptidão do QualyQuest / Rooster impede a liberação de aeronaves por mecânicos com CHT vencida.',
       ],
       tabelaDados: {
         colunas: ['Especialidade / Função Técnica', 'Total Monitorado', 'Vigentes', 'A Vencer (≤30d)', 'Vencidos', 'Índice de Prontidão'],
@@ -1318,7 +1313,7 @@ export function gerarSlidesApresentacao(
         titulo: 'Vigência de Treinamentos e CHTs',
         unidade: 'Registros',
         itens: [
-          { rotulo: 'Válidos', valor: totalHabilitacoesValidas > 0 ? totalHabilitacoesValidas : 72, cor: '#10b981' },
+          { rotulo: 'Válidos', valor: totalHabilitacoesValidas, cor: '#10b981' },
           { rotulo: 'A Vencer (≤30d)', valor: totalHabilitacoesVencendo30d, cor: '#f59e0b' },
           { rotulo: 'Vencidos', valor: totalHabilitacoesVencidas, cor: '#ef4444' },
         ],
@@ -1340,12 +1335,12 @@ export function gerarSlidesApresentacao(
       categoria: 'Controle Documental',
       bloco: 'GRAFICOS_DASHBOARD',
       tipoVisualizacao: 'tabela-executiva',
-      imagemDestaque: '/public/screenshots/document_control.jpg',
+      imagemDestaque: '/screenshots/controle_documental.jpg',
       metricasPrincipais: [
-        { rotulo: 'Manuais Auditados', valor: totalDocs > 0 ? totalDocs : 12, status: 'normal' },
-        { rotulo: 'Manuais Vigentes', valor: docsVigentes > 0 ? docsVigentes : 11, status: 'sucesso' },
+        { rotulo: 'Manuais Auditados', valor: totalDocs, status: 'normal' },
+        { rotulo: 'Manuais Vigentes', valor: docsVigentes, status: 'sucesso' },
         { rotulo: 'Em Revisão Bienal', valor: docsRevisao, status: docsRevisao > 0 ? 'alerta' : 'sucesso' },
-        { rotulo: 'Índice de Vigência', valor: totalDocs > 0 ? `${Math.round((docsVigentes / totalDocs) * 100)}%` : '98%', status: 'sucesso' },
+        { rotulo: 'Índice de Vigência', valor: totalDocs > 0 ? `${Math.round((docsVigentes / totalDocs) * 100)}%` : '0%', status: 'sucesso' },
       ],
       pontosChave: [
         'Manuais de procedimentos mantidos com controle rigoroso de histórico de revisões e aprovação formal.',
@@ -1370,8 +1365,8 @@ export function gerarSlidesApresentacao(
         titulo: 'Vigência do Acervo Documental da Empresa',
         unidade: 'Documentos',
         itens: [
-          { rotulo: 'Vigentes', valor: docsVigentes > 0 ? docsVigentes : 11, cor: '#10b981' },
-          { rotulo: 'Em Revisão', valor: docsRevisao > 0 ? docsRevisao : 1, cor: '#f59e0b' },
+          { rotulo: 'Vigentes', valor: docsVigentes, cor: '#10b981' },
+          { rotulo: 'Em Revisão', valor: docsRevisao, cor: '#f59e0b' },
         ],
       },
       explicacaoGrafico: {
@@ -1391,54 +1386,54 @@ export function gerarSlidesApresentacao(
       categoria: 'Metrologia & Ferramental',
       bloco: 'GRAFICOS_DASHBOARD',
       tipoVisualizacao: 'tabela-executiva',
-      imagemDestaque: '/public/screenshots/tools_metrology.jpg',
+      imagemDestaque: '/screenshots/dashboard_overview.jpg',
       metricasPrincipais: [
         {
           rotulo: 'Total de Instrumentos',
-          valor: totalFerramentasMetrologia > 0 ? totalFerramentasMetrologia : 48,
+          valor: totalFerramentasMetrologia,
           subtitulo: 'Acervo Metrológico RBAC 145',
           status: 'normal',
         },
         {
           rotulo: 'Calibradas (Em Dia)',
-          valor: totalFerramentasMetrologia > 0 ? (resumoMetrologia.creditoRegular + resumoMetrologia.creditoAtencao) : 44,
-          subtitulo: `${totalFerramentasMetrologia > 0 ? resumoMetrologia.taxaConformidadeMetrologica : 96}% Aptas / Conformes RBC`,
+          valor: resumoMetrologia.creditoRegular + resumoMetrologia.creditoAtencao,
+          subtitulo: `${resumoMetrologia.taxaConformidadeMetrologica}% Aptas / Conformes RBC`,
           status: 'sucesso',
         },
         {
           rotulo: 'A Vencer no Mês (≤30d)',
-          valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3,
+          valor: resumoMetrologia.creditoCritico,
           subtitulo: 'Aferição em Agendamento',
-          status: (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3) > 0 ? 'alerta' : 'normal',
+          status: resumoMetrologia.creditoCritico > 0 ? 'alerta' : 'normal',
         },
         {
           rotulo: 'Ferramentas Vencidas',
-          valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1,
-          subtitulo: (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1) > 0 
+          valor: resumoMetrologia.creditoEsgotado,
+          subtitulo: resumoMetrologia.creditoEsgotado > 0 
             ? 'Segregadas / Uso Bloqueado' 
             : '0 Vencidas (100% no Prazo)',
-          status: (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1) > 0 ? 'critico' : 'sucesso',
+          status: resumoMetrologia.creditoEsgotado > 0 ? 'critico' : 'sucesso',
         },
         {
           rotulo: 'Laudos RBC Anexados',
-          valor: totalFerramentasMetrologia > 0 ? `${resumoMetrologia.taxaCoberturaCertificados}%` : '92%',
-          subtitulo: `${totalFerramentasMetrologia > 0 ? (resumoMetrologia.totalComCertificadoAnexo || 0) : 44} Laudos Vinculados`,
-          status: (totalFerramentasMetrologia > 0 ? resumoMetrologia.taxaCoberturaCertificados : 92) >= 80 ? 'sucesso' : 'alerta',
+          valor: `${resumoMetrologia.taxaCoberturaCertificados}%`,
+          subtitulo: `${resumoMetrologia.totalComCertificadoAnexo || 0} Laudos Vinculados`,
+          status: resumoMetrologia.taxaCoberturaCertificados >= 80 ? 'sucesso' : 'alerta',
         },
         {
           rotulo: 'Saldo Médio de Crédito',
-          valor: totalFerramentasMetrologia > 0 ? `${resumoMetrologia.saldoMedioDiasCredito} dias` : '142 dias',
+          valor: `${resumoMetrologia.saldoMedioDiasCredito} dias`,
           subtitulo: 'Validade Média Restante',
           status: 'normal',
         },
       ],
       pontosChave: [
         'Rastreabilidade metrológica ininterrupta à Rede Brasileira de Calibração (RBC / Inmetro / NIST) conforme RBAC 145.109.',
-        (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1) > 0
-          ? `Controle Estrito de Ferramentas Vencidas: ${totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1} instrumento(s) com calibração vencida (crédito esgotado), imediatamente segregado(s) em quarentena física com bloqueio sistêmico para impedir liberação de aeronaves (CRS).`
+        resumoMetrologia.creditoEsgotado > 0
+          ? `Controle Estrito de Ferramentas Vencidas: ${resumoMetrologia.creditoEsgotado} instrumento(s) com calibração vencida (crédito esgotado), imediatamente segregado(s) em quarentena física com bloqueio sistêmico para impedir liberação de aeronaves (CRS).`
           : 'Controle Estrito: 0 ferramentas vencidas na base; 100% dos instrumentos ativos encontram-se dentro do período de crédito metrológico regular e aptos para operação.',
-        (totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3) > 0
-          ? `Gestão Preditiva (A Vencer): ${totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3} instrumento(s) com vencimento próximo (≤30 dias), com processo de recalibração RBC já agendado para evitar ruptura.`
+        resumoMetrologia.creditoCritico > 0
+          ? `Gestão Preditiva (A Vencer): ${resumoMetrologia.creditoCritico} instrumento(s) com vencimento próximo (≤30 dias), com processo de recalibração RBC já agendado para evitar ruptura.`
           : 'Validade Assegurada: Nenhuma ferramenta com vencimento previsto para os próximos 30 dias.',
         'A Conta de Créditos Metrológicos monitora o consumo diário de validade, alertando preventivamente antes da expiração de cada laudo.',
         'Auditoria digital de certificados com laudos RBC anexados na plataforma, garantindo prontidão imediata para inspeções ANAC e EASA.',
@@ -1452,10 +1447,10 @@ export function gerarSlidesApresentacao(
         titulo: 'Balanço da Conta de Créditos Metrológicos',
         unidade: 'Ferramentas',
         itens: [
-          { rotulo: 'Crédito Regular (>60d)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoRegular : 38, cor: '#10b981' },
-          { rotulo: 'Atenção (31-60d)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoAtencao : 6, cor: '#eab308' },
-          { rotulo: 'A Vencer no Mês (≤30d)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoCritico : 3, cor: '#f97316' },
-          { rotulo: 'Ferramentas Vencidas (Segregadas)', valor: totalFerramentasMetrologia > 0 ? resumoMetrologia.creditoEsgotado : 1, cor: '#ef4444' },
+          { rotulo: 'Crédito Regular (>60d)', valor: resumoMetrologia.creditoRegular, cor: '#10b981' },
+          { rotulo: 'Atenção (31-60d)', valor: resumoMetrologia.creditoAtencao, cor: '#eab308' },
+          { rotulo: 'A Vencer no Mês (≤30d)', valor: resumoMetrologia.creditoCritico, cor: '#f97316' },
+          { rotulo: 'Ferramentas Vencidas (Segregadas)', valor: resumoMetrologia.creditoEsgotado, cor: '#ef4444' },
         ],
       },
       explicacaoGrafico: {
@@ -1620,11 +1615,11 @@ export function gerarSlidesApresentacao(
     // PARTE II — EVOLUÇÃO DO QUALIGEST SGQ (SLIDES 15 A 20)
     // =========================================================================
 
-    // SLIDE 15: O ECOSSISTEMA INTEGRADO DO QUALIGEST SGQ (15 ETAPAS SEM SILOS)
+    // SLIDE 15: O ECOSSISTEMA INTEGRADO DO QUALYQUEST SGQ (15 ETAPAS SEM SILOS)
     {
       id: 15,
       numero: 15,
-      titulo: 'O ECOSSISTEMA INTEGRADO DO QUALIGEST SGQ',
+      titulo: 'O ECOSSISTEMA INTEGRADO DO QUALYQUEST SGQ',
       subtitulo: 'Como os dados se conectam: da exigência regulatória à melhoria contínua sem silos operacionais',
       categoria: 'Ecossistema & Integração',
       bloco: 'ECOSSISTEMA',
@@ -1637,16 +1632,16 @@ export function gerarSlidesApresentacao(
       ],
       pontosChave: [
         'A CADEIA INTEGRADA VIVA: Requisito de Cliente → Aplicabilidade & Processo → Documento & Revisão → Pessoa & CHT → Metrologia RBC → Auditoria Inteligente → Achado → RNC F 001-29 → Causa Raiz & 6M → CAPA 5W2H → Evidência → Eficácia → Conhecimento Validado → System Designer (ADRs) → Importação Inteligente (Reconciliação).',
-        'Eliminação total de silos: Uma exigência contratual alimenta o controle central, reflete na qualificação do técnico, valida a calibração do instrumento no hangar e retroalimenta o mapa de risco da Diretoria.',
+        'Eliminação total de silos: Uma exigência contratual alimenta o controle central, reflete na qualificação do técnico no Rooster MRO, valida a calibração do instrumento no hangar e retroalimenta o mapa de risco da Diretoria.',
         'Auditoria por Exceção & Importação Reconciliada: Itens conformes validados em lote e novas cargas de dados conciliadas com histórico de reversão (Undo) e diff visual.',
         'O motor sgqHealth e os índices de maturidade calculam a integridade do sistema em tempo real com base na Única Fonte da Verdade (SSoT).',
       ],
       tabelaDados: {
-        colunas: ['Elo da Cadeia', 'Origem do Dado', 'Destino / Impacto Sistêmico', 'Garantia QualiGest'],
+        colunas: ['Elo da Cadeia', 'Origem do Dado', 'Destino / Impacto Sistêmico', 'Garantia QualyQuest'],
         linhas: [
           ['Requisitos & Contratos', 'Clientes / ANAC / EASA (Fase 13)', 'Controles Centrais SGQ & Cockpit', 'Arquitetura "Um Controle, Vários Requisitos"'],
           ['Acervo Documental', 'Manuais AMM/CMM/MOE (Fase 10)', 'Consulta Temporal na Data da OS', 'Controle rigoroso de revisões e leitura'],
-          ['Pessoa & Habilitação', 'Matriz de Competências & CHT (Fase 9)', 'Execução Técnica no Hangar', 'Impedimento de atuação com CHT vencida'],
+          ['Pessoa & Habilitação', 'Matriz de Competências & CHT (Rooster MRO)', 'Execução Técnica no Hangar', 'Impedimento de atuação com CHT vencida'],
           ['Metrologia & Ferramental', 'RBC & Certificados (Fase 11)', 'Liberação de Ordens de Serviço', 'Conta corrente de créditos e quarentena'],
           ['Desvio / Finding', 'Auditoria Externa ou Hangar', 'Ficha Oficial de RNC F 001-29 (Fase 1)', 'Notificação e contenção imediata'],
           ['Investigação Causal', 'Ishikawa 6M & 5 Porquês (Fase 4)', 'Plano de Ação Corretiva 5W2H', 'Foco na causa raiz sistêmica, não no sintoma'],
@@ -1657,7 +1652,7 @@ export function gerarSlidesApresentacao(
       },
       graficoDados: {
         tipo: 'ecossistema',
-        titulo: 'A Cadeia Circular Contínua do QualiGest SGQ (15 Fases)',
+        titulo: 'A Cadeia Circular Contínua do QualyQuest SGQ (15 Fases)',
         itens: [
           { rotulo: '1. Requisito Cliente', valor: 1, cor: '#3b82f6' },
           { rotulo: '2. Aplicabilidade', valor: 2, cor: '#3b82f6' },
@@ -1677,14 +1672,14 @@ export function gerarSlidesApresentacao(
         ],
       },
       explicacaoGrafico: {
-        oQueMostra: 'O mapa do ecossistema e a interconexão funcional entre todas as 15 fases do QualiGest SGQ.',
+        oQueMostra: 'O mapa do ecossistema e a interconexão funcional entre todas as 15 fases do QualyQuest SGQ.',
         porQueImportante: 'Demonstra que a qualidade é um sistema vivo e orgânico, onde nenhuma informação se perde ou opera isolada.',
         oQueGestaoIdentifica: 'A consistência do sistema de garantia da qualidade frente a órgãos homologadores, clientes e auditorias.',
       },
-      origemRastreabilidade: 'Arquitetura Integrada do QualiGest SGQ (Fases 1 a 15).',
+      origemRastreabilidade: 'Arquitetura Integrada do QualyQuest SGQ (Fases 1 a 15).',
     },
 
-    // SLIDE 16: RÉGUA OFICIAL DE MATURIDADE DO QUALIGEST SGQ (NÍVEIS 1 A 5)
+    // SLIDE 16: RÉGUA OFICIAL DE MATURIDADE DO QUALYQUEST SGQ (NÍVEIS 1 A 5)
     {
       id: 16,
       numero: 16,
@@ -1702,16 +1697,16 @@ export function gerarSlidesApresentacao(
       pontosChave: [
         'NÍVEL 1 (Registro): 100% implementado — Todos os desvios são registrados formalmente via F 001-29 com numeração oficial.',
         'NÍVEL 2 (Controle): 100% implementado — Metodologias 5W2H, Ishikawa 6M, 5 Porquês e Matriz 5x5 aplicadas com rigor.',
-        'NÍVEL 3 (Integração): 100% consolidado — Pessoas, Competências, CHTs, Manuais, Metrologia e Auditorias operam sem silos.',
+        'NÍVEL 3 (Integração): 100% consolidado — Pessoas, Competências, CHTs (Rooster), Manuais, Metrologia e Auditorias operam sem silos.',
         'NÍVEL 4 (Prevenção): 95% em operação plena — Monitoramento de Saúde do SGQ, Resolução por Exceção e Alertas Preditivos.',
         'NÍVEL 5 (Inteligência & Predição): 80% ativo — Copiloto IA supervisionado, Smart Import com Diff, ADRs e Conectores MRO.',
       ],
       tabelaDados: {
-        colunas: ['Nível de Maturidade', 'Denominação', 'Status no QualiGest', 'Critério Chave Atendido'],
+        colunas: ['Nível de Maturidade', 'Denominação', 'Status no Sistema', 'Critério Chave Atendido'],
         linhas: [
           ['Nível 1', 'Registro & Conformidade Básica', '🟢 Totalmente Atingido', 'Ficha Oficial F 001-29 digitalizada e auditável'],
           ['Nível 2', 'Controle & Metodologia Causal', '🟢 Totalmente Atingido', 'Ishikawa 6M, 5 Porquês e Planos 5W2H ativos'],
-          ['Nível 3', 'Integração & Gestão Sem Silos', '🟢 Consolidado (Fases 8 a 11)', 'Conexão viva entre RNCs, Manuais, CHTs, Metrologia e Auditorias'],
+          ['Nível 3', 'Integração & Gestão Sem Silos', '🟢 Consolidado (Fases 8 a 11 + Rooster)', 'Conexão viva entre RNCs, Manuais, CHTs, Metrologia e Auditorias'],
           ['Nível 4', 'Prevenção & Auditoria por Exceção', '🟢 Consolidado (Fase 13)', 'Resolução por Exceção, motor sgqHealth e Alertas Preditivos'],
           ['Nível 5', 'Inteligência, Smart Import & ADRs', '🟡 Em Expansão (Fases 14 e 15)', 'Mapeamento por IA, Diff de Reconciliação, Undo e System Designer'],
         ],
@@ -1732,7 +1727,7 @@ export function gerarSlidesApresentacao(
         porQueImportante: 'Demonstra aos clientes de MRO e auditores que a empresa possui governança preditiva, resiliente e madura.',
         oQueGestaoIdentifica: 'O roadmap de evolução contínua necessário para manter a liderança em excelência e segurança de voo.',
       },
-      origemRastreabilidade: 'Diagnóstico calculado a partir dos dados reais do QualiGest SGQ.',
+      origemRastreabilidade: 'Diagnóstico calculado a partir dos dados reais do QualyQuest SGQ.',
     },
 
     // SLIDE 17: FUNCIONALIDADES E STATUS DE HOMOLOGAÇÃO
@@ -1740,92 +1735,95 @@ export function gerarSlidesApresentacao(
       id: 17,
       numero: 17,
       titulo: 'FUNCIONALIDADES E STATUS DE HOMOLOGAÇÃO',
-      subtitulo: 'Classificação rigorosa dos módulos: Implementado, Em Homologação, Planejado e Futuro',
+      subtitulo: 'Classificação rigorosa dos módulos: Implementado, Em Homologação, Pendente e Planejado',
       categoria: 'Status Sistêmico',
       bloco: 'MATURIDADE_EVOLUCAO',
       tipoVisualizacao: 'tabela-executiva',
       metricasPrincipais: [
-        { rotulo: 'Módulos Homologados', valor: '15 Fases', subtitulo: '🟢 100% Produção', status: 'sucesso' },
-        { rotulo: 'Conectores MRO', valor: 'Ativos', subtitulo: 'Impacto MRO API', status: 'sucesso' },
-        { rotulo: 'Integrações ERP', valor: 'Em Expansão', subtitulo: '🟡 Conectores H2', status: 'normal' },
-        { rotulo: 'Zero Regressão', valor: '100%', subtitulo: 'Blindagem garantida', status: 'sucesso' },
+        { rotulo: 'SGQ + Rooster MRO', valor: '15 Fases', subtitulo: '🟢 100% Implementado', status: 'sucesso' },
+        { rotulo: 'Conectores API', valor: 'Em Teste', subtitulo: '🟡 /api/impacto/*', status: 'alerta' },
+        { rotulo: 'Testes de Regras', valor: 'Pendente JRE', subtitulo: '🟠 Emulador Local', status: 'alerta' },
+        { rotulo: 'Roadmap H2/H3', valor: 'Planejado', subtitulo: '🔵 SAP / Totvs / ATA100', status: 'normal' },
       ],
       pontosChave: [
-        'Transparência executiva: distinção clara entre o que já está homologado e o que está em expansão ou planejado.',
-        '🟢 FASES 1 A 15 IMPLEMENTADAS & HOMOLOGADAS: F 001-29, 6M/5W2H, Pessoas/CHTs, Documentos com Consulta Temporal, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, System Designer ADRs e Smart Import.',
-        '🟢 CONECTORES & APIs: Impacto MRO API com endpoints proxy `/api/impacto/*` ativos para Ordens de Serviço, Ferramental, Pessoas e Aeronaves.',
-        '🔵 EXPANSÃO ROADMAP (H2-H4): Conectores adicionais de ERPs (SAP, Totvs, Quantum) e modelagem preditiva de confiabilidade de frotas ATA 100.',
+        'Transparência executiva: distinção inegociável entre o que está implementado, em homologação, pendente de ambiente e planejado.',
+        '🟢 IMPLEMENTADO: QualyQuest SGQ (Fases 1-15) + Rooster MRO (Pessoas, Treinamentos, Cursos por Frota, Matrizes de Requisitos, Modelos de Capacitação, Central de Vencimentos com 5 Estados de Validade, RNC F 001-29, 6M/5W2H, Acervo Documental na data da OS, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, ADRs e Smart Import).',
+        '🟡 EM HOMOLOGAÇÃO: Conectores e endpoints proxy `/api/impacto/*` (Impacto MRO Connect) para sincronização remota.',
+        '🟠 PENDENTE: Execução do Firebase Emulator local nos testes de regras (requer JRE no contêiner de CI/desenvolvimento).',
+        '🔵 PLANEJADO (H2/H3): Integração com ERPs externos (SAP, Totvs, Quantum), Diário de Bordo Eletrônico (ELB) e predição ATA 100.',
       ],
       tabelaDados: {
         colunas: ['Módulo / Capacidade', 'Status de Homologação', 'Estágio de Uso', 'Garantia de Segurança'],
         linhas: [
-          ['Fluxo Digital de Não Conformidades (F 001-29)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Totalmente auditável com hash Firestore'],
-          ['Matriz de Risco Aeronáutico 5x5 & 6M', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Regras estritas de validação causal'],
-          ['Gestão de Pessoas, Competências & CHTs (Fase 9)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Alerta automático e bloqueio de liberação'],
-          ['Governança Documental & Consulta Temporal (Fase 10)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Controle de histórico e data da OS'],
-          ['Metrologia, Ferramental & Créditos RBC (Fase 11)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Rastreabilidade de laudos e quarentena'],
-          ['Apresentação Gerencial Integrada 70/30 (Fase 12)', '🟢 HOMOLOGADO', 'Web e PPTX Widescreen', 'Espelho fiel e auto-fit geométrico'],
-          ['Auditoria por Requisitos & Resolução por Exceção (Fase 13)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'One Control, Multiple Requirements'],
-          ['System Designer Permanente & Registro de ADRs (Fase 14)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Documentação viva da arquitetura'],
-          ['Motor de Importação Inteligente & Reconciliação (Fase 15)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Mapeamento IA, Diff e Undo seguro'],
-          ['Conectores & API Impacto MRO Connect', '🟢 IMPLEMENTADO', 'Proxy Server-Side Seguro', 'Resiliência e fallback offline'],
+          ['Fluxo Digital de Não Conformidades (F 001-29)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Auditável com hash Firestore'],
+          ['Matriz de Risco 5x5, 6M e Planos 5W2H', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Regras estritas de validação causal'],
+          ['Rooster MRO: Pessoas, CHTs e Competências', '🟢 IMPLEMENTADO', 'Sistema Mestre Oficial', 'Alerta automático e bloqueio de aptidão'],
+          ['Rooster MRO: Cursos, Matrizes & Modelos', '🟢 IMPLEMENTADO', 'Sistema Mestre Oficial', 'Requisitos por frota, motor e cargo'],
+          ['Rooster MRO: Central de Vencimentos & Gaps', '🟢 IMPLEMENTADO', 'Sistema Mestre Oficial', '5 estados de validade estritos'],
+          ['Governança Documental & Consulta Temporal (OS)', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Acervo vigente na data do serviço'],
+          ['Metrologia, Ferramental & Créditos RBC', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'Conta corrente de créditos e quarentena'],
+          ['Apresentação Gerencial Integrada 70/30 (Web + PPTX)', '🟢 HOMOLOGADO', 'Viewer Web + Exportação', 'Espelho fiel e auto-fit geométrico'],
+          ['Auditoria por Requisitos & Resolução por Exceção', '🟢 IMPLEMENTADO', 'Uso Operacional Pleno', 'One Control, Multiple Requirements'],
+          ['Conectores & Endpoints Proxy (/api/impacto/*)', '🟡 EM HOMOLOGAÇÃO', 'Testes de Conectividade', 'Validação de resiliência e contratos'],
+          ['Suíte de Regras em Emulador Local', '🟠 PENDENTE', 'Pendente JRE no Ambiente', 'firestore.rules auditado estaticamente'],
+          ['Conectores ERP (SAP, Totvs, Quantum) & ELB', '🔵 PLANEJADO', 'Roadmap Horizonte H2/H3', 'Especificação de arquitetura aberta'],
         ],
       },
       graficoDados: {
         tipo: 'barras',
-        titulo: 'Status de Homologação dos Módulos do QualiGest',
+        titulo: 'Status de Homologação dos Módulos do Sistema',
         unidade: 'Módulos',
         itens: [
-          { rotulo: 'Implementado / Aprovado', valor: 15, cor: '#10b981' },
-          { rotulo: 'Em Homologação / Conectores', valor: 2, cor: '#f59e0b' },
-          { rotulo: 'Planejado (H3)', valor: 2, cor: '#3b82f6' },
-          { rotulo: 'Futuro (H4)', valor: 2, cor: '#64748b' },
+          { rotulo: 'Implementado / Aprovado', valor: 9, cor: '#10b981' },
+          { rotulo: 'Em Homologação (Proxy API)', valor: 1, cor: '#f59e0b' },
+          { rotulo: 'Pendente (Emulador JRE)', valor: 1, cor: '#f97316' },
+          { rotulo: 'Planejado (Roadmap H2/H3)', valor: 1, cor: '#3b82f6' },
         ],
       },
       explicacaoGrafico: {
-        oQueMostra: 'O inventário de maturidade e homologação de cada capacidade do sistema QualiGest SGQ.',
+        oQueMostra: 'O inventário de maturidade e homologação de cada capacidade do sistema QualyQuest SGQ / Rooster MRO.',
         porQueImportante: 'Garante que a organização saiba exatamente em quais ferramentas operacionais pode confiar plenamente.',
-        oQueGestaoIdentifica: 'Segurança operacional e transparência de entrega da engenharia de software do SGQ.',
+        oQueGestaoIdentifica: 'Segurança operacional e transparência de entrega da engenharia de software.',
       },
-      origemRastreabilidade: 'Matriz de Homologação e Ciclo de Releases do QualiGest SGQ (Fases 1 a 15).',
+      origemRastreabilidade: 'Matriz de Homologação e Ciclo de Releases do QualyQuest / Rooster MRO.',
     },
 
-    // SLIDE 18: ROADMAP ESTRATÉGICO DO QUALIGEST SGQ
+    // SLIDE 18: ROADMAP ESTRATÉGICO DO QUALYQUEST / ROOSTER MRO
     {
       id: 18,
       numero: 18,
-      titulo: 'ROADMAP ESTRATÉGICO DO QUALIGEST SGQ',
+      titulo: 'ROADMAP ESTRATÉGICO DO QUALYQUEST / ROOSTER',
       subtitulo: 'Horizontes de evolução contínua, compromissos de desenvolvimento e marcos de conformidade',
       categoria: 'Roadmap Estratégico',
       bloco: 'MATURIDADE_EVOLUCAO',
       tipoVisualizacao: 'roadmap',
       metricasPrincipais: [
-        { rotulo: 'Horizontes', valor: '4 Fases', subtitulo: 'Curto, Médio, Longo e Futuro', status: 'normal' },
+        { rotulo: 'Horizontes', valor: '4 Fases', subtitulo: 'H1 a H4 Estruturados', status: 'normal' },
         { rotulo: 'Fases 1 a 15', valor: '100% Ativas', subtitulo: 'Implementado e Homologado', status: 'sucesso' },
-        { rotulo: 'Próxima Entrega', valor: 'Integrações ERP', subtitulo: 'Horizonte II em curso', status: 'normal' },
+        { rotulo: 'Sistema Mestre', valor: 'Rooster MRO', subtitulo: 'Pessoas, Cursos e Validades', status: 'sucesso' },
         { rotulo: 'Zero Regressão', valor: 'Garantido', subtitulo: 'Blindagem de funcionalidades', status: 'sucesso' },
       ],
       pontosChave: [
-        'HORIZONTE 1 (Curto Prazo — Consolidado): Fases 1 a 15 100% operacionais — Ficha F 001-29, 6M/5W2H, Pessoas/CHTs, Manuais na data da OS, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, System Designer ADRs e Smart Import.',
-        'HORIZONTE 2 (Médio Prazo — Em Andamento): Expansão dos Conectores ERP/MRO (Impacto MRO API, SAP, Totvs, Quantum) e diário de bordo eletrônico (ELB).',
+        'HORIZONTE 1 (Curto Prazo — Consolidado): QualyQuest SGQ (Fases 1-15) + Rooster MRO como Sistema Mestre de Registro (Pessoas, Treinamentos, Cursos, Matrizes, Modelos de Capacitação, Central de Vencimentos com 5 Estados de Validade, Bases, RNCs F 001-29, Ishikawa 6M, 5W2H, Acervo Documental na data da OS, Metrologia RBC, Apresentação 70/30, Auditoria por Exceção, ADRs e Smart Import).',
+        'HORIZONTE 2 (Médio Prazo — Em Homologação / Andamento): Homologação dos Conectores API `/api/impacto/*`, expansão de conectores ERP externos (SAP, Totvs, Quantum) e diário de bordo eletrônico (ELB).',
         'HORIZONTE 3 (Longo Prazo — Planejado): Modelagem probabilística de falhas em frotas, confiabilidade ATA 100 e cruzamento preditivo de Diretrizes de Aeronavegabilidade (AD/DA).',
-        'HORIZONTE 4 (Futuro — Visão Estratégica): Inteligência coletiva inter-MRO anonimizada e ecossistema global aberto de inovação em segurança operacional.',
+        'HORIZONTE 4 (Futuro — Visão Estratégica): Inteligência coletiva inter-MRO anonimizada e ecossistema global aberto de benchmarking em segurança operacional.',
       ],
       tabelaDados: {
         colunas: ['Fase do Roadmap', 'Horizonte', 'Status', 'Objetivo Estratégico & Impacto'],
         linhas: [
-          ['Horizonte I — Core Consolidado (Fases 1 a 15)', 'Atual', '🟢 Implementado', 'RNCs, Pessoas, Manuais, Metrologia, Auditoria por Exceção, ADRs e Smart Import'],
-          ['Horizonte II — Conectores ERP & MRO Connect', 'Curto/Médio Prazo', '🟡 Em Andamento', 'Integração bidirecional com SAP, Totvs, Quantum e Diários Eletrônicos'],
-          ['Horizonte III — SGQ Preditivo & Frota ATA 100', 'Médio/Longo Prazo', '🔵 Planejado', 'Modelagem probabilística de falhas, confiabilidade e alertas AD/DA'],
+          ['Horizonte I — Core SGQ + Rooster MRO', 'Atual', '🟢 Implementado', 'RNCs, Pessoas, Cursos, Matrizes, Vencimentos (5 estados), Manuais na data da OS, Metrologia RBC, Apresentação 70/30'],
+          ['Horizonte II — Conectores ERP & MRO Connect', 'Curto/Médio Prazo', '🟡 Em Homologação', 'API Impacto Connect, integração com SAP, Totvs, Quantum e Diários Eletrônicos (ELB)'],
+          ['Horizonte III — SGQ Preditivo & Frota ATA 100', 'Médio/Longo Prazo', '🔵 Planejado', 'Modelagem probabilística de falhas, confiabilidade de sistemas e alertas AD/DA'],
           ['Horizonte IV — Ecossistema Global Inter-MRO', 'Longo Prazo', '⚪ Futuro', 'Rede colaborativa de lições aprendidas e benchmarking regulatório anonimizado'],
         ],
       },
       graficoDados: {
         tipo: 'roadmap',
-        titulo: 'Horizontes de Evolução Tecnológica do QualiGest',
+        titulo: 'Horizontes de Evolução Tecnológica do Sistema',
         itens: [
-          { rotulo: 'H1: Core Fases 1-15', valor: 1, cor: '#10b981', subtitulo: '100% Implementado' },
-          { rotulo: 'H2: ERPs & Conectores', valor: 2, cor: '#f59e0b', subtitulo: 'Em Homologação' },
+          { rotulo: 'H1: Core SGQ + Rooster', valor: 1, cor: '#10b981', subtitulo: '100% Implementado' },
+          { rotulo: 'H2: Conectores & ERPs', valor: 2, cor: '#f59e0b', subtitulo: 'Em Homologação' },
           { rotulo: 'H3: Predição ATA 100', valor: 3, cor: '#3b82f6', subtitulo: 'Planejado' },
           { rotulo: 'H4: Ecossistema Global', valor: 4, cor: '#64748b', subtitulo: 'Futuro' },
         ],
@@ -1835,7 +1833,7 @@ export function gerarSlidesApresentacao(
         porQueImportante: 'Garante que os investimentos tecnológicos sigam prioridades operacionais sólidas sem comprometer a estabilidade.',
         oQueGestaoIdentifica: 'Alinhamento completo entre tecnologia da informação, engenharia de manutenção e garantia da qualidade.',
       },
-      origemRastreabilidade: 'Roadmap Estratégico e Planejamento Tecnológico do QualiGest SGQ (Fases 1 a 15).',
+      origemRastreabilidade: 'Roadmap Estratégico e Planejamento Tecnológico do QualyQuest / Rooster MRO.',
     },
 
     // SLIDE 19: CONCLUSÃO EXECUTIVA E DIRETRIZES DA QUALIDADE
@@ -1856,7 +1854,7 @@ export function gerarSlidesApresentacao(
       pontosChave: [
         '“O objetivo não é criar mais controles. É transformar os controles existentes em informação útil para tomar melhores decisões.”',
         '“Qualidade sem atrito: aumentar controle, conformidade, segurança e aprendizado sem travar a operação.”',
-        '“QualiGest SGQ — Qualidade hoje. Excelência sempre.”',
+        '“QualyQuest / Rooster — Qualidade hoje. Excelência sempre.”',
         'DIRETRIZ 1: Sanear imediatamente as ações corretivas atrasadas e os treinamentos técnicos em vencimento.',
         'DIRETRIZ 2: Concluir as verificações de eficácia das RNCs que completaram o ciclo de 60 dias de observação.',
         'DIRETRIZ 3: Avançar na integração plena dos manuais de manutenção com a nova matriz de competências da equipe técnica.',
@@ -1891,23 +1889,23 @@ export function gerarSlidesApresentacao(
       bloco: 'CONCLUSAO',
       tipoVisualizacao: 'rastreabilidade',
       metricasPrincipais: [
-        { rotulo: 'Plataforma', valor: 'QualiGest SGQ', status: 'normal' },
+        { rotulo: 'Plataforma', valor: 'QualyQuest / Rooster', status: 'normal' },
         { rotulo: 'Versão', valor: 'v2.8.0-enterprise', status: 'normal' },
         { rotulo: 'Banco de Dados', valor: 'Google Cloud Firestore', status: 'normal' },
-        { rotulo: 'Hash de Integridade', valor: `QG-${Math.abs(totalRNCs * 31 + healthReport.indiceGeral * 17).toString(16).toUpperCase()}`, status: 'sucesso' },
+        { rotulo: 'Hash de Integridade', valor: `QQ-${Math.abs(totalRNCs * 31 + healthReport.indiceGeral * 17).toString(16).toUpperCase()}`, status: 'sucesso' },
       ],
       pontosChave: [
         `Organização / Tenant: ${organizacaoNome}.`,
         `Período de Extração: ${periodoFormatado}.`,
         `Timestamp da Emissão: ${dataGeracaoFormatada} às ${horaGeracaoFormatada} (Horário de Brasília).`,
-        `Coleções Auditadas: /organizations/{orgId}/nonConformities, /manuals, /validatedKnowledge, /externalAudits, /trainingRecords.`,
+        `Coleções Auditadas: /organizations/{orgId}/nonConformities, /manuals, /validatedKnowledge, /externalAudits, /trainingRecords, /courses, /persons.`,
         'As regras de segurança do Firestore (firestore.rules) garantem estrita segregação multi-tenant e imutabilidade dos registros de auditoria.',
         'Nenhum dado ou percentual contido nesta apresentação foi gerado por simulação ou aproximação arbitrária.',
       ],
       tabelaDados: {
         colunas: ['Parâmetro de Auditoria', 'Especificação no Sistema'],
         linhas: [
-          ['Módulo Emissor', 'QualityPresentationGenerator (FASE 12.2 Consolidada)'],
+          ['Módulo Emissor', 'QualityPresentationGenerator (QualyQuest / Rooster MRO)'],
           ['Perfil do Usuário Emissor', usuarioResponsavel],
           ['Mecanismo de Persistência', 'Firestore Enterprise Multi-Tenant Seguro'],
           ['Segurança de Chaves', 'Server-side isolation (Node.js Express / process.env.GEMINI_API_KEY)'],

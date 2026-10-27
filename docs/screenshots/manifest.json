@@ -1,0 +1,86 @@
+[
+  {
+    "key": "dashboard_overview",
+    "label": "Painel Executivo & Dashboard da Qualidade",
+    "filePng": "docs/screenshots/dashboard_overview.png",
+    "fileJpg": "docs/screenshots/dashboard_overview.jpg",
+    "description": "Monitoramento executivo de Não Conformidades (RNC F 001-29), Matriz de Avaliação de Risco 5x5 (MOMQ / RBAC 145), incidências por setor e alertas normativos."
+  },
+  {
+    "key": "colaboradores_lista",
+    "label": "Gestão de Pessoas & Colaboradores (Rooster MRO)",
+    "filePng": "docs/screenshots/colaboradores_lista.png",
+    "fileJpg": "docs/screenshots/colaboradores_lista.jpg",
+    "description": "Cadastro mestre de colaboradores integrado ao Rooster MRO, com matrícula, CANAC, cargo, base operacional (Hubs e Estações) e situação cadastral."
+  },
+  {
+    "key": "ficha_mecanico",
+    "label": "Dossiê do Colaborador & Ficha Técnica",
+    "filePng": "docs/screenshots/ficha_mecanico.png",
+    "fileJpg": "docs/screenshots/ficha_mecanico.jpg",
+    "description": "Ficha completa do colaborador com qualificações CHT ANAC (CEL/GMP/AVI), habilitações por frota/motor (CFM56, LEAP-1B) e histórico de capacitações."
+  },
+  {
+    "key": "treinamentos_qualificacoes",
+    "label": "Registros de Treinamentos e Qualificações",
+    "filePng": "docs/screenshots/treinamentos_qualificacoes.png",
+    "fileJpg": "docs/screenshots/treinamentos_qualificacoes.jpg",
+    "description": "Histórico auditável de treinamentos concluídos com datas de realização, validades, número de certificado, instrutor e rastreabilidade de reciclagens."
+  },
+  {
+    "key": "catalogo_cursos",
+    "label": "Catálogo de Treinamentos e Cursos",
+    "filePng": "docs/screenshots/catalogo_cursos.png",
+    "fileJpg": "docs/screenshots/catalogo_cursos.jpg",
+    "description": "Catálogo canônico de cursos organizados por frota e doutrinação, com cargas horárias, modalidades e periodicidades em meses de calendário."
+  },
+  {
+    "key": "matriz_treinamento",
+    "label": "Matrizes de Treinamento & Requisitos de Frota",
+    "filePng": "docs/screenshots/matriz_treinamento.png",
+    "fileJpg": "docs/screenshots/matriz_treinamento.jpg",
+    "description": "Matriz cruzada de capacitação técnica por frota (B737, A320, E190), motores e doutrinação, cruzando postos e requisitos operacionais."
+  },
+  {
+    "key": "modelos_capacitacao",
+    "label": "Modelos de Capacitação Operacional",
+    "filePng": "docs/screenshots/modelos_capacitacao.png",
+    "fileJpg": "docs/screenshots/modelos_capacitacao.jpg",
+    "description": "Modelos padronizados de capacitação para atribuição de requisitos de treinamento por cargo e função técnica."
+  },
+  {
+    "key": "vencimentos_gaps",
+    "label": "Central Preditiva de Vencimentos & Gaps",
+    "filePng": "docs/screenshots/vencimentos_gaps.png",
+    "fileJpg": "docs/screenshots/vencimentos_gaps.jpg",
+    "description": "Central de controle preditivo de validades de treinamentos e CHTs, distinguindo os 5 estados canônicos de validade com alertas aos 60, 30 e 15 dias."
+  },
+  {
+    "key": "cadastros_bases",
+    "label": "Bases & Locais Operacionais (Mestre)",
+    "filePng": "docs/screenshots/cadastros_bases.png",
+    "fileJpg": "docs/screenshots/cadastros_bases.jpg",
+    "description": "Gestão unificada de bases permanentes (Hubs), estações de linha e sites de atendimento com códigos IATA/ICAO e auditoria de transferência."
+  },
+  {
+    "key": "relatorio_rnc",
+    "label": "Gestão de Não Conformidades (RNC F 001-29)",
+    "filePng": "docs/screenshots/relatorio_rnc.png",
+    "fileJpg": "docs/screenshots/relatorio_rnc.jpg",
+    "description": "Gestão do ciclo completo de RNCs com triagem de risco, investigação de causa raiz (Ishikawa 6M + 5 Porquês) e planos de ação CAPA 5W2H."
+  },
+  {
+    "key": "controle_documental",
+    "label": "Controle Documental & Acervo Técnico",
+    "filePng": "docs/screenshots/controle_documental.png",
+    "fileJpg": "docs/screenshots/controle_documental.jpg",
+    "description": "Acervo de manuais técnicos (AMM, CMM, MOE, POP) com controle de revisões vigentes e motor de consulta temporal na data da Ordem de Serviço."
+  },
+  {
+    "key": "apresentacao_gerencial",
+    "label": "Apresentação Gerencial Oficial 70/30",
+    "filePng": "docs/screenshots/apresentacao_gerencial.png",
+    "fileJpg": "docs/screenshots/apresentacao_gerencial.jpg",
+    "description": "Espelho executivo com 20 slides corporativos SSoT em proporção 70/30 (70% Situação Real, 30% Evolução), auto-fit widescreen e exportação PPTX."
+  }
+]

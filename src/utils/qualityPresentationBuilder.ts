@@ -559,7 +559,7 @@ export async function exportarApresentacaoPPTX(
   });
 
   // Rodapé da Capa
-  slideCapa.addText(`QualiGest SGQ ${apresentacao.versaoSistema} | Documento Oficial Auditável | RBAC 145 / ISO 9001:2015`, {
+  slideCapa.addText(`QualyQuest / Rooster SGQ ${apresentacao.versaoSistema} | Documento Oficial Auditável | RBAC 145 / ISO 9001:2015`, {
     x: 1.0,
     y: 6.8,
     w: 11.33,
@@ -1190,7 +1190,7 @@ export async function exportarApresentacaoPPTX(
     }
 
     // RODAPÉ DO SLIDE
-    slide.addText(`QualiGest SGQ v2.8.0 | Organização: ${apresentacao.organizacao} | Fonte: ${slideData.origemRastreabilidade}`, {
+    slide.addText(`QualyQuest / Rooster SGQ v2.8.0 | Organização: ${apresentacao.organizacao} | Fonte: ${slideData.origemRastreabilidade}`, {
       x: 0.8,
       y: 7.05,
       w: 11.7,
@@ -1221,7 +1221,7 @@ export async function exportarApresentacaoPPTX(
  */
 export function exportarApresentacaoCSV(apresentacao: RelatorioApresentacaoQualidade): void {
   const linhasCSV: string[] = [];
-  linhasCSV.push(`RELATÓRIO GERENCIAL DA QUALIDADE - QUALIGEST SGQ`);
+  linhasCSV.push(`RELATÓRIO GERENCIAL DA QUALIDADE - QUALYQUEST / ROOSTER SGQ`);
   linhasCSV.push(`Organização;${apresentacao.organizacao}`);
   linhasCSV.push(`Período;${apresentacao.resumoExecutivo.periodoFormatado}`);
   linhasCSV.push(`Data de Emissão;${apresentacao.geradoEm}`);
