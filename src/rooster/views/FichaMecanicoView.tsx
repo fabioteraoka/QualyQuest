@@ -364,11 +364,13 @@ export const FichaMecanicoView: React.FC = () => {
               onChange={(e) => setSelectedPessoaId(e.target.value)}
               className="w-full pl-3 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-md font-semibold text-slate-900 focus:outline-hidden focus:ring-1 focus:ring-sky-600 cursor-pointer"
             >
-              {db.pessoas.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.id} — {p.nome} ({p.categoria} · {p.base_principal_id})
-                </option>
-              ))}
+              {[...db.pessoas]
+                .sort((a, b) => a.nome.localeCompare(b.nome))
+                .map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.nome}
+                  </option>
+                ))}
             </select>
           </div>
         </div>

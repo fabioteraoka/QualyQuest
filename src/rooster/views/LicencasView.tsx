@@ -408,11 +408,13 @@ export const LicencasView: React.FC = () => {
                 onChange={(e) => setPessoaId(e.target.value)}
                 className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
               >
-                {db.pessoas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.id} — {p.nome} {p.canac ? `(CANAC: ${p.canac})` : ''}
-                  </option>
-                ))}
+                {[...db.pessoas]
+                  .sort((a, b) => a.nome.localeCompare(b.nome))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.nome}
+                    </option>
+                  ))}
               </select>
             </div>
 

@@ -706,11 +706,13 @@ export const TreinamentosView: React.FC = () => {
                   required
                 >
                   <option value="">Selecione o Colaborador...</option>
-                  {db.pessoas.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.nome} {p.canac ? `(CANAC: ${p.canac})` : `(${p.id})`}
-                    </option>
-                  ))}
+                  {[...db.pessoas]
+                    .sort((a, b) => a.nome.localeCompare(b.nome))
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome}
+                      </option>
+                    ))}
                 </select>
               </div>
 
