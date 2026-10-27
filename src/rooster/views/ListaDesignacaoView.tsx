@@ -1,35 +1,124 @@
 import React, { useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Check,
+  CheckCircle2,
   ChevronDown,
   Download,
+  Edit2,
   Filter,
+  Info,
   Layers,
   MapPin,
   Palette,
+  Plane,
   Printer,
+  Save,
+  Shield,
+  Sliders,
   Sparkles,
   UserCheck,
+  X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { Base, ItemStatus, Licenca, Pessoa } from '../types';
+import {
+  AeronaveDesignacao,
+  Base,
+  DesignacaoPessoa,
+  FuncaoDesignacao,
+  ItemStatus,
+  Licenca,
+  Pessoa,
+  SimNaoVazio,
+} from '../types';
 import {
   calcularDiasParaVencer,
   calcularStatusLicenca,
   formatarDataBr,
   getStatusColor,
 } from '../utils/businessRules';
+import { repository } from '../services/storage';
 
 export const ListaDesignacaoView: React.FC = () => {
-  const { db, filtroBase, setFiltroBase, dataReferencia, faixas, triggerPrint } = useApp();
+  const {
+    db,
+    filtroBase,
+    setFiltroBase,
+    dataReferencia,
+    faixas,
+    triggerPrint,
+    currentUser,
+    showToast,
+    setActiveTab,
+  } = useApp();
 
   const [destacarVencimentos, setDestacarVencimentos] = useState<boolean>(true);
   const [imprimirTodasAsBases, setImprimirTodasAsBases] = useState<boolean>(false);
+  const [exibirGuiaOperacional, setExibirGuiaOperacional] = useState<boolean>(true);
+
+  // Estado do Modal de Edição de Designação & Frota
+  const [mecanicoParaEditar, setMecanicoParaEditar] = useState<Pessoa | null>(null);
+  const [editImp, setEditImp] = useState('');
+  const [editEasaType, setEditEasaType] = useState('N/A');
+  const [editIncluirNaLista, setEditIncluirNaLista] = useState(true);
+  const [editBases, setEditBases] = useState<string[]>([]);
+  const [editFuncoes, setEditFuncoes] = useState<Record<FuncaoDesignacao, SimNaoVazio>>({
+    Executante: 'SIM',
+    Supervisor: 'NÃO',
+    IIO: 'NÃO',
+    Inspetor: 'NÃO',
+    APRS: 'NÃO',
+  });
+  const [editAeronaves, setEditAeronaves] = useState<Record<AeronaveDesignacao, SimNaoVazio>>({
+    B737: '',
+    E190E2: '',
+    A320FAM: '',
+    A330: '',
+    B767: '',
+    B777: '',
+  });
+  const [isSavingModal, setIsSavingModal] = useState(false);
 
   // Available bases for filter
   const baseOptions = [{ id: 'TOTAL', nome: 'Todas as Bases (TOTAL)' }, ...db.bases];
 
-  // Helper to extract designation row for a mechanic
+  const funcoesLista: Array<{
+    id: FuncaoDesignacao;
+    label: string;
+    finalidade: string;
+    destaque?: boolean;
+  }> = [
+    {
+      id: 'Executante',
+      label: 'Executante',
+      finalidade: 'Apto a EXECUTAR tarefas físicas de manutenção nas frotas designadas',
+    },
+    {
+      id: 'APRS',
+      label: 'APRS (CRS / RTS)',
+      finalidade: 'Apto a ASSINAR e emitir Liberação de Manutenção (Release to Service)',
+      destaque: true,
+    },
+    {
+      id: 'Supervisor',
+      label: 'Supervisor',
+      finalidade: 'Supervisão técnica de equipe e coordenação operacional de turno',
+    },
+    {
+      id: 'IIO',
+      label: 'IIO (RII)',
+      finalidade: 'Inspeção de Itens Obrigatórios / Críticos para Segurança de Voo',
+    },
+    {
+      id: 'Inspetor',
+      label: 'Inspetor',
+      finalidade: 'Inspeção de conformidade técnica e garantia da qualidade',
+    },
+  ];
+
+  const aeronavesLista: AeronaveDesignacao[] = ['B737', 'E190E2', 'A320FAM', 'A330', 'B767', 'B777'];
+
+  // Helper to extract designation row for a mechanic (sem CCT)
   const getDesignacaoData = (pessoa: Pessoa) => {
     const desigPessoa = db.designacoesPessoa.find((dp) => dp.pessoa_id === pessoa.id);
     const basesPessoa = db.designacoesBase
@@ -38,11 +127,6 @@ export const ListaDesignacaoView: React.FC = () => {
     const baseTexto = basesPessoa.length > 0 ? basesPessoa.join('/') : pessoa.base_principal_id;
 
     const licencasPessoa = db.licencas.filter((l) => l.pessoa_id === pessoa.id);
-
-    // CCT (License numbers)
-    const cctAvi = licencasPessoa.find((l) => l.orgao === 'ANAC' && l.tipo === 'CCT' && l.habilitacao === 'AVI');
-    const cctCel = licencasPessoa.find((l) => l.orgao === 'ANAC' && l.tipo === 'CCT' && l.habilitacao === 'CEL');
-    const cctGmp = licencasPessoa.find((l) => l.orgao === 'ANAC' && l.tipo === 'CCT' && l.habilitacao === 'GMP');
 
     // CHT (Expiration dates)
     const chtLic = licencasPessoa.find((l) => l.orgao === 'ANAC' && l.tipo === 'CHT');
@@ -73,9 +157,6 @@ export const ListaDesignacaoView: React.FC = () => {
       easaType: desigPessoa?.easa_type || 'N/A',
       baseTexto,
       basesList: basesPessoa,
-      cctAvi: cctAvi?.numero || '',
-      cctCel: cctCel?.numero || '',
-      cctGmp: cctGmp?.numero || '',
       licencaNumero,
       chtAvi,
       chtCel,
@@ -123,7 +204,119 @@ export const ListaDesignacaoView: React.FC = () => {
       })
       .sort((a, b) => a.nome.localeCompare(b.nome))
       .map(getDesignacaoData);
-  }, [db.pessoas, db.designacoesPessoa, db.designacoesBase, db.licencas, db.designacoesFuncao, db.designacoesAeronave, filtroBase]);
+  }, [
+    db.pessoas,
+    db.designacoesPessoa,
+    db.designacoesBase,
+    db.licencas,
+    db.designacoesFuncao,
+    db.designacoesAeronave,
+    filtroBase,
+  ]);
+
+  // Abrir Modal de Edição Completa para um Mecânico
+  const handleAbrirModal = (pessoa: Pessoa) => {
+    const desigPessoa = db.designacoesPessoa.find((dp) => dp.pessoa_id === pessoa.id);
+    const basesPessoa = db.designacoesBase
+      .filter((dbItem) => dbItem.pessoa_id === pessoa.id)
+      .map((b) => b.base_id);
+
+    setEditImp(desigPessoa?.imp || '');
+    setEditEasaType(desigPessoa?.easa_type || 'N/A');
+    setEditIncluirNaLista(desigPessoa?.incluir_na_lista ?? true);
+    setEditBases(basesPessoa.length > 0 ? basesPessoa : [pessoa.base_principal_id]);
+
+    const funcs: Record<FuncaoDesignacao, SimNaoVazio> = {
+      Executante: 'SIM',
+      Supervisor: 'NÃO',
+      IIO: 'NÃO',
+      Inspetor: 'NÃO',
+      APRS: 'NÃO',
+    };
+    (['Executante', 'Supervisor', 'IIO', 'Inspetor', 'APRS'] as FuncaoDesignacao[]).forEach((f) => {
+      const registro = db.designacoesFuncao.find((df) => df.pessoa_id === pessoa.id && df.funcao === f);
+      if (registro) funcs[f] = registro.valor;
+    });
+    setEditFuncoes(funcs);
+
+    const aeros: Record<AeronaveDesignacao, SimNaoVazio> = {
+      B737: '',
+      E190E2: '',
+      A320FAM: '',
+      A330: '',
+      B767: '',
+      B777: '',
+    };
+    aeronavesLista.forEach((a) => {
+      const registro = db.designacoesAeronave.find((da) => da.pessoa_id === pessoa.id && da.aeronave === a);
+      if (registro) aeros[a] = registro.valor;
+    });
+    setEditAeronaves(aeros);
+
+    setMecanicoParaEditar(pessoa);
+  };
+
+  // Salvar edições do Modal no Firestore/Storage
+  const handleSalvarModal = async () => {
+    if (!mecanicoParaEditar) return;
+    setIsSavingModal(true);
+    try {
+      const nomeUsuario = currentUser.nome || 'Admin';
+
+      // 1. Dados gerais da designação
+      await repository.saveDesignacaoPessoa(
+        {
+          pessoa_id: mecanicoParaEditar.id,
+          imp: editImp.trim(),
+          easa_type: editEasaType.trim() || 'N/A',
+          incluir_na_lista: editIncluirNaLista,
+        },
+        nomeUsuario
+      );
+
+      // 2. Bases designadas
+      await repository.setDesignacaoBasesForPessoa(mecanicoParaEditar.id, editBases, nomeUsuario);
+
+      // 3. Funções designadas (Executante, APRS, Supervisor, etc.)
+      for (const func of ['Executante', 'Supervisor', 'IIO', 'Inspetor', 'APRS'] as FuncaoDesignacao[]) {
+        await repository.setDesignacaoFuncao(mecanicoParaEditar.id, func, editFuncoes[func] || '', nomeUsuario);
+      }
+
+      // 4. Aeronaves / Frotas designadas
+      for (const aero of aeronavesLista) {
+        await repository.setDesignacaoAeronave(mecanicoParaEditar.id, aero, editAeronaves[aero] || '', nomeUsuario);
+      }
+
+      showToast(`Designações e autorizações de frota de ${mecanicoParaEditar.nome} atualizadas com sucesso!`);
+      setMecanicoParaEditar(null);
+    } catch (err: any) {
+      showToast(`Erro ao salvar designações: ${err?.message || err}`);
+    } finally {
+      setIsSavingModal(false);
+    }
+  };
+
+  // Quick In-Place Toggle para Funções
+  const handleQuickToggleFuncao = async (pessoaId: string, funcao: FuncaoDesignacao, atual: string) => {
+    if (currentUser.perfil === 'Leitor') return;
+    const proximo: SimNaoVazio = atual === 'SIM' ? 'NÃO' : atual === 'NÃO' ? '' : 'SIM';
+    try {
+      await repository.setDesignacaoFuncao(pessoaId, funcao, proximo, currentUser.nome);
+    } catch (err: any) {
+      showToast(`Erro ao atualizar função: ${err?.message || err}`);
+    }
+  };
+
+  // Quick In-Place Toggle para Aeronaves
+  const handleQuickToggleAero = async (pessoaId: string, aero: AeronaveDesignacao, atual: string) => {
+    if (currentUser.perfil === 'Leitor') return;
+    const proximo: SimNaoVazio = atual === 'SIM' ? 'NÃO' : atual === 'NÃO' ? '' : 'SIM';
+    try {
+      await repository.setDesignacaoAeronave(pessoaId, aero, proximo, currentUser.nome);
+    } catch (err: any) {
+      showToast(`Erro ao atualizar aeronave: ${err?.message || err}`);
+    }
+  };
 
   // Color helper for CHT dates
   const renderChtDateCell = (lic: Licenca | undefined) => {
@@ -161,14 +354,23 @@ export const ListaDesignacaoView: React.FC = () => {
     );
   };
 
-  const renderSimNaoCell = (valor: string, bgGray = false) => {
+  const renderSimNaoCell = (
+    valor: string,
+    bgGray = false,
+    onClick?: () => void,
+    title?: string
+  ) => {
     const isSim = valor === 'SIM';
     const isNao = valor === 'NÃO';
     return (
       <td
-        className={`p-1 text-center font-bold text-[10px] border border-slate-300 ${
+        onClick={onClick}
+        title={title}
+        className={`p-1 text-center font-bold text-[10px] border border-slate-300 select-none transition-colors ${
           bgGray ? 'bg-[#EDEDED]' : ''
-        } ${isSim ? 'text-slate-900' : isNao ? 'text-slate-400' : 'text-transparent'}`}
+        } ${isSim ? 'text-slate-900 font-black' : isNao ? 'text-slate-400' : 'text-transparent'} ${
+          onClick ? 'cursor-pointer hover:bg-sky-100 hover:text-sky-950 print:cursor-default' : ''
+        }`}
       >
         {valor || '-'}
       </td>
@@ -191,7 +393,7 @@ export const ListaDesignacaoView: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           {/* Base selector */}
           <div className="flex items-center gap-1.5 text-xs">
             <MapPin className="w-4 h-4 text-sky-800" />
@@ -233,6 +435,16 @@ export const ListaDesignacaoView: React.FC = () => {
             </div>
           </div>
 
+          {/* Botão de Atalho para Matriz Completa de Designações */}
+          <button
+            onClick={() => setActiveTab('designacoes_crud')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-md text-xs font-semibold transition-colors cursor-pointer border border-slate-300"
+            title="Abrir tabela matriz com visão geral de todas as designações e frotas"
+          >
+            <Sliders className="w-3.5 h-3.5 text-slate-600" />
+            <span>Matriz Geral de Designações</span>
+          </button>
+
           {/* Print Button */}
           <button
             onClick={triggerPrint}
@@ -243,6 +455,37 @@ export const ListaDesignacaoView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Painel Informativo de Regras de Execução e Assinatura por Frota (RBAC 145) */}
+      {exibirGuiaOperacional && (
+        <div className="no-print bg-sky-50/80 border border-sky-200 rounded-lg p-3 text-xs text-sky-950 flex items-start justify-between gap-3 shadow-2xs">
+          <div className="flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-sky-700 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-bold flex items-center gap-2">
+                <span>Como designar mecânicos para executar e assinar a manutenção por frota:</span>
+                <span className="text-[10px] bg-sky-200 text-sky-900 px-1.5 py-0.2 rounded font-semibold">
+                  RBAC 145 / EASA
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-700 leading-relaxed">
+                • <strong>Apto a Executar:</strong> Marque a frota correspondente como <strong>SIM</strong> e a função{' '}
+                <strong className="text-slate-900">Executante = SIM</strong>.<br />
+                • <strong>Apto a Assinar (Liberação de Manutenção / CRS / RTS):</strong> Marque a frota como{' '}
+                <strong>SIM</strong> e a função <strong className="text-pink-900">APRS = SIM</strong> (Autorização de Pessoal para Retorno ao Serviço).<br />
+                • Você pode clicar diretamente no botão <strong>"Editar"</strong> na linha de cada mecânico para alterar bases, funções e frotas, ou clicar diretamente nas células da tabela para alternar SIM/NÃO.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setExibirGuiaOperacional(false)}
+            className="text-slate-400 hover:text-slate-600 p-1 shrink-0 cursor-pointer"
+            title="Dispensar aviso"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Screen Warning when rows > 40 */}
       {rows.length > db.configuracao.limite_linhas_pagina && (
@@ -318,7 +561,8 @@ export const ListaDesignacaoView: React.FC = () => {
                 <th rowSpan={3} className="border border-slate-300 px-1 py-1 text-center w-14">
                   IMP
                 </th>
-                <th colSpan={9} className="border border-slate-300 px-2 py-1 bg-slate-300 text-slate-950 font-black">
+                {/* LICENSE: CANAC (1) + CHT (4) + FAA (2) = 7 columns */}
+                <th colSpan={7} className="border border-slate-300 px-2 py-1 bg-slate-300 text-slate-950 font-black">
                   LICENSE (COM 200607-05 / ANAC)
                 </th>
                 <th rowSpan={3} className="border border-slate-300 px-1 py-1 text-center w-14">
@@ -338,15 +582,18 @@ export const ListaDesignacaoView: React.FC = () => {
                 >
                   AERONAVES
                 </th>
+                <th
+                  rowSpan={3}
+                  className="no-print border border-slate-300 px-2 py-1 text-center bg-slate-200 text-slate-900 font-bold min-w-[65px]"
+                >
+                  AÇÕES
+                </th>
               </tr>
 
-              {/* Row 2 of Header: License Sub-blocks and Validity text banner */}
+              {/* Row 2 of Header: License Sub-blocks */}
               <tr className="bg-slate-100 text-slate-900 text-center font-bold text-[9px]">
                 <th rowSpan={2} className="border border-slate-300 px-1 py-0.5 w-14">
                   CANAC
-                </th>
-                <th colSpan={3} className="border border-slate-300 px-1 py-0.5 bg-slate-200">
-                  CCT License
                 </th>
                 <th colSpan={4} className="border border-slate-300 px-1 py-0.5 bg-slate-200">
                   CHT License and expiration
@@ -371,10 +618,6 @@ export const ListaDesignacaoView: React.FC = () => {
 
               {/* Row 3 of Header: Lowest level column names */}
               <tr className="bg-slate-50 text-slate-700 text-center font-semibold text-[8px]">
-                {/* CCT */}
-                <th className="border border-slate-300 px-1 py-0.5">AVI</th>
-                <th className="border border-slate-300 px-1 py-0.5">CEL</th>
-                <th className="border border-slate-300 px-1 py-0.5">GMP</th>
                 {/* CHT */}
                 <th className="border border-slate-300 px-1 py-0.5 min-w-[55px]">Licença Nº</th>
                 <th className="border border-slate-300 px-1 py-0.5 min-w-[62px]">AVI</th>
@@ -403,12 +646,12 @@ export const ListaDesignacaoView: React.FC = () => {
             <tbody className="divide-y divide-slate-200">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={24} className="p-8 text-center text-slate-500 text-xs">
+                  <td colSpan={22} className="p-8 text-center text-slate-500 text-xs">
                     Nenhum mecânico designado para a base selecionada ({filtroBase}).
                   </td>
                 </tr>
               ) : (
-                rows.map((r, index) => (
+                rows.map((r) => (
                   <tr key={r.pessoa.id} className="hover:bg-sky-50/40 print:hover:bg-transparent">
                     {/* BASE */}
                     <td className="p-1 text-center font-mono font-bold text-[9px] text-slate-700 border border-slate-300 whitespace-nowrap">
@@ -428,17 +671,6 @@ export const ListaDesignacaoView: React.FC = () => {
                     {/* CANAC */}
                     <td className="p-1 text-center font-mono text-slate-800 border border-slate-300 text-[10px]">
                       {r.pessoa.canac || '-'}
-                    </td>
-
-                    {/* CCT License AVI / CEL / GMP */}
-                    <td className="p-1 text-center font-mono text-[9px] text-slate-600 border border-slate-300">
-                      {r.cctAvi || '-'}
-                    </td>
-                    <td className="p-1 text-center font-mono text-[9px] text-slate-600 border border-slate-300">
-                      {r.cctCel || '-'}
-                    </td>
-                    <td className="p-1 text-center font-mono text-[9px] text-slate-600 border border-slate-300">
-                      {r.cctGmp || '-'}
                     </td>
 
                     {/* CHT Licença Nº */}
@@ -464,20 +696,109 @@ export const ListaDesignacaoView: React.FC = () => {
                       {r.easaType}
                     </td>
 
-                    {/* Funções de Designação (#EDEDED background) */}
-                    {renderSimNaoCell(r.executante, true)}
-                    {renderSimNaoCell(r.supervisor, true)}
-                    {renderSimNaoCell(r.iio, true)}
-                    {renderSimNaoCell(r.inspetor, true)}
-                    {renderSimNaoCell(r.aprs, true)}
+                    {/* Funções de Designação (#EDEDED background) - Com suporte a clique rápido */}
+                    {renderSimNaoCell(
+                      r.executante,
+                      true,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleFuncao(r.pessoa.id, 'Executante', r.executante)
+                        : undefined,
+                      'Executante (Apto a executar manutenção). Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.supervisor,
+                      true,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleFuncao(r.pessoa.id, 'Supervisor', r.supervisor)
+                        : undefined,
+                      'Supervisor. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.iio,
+                      true,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleFuncao(r.pessoa.id, 'IIO', r.iio)
+                        : undefined,
+                      'IIO (Inspeção de Itens Obrigatórios / RII). Clique para alternar'
+                    )}
+                    {renderSimNaoCell(
+                      r.inspetor,
+                      true,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleFuncao(r.pessoa.id, 'Inspetor', r.inspetor)
+                        : undefined,
+                      'Inspetor de Qualidade. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.aprs,
+                      true,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleFuncao(r.pessoa.id, 'APRS', r.aprs)
+                        : undefined,
+                      'APRS (Apto a ASSINAR e liberar manutenção - CRS/RTS). Clique para alternar'
+                    )}
 
-                    {/* Frotas de Designação */}
-                    {renderSimNaoCell(r.b737)}
-                    {renderSimNaoCell(r.e190)}
-                    {renderSimNaoCell(r.a320)}
-                    {renderSimNaoCell(r.a330)}
-                    {renderSimNaoCell(r.b767)}
-                    {renderSimNaoCell(r.b777)}
+                    {/* Frotas de Designação - Com suporte a clique rápido */}
+                    {renderSimNaoCell(
+                      r.b737,
+                      false,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleAero(r.pessoa.id, 'B737', r.b737)
+                        : undefined,
+                      'Frota B737. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.e190,
+                      false,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleAero(r.pessoa.id, 'E190E2', r.e190)
+                        : undefined,
+                      'Frota E190E2. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.a320,
+                      false,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleAero(r.pessoa.id, 'A320FAM', r.a320)
+                        : undefined,
+                      'Frota A320FAM. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.a330,
+                      false,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleAero(r.pessoa.id, 'A330', r.a330)
+                        : undefined,
+                      'Frota A330. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.b767,
+                      false,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleAero(r.pessoa.id, 'B767', r.b767)
+                        : undefined,
+                      'Frota B767. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+                    {renderSimNaoCell(
+                      r.b777,
+                      false,
+                      currentUser.perfil !== 'Leitor'
+                        ? () => handleQuickToggleAero(r.pessoa.id, 'B777', r.b777)
+                        : undefined,
+                      'Frota B777. Clique para alternar SIM/NÃO/Vazio'
+                    )}
+
+                    {/* Coluna AÇÕES */}
+                    <td className="no-print p-1 text-center border border-slate-300 whitespace-nowrap">
+                      <button
+                        onClick={() => handleAbrirModal(r.pessoa)}
+                        className="px-2 py-0.5 bg-sky-900 hover:bg-sky-800 text-white font-bold rounded text-[9px] transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                        title={`Editar designações, bases e autorizações de frota de ${r.pessoa.nome}`}
+                      >
+                        <Edit2 className="w-2.5 h-2.5 text-sky-300" />
+                        <span>Editar</span>
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -522,6 +843,322 @@ export const ListaDesignacaoView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* ========================================================================= */}
+      {/* MODAL DE EDIÇÃO DE DESIGNAÇÃO & AUTORIZAÇÃO DE FROTA                      */}
+      {/* ========================================================================= */}
+      {mecanicoParaEditar && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-5 border border-slate-200 animate-scale-in">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-sky-100 text-sky-800 rounded-lg">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Designação Técnica &amp; Autorizações de Frota
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Mecânico: <strong className="text-slate-800">{mecanicoParaEditar.nome}</strong> (CANAC:{' '}
+                    <span className="font-mono">{mecanicoParaEditar.canac || 'N/A'}</span>)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMecanicoParaEditar(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Seção 1: Bases Operacionais Designadas */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-sky-700" />
+                <span>Bases Operacionais Autorizadas (Estações Designadas)</span>
+              </label>
+              <div className="flex flex-wrap items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+                {db.bases.map((base) => {
+                  const isChecked = editBases.includes(base.id);
+                  return (
+                    <button
+                      key={base.id}
+                      type="button"
+                      onClick={() => {
+                        if (isChecked) {
+                          setEditBases(editBases.filter((b) => b !== base.id));
+                        } else {
+                          setEditBases([...editBases, base.id]);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs font-bold rounded-md border transition cursor-pointer flex items-center gap-1.5 ${
+                        isChecked
+                          ? 'bg-sky-900 text-white border-sky-900 shadow-2xs'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>{base.id}</span>
+                      <span className="text-[10px] font-normal opacity-80">({base.nome})</span>
+                      {isChecked && <Check className="w-3 h-3 text-sky-300" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Seção 2: Dados de Registro da Designação */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Matrícula IMP (Designação)
+                </label>
+                <input
+                  type="text"
+                  value={editImp}
+                  onChange={(e) => setEditImp(e.target.value)}
+                  placeholder="Ex: IMP-015"
+                  className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono uppercase bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  EASA Type Rating
+                </label>
+                <input
+                  type="text"
+                  value={editEasaType}
+                  onChange={(e) => setEditEasaType(e.target.value)}
+                  placeholder="Ex: B1, B2 ou N/A"
+                  className="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Lista Oficial F 001-29
+                </label>
+                <div className="flex items-center gap-2 pt-1">
+                  <label className="inline-flex items-center gap-1.5 text-xs font-semibold cursor-pointer text-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={editIncluirNaLista}
+                      onChange={(e) => setEditIncluirNaLista(e.target.checked)}
+                      className="rounded text-sky-900 focus:ring-sky-600 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Exibir na Lista Oficial</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Seção 3: Funções Designadas (Executar vs Assinar/APRS) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Shield className="w-3.5 h-3.5 text-pink-700" />
+                  <span>Funções Designadas pela Organização</span>
+                </label>
+                <span className="text-[10px] text-slate-500">
+                  Clique nos botões para alternar (SIM / NÃO / Vazio)
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                {funcoesLista.map((f) => {
+                  const val = editFuncoes[f.id] || '';
+                  const isSim = val === 'SIM';
+                  const isNao = val === 'NÃO';
+
+                  return (
+                    <div
+                      key={f.id}
+                      className={`p-2.5 rounded-lg border flex items-center justify-between gap-3 ${
+                        f.destaque ? 'bg-pink-50/60 border-pink-200' : 'bg-white border-slate-200'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-xs text-slate-900">{f.label}</span>
+                          {f.destaque && (
+                            <span className="text-[9px] bg-pink-200 text-pink-900 font-bold px-1.5 py-0.2 rounded">
+                              Assina Manutenção
+                            </span>
+                          )}
+                          {f.id === 'Executante' && (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">
+                              Executa Manutenção
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-500 line-clamp-1">{f.finalidade}</p>
+                      </div>
+
+                      <div className="inline-flex rounded border border-slate-300 bg-slate-100 p-0.5 text-xs font-bold shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setEditFuncoes({ ...editFuncoes, [f.id]: 'SIM' })}
+                          className={`px-2 py-0.5 rounded transition cursor-pointer text-[10px] ${
+                            isSim ? 'bg-emerald-700 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          SIM
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditFuncoes({ ...editFuncoes, [f.id]: 'NÃO' })}
+                          className={`px-2 py-0.5 rounded transition cursor-pointer text-[10px] ${
+                            isNao ? 'bg-slate-700 text-white shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          NÃO
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditFuncoes({ ...editFuncoes, [f.id]: '' })}
+                          className={`px-1.5 py-0.5 rounded transition cursor-pointer text-[10px] ${
+                            !val ? 'bg-amber-500 text-slate-950 shadow-2xs font-bold' : 'text-slate-400 hover:text-slate-600'
+                          }`}
+                          title="Sem decisão / Pendente"
+                        >
+                          -
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Seção 4: Frotas e Aeronaves Autorizadas (Aptidão de Frota) */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                  <Plane className="w-3.5 h-3.5 text-sky-700" />
+                  <span>Frotas / Aeronaves Designadas (Aptidão Operacional por Modelo)</span>
+                </label>
+                <span className="text-[10px] text-slate-500">
+                  Indique quais frotas este mecânico está apto
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                {aeronavesLista.map((aero) => {
+                  const val = editAeronaves[aero] || '';
+                  const isSim = val === 'SIM';
+                  const isNao = val === 'NÃO';
+
+                  const aptoExecutar = isSim && editFuncoes.Executante === 'SIM';
+                  const aptoAssinar = isSim && editFuncoes.APRS === 'SIM';
+
+                  return (
+                    <div
+                      key={aero}
+                      className={`p-2.5 rounded-lg border transition ${
+                        isSim
+                          ? 'bg-sky-50/70 border-sky-300'
+                          : isNao
+                          ? 'bg-slate-100 border-slate-200'
+                          : 'bg-white border-amber-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="font-bold text-xs text-slate-900 font-mono">{aero}</span>
+                        <div className="inline-flex rounded border border-slate-300 bg-white p-0.5 text-[9px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setEditAeronaves({ ...editAeronaves, [aero]: 'SIM' })}
+                            className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                              isSim ? 'bg-sky-900 text-white font-black' : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            SIM
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditAeronaves({ ...editAeronaves, [aero]: 'NÃO' })}
+                            className={`px-1.5 py-0.5 rounded cursor-pointer ${
+                              isNao ? 'bg-slate-700 text-white font-black' : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            NÃO
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditAeronaves({ ...editAeronaves, [aero]: '' })}
+                            className={`px-1 py-0.5 rounded cursor-pointer ${
+                              !val ? 'bg-amber-400 text-slate-950 font-bold' : 'text-slate-400'
+                            }`}
+                            title="Pendente"
+                          >
+                            ?
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Resumo da Aptidão na Frota */}
+                      <div className="pt-1 border-t border-slate-200/60 flex flex-wrap gap-1 text-[9px]">
+                        {aptoExecutar && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 font-bold">
+                            ✓ Executar
+                          </span>
+                        )}
+                        {aptoAssinar && (
+                          <span className="px-1.5 py-0.2 rounded bg-pink-100 text-pink-900 font-bold">
+                            ✓ Assinar (CRS)
+                          </span>
+                        )}
+                        {isSim && !aptoExecutar && !aptoAssinar && (
+                          <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900">
+                            Sem função ativa
+                          </span>
+                        )}
+                        {isNao && (
+                          <span className="text-slate-400 italic">Não autorizado</span>
+                        )}
+                        {!val && (
+                          <span className="text-amber-800 italic">Pendente decisão</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setMecanicoParaEditar(null)}
+                disabled={isSavingModal}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSalvarModal}
+                disabled={isSavingModal}
+                className="px-5 py-2.5 bg-sky-900 hover:bg-sky-800 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingModal ? (
+                  <span>Salvando no Firestore...</span>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4 text-sky-300" />
+                    <span>Salvar Designações &amp; Frotas</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

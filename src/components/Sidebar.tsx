@@ -191,6 +191,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           aliases: ['rooster-licencas', 'licencas'],
           icon: <Award className="w-4 h-4 text-amber-400" />,
         },
+        {
+          id: 'rooster-designacao',
+          label: 'Lista de Designação Técnica',
+          aliases: ['designacao', 'lista-designacao'],
+          icon: <FileCheck2 className="w-4 h-4 text-emerald-400" />,
+          badge: 'F 001-29',
+          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
+        },
+        {
+          id: 'rooster-designacoes-crud',
+          label: 'Designações & Frotas (APRS)',
+          aliases: ['designacoes_crud', 'designacoes', 'autorizacoes-frotas'],
+          icon: <Plane className="w-4 h-4 text-sky-400" />,
+        },
       ],
     },
     {

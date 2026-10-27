@@ -4,22 +4,30 @@ import {
   Edit2,
   FileCheck2,
   Filter,
+  Info,
   MapPin,
   Plane,
   Save,
   Search,
   Shield,
   UserCheck,
+  X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { repository } from '../services/storage';
-import { AeronaveDesignacao, FuncaoDesignacao, SimNaoVazio } from '../types';
+import { AeronaveDesignacao, FuncaoDesignacao, Pessoa, SimNaoVazio } from '../types';
 
 export const DesignacoesView: React.FC = () => {
-  const { db, currentUser, showToast, navigateToFicha } = useApp();
+  const { db, currentUser, showToast, navigateToFicha, setActiveTab } = useApp();
 
   const [busca, setBusca] = useState('');
   const [baseFiltro, setBaseFiltro] = useState('TODAS');
+
+  // Estado para edição rápida de IMP e EASA Type
+  const [pessoaParaEditarMeta, setPessoaParaEditarMeta] = useState<Pessoa | null>(null);
+  const [impInput, setImpInput] = useState('');
+  const [easaInput, setEasaInput] = useState('N/A');
+  const [incluirListaInput, setIncluirListaInput] = useState(true);
 
   const funcoesLista: FuncaoDesignacao[] = ['Executante', 'Supervisor', 'IIO', 'Inspetor', 'APRS'];
   const aeronavesLista: AeronaveDesignacao[] = ['B737', 'E190E2', 'A320FAM', 'A330', 'B767', 'B777'];
@@ -81,6 +89,33 @@ export const DesignacoesView: React.FC = () => {
     }
   };
 
+  const handleAbrirEdicaoMeta = (pessoa: Pessoa) => {
+    const desig = db.designacoesPessoa.find((dp) => dp.pessoa_id === pessoa.id);
+    setImpInput(desig?.imp || '');
+    setEasaInput(desig?.easa_type || 'N/A');
+    setIncluirListaInput(desig?.incluir_na_lista ?? true);
+    setPessoaParaEditarMeta(pessoa);
+  };
+
+  const handleSalvarEdicaoMeta = async () => {
+    if (!pessoaParaEditarMeta) return;
+    try {
+      await repository.saveDesignacaoPessoa(
+        {
+          pessoa_id: pessoaParaEditarMeta.id,
+          imp: impInput.trim(),
+          easa_type: easaInput.trim() || 'N/A',
+          incluir_na_lista: incluirListaInput,
+        },
+        currentUser.nome
+      );
+      showToast(`Dados de designação de ${pessoaParaEditarMeta.nome} atualizados!`);
+      setPessoaParaEditarMeta(null);
+    } catch (err: any) {
+      showToast(`Erro ao salvar: ${err?.message || err}`);
+    }
+  };
+
   return (
     <div className="p-6 max-w-[1550px] mx-auto space-y-4">
       {/* Header */}
@@ -121,6 +156,32 @@ export const DesignacoesView: React.FC = () => {
               </option>
             ))}
           </select>
+
+          <button
+            onClick={() => setActiveTab('designacao')}
+            className="px-3 py-1.5 bg-sky-900 hover:bg-sky-800 text-white font-semibold rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            title="Ir para a Lista Oficial de Designação e Habilitações"
+          >
+            <FileCheck2 className="w-3.5 h-3.5 text-sky-300" />
+            <span>Ver Lista Oficial (A4)</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Guia de Configuração de Execução e Assinatura por Frota */}
+      <div className="bg-sky-50 border border-sky-200 rounded-lg p-3.5 text-xs text-sky-950 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+        <div className="flex items-start gap-2.5 max-w-4xl">
+          <Shield className="w-4 h-4 text-sky-800 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <span className="font-bold text-slate-900">
+              Como autorizar mecânicos para Executar e Assinar/Liberar manutenção por frota (RBAC 145 / ANAC):
+            </span>
+            <p className="text-[11px] text-slate-700 leading-relaxed">
+              • <strong>Apto a Executar Manutenção:</strong> Marque a frota correspondente como <strong>SIM</strong> e a coluna <strong>Executante = SIM</strong>.<br />
+              • <strong>Apto a Assinar / Liberar Manutenção (CRS / Return to Service):</strong> Marque a frota como <strong>SIM</strong> e a coluna <strong>APRS = SIM</strong> (Autorização de Pessoal para Retorno ao Serviço).<br />
+              • Clique diretamente sobre qualquer célula (SIM / NÃO / ?) para alternar a autorização em tempo real.
+            </p>
+          </div>
         </div>
       </div>
 
@@ -182,12 +243,22 @@ export const DesignacoesView: React.FC = () => {
                 return (
                   <tr key={p.id} className="hover:bg-slate-50">
                     <td className="py-2 px-3 font-semibold text-slate-900 whitespace-nowrap border-r border-slate-100">
-                      <button
-                        onClick={() => navigateToFicha(p.id)}
-                        className="hover:underline hover:text-sky-900 cursor-pointer font-bold"
-                      >
-                        {p.nome}
-                      </button>
+                      <div className="flex items-center justify-between gap-1">
+                        <button
+                          onClick={() => navigateToFicha(p.id)}
+                          className="hover:underline hover:text-sky-900 cursor-pointer font-bold"
+                          title="Abrir ficha e dossiê do colaborador"
+                        >
+                          {p.nome}
+                        </button>
+                        <button
+                          onClick={() => handleAbrirEdicaoMeta(p)}
+                          className="p-1 text-slate-400 hover:text-sky-900 rounded cursor-pointer"
+                          title="Editar IMP e EASA Type"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </td>
 
                     {/* Bases Selector Chips */}
@@ -214,11 +285,19 @@ export const DesignacoesView: React.FC = () => {
                       </div>
                     </td>
 
-                    <td className="py-2 px-2 text-center font-mono text-[11px] font-bold text-slate-700 border-r border-slate-100">
+                    <td
+                      onClick={() => handleAbrirEdicaoMeta(p)}
+                      className="py-2 px-2 text-center font-mono text-[11px] font-bold text-slate-700 border-r border-slate-100 cursor-pointer hover:bg-sky-50"
+                      title="Clique para editar Matrícula IMP"
+                    >
                       {desig?.imp || '-'}
                     </td>
 
-                    <td className="py-2 px-2 text-center font-bold text-[11px] text-slate-800 border-r border-slate-100">
+                    <td
+                      onClick={() => handleAbrirEdicaoMeta(p)}
+                      className="py-2 px-2 text-center font-bold text-[11px] text-slate-800 border-r border-slate-100 cursor-pointer hover:bg-sky-50"
+                      title="Clique para editar EASA Type"
+                    >
                       {desig?.easa_type || 'N/A'}
                     </td>
 
@@ -237,7 +316,7 @@ export const DesignacoesView: React.FC = () => {
                               ? 'bg-[#EDEDED] text-slate-400 hover:bg-slate-200'
                               : 'bg-white text-transparent hover:bg-slate-100'
                           }`}
-                          title="Clique para alternar (SIM / NÃO / Vazio)"
+                          title={`Função ${f}: clique para alternar (SIM / NÃO / Vazio)`}
                         >
                           {val || '-'}
                         </td>
@@ -261,7 +340,7 @@ export const DesignacoesView: React.FC = () => {
                               ? 'bg-slate-50 text-slate-400 hover:bg-slate-200'
                               : 'bg-amber-100/70 text-amber-900 hover:bg-amber-200'
                           }`}
-                          title={isVazio ? 'Ainda não decidido (Pendente)' : 'Clique para alternar'}
+                          title={isVazio ? 'Frota pendente de autorização. Clique para definir SIM' : `Frota ${a}: clique para alternar`}
                         >
                           {val || '?'}
                         </td>
@@ -274,6 +353,83 @@ export const DesignacoesView: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Modal de Edição de IMP / EASA Type */}
+      {pessoaParaEditarMeta && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-200 animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Dados Oficiais da Designação</h3>
+                <p className="text-xs text-slate-500">{pessoaParaEditarMeta.nome}</p>
+              </div>
+              <button
+                onClick={() => setPessoaParaEditarMeta(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Matrícula IMP (Designação)
+                </label>
+                <input
+                  type="text"
+                  value={impInput}
+                  onChange={(e) => setImpInput(e.target.value)}
+                  placeholder="Ex: IMP-015"
+                  className="w-full p-2 border border-slate-300 rounded-lg font-mono uppercase bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  EASA Type Rating
+                </label>
+                <input
+                  type="text"
+                  value={easaInput}
+                  onChange={(e) => setEasaInput(e.target.value)}
+                  placeholder="Ex: B1, B2 ou N/A"
+                  className="w-full p-2 border border-slate-300 rounded-lg font-bold text-slate-800 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div className="pt-1">
+                <label className="inline-flex items-center gap-2 cursor-pointer font-semibold text-slate-800">
+                  <input
+                    type="checkbox"
+                    checked={incluirListaInput}
+                    onChange={(e) => setIncluirListaInput(e.target.checked)}
+                    className="rounded text-sky-900 focus:ring-sky-600 w-4 h-4 cursor-pointer"
+                  />
+                  <span>Exibir mecânico na Lista Oficial de Designação (F 001-29)</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setPessoaParaEditarMeta(null)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 text-xs font-semibold cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSalvarEdicaoMeta}
+                className="px-5 py-2 bg-sky-900 hover:bg-sky-800 text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer"
+              >
+                Salvar Dados
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

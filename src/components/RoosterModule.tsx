@@ -221,6 +221,7 @@ const RoosterInternalWorkspace: React.FC<{
     { id: 'bases', label: 'Bases & Locais Operacionais', icon: MapPin, badge: `${db.bases.length}` },
     { id: 'ficha', label: 'Ficha do Mecânico (Dossiê)', icon: UserCheck },
     { id: 'designacao', label: 'Lista de Designação', icon: FileCheck2, badge: 'A4' },
+    { id: 'designacoes_crud', label: 'Designações & Frotas', icon: Plane },
     { id: 'conferencia', label: 'Conferência de Frota', icon: AlertTriangle },
     { id: 'licencas', label: 'Licenças (ANAC/FAA)', icon: Award, badge: `${db.licencas.length}` },
     { id: 'treinamentos', label: 'Treinamentos', icon: BookOpen },

@@ -611,6 +611,11 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
     case 'rooster-bases':
     case 'bases':
     case 'rooster-designacao':
+    case 'designacao':
+    case 'lista-designacao':
+    case 'rooster-designacoes-crud':
+    case 'designacoes_crud':
+    case 'designacoes':
     case 'rooster-conferencia':
     case 'conferencia':
     case 'rooster-relatorio':
@@ -633,7 +638,9 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           ? 'ficha'
           : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases' || activeTab === 'bases'
           ? 'bases'
-          : activeTab === 'rooster-designacao'
+          : activeTab === 'rooster-designacoes-crud' || activeTab === 'designacoes_crud' || activeTab === 'designacoes'
+          ? 'designacoes_crud'
+          : activeTab === 'rooster-designacao' || activeTab === 'designacao' || activeTab === 'lista-designacao'
           ? 'designacao'
           : activeTab === 'rooster-conferencia' || activeTab === 'conferencia'
           ? 'conferencia'
