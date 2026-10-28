@@ -24,8 +24,12 @@ import {
   FuncaoDesignacao,
   Licenca,
   MotorCatalogo,
+  FabricanteMotor,
   Pessoa,
+  CategoriaPessoa,
+  SituacaoPessoa,
   SimNaoVazio,
+  EasaType,
   Treinamento,
   TreinamentoMotor,
   OrgaoLicenca,
@@ -1635,17 +1639,569 @@ export class FirestoreAdapter implements StorageAdapter {
     sourceName = 'Planilha Oficial',
     onProgress?: (porcentagem: number, etapa: string) => void
   ): Promise<PostImportConferenceData> {
-    const db = getFirestoreDb();
-    if (!db) throw new Error('Firestore não inicializado.');
     const report = validateImportPayload(rawPayload, modo);
     if (!report.canCommit) {
-      throw new Error(`Importação rejeitada: ${report.totalErros} erros de validação.`);
+      const errorMessages = report.issues
+        .filter((i) => i.severidade === 'erro')
+        .slice(0, 5)
+        .map((i) => `[${i.entidade}] ${i.motivo}`)
+        .join('; ');
+      throw new Error(`Importação rejeitada: ${report.totalErros} erros de validação. ${errorMessages}`);
     }
 
-    onProgress?.(30, 'Processando entidades canônicas...');
-    console.info(`Gravando importação ${modo} no Firestore para organização ${this.orgId}...`);
-    onProgress?.(100, 'Concluído com sucesso');
+    onProgress?.(10, 'Preparando entidades canônicas...');
+    const db = getFirestoreDb();
+    const now = new Date().toISOString();
 
-    return generateConferenceData(this.memoryDb, rawPayload, modo, sourceName);
+    type BatchOperation = (batch: ReturnType<typeof writeBatch>) => void;
+    const operations: BatchOperation[] = [];
+
+    // 1. BASES OPERACIONAIS
+    const rawBases = Array.isArray(rawPayload.base) ? rawPayload.base : [];
+    const mappedBases: Base[] = [];
+    for (const b of rawBases) {
+      const id = String(b.id || '').trim();
+      if (!id) continue;
+      const sigla = String(b.sigla || id).trim().toUpperCase();
+      const baseItem: Base = {
+        id,
+        sigla,
+        nome: String(b.nome || id).trim(),
+        tipo: b.tipo || 'ESTACAO_LINHA',
+        cidade: b.cidade || '',
+        estado: b.estado || '',
+        pais: b.pais || 'Brasil',
+        endereco: b.endereco || '',
+        codigo_iata: b.codigo_iata || '',
+        codigo_icao: b.codigo_icao || '',
+        ativa: b.ativa !== false,
+        observacoes: b.observacoes || '',
+      };
+      mappedBases.push(baseItem);
+
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'operational_bases', id),
+            sanitizeForFirestore({
+              ...baseItem,
+              criado_em: b.criado_em || now,
+              atualizado_em: now,
+              atualizado_por: usuarioNome,
+            }),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 2. PESSOAS & COLABORADORES (Canonical persons)
+    const rawPessoas = Array.isArray(rawPayload.pessoa) ? rawPayload.pessoa : [];
+    const mappedPessoas: Pessoa[] = [];
+    const stagedColabs: ColaboradorPessoa[] = [];
+    for (const p of rawPessoas) {
+      const id = String(p.id || '').trim();
+      const nome = String(p.nome || '').trim();
+      if (!id || !nome) continue;
+
+      const categoria: CategoriaPessoa = p.categoria === 'Administrativo' ? 'Administrativo' : 'Mecânico';
+      const situacao: SituacaoPessoa = p.situacao === 'Inativo' ? 'Inativo' : 'Ativo';
+      const baseId = String(p.base_principal_id || 'GRU').trim();
+      const canac = p.canac ? String(p.canac).trim() : '';
+      const clienteOuArea = p.cliente_ou_area ? String(p.cliente_ou_area).trim() : '';
+
+      const pessoaItem: Pessoa = {
+        id,
+        nome,
+        categoria,
+        situacao,
+        base_principal_id: baseId,
+        cliente_ou_area: clienteOuArea,
+        canac,
+        criado_em: p.criado_em || now,
+        atualizado_em: now,
+        atualizado_por: usuarioNome,
+      };
+      mappedPessoas.push(pessoaItem);
+
+      const existingColab = this.canonicalPersonsMap.get(id);
+      const colabDoc: ColaboradorPessoa = {
+        id,
+        organizationId: this.orgId,
+        nome,
+        matricula: canac || p.matricula || id,
+        setor: clienteOuArea || existingColab?.setor || 'Operações de Manutenção',
+        baseOperacional: baseId,
+        baseOperacionalId: baseId,
+        funcao: categoria === 'Mecânico' ? 'Mecânico de Manutenção' : 'Administrativo',
+        cargoOperacional:
+          categoria === 'Mecânico' ? 'Mecânico de Manutenção de Linha / Base' : 'Analista Administrativo',
+        status: situacao === 'Inativo' ? 'INATIVO' : 'ATIVO',
+        camposCustomizados: {
+          canac,
+          categoria,
+          clienteOuArea,
+        },
+        createdAt: existingColab?.createdAt || p.criado_em || now,
+        updatedAt: now,
+        criadoPor: existingColab?.criadoPor || usuarioNome,
+        criadoPorUid: existingColab?.criadoPorUid || 'import-batch',
+      };
+      stagedColabs.push(colabDoc);
+
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'persons', id),
+            sanitizeForFirestore(colabDoc),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 3. CURSOS DE TREINAMENTO (Canonical trainingCourses)
+    const rawCursos = Array.isArray(rawPayload.curso_catalogo) ? rawPayload.curso_catalogo : [];
+    const mappedCursos: CursoCatalogo[] = [];
+    const stagedCourses: CursoTreinamento[] = [];
+    for (const c of rawCursos) {
+      const id = String(c.id || '').trim();
+      const curso = String(c.curso || '').trim();
+      if (!id || !curso) continue;
+
+      const grupo = c.grupo === 'Doutrinação' ? 'Doutrinação' : 'Frota';
+      const isFrota = grupo === 'Frota';
+      const frota = c.frota ? String(c.frota).trim() : '';
+      const variante = c.variante ? String(c.variante).trim() : '';
+      const validadeDias = typeof c.validade_dias === 'number' ? c.validade_dias : 1825;
+      const semValidade = c.sem_validade ?? (validadeDias === 100000 || validadeDias === 0);
+      const ativo = c.ativo !== false;
+
+      const cursoItem: CursoCatalogo = {
+        id,
+        grupo,
+        frota,
+        variante,
+        curso,
+        validade_dias: validadeDias,
+        ativo,
+        sem_validade: semValidade,
+      };
+      mappedCursos.push(cursoItem);
+
+      const courseDoc: CursoTreinamento = {
+        id,
+        organizationId: this.orgId,
+        codigo: id,
+        titulo: curso,
+        tipo: isFrota ? 'RECORRENTE' : 'INICIAL',
+        modalidade: 'PRESENCIAL',
+        cargaHorariaHoras: c.carga_horaria_horas || 8,
+        ementa: c.ementa || `Curso oficial ${grupo} - ${curso}`,
+        recorrente: !semValidade && validadeDias > 0 && validadeDias < 100000,
+        periodicidadeMeses: validadeDias > 0 && validadeDias < 100000 ? Math.round(validadeDias / 30) : undefined,
+        origemPrazo: validadeDias > 0 && validadeDias < 100000 ? 'REGULAMENTO' : 'PROGRAMA_TREINAMENTO',
+        competenciasDesenvolvidasIds: [],
+        status: ativo ? 'ATIVO' : 'INATIVO',
+        frotaOuFamilia: frota || 'Geral',
+        variantesAplicabilidade: variante ? [variante] : [],
+        createdAt: now,
+        updatedAt: now,
+        criadoPorUid: 'import-batch',
+      };
+      stagedCourses.push(courseDoc);
+
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'trainingCourses', id),
+            sanitizeForFirestore(courseDoc),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 4. LICENÇAS (Canonical qualifications)
+    const rawLicencas = Array.isArray(rawPayload.licenca) ? rawPayload.licenca : [];
+    const mappedLicencas: Licenca[] = [];
+    const stagedQualifications: QualificacaoColaborador[] = [];
+    for (const l of rawLicencas) {
+      const id = String(l.id || '').trim();
+      const pessoaId = String(l.pessoa_id || '').trim();
+      if (!id || !pessoaId) continue;
+
+      const orgao: OrgaoLicenca = l.orgao === 'FAA' ? 'FAA' : 'ANAC';
+      const tipo: TipoLicenca = l.tipo === 'CCT' ? 'CCT' : l.tipo === 'AMP' ? 'AMP' : 'CHT';
+      const habilitacao = l.habilitacao ? (String(l.habilitacao).trim().toUpperCase() as HabilitacaoLicenca) : undefined;
+      const numero = String(l.numero || '').trim();
+      const dataVencimento = l.data_vencimento ? String(l.data_vencimento).trim() : null;
+      const dataExpedicao = l.data_expedicao ? String(l.data_expedicao).trim() : null;
+
+      const licItem: Licenca = {
+        id,
+        pessoa_id: pessoaId,
+        orgao,
+        tipo,
+        habilitacao: (habilitacao || '') as any,
+        numero,
+        data_vencimento: dataVencimento,
+        data_expedicao: dataExpedicao,
+        criado_em: l.criado_em || now,
+        atualizado_em: now,
+        atualizado_por: usuarioNome,
+      };
+      mappedLicencas.push(licItem);
+
+      const personRef = mappedPessoas.find((p) => p.id === pessoaId);
+      const qualDoc: QualificacaoColaborador = {
+        id,
+        organizationId: this.orgId,
+        colaboradorId: pessoaId,
+        colaboradorNome: personRef?.nome || 'Mecânico',
+        colaboradorMatricula: personRef?.canac || pessoaId,
+        tipo: tipo === 'CCT' ? ('OUTRO' as any) : 'CHT_ANAC',
+        titulo: `${orgao} ${tipo} ${habilitacao || ''}`.trim(),
+        escopo: `Habilitação Técnica ${tipo} - ${orgao} ${habilitacao ? '(' + habilitacao + ')' : ''}`.trim(),
+        emissor: orgao,
+        numeroRegistro: numero,
+        dataEmissao: dataExpedicao || '',
+        dataValidade: dataVencimento || undefined,
+        possuiValidade: !!dataVencimento,
+        status: 'VALIDA',
+        bloqueiaOperacaoSeVencida: true,
+        responsavelValidacaoUid: 'import-batch',
+        responsavelValidacaoNome: usuarioNome,
+        dataValidacao: now,
+        createdAt: l.criado_em || now,
+        updatedAt: now,
+      };
+      stagedQualifications.push(qualDoc);
+
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'qualifications', id),
+            sanitizeForFirestore(qualDoc),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 5. TREINAMENTOS (Canonical trainingRecords)
+    const rawTreinamentos = Array.isArray(rawPayload.treinamento) ? rawPayload.treinamento : [];
+    const mappedTreinamentos: Treinamento[] = [];
+    const stagedTrainingRecords: RegistroTreinamentoColaborador[] = [];
+    for (const t of rawTreinamentos) {
+      const id = String(t.id || '').trim();
+      const pessoaId = String(t.pessoa_id || '').trim();
+      const cursoId = String(t.curso_id || '').trim();
+      if (!id || !pessoaId || !cursoId) continue;
+
+      const dataExecucao = t.data_execucao ? String(t.data_execucao).trim() : '';
+      const observacao = t.observacao ? String(t.observacao).trim() : '';
+
+      const trItem: Treinamento = {
+        id,
+        pessoa_id: pessoaId,
+        curso_id: cursoId,
+        data_execucao: dataExecucao,
+        observacao,
+        substituido_por: t.substituido_por || null,
+        criado_em: t.criado_em || now,
+        atualizado_em: now,
+        atualizado_por: usuarioNome,
+      };
+      mappedTreinamentos.push(trItem);
+
+      const personRef = mappedPessoas.find((p) => p.id === pessoaId);
+      const cursoRef = mappedCursos.find((c) => c.id === cursoId);
+      const trDoc: RegistroTreinamentoColaborador = {
+        id,
+        organizationId: this.orgId,
+        colaboradorId: pessoaId,
+        treinamentoId: cursoId,
+        treinamentoCodigo: cursoId,
+        treinamentoTitulo: cursoRef ? cursoRef.curso : cursoId,
+        colaboradorNome: personRef?.nome || 'Mecânico',
+        colaboradorMatricula: personRef?.canac || pessoaId,
+        dataRealizacao: dataExecucao,
+        dataConclusao: dataExecucao,
+        cargaHoraria: 8,
+        instrutor: 'SGQ Treinamentos',
+        resultado: 'APROVADO',
+        observacoes: observacao,
+        createdAt: t.criado_em || now,
+        updatedAt: now,
+      };
+      stagedTrainingRecords.push(trDoc);
+
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'trainingRecords', id),
+            sanitizeForFirestore(trDoc),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 6. MOTORES MRO (roster_motores)
+    const rawMotores = Array.isArray(rawPayload.motor_catalogo) ? rawPayload.motor_catalogo : [];
+    const mappedMotores: MotorCatalogo[] = [];
+    for (const m of rawMotores) {
+      const id = String(m.id || '').trim();
+      if (!id) continue;
+      const mItem: MotorCatalogo = {
+        id,
+        fabricante: (m.fabricante || 'GE') as FabricanteMotor,
+        modelo: m.modelo || '',
+      };
+      mappedMotores.push(mItem);
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'roster_motores', id),
+            sanitizeForFirestore(mItem),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 7. VÍNCULOS MOTOR × TREINAMENTO (roster_treinamentos_motor)
+    const rawTreinamentosMotor = Array.isArray(rawPayload.treinamento_motor) ? rawPayload.treinamento_motor : [];
+    const mappedTreinamentosMotor: TreinamentoMotor[] = [];
+    for (const tm of rawTreinamentosMotor) {
+      const treinamentoId = String(tm.treinamento_id || '').trim();
+      const motorId = String(tm.motor_id || '').trim();
+      if (!treinamentoId || !motorId) continue;
+      const tmItem: TreinamentoMotor = {
+        treinamento_id: treinamentoId,
+        motor_id: motorId,
+      };
+      mappedTreinamentosMotor.push(tmItem);
+      const docId = tm.id || `${treinamentoId}__${motorId}`;
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'roster_treinamentos_motor', docId),
+            sanitizeForFirestore(tmItem),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 8. DESIGNAÇÕES PESSOA (roster_designacoes_pessoa)
+    const rawDesignacoesPessoa = Array.isArray(rawPayload.designacao_pessoa) ? rawPayload.designacao_pessoa : [];
+    const mappedDesignacoesPessoa: DesignacaoPessoa[] = [];
+    for (const dp of rawDesignacoesPessoa) {
+      const pessoaId = String(dp.pessoa_id || '').trim();
+      if (!pessoaId) continue;
+      const easaType: EasaType = dp.easa_type === 'SIM' ? 'SIM' : dp.easa_type === 'NÃO' ? 'NÃO' : 'N/A';
+      const dpItem: DesignacaoPessoa = {
+        pessoa_id: pessoaId,
+        imp: dp.imp || '',
+        easa_type: easaType,
+        incluir_na_lista: dp.incluir_na_lista !== false,
+        nome_na_lista: dp.nome_na_lista || undefined,
+      };
+      mappedDesignacoesPessoa.push(dpItem);
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'roster_designacoes_pessoa', pessoaId),
+            sanitizeForFirestore(dpItem),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 9. DESIGNAÇÕES BASE (roster_designacoes_base)
+    const rawDesignacoesBase = Array.isArray(rawPayload.designacao_base) ? rawPayload.designacao_base : [];
+    const mappedDesignacoesBase: DesignacaoBase[] = [];
+    for (const dbItem of rawDesignacoesBase) {
+      const pessoaId = String(dbItem.pessoa_id || '').trim();
+      const baseId = String(dbItem.base_id || '').trim();
+      if (!pessoaId || !baseId) continue;
+      const item: DesignacaoBase = { pessoa_id: pessoaId, base_id: baseId };
+      mappedDesignacoesBase.push(item);
+      const docId = `${pessoaId}__${baseId}`;
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'roster_designacoes_base', docId),
+            sanitizeForFirestore(item),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 10. DESIGNAÇÕES FUNÇÃO (roster_designacoes_funcao)
+    const rawDesignacoesFuncao = Array.isArray(rawPayload.designacao_funcao) ? rawPayload.designacao_funcao : [];
+    const mappedDesignacoesFuncao: DesignacaoFuncao[] = [];
+    for (const df of rawDesignacoesFuncao) {
+      const pessoaId = String(df.pessoa_id || '').trim();
+      const funcao = String(df.funcao || '').trim() as FuncaoDesignacao;
+      if (!pessoaId || !funcao) continue;
+      const item: DesignacaoFuncao = {
+        pessoa_id: pessoaId,
+        funcao,
+        valor: (df.valor === 'SIM' ? 'SIM' : 'NÃO') as SimNaoVazio,
+      };
+      mappedDesignacoesFuncao.push(item);
+      const docId = `${pessoaId}__${funcao}`;
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'roster_designacoes_funcao', docId),
+            sanitizeForFirestore(item),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 11. DESIGNAÇÕES AERONAVE (roster_designacoes_aeronave)
+    const rawDesignacoesAeronave = Array.isArray(rawPayload.designacao_aeronave) ? rawPayload.designacao_aeronave : [];
+    const mappedDesignacoesAeronave: DesignacaoAeronave[] = [];
+    for (const da of rawDesignacoesAeronave) {
+      const pessoaId = String(da.pessoa_id || '').trim();
+      const aeronave = String(da.aeronave || '').trim() as AeronaveDesignacao;
+      if (!pessoaId || !aeronave) continue;
+      const item: DesignacaoAeronave = {
+        pessoa_id: pessoaId,
+        aeronave,
+        valor: (da.valor === 'SIM' ? 'SIM' : 'NÃO') as SimNaoVazio,
+      };
+      mappedDesignacoesAeronave.push(item);
+      const docId = `${pessoaId}__${aeronave}`;
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'roster_designacoes_aeronave', docId),
+            sanitizeForFirestore(item),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // 12. CONFIGURAÇÃO (roster_configuracao/geral)
+    let newConfig = { ...this.memoryDb.configuracao };
+    if (rawPayload.configuracao) {
+      newConfig = {
+        ...newConfig,
+        ...rawPayload.configuracao,
+      };
+      if (db) {
+        operations.push((batch) => {
+          batch.set(
+            doc(db, 'organizations', this.orgId, 'roster_configuracao', 'geral'),
+            sanitizeForFirestore(newConfig),
+            { merge: true }
+          );
+        });
+      }
+    }
+
+    // Persiste no Firestore em lotes de até 400 operações ANTES de atualizar a memória
+    // Não simula sucesso: se o Firestore falhar (permissão, validação, etc.), a operação lança erro e não altera o estado local
+    if (db && operations.length > 0) {
+      onProgress?.(30, `Gravando ${operations.length} documentos no Firestore...`);
+      const CHUNK_SIZE = 400;
+      for (let i = 0; i < operations.length; i += CHUNK_SIZE) {
+        const chunk = operations.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        for (const op of chunk) {
+          op(batch);
+        }
+        await batch.commit();
+        const percent = Math.min(95, Math.round(30 + ((i + chunk.length) / operations.length) * 65));
+        onProgress?.(percent, `Gravados ${Math.min(i + chunk.length, operations.length)} de ${operations.length} registros...`);
+      }
+    }
+
+    // Somente após confirmação de sucesso na persistência remota (ou em ambiente local se db null):
+    stagedColabs.forEach((c) => this.canonicalPersonsMap.set(c.id, c));
+    stagedCourses.forEach((c) => this.canonicalCoursesMap.set(c.id, c));
+    stagedQualifications.forEach((q) => this.canonicalQualificationsMap.set(q.id, q));
+    stagedTrainingRecords.forEach((tr) => this.canonicalTrainingRecordsMap.set(tr.id, tr));
+
+    if (modo === 'substituir') {
+      this.memoryDb = {
+        ...this.memoryDb,
+        bases: mappedBases,
+        pessoas: mappedPessoas,
+        cursosCatalogo: mappedCursos,
+        licencas: mappedLicencas,
+        treinamentos: mappedTreinamentos,
+        motoresCatalogo: mappedMotores,
+        treinamentosMotor: mappedTreinamentosMotor,
+        designacoesPessoa: mappedDesignacoesPessoa,
+        designacoesBase: mappedDesignacoesBase,
+        designacoesFuncao: mappedDesignacoesFuncao,
+        designacoesAeronave: mappedDesignacoesAeronave,
+        configuracao: newConfig,
+      };
+    } else {
+      const mergeById = <T extends { id: string }>(currentList: T[], newList: T[]): T[] => {
+        const map = new Map<string, T>();
+        currentList.forEach((item) => map.set(item.id, item));
+        newList.forEach((item) => map.set(item.id, item));
+        return Array.from(map.values());
+      };
+      this.memoryDb = {
+        ...this.memoryDb,
+        bases: mergeById(this.memoryDb.bases, mappedBases),
+        pessoas: mergeById(this.memoryDb.pessoas, mappedPessoas),
+        cursosCatalogo: mergeById(this.memoryDb.cursosCatalogo, mappedCursos),
+        licencas: mergeById(this.memoryDb.licencas, mappedLicencas),
+        treinamentos: mergeById(this.memoryDb.treinamentos, mappedTreinamentos),
+        motoresCatalogo: mergeById(this.memoryDb.motoresCatalogo, mappedMotores),
+        treinamentosMotor: [...this.memoryDb.treinamentosMotor, ...mappedTreinamentosMotor],
+        designacoesPessoa: mergeById(
+          this.memoryDb.designacoesPessoa.map((d) => ({ ...d, id: d.pessoa_id })),
+          mappedDesignacoesPessoa.map((d) => ({ ...d, id: d.pessoa_id }))
+        ).map(({ id, ...rest }) => rest as DesignacaoPessoa),
+        designacoesBase: [...this.memoryDb.designacoesBase, ...mappedDesignacoesBase],
+        designacoesFuncao: [...this.memoryDb.designacoesFuncao, ...mappedDesignacoesFuncao],
+        designacoesAeronave: [...this.memoryDb.designacoesAeronave, ...mappedDesignacoesAeronave],
+        configuracao: newConfig,
+      };
+    }
+
+    const totalGravados =
+      this.memoryDb.bases.length +
+      this.memoryDb.pessoas.length +
+      this.memoryDb.licencas.length +
+      this.memoryDb.cursosCatalogo.length +
+      this.memoryDb.treinamentos.length +
+      this.memoryDb.motoresCatalogo.length +
+      this.memoryDb.treinamentosMotor.length +
+      this.memoryDb.designacoesPessoa.length +
+      this.memoryDb.designacoesBase.length +
+      this.memoryDb.designacoesFuncao.length +
+      this.memoryDb.designacoesAeronave.length;
+
+    await this.recordAudit(
+      'IMPORTAR',
+      'sistema',
+      'IMPORT_TRANSACTION',
+      `Importação em lote oficial (${sourceName}, modo: ${modo}). Total de registros gravados: ${totalGravados}.`,
+      null,
+      { sourceName, modo, totalGravados },
+      usuarioNome
+    );
+
+    this.notify();
+    onProgress?.(100, 'Importação concluída com sucesso!');
+
+    return generateConferenceData(this.memoryDb, rawPayload, modo, sourceName, totalGravados);
   }
 }

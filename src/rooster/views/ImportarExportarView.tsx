@@ -157,7 +157,7 @@ export const ImportarExportarView: React.FC = () => {
   };
 
   // Confirm import with all-or-nothing transaction
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!loadedPayload || !validationReport) return;
     if (!validationReport.canCommit) {
       alert('A importação não pode ser concluída pois existem erros bloqueantes de integridade.');
@@ -166,7 +166,7 @@ export const ImportarExportarView: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const confData = commitImportPayload(loadedPayload, importMode, currentUser.nome, fileName || 'Arquivo');
+      const confData = await commitImportPayload(loadedPayload, importMode, currentUser.nome, fileName || 'Arquivo');
       setLastConferenceData(confData);
       showToast('Dados importados com sucesso! Painel de conferência atualizado.');
       handleCancel();
@@ -188,7 +188,6 @@ export const ImportarExportarView: React.FC = () => {
       try {
         const ok = await restoreOfficialBackup(currentUser.nome);
         if (ok) {
-          const freshDb = commitImportPayload; // DB already reloaded
           // Generate conference
           const conf = generateConferenceData(db, undefined, 'substituir', 'Último Arquivo Oficial Restaurado');
           setLastConferenceData(conf);

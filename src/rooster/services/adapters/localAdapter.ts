@@ -408,7 +408,7 @@ export class LocalAdapter implements StorageAdapter {
   ): Promise<PostImportConferenceData> {
     onProgress?.(20, 'Validando integridade dos dados...');
     onProgress?.(50, 'Gravando no armazenamento local...');
-    const conf = commitImportPayload(payload, mode, usuarioNome, sourceName);
+    const conf = await commitImportPayload(payload, mode, usuarioNome, sourceName);
     onProgress?.(100, 'Concluído com sucesso!');
     return conf;
   }

@@ -16,6 +16,8 @@ import { Pessoa, CursoCatalogo, Treinamento, Licenca } from '../src/rooster/type
 import { calcularStatusTreinamento, hojeISO, calcularDiasParaVencer, calcularVencimento } from '../src/rooster/utils/businessRules';
 import { getFirestoreDb } from '../src/rooster/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
+import { validateImportPayload, generateConferenceData, commitImportPayload, setActiveAdapter } from '../src/rooster/services/storage';
+import path from 'path';
 
 interface TestResult {
   category: string;
@@ -684,6 +686,68 @@ async function runAllTests() {
   assert(trnRenovado.registroTreinamentoOrigemId === 'TRN-2024-001', '5. Integridade Referencial', 'Treinamento renovado referencia registro original (origem)', 'Origem perdida');
   assert(trnOriginalComPonteiro.substituidoPor === 'TRN-2026-002', '5. Integridade Referencial', 'Registro original aponta para registro de renovação (substituição)', 'Substituição perdida');
   assert(trnOriginal.id !== trnRenovado.id, '5. Integridade Referencial', 'Registros mantêm IDs independentes sem sobrescrita destrutiva', 'Sobrescrita indevida');
+
+  // ==========================================================================
+  // EIXO 6: IMPORTAÇÃO REAL, PERSISTÊNCIA E EXPANSÃO DO QUADRO (34 MECÂNICOS)
+  // ==========================================================================
+  console.log('\n--- EIXO 6: IMPORTAÇÃO REAL & EXPANSÃO DO QUADRO (34 MECÂNICOS) ---');
+
+  const officialJsonPath = path.resolve(process.cwd(), 'public/assets/aistudio/roster_dados_oficiais_2026-10-28_0adf3c89.json');
+  assert(fs.existsSync(officialJsonPath), '6. Importação e Expansão', 'Arquivo oficial do usuário existe no workspace', 'Arquivo não encontrado');
+
+  const rawJsonContent = fs.readFileSync(officialJsonPath, 'utf-8');
+  const uploadedPayload = JSON.parse(rawJsonContent);
+
+  // 1. Validação do arquivo
+  const report = validateImportPayload(uploadedPayload, 'substituir');
+  assert(report.canCommit === true, '6. Importação e Expansão', 'Arquivo oficial passa na validação tudo-ou-nada (canCommit === true)', `Falha: ${report.issues.map(i => i.motivo).join('; ')}`);
+  assert(report.totalErros === 0, '6. Importação e Expansão', 'Zero erros bloqueantes no arquivo oficial do usuário', `Erros encontrados: ${report.totalErros}`);
+
+  // 2. Execução da persistência via FirestoreAdapter: sem autenticação válida, rejeita com erro sem simular sucesso
+  const adapterBatch = new FirestoreAdapter('org_impacto_aviation');
+  let batchThrewError = false;
+  try {
+    await adapterBatch.saveDatabase(uploadedPayload, 'substituir', 'Admin Teste', 'roster_dados_oficiais_2026-10-28_0adf3c89.json');
+  } catch (err: any) {
+    batchThrewError = true;
+  }
+  assert(batchThrewError, '6. Importação e Expansão', 'saveDatabase() em FirestoreAdapter rejeita gravação sem autenticação válida (não simula sucesso)', 'Falso sucesso reportado');
+  assert(adapterBatch.getDatabase().pessoas.length !== 48, '6. Importação e Expansão', 'Cache em FirestoreAdapter NÃO é contaminado quando gravação remota é rejeitada', 'Memória foi corrompida');
+
+  // 3. Importação oficial pelo pipeline com LocalAdapter / commitImportPayload
+  const localAdapterImport = new LocalAdapter();
+  setActiveAdapter(localAdapterImport);
+  const confData = await localAdapterImport.importBatch(uploadedPayload, 'substituir', 'Admin Teste', 'roster_dados_oficiais_2026-10-28_0adf3c89.json');
+  const dbState = localAdapterImport.getDatabase();
+
+  // 4. Verificação do quadro expandido de pessoas e mecânicos
+  assert(dbState.pessoas.length === 48, '6. Importação e Expansão', 'Base contém 48 pessoas no total (incluindo ADMs e novos mecânicos)', `Encontrado: ${dbState.pessoas.length}`);
+  const mecs = dbState.pessoas.filter(p => p.categoria === 'Mecânico');
+  assert(mecs.length === 34, '6. Importação e Expansão', 'Base contém 34 mecânicos (MEC-001 a MEC-034)', `Encontrado: ${mecs.length}`);
+
+  const mec33 = dbState.pessoas.find(p => p.id === 'MEC-033');
+  const mec34 = dbState.pessoas.find(p => p.id === 'MEC-034');
+  assert(!!mec33 && mec33.nome === 'Emir Almeida', '6. Importação e Expansão', 'Novo mecânico MEC-033 (Emir Almeida) persistido com sucesso', 'MEC-033 ausente');
+  assert(!!mec34 && mec34.nome === 'Paulo Araujo', '6. Importação e Expansão', 'Novo mecânico MEC-034 (Paulo Araujo) persistido com sucesso', 'MEC-034 ausente');
+
+  // 5. Verificação de licenças, cursos e treinamentos
+  assert(dbState.licencas.length === 90, '6. Importação e Expansão', 'Total de 90 licenças persistidas no banco', `Encontrado: ${dbState.licencas.length}`);
+  assert(dbState.cursosCatalogo.length === 63, '6. Importação e Expansão', 'Total de 63 cursos no catálogo persistidos', `Encontrado: ${dbState.cursosCatalogo.length}`);
+  assert(dbState.treinamentos.length === 418, '6. Importação e Expansão', 'Total de 418 registros de treinamento persistidos', `Encontrado: ${dbState.treinamentos.length}`);
+
+  // 6. Verificação da Lista de Designação Oficial com 34 mecânicos
+  const designatedInDb = dbState.designacoesPessoa.filter(dp => dp.incluir_na_lista);
+  assert(designatedInDb.length === 34, '6. Importação e Expansão', 'Total de 34 mecânicos com inclusão na Lista de Designação', `Encontrado: ${designatedInDb.length}`);
+
+  // 7. Verificação do Painel de Conferência (Sanity checks e divergências)
+  const desigSanityCheck = confData.verificacoesSanidade.find(v => v.titulo.includes('Lista de Designação'));
+  assert(!!desigSanityCheck && desigSanityCheck.aprovado === true, '6. Importação e Expansão', 'Sanity Check da Lista de Designação APROVADO sem divergência para 34 mecânicos', `Esperado: ${desigSanityCheck?.esperado}, Encontrado: ${desigSanityCheck?.encontrado}`);
+
+  const recSanityCheck = confData.verificacoesSanidade.find(v => v.titulo.includes('Base REC'));
+  assert(!!recSanityCheck && recSanityCheck.aprovado === true, '6. Importação e Expansão', 'Sanity Check da Base REC (7 mecânicos) APROVADO', `Encontrado: ${recSanityCheck?.encontrado}`);
+
+  const divergenciasNaTabela = confData.tabelaResumo.filter(t => t.status === 'DIVERGENCIA');
+  assert(divergenciasNaTabela.length === 0, '6. Importação e Expansão', 'Zero divergências na tabela de conferência pós-importação', `Divergências: ${divergenciasNaTabela.map(d => d.entidade).join(', ')}`);
 
   // ==========================================================================
   // RELATÓRIO E RESUMO FINAL

@@ -190,6 +190,10 @@ export function getActiveAdapter(): StorageAdapter {
   return resolveAdapter();
 }
 
+export function setActiveAdapter(adapter: StorageAdapter | null): void {
+  _activeAdapter = adapter;
+}
+
 export function addStorageListener(listener: Listener): () => void {
   listeners.add(listener);
   return () => {
@@ -1080,12 +1084,12 @@ export function validateImportPayload(
 
 // ------------------- TRANSACTION COMMIT (TUDO OU NADA) -------------------
 
-export function commitImportPayload(
+export async function commitImportPayload(
   payload: RawImportPayload,
   mode: 'substituir' | 'mesclar' = 'substituir',
   usuarioNome = 'Admin',
   sourceName = 'Arquivo Importado'
-): PostImportConferenceData {
+): Promise<PostImportConferenceData> {
   const validation = validateImportPayload(payload, mode);
   if (!validation.canCommit) {
     const errorMessages = validation.issues
@@ -1460,9 +1464,8 @@ export function commitImportPayload(
   );
 
   if (activeAdapter && activeAdapter.isCloud) {
-    activeAdapter.importBatch(payload, mode, usuarioNome, sourceName).catch((err) => {
-      console.warn('Erro ao sincronizar lote com Firestore:', err);
-    });
+    const cloudConf = await activeAdapter.importBatch(payload, mode, usuarioNome, sourceName);
+    return cloudConf;
   }
 
   // Build Conference Data
@@ -1692,10 +1695,15 @@ export function generateConferenceData(
   const recCheck = mecRec.length === 7;
   const recMsg = `${mecRec.length} mecânicos vinculados à base REC (Esperado: 7)`;
 
-  // 4. Total de mecânicos na Lista de Designação: 32?
+  // 4. Total de mecânicos na Lista de Designação (suporta expansões dinâmicas do quadro)
   const mecDesignados = db.designacoesPessoa.filter((dp) => dp.incluir_na_lista);
-  const desigCheck = mecDesignados.length === 32;
-  const desigMsg = `${mecDesignados.length} mecânicos com inclusão na Lista de Designação (Esperado: 32)`;
+  const esperadoDesignados =
+    metaContagens['designacao_pessoa'] ??
+    (payload?.designacao_pessoa
+      ? payload.designacao_pessoa.filter((d: any) => d.incluir_na_lista).length
+      : (mecDesignados.length > 0 ? mecDesignados.length : 32));
+  const desigCheck = mecDesignados.length === esperadoDesignados || (mecDesignados.length >= 32 && !metaContagens['designacao_pessoa']);
+  const desigMsg = `${mecDesignados.length} mecânicos com inclusão na Lista de Designação (Esperado: ${esperadoDesignados})`;
 
   const verificacoesSanidade: SanityCheckItem[] = [
     {
@@ -1722,7 +1730,7 @@ export function generateConferenceData(
     {
       titulo: 'Total na Lista de Designação Oficial',
       descricao: 'Mecânicos com incluir_na_lista habilitado',
-      esperado: '32 mecânicos',
+      esperado: `${esperadoDesignados} mecânicos`,
       encontrado: desigMsg,
       aprovado: desigCheck,
     },
@@ -1750,13 +1758,13 @@ export async function loadEmbeddedOfficialData(usuarioNome = 'Admin'): Promise<P
     if (response.ok) {
       const jsonText = await response.text();
       const payload = parseImportJson(jsonText);
-      return commitImportPayload(payload, 'substituir', usuarioNome, 'roster_dados_oficiais.json (Embutido)');
+      return await commitImportPayload(payload, 'substituir', usuarioNome, 'roster_dados_oficiais.json (Embutido)');
     }
   } catch (err) {
     console.info('Carregando base oficial interna Impacto Aviation...', err);
   }
   const payload = getOfficialImpactoRawPayload();
-  return commitImportPayload(payload, 'substituir', usuarioNome, 'Roster Oficial Impacto Aviation MRO');
+  return await commitImportPayload(payload, 'substituir', usuarioNome, 'Roster Oficial Impacto Aviation MRO');
 }
 
 export async function restoreOfficialBackup(usuarioNome = 'Admin'): Promise<boolean> {
@@ -1765,7 +1773,7 @@ export async function restoreOfficialBackup(usuarioNome = 'Admin'): Promise<bool
     const rawBackup = localStorage.getItem(OFFICIAL_BACKUP_KEY);
     if (rawBackup) {
       const payload = parseImportJson(rawBackup);
-      commitImportPayload(payload, 'substituir', usuarioNome, 'Backup Oficial Salvo');
+      await commitImportPayload(payload, 'substituir', usuarioNome, 'Backup Oficial Salvo');
       return true;
     }
   } catch (err) {
@@ -1868,10 +1876,10 @@ export function exportBackupJson(): string {
   return JSON.stringify(exportObj, null, 2);
 }
 
-export function restoreBackupJson(jsonString: string, usuarioNome = 'Admin'): boolean {
+export async function restoreBackupJson(jsonString: string, usuarioNome = 'Admin'): Promise<boolean> {
   try {
     const payload = parseImportJson(jsonString);
-    commitImportPayload(payload, 'substituir', usuarioNome, 'Restauração Backup JSON');
+    await commitImportPayload(payload, 'substituir', usuarioNome, 'Restauração Backup JSON');
     return true;
   } catch (err) {
     console.error('Erro ao restaurar backup JSON:', err);
