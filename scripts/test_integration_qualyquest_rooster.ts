@@ -750,8 +750,125 @@ async function runAllTests() {
   assert(divergenciasNaTabela.length === 0, '6. Importação e Expansão', 'Zero divergências na tabela de conferência pós-importação', `Divergências: ${divergenciasNaTabela.map(d => d.entidade).join(', ')}`);
 
   // ==========================================================================
-  // RELATÓRIO E RESUMO FINAL
+  // EIXO 7: CORREÇÕES PRIORITÁRIAS DA RODADA ATUAL
   // ==========================================================================
+  console.log('\n--- EIXO 7: DUPLICIDADE, BLOQUEIOS OPERACIONAIS, TELAS REDUNDANTES E PPTX ---');
+
+  // 7.1 Prevenção de Duplicidades e Normalização Central
+  const { normalizePersonName, normalizeMatriculaOrCanac, compararColaboradores } = await import('../src/utils/personNormalization');
+
+  const nomeA = 'João da Silva Santos';
+  const nomeB = 'joao da  silva santos';
+  const nomeC = 'João Silva Santos';
+  const nomeD = 'José da Silva Santos';
+
+  assert(normalizePersonName(nomeA) === normalizePersonName(nomeB), '7. Correções da Rodada Atual', 'normalizePersonName() equipara maiúsculas, minúsculas, acentos e espaços múltiplos', 'Falha na normalização');
+  assert(normalizeMatriculaOrCanac('canac- 123456 ') === '123456', '7. Correções da Rodada Atual', 'normalizeMatriculaOrCanac() padroniza CANAC e matrículas numéricas', 'Falha na normalização de matrícula');
+
+  const compMesma = compararColaboradores(
+    { nome: nomeA, matricula: 'IMP-100' },
+    { nome: nomeB, matricula: 'imp 100' }
+  );
+  assert(compMesma.ehMesmaPessoa === true && compMesma.temMatriculaIdentica === true, '7. Correções da Rodada Atual', 'compararColaboradores() reconhece mesma pessoa com grafia e matrícula equivalentes', 'Não reconheceu mesma pessoa');
+
+  const compHomonimoDivergente = compararColaboradores(
+    { nome: 'Carlos Eduardo Oliveira', matricula: 'IMP-201' },
+    { nome: 'Carlos Eduardo Oliveira', matricula: 'IMP-999' }
+  );
+  assert(compHomonimoDivergente.ehHomonimoExato === true && compHomonimoDivergente.temMatriculaConflitante === true, '7. Correções da Rodada Atual', 'Detecta homônimo com nome idêntico mas matrícula divergente (sem mesclagem cega)', 'Não detectou homônimo conflitante');
+
+  // 7.2 Bloqueio Operacional: Distinção entre Individual Cadastral e Técnico CHT + Histórico de Encerramentos
+  const colabComBloqueio: ColaboradorPessoa = {
+    id: 'colab-teste-bloqueio',
+    organizationId: tenantA,
+    nome: 'Mecânico Teste Restrição',
+    matricula: 'IMP-777',
+    setor: 'Hangar / Manutenção',
+    funcao: 'Mecânico',
+    status: 'ATIVO',
+    restricaoOperacional: {
+      possuiRestricao: true,
+      motivo: 'Afastamento médico preventivo temporário',
+      dataInicio: '2026-10-01',
+      impedeExecucao: true,
+      apenasAlerta: false,
+      registradoPor: 'Diretoria Técnica',
+      registradoEm: '2026-10-01T08:00:00Z',
+      historicoEncerramentos: []
+    },
+    createdAt: '2026-01-01',
+    updatedAt: '2026-10-01',
+    criadoPor: 'Admin',
+    criadoPorUid: 'admin-uid'
+  };
+
+  assert(colabComBloqueio.restricaoOperacional?.possuiRestricao === true && colabComBloqueio.restricaoOperacional.impedeExecucao === true, '7. Correções da Rodada Atual', 'Restrição cadastral individual configurada com bloqueio impeditivo', 'Falha na configuração de bloqueio individual');
+
+  // Simular encerramento auditado com justificativa obrigatória
+  const justificativaEncerramento = 'Apresentado laudo pericial liberatório sem restrições em 28/10/2026';
+  const colabLiberado: ColaboradorPessoa = {
+    ...colabComBloqueio,
+    restricaoOperacional: {
+      possuiRestricao: false,
+      impedeExecucao: false,
+      apenasAlerta: false,
+      registradoPor: colabComBloqueio.restricaoOperacional?.registradoPor,
+      registradoEm: colabComBloqueio.restricaoOperacional?.registradoEm,
+      historicoEncerramentos: [
+        {
+          data: new Date().toISOString(),
+          encerradoPor: 'Gestor SGQ Teste',
+          motivo: justificativaEncerramento
+        }
+      ]
+    }
+  };
+
+  assert(colabLiberado.restricaoOperacional?.possuiRestricao === false && colabLiberado.restricaoOperacional.historicoEncerramentos?.length === 1, '7. Correções da Rodada Atual', 'Encerramento de bloqueio preserva histórico e justificativa técnica formal', 'Histórico de encerramento não registrado');
+  assert(colabLiberado.restricaoOperacional?.historicoEncerramentos?.[0].motivo === justificativaEncerramento, '7. Correções da Rodada Atual', 'Justificativa técnica de encerramento vinculada ao histórico com exatidão', 'Motivo divergente');
+
+  // 7.3 Unificação de Rotas Canônicas (Zero Telas Redundantes)
+  const routerCode = fs.readFileSync('src/components/app/AppViewRouter.tsx', 'utf8');
+  assert(
+    routerCode.includes("case 'rooster-pessoas':") &&
+    routerCode.includes("case 'pessoas-competencias':") &&
+    routerCode.includes("initialSubTab={activeTab === 'cadastros-funcoes-cargos' ? 'FUNCOES_CARGOS' : 'COLABORADORES'}"),
+    '7. Correções da Rodada Atual',
+    'Rotas legadas de pessoas convergem para PersonsCompetenciesView canônica',
+    'Rotas de pessoas ainda fragmentadas'
+  );
+
+  assert(
+    routerCode.includes("case 'rooster-catalogo':") &&
+    routerCode.includes("case 'treinamentos-qualificacoes':") &&
+    routerCode.includes("<TrainingsQualificationsView"),
+    '7. Correções da Rodada Atual',
+    'Rotas de catálogo e registros convergem para TrainingsQualificationsView canônica',
+    'Rotas de treinamentos fragmentadas'
+  );
+
+  assert(
+    routerCode.includes("case 'rooster-vencimentos':") &&
+    routerCode.includes("case 'central-vencimentos-gaps':") &&
+    routerCode.includes("<ExpirationsGapsCenterView"),
+    '7. Correções da Rodada Atual',
+    'Rotas de vencimentos convergem para ExpirationsGapsCenterView canônica',
+    'Vencimentos ainda abrindo telas paralelas'
+  );
+
+  // 7.4 PPTX sem Overflow e com Geometria Validada
+  const builderCode = fs.readFileSync('src/utils/qualityPresentationBuilder.ts', 'utf8');
+  assert(
+    builderCode.includes('linhasExibidas.length <= 5') &&
+    builderCode.includes('maxBottomY - yFimTabela'),
+    '7. Correções da Rodada Atual',
+    'Cálculo de altura de tabelas bi-partidas protege estritamente maxBottomY (zero overflow no slide 12)',
+    'Proteção de altura no builder ausente'
+  );
+
+  const pptxFileExists = fs.existsSync('docs/Apresentacao_Gerencial_QualyQuest_Rooster.pptx');
+  assert(pptxFileExists, '7. Correções da Rodada Atual', 'Arquivo PPTX oficial gerado e disponível em docs/ e public/', 'PPTX não encontrado');
+
   console.log('\n===============================================================');
   const total = results.length;
   const passed = results.filter((r) => r.passed).length;

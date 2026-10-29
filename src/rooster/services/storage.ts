@@ -28,6 +28,7 @@ import {
   Usuario,
 } from '../types';
 import { parseDataBrParaIso } from '../utils/businessRules';
+import { normalizePersonName, normalizeMatriculaOrCanac } from '../../utils/personNormalization';
 import { FirestoreAdapter } from './adapters/firestoreAdapter';
 import { LocalAdapter } from './adapters/localAdapter';
 import { StorageAdapter } from './storageInterface';
@@ -1173,16 +1174,28 @@ export async function commitImportPayload(
       const cliente_ou_area = parseNullableString(r.cliente_ou_area) || '';
       const canac = parseNullableString(r.canac) || '';
 
-      const idx = newDb.pessoas.findIndex((p) => p.id === id);
+      const normNome = normalizePersonName(nome);
+      const normCanac = normalizeMatriculaOrCanac(canac);
+
+      const idx = newDb.pessoas.findIndex((p) => {
+        if (p.id === id) return true;
+        if (normCanac && p.canac && normalizeMatriculaOrCanac(p.canac) === normCanac) return true;
+        if (normNome && normalizePersonName(p.nome) === normNome) return true;
+        return false;
+      });
+
+      const existingPerson = idx >= 0 ? newDb.pessoas[idx] : null;
+      const targetId = existingPerson ? existingPerson.id : id;
+
       const item: Pessoa = {
-        id,
-        nome,
+        id: targetId,
+        nome: existingPerson?.nome || nome,
         categoria,
         situacao,
-        base_principal_id,
-        cliente_ou_area,
-        canac,
-        criado_em: r.criado_em || now,
+        base_principal_id: base_principal_id || existingPerson?.base_principal_id || 'GRU',
+        cliente_ou_area: cliente_ou_area || existingPerson?.cliente_ou_area || '',
+        canac: canac || existingPerson?.canac || '',
+        criado_em: existingPerson?.criado_em || r.criado_em || now,
         atualizado_em: now,
         atualizado_por: usuarioNome,
       };

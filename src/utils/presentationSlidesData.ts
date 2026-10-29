@@ -331,9 +331,9 @@ export function gerarSlidesApresentacao(
   });
   const chunksRncsMatriz = particionarArray(rncsZonaRiscoMatriz, 5);
 
-  // Ações Corretivas com paginação para detalhamento 5W2H
+  // Ações Corretivas com paginação para detalhamento 5W2H (máx 4 por slide para evitar overflow vertical)
   const recordsComAcaoCorretiva = recordsFiltrados.filter(r => r.acaoCorretiva && r.acaoCorretiva.descricao);
-  const chunksAcoes = particionarArray(recordsComAcaoCorretiva, 5);
+  const chunksAcoes = particionarArray(recordsComAcaoCorretiva, 4);
 
   // Agrupamento estatístico do efetivo por especialidade / função técnica (sem listagem nominal para apresentação executiva)
   const funcoesMap: Record<string, { total: number; ativos: number; emTreinamento: number; restritos: number; outros: number }> = {};
@@ -463,29 +463,31 @@ export function gerarSlidesApresentacao(
   });
 
   const linhasTabelaMetrologia: (string | number)[][] = ferramentasOrdenadas.length > 0
-    ? ferramentasOrdenadas.slice(0, 8).map((f: any) => {
+    ? ferramentasOrdenadas.slice(0, 6).map((f: any) => {
         const conta = calcularContaCreditoFerramenta(f);
-        let situacaoFormatada = '✅ Em Dia (Apta)';
+        let situacaoFormatada = 'Em Dia';
         if (conta.statusCredito === 'ESGOTADO' || conta.saldoDiasCredito <= 0 || f.status === 'VENCIDA') {
-          situacaoFormatada = '🚨 Vencida (Segregada)';
+          situacaoFormatada = 'Vencida';
         } else if (conta.statusCredito === 'CRITICO' || conta.saldoDiasCredito <= 30) {
-          situacaoFormatada = '⚠️ A Vencer (≤30d)';
+          situacaoFormatada = 'A Vencer';
         } else if (conta.statusCredito === 'ATENCAO') {
-          situacaoFormatada = '🟡 Atenção (≤60d)';
+          situacaoFormatada = 'Atenção';
         }
+
+        const instrumentoCurto = f.descricao
+          ? (f.descricao.length > 26 ? f.descricao.substring(0, 24) + '...' : f.descricao)
+          : (f.modelo || 'Instrumento RBC');
 
         return [
           f.codigoPatrimonio || 'SEM-PAT',
-          f.modelo || '—',
-          (f.descricao && f.descricao.length > 32 ? f.descricao.substring(0, 30) + '...' : f.descricao) || 'Instrumento de Medição',
+          instrumentoCurto,
           f.dataProximaCalibracao || '—',
-          conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d (${conta.percentualRestante}%)` : `${conta.saldoDiasCredito}d (Vencida - Bloqueada)`,
-          conta.temCertificadoAnexo ? '📎 Anexo RBC' : (f.numeroCertificado || 'Laudo Pendente'),
+          conta.saldoDiasCredito > 0 ? `+${conta.saldoDiasCredito}d` : `${conta.saldoDiasCredito}d (Bloq.)`,
           situacaoFormatada,
         ];
       })
     : [
-        ['—', '—', 'Nenhum instrumento cadastrado na base', '—', '—', '—', 'Sem dados']
+        ['—', 'Nenhum instrumento cadastrado', '—', '—', 'Sem dados']
       ];
 
   // CONSTRUÇÃO ESTRUTURADA E DINÂMICA DOS SLIDES (SEM LIMITE RÍGIDO DE 20 SLIDES)
@@ -1026,16 +1028,20 @@ export function gerarSlidesApresentacao(
             'O acompanhamento contínuo assegura que compromissos regulatórios assumidos não sofram descontinuidade.',
             'Integração auditável: toda evidência de conclusão é arquivada e vinculada ao processo no SGQ.',
           ],
-          tabelaDados: {
-            colunas: ['Código RNC', 'Ação Corretiva (O Quê)', 'Responsável (Quem)', 'Prazo (Quando)', 'Status'],
-            linhas: chunk.map(r => [
-              r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
-              r.acaoCorretiva?.descricao || 'Plano de eliminação de causa raiz',
-              r.acaoCorretiva?.responsavel || 'Gestor da Área',
-              r.acaoCorretiva?.dataPrazo || 'Conforme SLA',
-              r.acaoCorretiva?.status || 'Em Andamento'
-            ]),
-          },
+            tabelaDados: {
+              colunas: ['Código RNC', 'Ação Corretiva (O Quê)', 'Responsável (Quem)', 'Prazo (Quando)', 'Status'],
+              linhas: chunk.map(r => {
+                const desc = r.acaoCorretiva?.descricao || 'Plano de eliminação de causa raiz';
+                const descFormatada = desc.length > 95 ? desc.substring(0, 92) + '...' : desc;
+                return [
+                  r.numeroNC || `RNC-${r.id.substring(0, 6).toUpperCase()}`,
+                  descFormatada,
+                  r.acaoCorretiva?.responsavel || 'Gestor da Área',
+                  r.acaoCorretiva?.dataPrazo || 'Conforme SLA',
+                  r.acaoCorretiva?.status || 'Em Andamento'
+                ];
+              }),
+            },
           graficoDados: {
             tipo: 'nenhum' as const,
             itens: [],
@@ -1439,7 +1445,7 @@ export function gerarSlidesApresentacao(
         'Auditoria digital de certificados com laudos RBC anexados na plataforma, garantindo prontidão imediata para inspeções ANAC e EASA.',
       ],
       tabelaDados: {
-        colunas: ['Código / Tag', 'PN / Modelo', 'Descrição do Instrumento', 'Próxima Calibração', 'Conta de Crédito', 'Certificado RBC', 'Situação'],
+        colunas: ['Código', 'Instrumento', 'Próx. Calibração', 'Conta Crédito', 'Situação'],
         linhas: linhasTabelaMetrologia,
       },
       graficoDados: {

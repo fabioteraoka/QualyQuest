@@ -82,6 +82,7 @@ import { FleetCompetencyMatrixView } from './FleetCompetencyMatrixView';
 import { OperationalBasesView } from './OperationalBasesView';
 import { RoosterModule } from './RoosterModule';
 import { ActiveTab as RoosterActiveTab } from '../rooster/context/AppContext';
+import { RestricaoOperacionalModal } from './competencies/RestricaoOperacionalModal';
 
 interface PersonsCompetenciesViewProps {
   organizationId: string;
@@ -137,6 +138,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [selectedBase, setSelectedBase] = useState('TODAS');
   const [selectedStatus, setSelectedStatus] = useState<string>(initialStatusFilter || 'TODOS');
   const [filterRestricao, setFilterRestricao] = useState(false);
+  const [modalRestricaoOpen, setModalRestricaoOpen] = useState(false);
 
   // Estado do Wizard de Cadastro de Novo Colaborador (Passos 1, 2 e 3)
   const [novoColabPasso, setNovoColabPasso] = useState<1 | 2 | 3>(1);
@@ -648,6 +650,17 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
     setModalLoteAberto(false);
     setSucessoLoteMsg(resultado.mensagem);
     setTimeout(() => setSucessoLoteMsg(null), 5000);
+  };
+
+  // Ação de Salvar / Alterar Restrição Operacional
+  const handleSalvarRestricaoOperacional = async (
+    colaboradorAtualizado: ColaboradorPessoa,
+    justificativaAuditoria: string
+  ) => {
+    await savePerson(organizationId, colaboradorAtualizado, userProfile);
+    if (selectedColaborador?.id === colaboradorAtualizado.id) {
+      setSelectedColaborador(colaboradorAtualizado);
+    }
   };
 
   // Abrir Modal de Inativação Lógica
@@ -1620,32 +1633,69 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 </div>
               )}
 
-              {/* Alerta de Restrição Operacional se houver */}
-              {selectedColaborador.restricaoOperacional?.possuiRestricao && (
-                <div
-                  className={`p-4 rounded-xl border flex items-start gap-3 ${
-                    selectedColaborador.restricaoOperacional.impedeExecucao
-                      ? 'bg-rose-50 border-rose-200 text-rose-900'
-                      : 'bg-amber-50 border-amber-200 text-amber-900'
-                  }`}
-                >
-                  <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600" />
-                  <div className="text-xs space-y-1">
-                    <p className="font-semibold text-sm">
-                      {selectedColaborador.restricaoOperacional.impedeExecucao
-                        ? 'Bloqueio Operacional Ativo (Impede Execução)'
-                        : 'Alerta Operacional Não Impeditivo'}
-                    </p>
-                    <p>{selectedColaborador.restricaoOperacional.motivo}</p>
-                    {selectedColaborador.restricaoOperacional.dataInicio && (
-                      <p className="text-[11px] opacity-80">
-                        Vigência: {selectedColaborador.restricaoOperacional.dataInicio} até{' '}
-                        {selectedColaborador.restricaoOperacional.dataFim || 'Indeterminado'}
-                      </p>
-                    )}
+              {/* Painel de Bloqueio Operacional Cadastral & Restrições Técnicas */}
+              <div className="space-y-2">
+                {selectedColaborador.restricaoOperacional?.possuiRestricao ? (
+                  <div
+                    className={`p-4 rounded-xl border flex items-start justify-between gap-3 ${
+                      selectedColaborador.restricaoOperacional.impedeExecucao
+                        ? 'bg-rose-50 border-rose-200 text-rose-900'
+                        : 'bg-amber-50 border-amber-200 text-amber-900'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600" />
+                      <div className="text-xs space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-sm">
+                            {selectedColaborador.restricaoOperacional.impedeExecucao
+                              ? 'Bloqueio Operacional Ativo (Impede Execução)'
+                              : 'Alerta Operacional Não Impeditivo'}
+                          </p>
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/80 font-mono border border-slate-200">
+                            Origem: Restrição Cadastral Individual
+                          </span>
+                        </div>
+                        <p className="font-medium text-slate-800">{selectedColaborador.restricaoOperacional.motivo}</p>
+                        {selectedColaborador.restricaoOperacional.dataInicio && (
+                          <p className="text-[11px] opacity-80">
+                            Vigência: {selectedColaborador.restricaoOperacional.dataInicio} até{' '}
+                            {selectedColaborador.restricaoOperacional.dataFim || 'Indeterminado'}
+                            {selectedColaborador.restricaoOperacional.registradoPor && (
+                              <span className="ml-2 font-mono">
+                                • Registrado por: {selectedColaborador.restricaoOperacional.registradoPor}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setModalRestricaoOpen(true)}
+                      className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-800 shadow-xs transition shrink-0"
+                    >
+                      Gerenciar / Encerrar Bloqueio
+                    </button>
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="p-3 bg-slate-50/80 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2 text-slate-600">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>
+                        <strong>Situação Cadastral Individual:</strong> Sem restrições ou afastamentos cadastrados.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setModalRestricaoOpen(true)}
+                      className="px-3 py-1 text-xs font-semibold rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 transition"
+                    >
+                      + Aplicar Restrição Cadastral
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Navegação por Sub-Abas 360° */}
               <div className="flex border-b border-slate-200 gap-2 overflow-x-auto text-xs font-semibold">
@@ -4071,6 +4121,16 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
           acao={acaoLote}
           analise={analiseLote}
           onConfirmar={handleConfirmarAcaoLote}
+        />
+      )}
+      {/* Modal de Gestão e Encerramento de Restrição Operacional Individual */}
+      {selectedColaborador && (
+        <RestricaoOperacionalModal
+          isOpen={modalRestricaoOpen}
+          colaborador={selectedColaborador}
+          user={userProfile as any}
+          onClose={() => setModalRestricaoOpen(false)}
+          onSalvar={handleSalvarRestricaoOperacional}
         />
       )}
     </div>

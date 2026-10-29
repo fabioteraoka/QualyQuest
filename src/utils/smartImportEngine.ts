@@ -20,6 +20,12 @@ import {
   StatusColaborador,
 } from '../types';
 import { normalizeDocumentCode } from '../services/documentControlAuditReconciliation';
+import {
+  normalizePersonName,
+  normalizeMatriculaOrCanac,
+  calculateNameSimilarity,
+  compararColaboradores,
+} from './personNormalization';
 
 export interface ResultadoNormalizacaoStatusColaborador {
   status: StatusColaborador;
@@ -1599,6 +1605,10 @@ export function validarECompararLinhasImportacao(
     let cursoAcao: 'CRIAR_CURSO' | 'VINCULAR_EXISTENTE' | 'IGNORAR' | undefined = undefined;
     let cursoIdVinculado: string | undefined = undefined;
     let documentoAcao: 'CRIAR_DOCUMENTO' | 'NOVA_REVISAO' | 'IGNORAR' | undefined = undefined;
+    let alertaHomonimo: boolean = false;
+    let homonimoTipo: 'EXATO_COM_MATRICULA_DIVERGENTE' | 'NOME_SIMILAR' | 'DUPLICIDADE_NO_ARQUIVO' | 'CORRESPONDENCIA_EXATA' | undefined = undefined;
+    let homonimoDetalhes: string | undefined = undefined;
+    let opcoesReconciliacaoPessoa: ('VINCULAR_EXISTENTE' | 'ATUALIZAR' | 'CRIAR_PESSOA_CONFIRMADO' | 'IGNORAR')[] | undefined = undefined;
 
     if (tipoControle === 'CALIBRACAO_FERRAMENTAL') {
       const pat = normalizarTexto(dadosMapeados.codigoPatrimonio || '');
@@ -1728,121 +1738,165 @@ export function validarECompararLinhasImportacao(
         // 1. RECONCILIAÇÃO DO COLABORADOR (Pessoas & Competências - Fase 14.1-A)
         // ====================================================================
         if (pessoaNomeNorm) {
-          // A. Busca exata por matrícula informada ou nome completo normalizado
-          const pessoaCadastrada = (contexto.pessoasExistentes || []).find(
-            (p) =>
-              (dadosMapeados.pessoaMatricula && p.matricula && normalizarTexto(p.matricula) === normalizarTexto(dadosMapeados.pessoaMatricula)) ||
-              normalizarTexto(p.nome) === pessoaNomeNorm
-          );
+          const candPessoa = {
+            nome: String(dadosMapeados.pessoaNome || '').trim(),
+            matricula: String(dadosMapeados.pessoaMatricula || '').trim(),
+            canac: String(dadosMapeados.chtNumero || '').trim(),
+          };
+          const candNomeNorm = normalizePersonName(candPessoa.nome);
+          const candMatNorm = normalizeMatriculaOrCanac(candPessoa.matricula || candPessoa.canac);
 
-          if (pessoaCadastrada) {
-            pessoaAcao = 'VINCULAR_EXISTENTE';
-            pessoaIdVinculada = pessoaCadastrada.id;
-            pessoaNomeVinculada = pessoaCadastrada.nome;
-
-            // Detectar se há alteração cadastral para decisão humana (matrícula, setor, função ou status)
-            const camposPessoaDivergentes: CampoDivergente[] = [];
-            if (dadosMapeados.pessoaMatricula && normalizarTexto(pessoaCadastrada.matricula || '') !== normalizarTexto(dadosMapeados.pessoaMatricula)) {
-              camposPessoaDivergentes.push({
-                campo: 'pessoaMatricula',
-                label: 'Matrícula',
-                valorAtual: pessoaCadastrada.matricula || 'Não informada',
-                valorImportado: dadosMapeados.pessoaMatricula,
-              });
-            }
-            if (dadosMapeados.setor && normalizarTexto(pessoaCadastrada.setor || '') !== normalizarTexto(dadosMapeados.setor)) {
-              camposPessoaDivergentes.push({
-                campo: 'setor',
-                label: 'Setor',
-                valorAtual: pessoaCadastrada.setor || 'Geral',
-                valorImportado: dadosMapeados.setor,
-              });
-            }
-            if (dadosMapeados.funcao && normalizarTexto(pessoaCadastrada.cargoOperacional || '') !== normalizarTexto(dadosMapeados.funcao)) {
-              camposPessoaDivergentes.push({
-                campo: 'funcao',
-                label: 'Função / Cargo',
-                valorAtual: pessoaCadastrada.cargoOperacional || 'Mecânico',
-                valorImportado: dadosMapeados.funcao,
-              });
-            }
-            const rawStatusImp = dadosMapeados.statusColaborador || dadosMapeados.status || '';
-            if (rawStatusImp) {
-              const statusNormalizado = normalizarStatusColaborador(rawStatusImp);
-              if (pessoaCadastrada.status !== statusNormalizado) {
-                camposPessoaDivergentes.push({
-                  campo: 'status',
-                  label: 'Status do Colaborador',
-                  valorAtual: pessoaCadastrada.status,
-                  valorImportado: statusNormalizado,
-                });
-              }
-            }
-
-            if (camposPessoaDivergentes.length > 0) {
-              camposPessoaDivergentes.forEach((d) => camposDivergentes.push(d));
-              mensagensValidacao.push(
-                `Colaborador oficial identificado (${pessoaCadastrada.nome} - Matrícula: ${pessoaCadastrada.matricula || 'S/M'}). Dados complementares/alterações detectadas na planilha: ${camposPessoaDivergentes.map((c) => c.label).join(', ')}.`
-              );
-            }
-          } else {
-            // B. Verificar possível duplicidade / homônimo por similaridade de tokens no banco oficial
-            const tokens = pessoaNomeNorm.split(' ').filter((t) => t.length > 2);
-            const pessoaSimilar = (contexto.pessoasExistentes || []).find((p) => {
-              const pTokens = normalizarTexto(p.nome).split(' ').filter((t) => t.length > 2);
-              if (tokens.length >= 2 && pTokens.length >= 2) {
-                return tokens[0] === pTokens[0] && tokens[tokens.length - 1] === pTokens[pTokens.length - 1];
-              }
-              return false;
+          // 1. Comparar com o banco de pessoas existentes usando o motor central de normalização
+          let melhorMatch: { pessoa: ColaboradorPessoa; resultado: any } | null = null;
+          for (const p of contexto.pessoasExistentes || []) {
+            const comp = compararColaboradores(candPessoa, {
+              nome: p.nome,
+              matricula: p.matricula,
+              canac: (p as any).canac || (p as any).chtNumero,
             });
+            if (comp.ehMesmaPessoa || comp.ehHomonimoExato || comp.ehHomonimoProvavel) {
+              if (!melhorMatch || comp.scoreSimilaridade > melhorMatch.resultado.scoreSimilaridade) {
+                melhorMatch = { pessoa: p, resultado: comp };
+              }
+            }
+          }
 
-            if (pessoaSimilar) {
+          if (melhorMatch) {
+            const { pessoa: pessoaCadastrada, resultado: comp } = melhorMatch;
+
+            if (comp.temMatriculaConflitante && comp.ehHomonimoExato) {
+              // Conflito Crítico: mesmo nome, porém matrículas diferentes!
+              alertaHomonimo = true;
+              homonimoTipo = 'EXATO_COM_MATRICULA_DIVERGENTE';
+              homonimoDetalhes = comp.motivo;
               duplicidadeDetectada = true;
               classificacaoReconciliacao = 'POSSIVEL_DUPLICIDADE';
               decisaoUsuario = 'REVISAR';
-              registroExistenteId = pessoaSimilar.id;
-              registroExistenteResumo = `Possível homônimo/duplicata com colaborador existente: ${pessoaSimilar.nome} (${pessoaSimilar.matricula || 'S/M'}) - Setor: ${pessoaSimilar.setor || 'Geral'}`;
+              registroExistenteId = pessoaCadastrada.id;
+              registroExistenteResumo = `Homônimo com matrícula conflitante: "${pessoaCadastrada.nome}" (Cadastrada: ${pessoaCadastrada.matricula || 'S/M'} vs Planilha: ${candPessoa.matricula || 'S/M'}).`;
               pessoaAcao = 'VINCULAR_EXISTENTE';
-              pessoaIdVinculada = pessoaSimilar.id;
-              pessoaNomeVinculada = pessoaSimilar.nome;
+              pessoaIdVinculada = pessoaCadastrada.id;
+              pessoaNomeVinculada = pessoaCadastrada.nome;
+              opcoesReconciliacaoPessoa = ['VINCULAR_EXISTENTE', 'ATUALIZAR', 'CRIAR_PESSOA_CONFIRMADO', 'IGNORAR'];
               if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
-              mensagensValidacao.push(
-                `Possível homônimo/duplicidade detectada com "${pessoaSimilar.nome}". Decisão humana necessária para vincular ou criar novo colaborador.`
-              );
+              mensagensValidacao.push(`⚠️ ${comp.motivo}`);
+            } else if (comp.ehHomonimoProvavel && !comp.ehHomonimoExato && !comp.temMatriculaIdentica) {
+              // Nome muito semelhante (alta similaridade de tokens)
+              alertaHomonimo = true;
+              homonimoTipo = 'NOME_SIMILAR';
+              homonimoDetalhes = comp.motivo;
+              duplicidadeDetectada = true;
+              classificacaoReconciliacao = 'POSSIVEL_DUPLICIDADE';
+              decisaoUsuario = 'REVISAR';
+              registroExistenteId = pessoaCadastrada.id;
+              registroExistenteResumo = `Possível homônimo/grafia aproximada: "${pessoaCadastrada.nome}" (${pessoaCadastrada.matricula || 'S/M'}) - Setor: ${pessoaCadastrada.setor || 'Geral'}`;
+              pessoaAcao = 'VINCULAR_EXISTENTE';
+              pessoaIdVinculada = pessoaCadastrada.id;
+              pessoaNomeVinculada = pessoaCadastrada.nome;
+              opcoesReconciliacaoPessoa = ['VINCULAR_EXISTENTE', 'ATUALIZAR', 'CRIAR_PESSOA_CONFIRMADO', 'IGNORAR'];
+              if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
+              mensagensValidacao.push(`⚠️ ${comp.motivo}`);
             } else {
-              // C. Novo colaborador: verificar se já apareceu em linha anterior desta planilha
-              const pessoaEmLote = pessoasLoteMap.get(pessoaNomeNorm);
-              if (pessoaEmLote) {
-                pessoaAcao = 'CRIAR_PESSOA';
-                pessoaIdVinculada = pessoaEmLote.id;
-                pessoaNomeVinculada = pessoaEmLote.nome;
-              } else {
-                const newPersonId = `person-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
-                pessoasLoteMap.set(pessoaNomeNorm, {
-                  id: newPersonId,
-                  nome: dadosMapeados.pessoaNome,
-                  matricula: dadosMapeados.pessoaMatricula || '',
-                  setor: dadosMapeados.setor,
-                  funcao: dadosMapeados.funcao,
-                  isNew: true,
-                });
-                pessoaAcao = 'CRIAR_PESSOA';
-                pessoaIdVinculada = newPersonId;
-                pessoaNomeVinculada = dadosMapeados.pessoaNome;
-                qtdPessoasNaoCadastradas++;
-                if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
+              // Correspondência confirmada (mesma matrícula ou nome idêntico sem conflito)
+              alertaHomonimo = comp.ehHomonimoExato && !comp.temMatriculaIdentica;
+              homonimoTipo = alertaHomonimo ? 'CORRESPONDENCIA_EXATA' : undefined;
+              pessoaAcao = 'VINCULAR_EXISTENTE';
+              pessoaIdVinculada = pessoaCadastrada.id;
+              pessoaNomeVinculada = pessoaCadastrada.nome;
+              opcoesReconciliacaoPessoa = ['VINCULAR_EXISTENTE', 'ATUALIZAR', 'CRIAR_PESSOA_CONFIRMADO', 'IGNORAR'];
 
-                const rawStatusColab = dadosMapeados.statusColaborador || dadosMapeados.status;
-                const analiseStatus = normalizarStatusColaboradorCompleto(rawStatusColab);
-                if (analiseStatus.statusNaoInformado) {
-                  mensagensValidacao.push(
-                    `Novo colaborador identificado: "${dadosMapeados.pessoaNome}" com STATUS NÃO INFORMADO na planilha. Validação e decisão humana obrigatórias antes da persistência.`
-                  );
-                } else {
-                  mensagensValidacao.push(
-                    `Novo colaborador identificado: "${dadosMapeados.pessoaNome}" com status ${analiseStatus.status} (original: "${analiseStatus.statusOriginal}"). Será cadastrado oficialmente em Pessoas & Competências após aprovação.`
-                  );
+              // Detectar alterações cadastrais para decisão humana
+              const camposPessoaDivergentes: CampoDivergente[] = [];
+              if (candPessoa.matricula && normalizeMatriculaOrCanac(pessoaCadastrada.matricula || '') !== candMatNorm) {
+                camposPessoaDivergentes.push({
+                  campo: 'pessoaMatricula',
+                  label: 'Matrícula',
+                  valorAtual: pessoaCadastrada.matricula || 'Não informada',
+                  valorImportado: dadosMapeados.pessoaMatricula,
+                });
+              }
+              if (dadosMapeados.setor && normalizePersonName(pessoaCadastrada.setor || '') !== normalizePersonName(dadosMapeados.setor)) {
+                camposPessoaDivergentes.push({
+                  campo: 'setor',
+                  label: 'Setor',
+                  valorAtual: pessoaCadastrada.setor || 'Geral',
+                  valorImportado: dadosMapeados.setor,
+                });
+              }
+              if (dadosMapeados.funcao && normalizePersonName(pessoaCadastrada.cargoOperacional || '') !== normalizePersonName(dadosMapeados.funcao)) {
+                camposPessoaDivergentes.push({
+                  campo: 'funcao',
+                  label: 'Função / Cargo',
+                  valorAtual: pessoaCadastrada.cargoOperacional || 'Mecânico',
+                  valorImportado: dadosMapeados.funcao,
+                });
+              }
+              const rawStatusImp = dadosMapeados.statusColaborador || dadosMapeados.status || '';
+              if (rawStatusImp) {
+                const statusNormalizado = normalizarStatusColaborador(rawStatusImp);
+                if (pessoaCadastrada.status !== statusNormalizado) {
+                  camposPessoaDivergentes.push({
+                    campo: 'status',
+                    label: 'Status do Colaborador',
+                    valorAtual: pessoaCadastrada.status,
+                    valorImportado: statusNormalizado,
+                  });
                 }
+              }
+
+              if (camposPessoaDivergentes.length > 0) {
+                camposPessoaDivergentes.forEach((d) => camposDivergentes.push(d));
+                mensagensValidacao.push(
+                  `Colaborador oficial identificado (${pessoaCadastrada.nome} - Matrícula: ${pessoaCadastrada.matricula || 'S/M'}). Dados complementares/alterações detectadas na planilha: ${camposPessoaDivergentes.map((c) => c.label).join(', ')}.`
+                );
+              }
+            }
+          } else {
+            // 2. Não encontrado no banco: checar se já apareceu em linha anterior desta planilha (duplicidade intra-lote)
+            const pessoaEmLote = pessoasLoteMap.get(candNomeNorm) || (candMatNorm ? Array.from(pessoasLoteMap.values()).find(p => normalizeMatriculaOrCanac(p.matricula) === candMatNorm) : undefined);
+
+            if (pessoaEmLote) {
+              pessoaAcao = 'CRIAR_PESSOA';
+              pessoaIdVinculada = pessoaEmLote.id;
+              pessoaNomeVinculada = pessoaEmLote.nome;
+              opcoesReconciliacaoPessoa = ['VINCULAR_EXISTENTE', 'ATUALIZAR', 'CRIAR_PESSOA_CONFIRMADO', 'IGNORAR'];
+
+              // Checar se dados diferem da linha anterior do mesmo lote
+              if (pessoaEmLote.matricula && candPessoa.matricula && normalizeMatriculaOrCanac(pessoaEmLote.matricula) !== candMatNorm) {
+                alertaHomonimo = true;
+                homonimoTipo = 'DUPLICIDADE_NO_ARQUIVO';
+                homonimoDetalhes = `Mesmo colaborador com matrículas diferentes no próprio arquivo (${pessoaEmLote.matricula} vs ${candPessoa.matricula}).`;
+                mensagensValidacao.push(`⚠️ ${homonimoDetalhes}`);
+                if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
+              }
+            } else {
+              // Colaborador novo legítimo
+              const newPersonId = `person-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
+              pessoasLoteMap.set(candNomeNorm, {
+                id: newPersonId,
+                nome: candPessoa.nome,
+                matricula: candPessoa.matricula || '',
+                setor: dadosMapeados.setor,
+                funcao: dadosMapeados.funcao,
+                isNew: true,
+              });
+              pessoaAcao = 'CRIAR_PESSOA';
+              pessoaIdVinculada = newPersonId;
+              pessoaNomeVinculada = candPessoa.nome;
+              opcoesReconciliacaoPessoa = ['CRIAR_PESSOA_CONFIRMADO', 'VINCULAR_EXISTENTE', 'IGNORAR'];
+              qtdPessoasNaoCadastradas++;
+              if (statusQualidade !== 'ERRO') statusQualidade = 'ATENCAO';
+
+              const rawStatusColab = dadosMapeados.statusColaborador || dadosMapeados.status;
+              const analiseStatus = normalizarStatusColaboradorCompleto(rawStatusColab);
+              if (analiseStatus.statusNaoInformado) {
+                mensagensValidacao.push(
+                  `Novo colaborador identificado: "${candPessoa.nome}" com STATUS NÃO INFORMADO na planilha. Validação e decisão humana obrigatórias antes da persistência.`
+                );
+              } else {
+                mensagensValidacao.push(
+                  `Novo colaborador identificado: "${candPessoa.nome}" com status ${analiseStatus.status} (original: "${analiseStatus.statusOriginal}"). Será cadastrado oficialmente em Pessoas & Competências após aprovação.`
+                );
               }
             }
           }
@@ -2111,6 +2165,10 @@ export function validarECompararLinhasImportacao(
       documentoAcao,
       origemSugestao: 'AI_SUGGESTION',
       decisaoHumana: 'HUMAN_APPROVED',
+      alertaHomonimo,
+      homonimoTipo,
+      homonimoDetalhes,
+      opcoesReconciliacaoPessoa,
     });
   });
 

@@ -1055,17 +1055,23 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
     );
   };
 
-  // Alteração do vínculo de pessoa (vincular ao existente vs criar nova pessoa com validação)
+  // Alteração do vínculo de pessoa (vincular ao existente, atualizar cadastro, criar nova pessoa confirmada ou ignorar)
   const alterarPessoaAcaoLinha = (
     indiceLinha: number,
-    novaAcao: 'VINCULAR_EXISTENTE' | 'CRIAR_PESSOA'
+    novaAcao: 'VINCULAR_EXISTENTE' | 'ATUALIZAR' | 'CRIAR_PESSOA' | 'IGNORAR'
   ) => {
     setRegistrosValidados((prev) =>
       prev.map((l) => {
         if (l.indiceLinha === indiceLinha) {
+          const decisaoUsuario: any = novaAcao === 'IGNORAR' ? 'IGNORAR' : novaAcao === 'ATUALIZAR' ? 'ATUALIZAR' : 'CRIAR';
+          const acaoDuplicidade: any = novaAcao === 'IGNORAR' ? 'IGNORAR' : novaAcao === 'ATUALIZAR' ? 'ATUALIZAR' : novaAcao === 'CRIAR_PESSOA' ? 'CRIAR_NOVO' : 'MANTER_EXISTENTE';
           return {
             ...l,
-            pessoaAcao: novaAcao,
+            pessoaAcao: novaAcao === 'CRIAR_PESSOA' ? 'CRIAR_PESSOA' : novaAcao === 'IGNORAR' ? 'IGNORAR' : 'VINCULAR_EXISTENTE',
+            decisaoUsuario,
+            acaoDuplicidade,
+            selecionadoParaImportar: novaAcao !== 'IGNORAR',
+            decisaoHumana: 'HUMAN_APPROVED',
           };
         }
         return l;
@@ -2453,22 +2459,27 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                           </td>
 
                           <td className="p-2.5">
-                            {linha.classificacaoReconciliacao === 'NOVO' && (
+                            {linha.alertaHomonimo && (
+                              <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300 text-[10px] animate-pulse">
+                                ⚠️ Homônimo Detectado
+                              </span>
+                            )}
+                            {linha.classificacaoReconciliacao === 'NOVO' && !linha.alertaHomonimo && (
                               <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
                                 🟢 Novo
                               </span>
                             )}
-                            {linha.classificacaoReconciliacao === 'EXISTENTE_IGUAL' && (
+                            {linha.classificacaoReconciliacao === 'EXISTENTE_IGUAL' && !linha.alertaHomonimo && (
                               <span className="inline-flex items-center gap-1 font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 text-[10px]">
                                 🔵 Idêntico
                               </span>
                             )}
-                            {linha.classificacaoReconciliacao === 'EXISTENTE_ALTERADO' && (
+                            {linha.classificacaoReconciliacao === 'EXISTENTE_ALTERADO' && !linha.alertaHomonimo && (
                               <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[10px]">
                                 🟠 Com Alteração
                               </span>
                             )}
-                            {linha.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' && (
+                            {linha.classificacaoReconciliacao === 'POSSIVEL_DUPLICIDADE' && !linha.alertaHomonimo && (
                               <span className="inline-flex items-center gap-1 font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 text-[10px]">
                                 🟡 Duplicidade
                               </span>
@@ -2767,38 +2778,124 @@ export const SmartImportMigrationView: React.FC<SmartImportMigrationViewProps> =
                               </div>
                             )}
 
-                            {/* Decisão Específica para Colaborador (Pessoa) */}
-                            {linha.pessoaExistenteSimilar && (
-                              <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-blue-950">
-                                    Colaborador Identificado: "{linha.dadosMapeados.pessoaNome || 'Nome na planilha'}"
-                                  </span>
-                                  <span className="text-[10px] text-blue-700 font-mono">
-                                    Similaridade: {(linha.pessoaExistenteSimilar.scoreSimilaridade * 100).toFixed(0)}%
-                                  </span>
+                            {/* Decisão Específica para Colaborador (Pessoa) com Alerta de Homônimos e 4 Decisões Explícitas */}
+                            {(linha.pessoaExistenteSimilar || linha.alertaHomonimo || linha.dadosMapeados.pessoaNome) && (
+                              <div className={`p-3 rounded-lg text-xs space-y-2 border ${
+                                linha.alertaHomonimo
+                                  ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                                  : 'bg-blue-50/70 border-blue-200 text-slate-800'
+                              }`}>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold">
+                                      👤 Colaborador na Planilha: <span className="underline decoration-blue-500 font-semibold">{linha.dadosMapeados.pessoaNome || 'Não informado'}</span>
+                                      {linha.dadosMapeados.pessoaMatricula && (
+                                        <span className="ml-1 text-[11px] font-mono text-slate-600">
+                                          (Matrícula/CANAC: {linha.dadosMapeados.pessoaMatricula})
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                  {linha.pessoaExistenteSimilar && (
+                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/80 border border-slate-200 text-slate-700">
+                                      Similaridade: {(linha.pessoaExistenteSimilar.scoreSimilaridade * 100).toFixed(0)}% com "{linha.pessoaExistenteSimilar.nome}"
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="flex items-center gap-4 text-xs">
-                                  <label className="flex items-center gap-1.5 cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name={`pessoa-acao-${linha.indiceLinha}`}
-                                      checked={linha.pessoaAcao === 'VINCULAR_EXISTENTE'}
-                                      onChange={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'VINCULAR_EXISTENTE')}
-                                      className="text-blue-600 cursor-pointer"
-                                    />
-                                    <span>Vincular ao colaborador cadastrado: <strong>{linha.pessoaExistenteSimilar.nome}</strong></span>
-                                  </label>
-                                  <label className="flex items-center gap-1.5 cursor-pointer">
-                                    <input
-                                      type="radio"
-                                      name={`pessoa-acao-${linha.indiceLinha}`}
-                                      checked={linha.pessoaAcao === 'CRIAR_PESSOA'}
-                                      onChange={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'CRIAR_PESSOA')}
-                                      className="text-blue-600 cursor-pointer"
-                                    />
-                                    <span>Criar novo colaborador no cadastro</span>
-                                  </label>
+
+                                {/* Banner de Alerta de Homônimo se detectado */}
+                                {linha.alertaHomonimo && (
+                                  <div className="bg-amber-100 border border-amber-300 rounded p-2 text-xs flex items-start gap-2">
+                                    <span className="text-base leading-none">⚠️</span>
+                                    <div className="flex-1">
+                                      <strong className="text-amber-900 block font-semibold">
+                                        Alerta de Atenção — Possível Homônimo ou Conflito Cadastral
+                                      </strong>
+                                      <p className="text-amber-800 text-[11px] mt-0.5">
+                                        {linha.homonimoDetalhes || 'Verifique com cautela se este registro pertence ao colaborador já cadastrado ou se é outra pessoa com nome idêntico ou similar.'}
+                                      </p>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Decisões Explícitas (Humano no Comando) */}
+                                <div>
+                                  <span className="text-[11px] font-semibold text-slate-600 block mb-1.5 uppercase tracking-wider">
+                                    Decisão de Reconciliação do Colaborador:
+                                  </span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                                    {/* Opção 1: Vincular ao Colaborador Existente */}
+                                    <button
+                                      type="button"
+                                      onClick={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'VINCULAR_EXISTENTE')}
+                                      className={`p-2 rounded border text-left flex flex-col justify-between transition-colors ${
+                                        linha.pessoaAcao === 'VINCULAR_EXISTENTE' && linha.decisaoUsuario !== 'ATUALIZAR'
+                                          ? 'bg-blue-600 text-white border-blue-700 shadow-sm'
+                                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <span className="font-semibold text-[11px] flex items-center gap-1">
+                                        <span>🔗</span> Vincular ao Existente
+                                      </span>
+                                      <span className={`text-[10px] mt-1 ${linha.pessoaAcao === 'VINCULAR_EXISTENTE' && linha.decisaoUsuario !== 'ATUALIZAR' ? 'text-blue-100' : 'text-slate-500'}`}>
+                                        Usa o ID de {linha.pessoaExistenteSimilar?.nome ? `"${linha.pessoaExistenteSimilar.nome}"` : 'pessoa cadastrada'}
+                                      </span>
+                                    </button>
+
+                                    {/* Opção 2: Atualizar Cadastro Existente */}
+                                    <button
+                                      type="button"
+                                      onClick={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'ATUALIZAR')}
+                                      className={`p-2 rounded border text-left flex flex-col justify-between transition-colors ${
+                                        linha.decisaoUsuario === 'ATUALIZAR'
+                                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
+                                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <span className="font-semibold text-[11px] flex items-center gap-1">
+                                        <span>📝</span> Atualizar Cadastro
+                                      </span>
+                                      <span className={`text-[10px] mt-1 ${linha.decisaoUsuario === 'ATUALIZAR' ? 'text-indigo-100' : 'text-slate-500'}`}>
+                                        Atualiza dados de {linha.pessoaExistenteSimilar?.nome ? `"${linha.pessoaExistenteSimilar.nome}"` : 'cadastro existente'}
+                                      </span>
+                                    </button>
+
+                                    {/* Opção 3: Criar Novo Colaborador (Confirmado) */}
+                                    <button
+                                      type="button"
+                                      onClick={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'CRIAR_PESSOA')}
+                                      className={`p-2 rounded border text-left flex flex-col justify-between transition-colors ${
+                                        linha.pessoaAcao === 'CRIAR_PESSOA'
+                                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
+                                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <span className="font-semibold text-[11px] flex items-center gap-1">
+                                        <span>➕</span> Criar Novo (Homônimo)
+                                      </span>
+                                      <span className={`text-[10px] mt-1 ${linha.pessoaAcao === 'CRIAR_PESSOA' ? 'text-emerald-100' : 'text-slate-500'}`}>
+                                        Confirma pessoa diferente e gera novo cadastro
+                                      </span>
+                                    </button>
+
+                                    {/* Opção 4: Ignorar Linha */}
+                                    <button
+                                      type="button"
+                                      onClick={() => alterarPessoaAcaoLinha(linha.indiceLinha, 'IGNORAR')}
+                                      className={`p-2 rounded border text-left flex flex-col justify-between transition-colors ${
+                                        linha.pessoaAcao === 'IGNORAR' || linha.decisaoUsuario === 'IGNORAR'
+                                          ? 'bg-slate-600 text-white border-slate-700 shadow-sm'
+                                          : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      <span className="font-semibold text-[11px] flex items-center gap-1">
+                                        <span>🚫</span> Ignorar Linha
+                                      </span>
+                                      <span className={`text-[10px] mt-1 ${linha.pessoaAcao === 'IGNORAR' || linha.decisaoUsuario === 'IGNORAR' ? 'text-slate-200' : 'text-slate-500'}`}>
+                                        Descarta este registro sem alterar nada
+                                      </span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
                             )}

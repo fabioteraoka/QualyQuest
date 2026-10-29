@@ -1685,6 +1685,11 @@ export interface RestricaoOperacional {
   apenasAlerta: boolean;
   registradoPor?: string;
   registradoEm?: string;
+  historicoEncerramentos?: {
+    data: string;
+    encerradoPor: string;
+    motivo: string;
+  }[];
 }
 
 export interface ColaboradorPessoa {
@@ -2912,6 +2917,10 @@ export interface RegistroLinhaImportacao {
   documentoAcao?: 'CRIAR_DOCUMENTO' | 'NOVA_REVISAO' | 'IGNORAR';
   origemSugestao?: 'AI_SUGGESTION';
   decisaoHumana?: 'HUMAN_APPROVED' | 'HUMAN_EDITED' | 'HUMAN_REJECTED';
+  alertaHomonimo?: boolean;
+  homonimoTipo?: 'EXATO_COM_MATRICULA_DIVERGENTE' | 'NOME_SIMILAR' | 'DUPLICIDADE_NO_ARQUIVO' | 'CORRESPONDENCIA_EXATA';
+  homonimoDetalhes?: string;
+  opcoesReconciliacaoPessoa?: ('VINCULAR_EXISTENTE' | 'ATUALIZAR' | 'CRIAR_PESSOA_CONFIRMADO' | 'IGNORAR')[];
 }
 
 export interface PreviaEstruturaArquivo {

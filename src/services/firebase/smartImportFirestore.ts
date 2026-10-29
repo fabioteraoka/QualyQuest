@@ -42,6 +42,7 @@ import {
 } from './documentControlFirestore';
 import { normalizeDocumentCode } from '../documentControlAuditReconciliation';
 import { normalizarStatusColaborador } from '../../utils/smartImportEngine';
+import { normalizePersonName, normalizeMatriculaOrCanac } from '../../utils/personNormalization';
 import { INITIAL_CALIBRATED_TOOLS } from '../../data/initialCalibratedTools';
 
 // ============================================================================
@@ -410,21 +411,40 @@ export async function efetivarImportacaoNoQualigest(
       let pessoaId = linha.pessoaIdVinculada;
       let pessoaNome = linha.pessoaNomeVinculada || dados.pessoaNome || 'Colaborador';
       let matricula = dados.pessoaMatricula || '';
-      const pessoaNomeNorm = (pessoaNome || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .trim();
+      const pessoaNomeNorm = normalizePersonName(pessoaNome);
+      const matriculaNorm = normalizeMatriculaOrCanac(matricula);
 
       // ====================================================================
       // 1.1 PERSISTÊNCIA OFICIAL DO COLABORADOR (Pessoas & Competências)
       // ====================================================================
-      if (linha.pessoaAcao === 'CRIAR_PESSOA' || (!pessoaId && linha.decisaoUsuario !== 'IGNORAR')) {
-        if (pessoasCriadasBatch.has(pessoaNomeNorm)) {
-          const pessoaJaCriada = pessoasCriadasBatch.get(pessoaNomeNorm)!;
-          pessoaId = pessoaJaCriada.id;
-          pessoaNome = pessoaJaCriada.nome;
-          matricula = pessoaJaCriada.matricula;
+      // Se não houver pessoaId ou for CRIAR_PESSOA, antes de criar verifica se já existe no banco ou no lote
+      let pessoaJaExistenteNoBanco = (contextoExistente?.pessoasExistentes || []).find((p) => {
+        const pNomeNorm = normalizePersonName(p.nome);
+        const pMatNorm = normalizeMatriculaOrCanac(p.matricula);
+        const matchMat = Boolean(matriculaNorm && pMatNorm && matriculaNorm === pMatNorm);
+        const matchNome = Boolean(pessoaNomeNorm && pNomeNorm && pessoaNomeNorm === pNomeNorm);
+        return matchMat || matchNome;
+      });
+
+      if (linha.decisaoUsuario === 'IGNORAR' || linha.decisaoUsuario === 'MANTER_EXISTENTE') {
+        // Usuário optou por ignorar ou manter existente: não cria pessoa
+        if (pessoaJaExistenteNoBanco) {
+          pessoaId = pessoaJaExistenteNoBanco.id;
+          pessoaNome = pessoaJaExistenteNoBanco.nome;
+          matricula = pessoaJaExistenteNoBanco.matricula;
+        }
+      } else if (
+        (linha.pessoaAcao === 'CRIAR_PESSOA' || (!pessoaId && linha.decisaoUsuario !== 'IGNORAR')) &&
+        (!pessoaJaExistenteNoBanco || linha.decisaoUsuario === 'CRIAR')
+      ) {
+        // Verificar se já foi criado em linha anterior deste lote
+        const jaCriadoNoLote = pessoasCriadasBatch.get(pessoaNomeNorm) || 
+          (matriculaNorm ? Array.from(pessoasCriadasBatch.values()).find(p => normalizeMatriculaOrCanac(p.matricula) === matriculaNorm) : undefined);
+
+        if (jaCriadoNoLote) {
+          pessoaId = jaCriadoNoLote.id;
+          pessoaNome = jaCriadoNoLote.nome;
+          matricula = jaCriadoNoLote.matricula;
         } else {
           pessoaId = pessoaId || `person-imp-${Date.now().toString(36)}-${Math.random().toString(36).substr(2, 6)}`;
           matricula = dados.pessoaMatricula || `IMP-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -473,9 +493,9 @@ export async function efetivarImportacaoNoQualigest(
           idsGerados.push(pessoaId);
           totalCriados++;
         }
-      } else if (linha.pessoaAcao === 'VINCULAR_EXISTENTE' && pessoaId) {
-        // Se houver alteração nos dados do colaborador existente (aprovado na decisão)
-        const pessoaExistente = (contextoExistente?.pessoasExistentes || []).find((p) => p.id === pessoaId);
+      } else if (linha.pessoaAcao === 'VINCULAR_EXISTENTE' || pessoaJaExistenteNoBanco) {
+        pessoaId = pessoaId || pessoaJaExistenteNoBanco?.id;
+        const pessoaExistente = pessoaJaExistenteNoBanco || (contextoExistente?.pessoasExistentes || []).find((p) => p.id === pessoaId);
         if (pessoaExistente && !pessoasAtualizadasBatch.has(pessoaId)) {
           const temNovaMatricula = dados.pessoaMatricula && dados.pessoaMatricula !== pessoaExistente.matricula;
           const temNovoSetor = dados.setor && dados.setor !== pessoaExistente.setor;

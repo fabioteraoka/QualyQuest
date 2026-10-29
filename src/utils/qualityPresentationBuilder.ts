@@ -959,25 +959,34 @@ export async function exportarApresentacaoPPTX(
           })));
         }
 
-        const alturaTabela = 0.30 + linhasExibidas.length * 0.28 + (precisaResumo ? 0.25 : 0);
+        // Estimativa realista de altura por linha baseada no comprimento do texto das células
+        const rowHeights = linhasExibidas.map((l) => {
+          const maxChar = Math.max(...l.map((c) => String(c ?? '').length), 0);
+          return maxChar > 50 ? 0.38 : maxChar > 24 ? 0.32 : 0.28;
+        });
+        const alturaTabelaEstimada = 0.32 + rowHeights.reduce((acc, h) => acc + h, 0) + (precisaResumo ? 0.25 : 0);
+        const yTabela = posYConteudo + 0.1;
 
         slide.addTable([headerRow, ...bodyRows], {
           x: 6.7,
-          y: posYConteudo + 0.1,
+          y: yTabela,
           w: 5.8,
           colW: largurasColunas,
           border: { pt: 0.5, color: COR_BORDER },
         });
 
         // Síntese Executiva / Diretriz no espaço remanescente abaixo da tabela
-        const espacoAbaixo = availH - alturaTabela - 0.30;
-        if (espacoAbaixo >= 1.0) {
-          const yBox = posYConteudo + 0.1 + alturaTabela + 0.12;
+        const yFimTabela = yTabela + alturaTabelaEstimada;
+        const espacoAbaixo = maxBottomY - yFimTabela - 0.15;
+        // Só renderiza o card inferior se houver espaço vertical seguro com folga comprovada e no máximo 5 linhas na tabela
+        if (espacoAbaixo >= 1.15 && linhasExibidas.length <= 5) {
+          const yBox = yFimTabela + 0.12;
+          const hBox = Math.min(espacoAbaixo, 1.25);
           slide.addShape(pptx.ShapeType.roundRect, {
             x: 6.7,
             y: yBox,
             w: 5.8,
-            h: Math.min(espacoAbaixo, 1.40),
+            h: hBox,
             fill: { color: COR_CARD_BG },
             line: { color: COR_BORDER, width: 1 },
             rectRadius: 0.06,
@@ -985,7 +994,7 @@ export async function exportarApresentacaoPPTX(
 
           slide.addText('Diretriz e Ação Recomendada SGQ', {
             x: 6.85,
-            y: yBox + 0.10,
+            y: yBox + 0.08,
             w: 5.5,
             h: 0.22,
             fontSize: 9.0,
@@ -994,16 +1003,16 @@ export async function exportarApresentacaoPPTX(
             color: COR_NAVY,
           });
 
-          const notas = (slideData.pontosChave || []).slice(0, 2).map(p => ({
-            text: truncarTexto(p, 110),
-            options: { bullet: true, fontSize: 8.0, fontFace: 'Arial', color: COR_TEXT_DARK, lineSpacing: 13 }
+          const notas = (slideData.pontosChave || []).slice(0, 2).map((p) => ({
+            text: truncarTexto(p, 95),
+            options: { bullet: true, fontSize: 7.8, fontFace: 'Arial', color: COR_TEXT_DARK, lineSpacing: 12 },
           }));
 
           slide.addText(notas, {
             x: 6.85,
-            y: yBox + 0.35,
+            y: yBox + 0.32,
             w: 5.5,
-            h: Math.min(espacoAbaixo - 0.45, 0.95),
+            h: Math.max(0.4, hBox - 0.40),
           });
         }
       } else {

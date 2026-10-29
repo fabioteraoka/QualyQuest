@@ -567,10 +567,16 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
+    // 1 & 2. COLABORADORES & PERFIL 360° CANÔNICO
     case 'colaboradores-lista':
     case 'colaborador-novo':
     case 'cadastros-funcoes-cargos':
     case 'pessoas-competencias':
+    case 'rooster-pessoas':
+    case 'pessoas':
+    case 'rooster-ficha':
+    case 'ficha':
+    case 'colaborador-perfil':
       return (
         <PersonsCompetenciesView
           organizationId={props.activeOrgId}
@@ -594,22 +600,103 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
-    case 'rooster-mro':
-    case 'rooster':
-    case 'rooster-pessoas':
-    case 'pessoas':
-    case 'rooster-ficha':
-    case 'ficha':
-    case 'colaborador-perfil':
+    // MATRIZ DE COMPETÊNCIAS & MODELOS DE CAPACITAÇÃO CANÔNICA
+    case 'rooster-matrizes':
+    case 'matrizes':
+    case 'matriz-competencias':
+    case 'modelos-capacitacao':
+      return (
+        <PersonsCompetenciesView
+          organizationId={props.activeOrgId}
+          userProfile={props.userProfile}
+          persons={props.persons}
+          competencies={props.competencies}
+          personCompetencies={props.personCompetencies}
+          qualifications={props.qualifications}
+          trainingRecords={props.trainingRecords}
+          trainingCourses={props.trainingCourses}
+          documents={props.personDocuments}
+          activities={props.activityRequirements}
+          nonConformities={props.records}
+          bases={props.basesOperacionais}
+          initialStatusFilter={props.initialPersonStatusFilter}
+          initialSubTab="MATRIZ"
+          onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
+          onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
+          onNavigateToImport={() => setActiveTab('importacao-certificados')}
+        />
+      );
+
+    // 3 & 4. TREINAMENTOS, QUALIFICAÇÕES & CATÁLOGO CANÔNICO
+    case 'treinamentos-qualificacoes':
+    case 'rooster-treinamentos':
     case 'rooster-catalogo':
     case 'catalogo':
     case 'treinamentos-catalogo':
-    case 'rooster-treinamentos':
+    case 'cht-qualificacoes':
     case 'rooster-licencas':
-    case 'licencas':
-    case 'cadastros-bases':
-    case 'rooster-bases':
-    case 'bases':
+    case 'licencas': {
+      const initialTabVal =
+        activeTab === 'cht-qualificacoes' || activeTab === 'rooster-licencas' || activeTab === 'licencas'
+          ? 'QUALIFICACOES'
+          : activeTab === 'rooster-catalogo' || activeTab === 'catalogo' || activeTab === 'treinamentos-catalogo'
+          ? 'CURSOS'
+          : 'REGISTROS';
+
+      return (
+        <TrainingsQualificationsView
+          organizationId={props.activeOrgId}
+          userProfile={props.userProfile}
+          persons={props.persons}
+          trainingCourses={props.trainingCourses}
+          trainingRecords={props.trainingRecords}
+          qualifications={props.qualifications}
+          documents={props.personDocuments}
+          initialTab={initialTabVal}
+          onNavigateToImport={() => setActiveTab('importacao-certificados')}
+          onNavigateToRooster={(roosterTab) => {
+            if (roosterTab === 'designacao') setActiveTab('rooster-designacao');
+            else if (roosterTab === 'conferencia') setActiveTab('rooster-conferencia');
+            else setActiveTab('rooster-designacoes-crud');
+          }}
+          onRegistrosRemovidos={(ids) =>
+            props.setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))
+          }
+        />
+      );
+    }
+
+    // 5. CENTRAL UNIFICADA DE VENCIMENTOS & GAPS OPERACIONAIS
+    case 'central-vencimentos-gaps':
+    case 'rooster-vencimentos':
+    case 'vencimentos':
+    case 'aptidao-operacional':
+      return (
+        <ExpirationsGapsCenterView
+          organizationId={props.activeOrgId}
+          userProfile={props.userProfile}
+          persons={props.persons}
+          competencies={props.competencies}
+          personCompetencies={props.personCompetencies}
+          qualifications={props.qualifications}
+          trainingRecords={props.trainingRecords}
+          documents={props.personDocuments}
+          activities={props.activityRequirements}
+          aiSuggestions={props.aiCompetencySuggestions}
+          ferramentas={props.ferramentasCalibradas}
+          documentosControlados={props.documentosControlados}
+          recordsNC={props.records}
+          initialSubTab={activeTab === 'aptidao-operacional' ? 'SIMULADOR' : 'VENCIMENTOS'}
+          onNavigateToImport={() => setActiveTab('importacao-certificados')}
+          onRegistrosRemovidos={(ids) =>
+            props.setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))
+          }
+        />
+      );
+
+    // 7. MÓDULOS TÉCNICOS ESPECIALIZADOS DE DESIGNAÇÃO & CONFERÊNCIA MRO (F 001-29)
+    case 'rooster-mro':
+    case 'rooster':
     case 'rooster-designacao':
     case 'designacao':
     case 'lista-designacao':
@@ -618,41 +705,20 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
     case 'designacoes':
     case 'rooster-conferencia':
     case 'conferencia':
-    case 'rooster-relatorio':
-    case 'rooster-roster':
-    case 'rooster-motores':
-    case 'rooster-matrizes':
-    case 'matrizes':
-    case 'matriz-competencias':
-    case 'modelos-capacitacao':
-    case 'rooster-vencimentos':
-    case 'vencimentos': {
+    case 'cadastros-bases':
+    case 'rooster-bases':
+    case 'bases':
+    case 'rooster-motores': {
       const roosterTab =
-        activeTab === 'rooster-catalogo' || activeTab === 'catalogo' || activeTab === 'treinamentos-catalogo'
-          ? 'catalogo'
-          : activeTab === 'rooster-treinamentos'
-          ? 'treinamentos'
-          : activeTab === 'rooster-licencas' || activeTab === 'licencas'
-          ? 'licencas'
-          : activeTab === 'rooster-ficha' || activeTab === 'colaborador-perfil' || activeTab === 'ficha'
-          ? 'ficha'
-          : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases' || activeTab === 'bases'
-          ? 'bases'
-          : activeTab === 'rooster-designacoes-crud' || activeTab === 'designacoes_crud' || activeTab === 'designacoes'
+        activeTab === 'rooster-designacoes-crud' || activeTab === 'designacoes_crud' || activeTab === 'designacoes'
           ? 'designacoes_crud'
-          : activeTab === 'rooster-designacao' || activeTab === 'designacao' || activeTab === 'lista-designacao'
-          ? 'designacao'
           : activeTab === 'rooster-conferencia' || activeTab === 'conferencia'
           ? 'conferencia'
-          : activeTab === 'rooster-relatorio' || activeTab === 'rooster-roster'
-          ? 'roster'
+          : activeTab === 'cadastros-bases' || activeTab === 'rooster-bases' || activeTab === 'bases'
+          ? 'bases'
           : activeTab === 'rooster-motores'
           ? 'motores'
-          : activeTab === 'rooster-matrizes' || activeTab === 'modelos-capacitacao' || activeTab === 'matrizes' || activeTab === 'matriz-competencias'
-          ? 'matrizes'
-          : activeTab === 'rooster-vencimentos' || activeTab === 'vencimentos'
-          ? 'vencimentos'
-          : 'pessoas';
+          : 'designacao';
 
       return (
         <PersonsCompetenciesView
@@ -677,57 +743,6 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
     }
-
-    case 'treinamentos-qualificacoes':
-    case 'cht-qualificacoes':
-      return (
-        <TrainingsQualificationsView
-          organizationId={props.activeOrgId}
-          userProfile={props.userProfile}
-          persons={props.persons}
-          trainingCourses={props.trainingCourses}
-          trainingRecords={props.trainingRecords}
-          qualifications={props.qualifications}
-          documents={props.personDocuments}
-          initialTab={activeTab === 'cht-qualificacoes' ? 'QUALIFICACOES' : 'CURSOS'}
-          onNavigateToImport={() => setActiveTab('importacao-inteligente')}
-          onNavigateToRooster={(roosterTab) => {
-            if (roosterTab === 'catalogo') setActiveTab('rooster-catalogo');
-            else if (roosterTab === 'treinamentos') setActiveTab('rooster-treinamentos');
-            else if (roosterTab === 'licencas') setActiveTab('rooster-licencas');
-            else if (roosterTab === 'ficha') setActiveTab('rooster-ficha');
-            else setActiveTab('rooster-mro');
-          }}
-          onRegistrosRemovidos={(ids) =>
-            props.setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))
-          }
-        />
-      );
-
-    case 'central-vencimentos-gaps':
-    case 'aptidao-operacional':
-      return (
-        <ExpirationsGapsCenterView
-          organizationId={props.activeOrgId}
-          userProfile={props.userProfile}
-          persons={props.persons}
-          competencies={props.competencies}
-          personCompetencies={props.personCompetencies}
-          qualifications={props.qualifications}
-          trainingRecords={props.trainingRecords}
-          documents={props.personDocuments}
-          activities={props.activityRequirements}
-          aiSuggestions={props.aiCompetencySuggestions}
-          ferramentas={props.ferramentasCalibradas}
-          documentosControlados={props.documentosControlados}
-          recordsNC={props.records}
-          initialSubTab={activeTab === 'aptidao-operacional' ? 'SIMULADOR' : 'VENCIMENTOS'}
-          onNavigateToImport={() => setActiveTab('importacao-inteligente')}
-          onRegistrosRemovidos={(ids) =>
-            props.setTrainingRecords((prev) => prev.filter((x) => !ids.includes(x.id)))
-          }
-        />
-      );
 
     case 'competencias-dashboard':
       return (
