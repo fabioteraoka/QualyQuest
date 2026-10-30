@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   AlertTriangle,
@@ -52,6 +52,20 @@ export const RestricaoOperacionalModal: React.FC<RestricaoOperacionalModalProps>
   const [justificativaEncerramento, setJustificativaEncerramento] = useState('');
   const [isSalvando, setIsSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const rest = colaborador.restricaoOperacional;
+      const isBloq = rest?.possuiRestricao ?? false;
+      setModo(isBloq ? 'VISUALIZAR' : 'EDITAR');
+      setMotivo(rest?.motivo || '');
+      setTipoBloqueio(rest?.impedeExecucao ? 'IMPEDITIVO' : 'ALERTA');
+      setDataInicio(rest?.dataInicio || new Date().toISOString().slice(0, 10));
+      setDataFim(rest?.dataFim || '');
+      setJustificativaEncerramento('');
+      setErro(null);
+    }
+  }, [isOpen, colaborador]);
 
   if (!isOpen) return null;
 
@@ -361,7 +375,7 @@ export const RestricaoOperacionalModal: React.FC<RestricaoOperacionalModalProps>
                   </label>
                   <textarea
                     rows={3}
-                    value={motivo}
+                    value={motivo ?? ''}
                     onChange={(e) => setMotivo(e.target.value)}
                     placeholder="Ex: Restrição médica preventiva de esforço repetitivo até nova junta, ou aguardando conclusão de investigação de incidente técnico..."
                     className="w-full text-xs p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
@@ -376,7 +390,7 @@ export const RestricaoOperacionalModal: React.FC<RestricaoOperacionalModalProps>
                     </label>
                     <input
                       type="date"
-                      value={dataInicio}
+                      value={dataInicio ?? ''}
                       onChange={(e) => setDataInicio(e.target.value)}
                       className="w-full text-xs p-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"
                       required
@@ -388,7 +402,7 @@ export const RestricaoOperacionalModal: React.FC<RestricaoOperacionalModalProps>
                     </label>
                     <input
                       type="date"
-                      value={dataFim}
+                      value={dataFim ?? ''}
                       onChange={(e) => setDataFim(e.target.value)}
                       placeholder="Deixe em branco se indeterminado"
                       className="w-full text-xs p-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -437,7 +451,7 @@ export const RestricaoOperacionalModal: React.FC<RestricaoOperacionalModalProps>
                 </label>
                 <textarea
                   rows={3}
-                  value={justificativaEncerramento}
+                  value={justificativaEncerramento ?? ''}
                   onChange={(e) => setJustificativaEncerramento(e.target.value)}
                   placeholder="Ex: Apresentado atestado médico de aptidão sem restrições, ou concluída a reciclagem interna conforme procedimento..."
                   className="w-full text-xs p-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"

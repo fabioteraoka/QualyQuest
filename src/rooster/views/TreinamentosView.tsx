@@ -752,7 +752,7 @@ export const TreinamentosView: React.FC = () => {
                 </label>
                 <input
                   type="date"
-                  value={indDataValidade}
+                  value={indDataValidade ?? ''}
                   onChange={(e) => setIndDataValidade(e.target.value)}
                   placeholder="Automático pelo catálogo se vazio"
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"

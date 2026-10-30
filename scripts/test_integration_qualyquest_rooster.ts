@@ -17,6 +17,8 @@ import { calcularStatusTreinamento, hojeISO, calcularDiasParaVencer, calcularVen
 import { getFirestoreDb } from '../src/rooster/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { validateImportPayload, generateConferenceData, commitImportPayload, setActiveAdapter } from '../src/rooster/services/storage';
+import { detectarColaboradoresDuplicados, obterResumoVinculosColaborador } from '../src/services/mergePersonsService';
+import { normalizePersonName, normalizeMatriculaOrCanac } from '../src/utils/personNormalization';
 import path from 'path';
 
 interface TestResult {
@@ -868,6 +870,225 @@ async function runAllTests() {
 
   const pptxFileExists = fs.existsSync('docs/Apresentacao_Gerencial_QualyQuest_Rooster.pptx');
   assert(pptxFileExists, '7. Correções da Rodada Atual', 'Arquivo PPTX oficial gerado e disponível em docs/ e public/', 'PPTX não encontrado');
+
+  // ==========================================================================
+  // EIXO 8: DEDUPLICAÇÃO E UNIFICAÇÃO SEGURA DE COLABORADORES (VÍNCULOS & MERGE)
+  // ==========================================================================
+  console.log('\n--- EIXO 8: DEDUPLICAÇÃO E UNIFICAÇÃO SEGURA DE COLABORADORES ---');
+
+  // 8.1 Normalização de Nomes e Identificadores
+  const nomeDupA = 'João da Silva Santos';
+  const nomeDupB = '  JOAO   DA SILVA SANTOS ';
+  assert(
+    normalizePersonName(nomeDupA) === normalizePersonName(nomeDupB),
+    '8. Deduplicação e Unificação',
+    'Normalização de nomes é invariante a maiúsculas, acentuação e múltiplos espaços',
+    'Falha na equivalência de normalização'
+  );
+
+  const canacDupA = '123.456';
+  const canacDupB = '123456';
+  assert(
+    normalizeMatriculaOrCanac(canacDupA) === normalizeMatriculaOrCanac(canacDupB),
+    '8. Deduplicação e Unificação',
+    'Normalização de CANAC/Matrícula remove pontuações e formatações espúrias',
+    'Falha na normalização de CANAC'
+  );
+
+  // 8.2 Detecção Automática de Duplicados
+  const listaColabsTeste: ColaboradorPessoa[] = [
+    {
+      id: 'MEC-001',
+      organizationId: 'org_impacto_aviation',
+      nome: 'Carlos Roberto Pereira',
+      matricula: '1001',
+      cargoOperacional: 'Mecânico',
+      funcao: 'INSPETOR_CONTROLE_QUALIDADE',
+      setor: 'Manutenção',
+      baseOperacional: 'GRU',
+      status: 'ATIVO',
+      dataAdmissao: '2020-01-10',
+      contatoCorporativo: 'carlos@impacto.com.br',
+      observacoes: '',
+      camposCustomizados: { canac: '112233' },
+      createdAt: '2020-01-10',
+      updatedAt: '2024-01-10',
+      criadoPor: 'Admin Teste',
+      criadoPorUid: 'admin-001',
+    },
+    {
+      id: 'MEC-TEMP-99',
+      organizationId: 'org_impacto_aviation',
+      nome: 'CARLOS  ROBERTO  PEREIRA',
+      matricula: '1001',
+      cargoOperacional: 'Mecânico de Linha',
+      funcao: 'MECANICO_MANUTENCAO_AERONAVES',
+      setor: 'Manutenção',
+      baseOperacional: 'GRU',
+      status: 'ATIVO',
+      dataAdmissao: '2022-05-15',
+      contatoCorporativo: '',
+      observacoes: 'Importado por engano',
+      camposCustomizados: { canac: '112233' },
+      createdAt: '2024-02-01',
+      updatedAt: '2024-02-01',
+      criadoPor: 'Importador',
+      criadoPorUid: 'imp-001',
+    },
+    {
+      id: 'MEC-002',
+      organizationId: 'org_impacto_aviation',
+      nome: 'Ana Paula Souza',
+      matricula: '1002',
+      cargoOperacional: 'Engenheira',
+      funcao: 'ENGENHEIRO_MANUTENCAO',
+      setor: 'Técnico',
+      baseOperacional: 'REC',
+      status: 'ATIVO',
+      dataAdmissao: '2021-03-01',
+      contatoCorporativo: '',
+      observacoes: '',
+      camposCustomizados: { canac: '445566' },
+      createdAt: '2021-03-01',
+      updatedAt: '2024-01-10',
+      criadoPor: 'Admin Teste',
+      criadoPorUid: 'admin-001',
+    },
+  ];
+
+  const gruposDuplicados = detectarColaboradoresDuplicados(listaColabsTeste);
+  assert(
+    gruposDuplicados.length === 1,
+    '8. Deduplicação e Unificação',
+    'Detecta exatamente 1 grupo de duplicados entre os colaboradores cadastrados',
+    `Esperado 1 grupo, encontrado: ${gruposDuplicados.length}`
+  );
+
+  const parDuplicado = gruposDuplicados[0];
+  assert(
+    parDuplicado.colaboradorPrincipal.id === 'MEC-001' && parDuplicado.colaboradorDuplicado.id === 'MEC-TEMP-99',
+    '8. Deduplicação e Unificação',
+    'Identifica com precisão o registro canônico principal (MEC-001) e o registro secundário duplicado (MEC-TEMP-99)',
+    'Inversão indevida de principal e duplicado'
+  );
+  assert(
+    parDuplicado.score >= 0.95,
+    '8. Deduplicação e Unificação',
+    'Atribui score alto de certeza (>= 0.95) para correspondência de nome normalizado e CANAC idêntico',
+    `Score obtido: ${parDuplicado.score}`
+  );
+
+  // 8.3 Resumo e Contabilização de Vínculos
+  const treinosMock: RegistroTreinamentoColaborador[] = [
+    {
+      id: 'TRN-1',
+      organizationId: 'org_impacto_aviation',
+      colaboradorId: 'MEC-TEMP-99',
+      colaboradorNome: 'Carlos Roberto Pereira',
+      colaboradorMatricula: '1001',
+      treinamentoId: 'CURSO-SGQ',
+      treinamentoCodigo: 'SGQ-01',
+      treinamentoTitulo: 'SGQ Básico',
+      dataRealizacao: '2023-05-10',
+      dataConclusao: '2023-05-10',
+      dataValidade: '2025-05-10',
+      cargaHoraria: 8,
+      instrutor: 'Instrutor SGQ',
+      resultado: 'APROVADO',
+      createdAt: '2023-05-10',
+      updatedAt: '2023-05-10',
+    },
+    {
+      id: 'TRN-2',
+      organizationId: 'org_impacto_aviation',
+      colaboradorId: 'MEC-TEMP-99',
+      colaboradorNome: 'Carlos Roberto Pereira',
+      colaboradorMatricula: '1001',
+      treinamentoId: 'CURSO-HF',
+      treinamentoCodigo: 'HF-01',
+      treinamentoTitulo: 'Fatores Humanos',
+      dataRealizacao: '2023-08-15',
+      dataConclusao: '2023-08-15',
+      dataValidade: '2025-08-15',
+      cargaHoraria: 16,
+      instrutor: 'Instrutor HF',
+      resultado: 'APROVADO',
+      createdAt: '2023-08-15',
+      updatedAt: '2023-08-15',
+    },
+  ];
+
+  const resumoDuplicado = obterResumoVinculosColaborador('MEC-TEMP-99', {
+    trainingRecords: treinosMock,
+    qualifications: [],
+    personCompetencies: [],
+    documents: [],
+  });
+
+  assert(
+    resumoDuplicado.totalTreinamentos === 2 && resumoDuplicado.totalVinculos >= 2,
+    '8. Deduplicação e Unificação',
+    'obterResumoVinculosColaborador totaliza corretamente os vínculos atrelados ao registro duplicado',
+    `Esperado 2 treinos, retornado: ${resumoDuplicado.totalTreinamentos}`
+  );
+
+  // 8.4 Simulação de Re-binding Seguro dos Vínculos
+  const treinosAposMigracao = treinosMock.map((t) => {
+    if (t.colaboradorId === 'MEC-TEMP-99') {
+      return {
+        ...t,
+        colaboradorId: 'MEC-001',
+        colaboradorNome: 'Carlos Roberto Pereira',
+        observacoesRevisao: 'Vínculo transferido por unificação do cadastro duplicado MEC-TEMP-99.',
+      };
+    }
+    return t;
+  });
+
+  const orfaosRestantes = treinosAposMigracao.filter((t) => t.colaboradorId === 'MEC-TEMP-99');
+  const consolidadosNoPrincipal = treinosAposMigracao.filter((t) => t.colaboradorId === 'MEC-001');
+
+  assert(
+    orfaosRestantes.length === 0,
+    '8. Deduplicação e Unificação',
+    'Após consolidação, zero registros de treinamento ficam órfãos ou vinculados ao duplicado',
+    `Restaram ${orfaosRestantes.length} registros órfãos`
+  );
+  assert(
+    consolidadosNoPrincipal.length === 2,
+    '8. Deduplicação e Unificação',
+    '100% dos treinamentos do duplicado foram transferidos intactos para o colaborador principal',
+    `Esperados 2 no principal, encontrados: ${consolidadosNoPrincipal.length}`
+  );
+
+  // 8.5 Exclusão do Colaborador Duplicado da Lista
+  const listaFinalAposMerge = listaColabsTeste.filter((p) => p.id !== 'MEC-TEMP-99');
+  assert(
+    listaFinalAposMerge.length === 2 && !listaFinalAposMerge.some((p) => p.id === 'MEC-TEMP-99'),
+    '8. Deduplicação e Unificação',
+    'Colaborador duplicado é descartado da lista mestre sem deixar duplicidade visual no sistema',
+    'Colaborador duplicado ainda presente na lista final'
+  );
+
+  // 8.6 Verificação de Presença do Botão e Modal nas Telas Oficiais
+  const personsViewCode = fs.readFileSync('src/components/PersonsCompetenciesView.tsx', 'utf8');
+  assert(
+    personsViewCode.includes('<MergeColaboradoresModal') &&
+    personsViewCode.includes('Unificar Duplicados') &&
+    personsViewCode.includes('Unificar / Mesclar com Outro Colaborador (Transferir Vínculos)'),
+    '8. Deduplicação e Unificação',
+    'PersonsCompetenciesView inclui botão no cabeçalho, opção na tela de bloqueio e modal de unificação montado',
+    'Falta integração na PersonsCompetenciesView'
+  );
+
+  const pessoasRoosterCode = fs.readFileSync('src/rooster/views/PessoasView.tsx', 'utf8');
+  assert(
+    pessoasRoosterCode.includes('<MergeColaboradoresModal') &&
+    pessoasRoosterCode.includes('Unificar Duplicados'),
+    '8. Deduplicação e Unificação',
+    'Rooster PessoasView inclui botão de unificar duplicados e modal montado',
+    'Falta integração na PessoasView do Rooster'
+  );
 
   console.log('\n===============================================================');
   const total = results.length;

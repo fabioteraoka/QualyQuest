@@ -289,7 +289,7 @@ export const LicencasView: React.FC = () => {
                               <input
                                 type="date"
                                 autoFocus
-                                value={inlineDateValue}
+                                value={inlineDateValue ?? ''}
                                 onChange={(e) => setInlineDateValue(e.target.value)}
                                 className="text-xs font-mono p-1 bg-white border border-sky-600 rounded"
                               />
@@ -493,7 +493,7 @@ export const LicencasView: React.FC = () => {
                 <input
                   type="date"
                   required={tipo === 'CHT'}
-                  value={tipo === 'CHT' ? dataVencimento : dataExpedicao}
+                  value={(tipo === 'CHT' ? dataVencimento : dataExpedicao) ?? ''}
                   onChange={(e) => {
                     if (tipo === 'CHT') setDataVencimento(e.target.value);
                     else setDataExpedicao(e.target.value);
@@ -508,7 +508,7 @@ export const LicencasView: React.FC = () => {
               <input
                 type="text"
                 placeholder="Ex.: Manutenção de Célula e Sistemas Mecânicos B737 / A320"
-                value={escopo}
+                value={escopo ?? ''}
                 onChange={(e) => setEscopo(e.target.value)}
                 className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
               />
@@ -519,7 +519,7 @@ export const LicencasView: React.FC = () => {
               <input
                 type="text"
                 placeholder="Ex.: Não autorizado para inspeção boroscópica / Apenas com óculos"
-                value={limitacoesOperacionais}
+                value={limitacoesOperacionais ?? ''}
                 onChange={(e) => setLimitacoesOperacionais(e.target.value)}
                 className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
               />

@@ -1777,7 +1777,7 @@ export const TrainingsQualificationsView: React.FC<TrainingsQualificationsViewPr
                   <div className="p-2.5 bg-slate-100 rounded-lg border border-slate-200 text-slate-900 font-semibold flex justify-between items-center">
                     <span>{treinoParaEditar.colaboradorNome} ({treinoParaEditar.colaboradorMatricula})</span>
                     <span className="text-[10px] text-slate-500 uppercase font-mono">Vínculo Seguro</span>
-                    <input type="hidden" name="colaboradorId" value={treinoParaEditar.colaboradorId} />
+                    <input type="hidden" name="colaboradorId" value={treinoParaEditar.colaboradorId ?? ''} />
                   </div>
                 ) : (
                   <select

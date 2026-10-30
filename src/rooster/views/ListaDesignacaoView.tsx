@@ -918,7 +918,7 @@ export const ListaDesignacaoView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={editImp}
+                  value={editImp ?? ''}
                   onChange={(e) => setEditImp(e.target.value)}
                   placeholder="Ex: IMP-015"
                   className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono uppercase bg-slate-50 focus:bg-white"
@@ -931,7 +931,7 @@ export const ListaDesignacaoView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={editEasaType}
+                  value={editEasaType ?? ''}
                   onChange={(e) => setEditEasaType(e.target.value)}
                   placeholder="Ex: B1, B2 ou N/A"
                   className="w-full p-2 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-slate-50 focus:bg-white"

@@ -426,15 +426,15 @@ export async function efetivarImportacaoNoQualigest(
         return matchMat || matchNome;
       });
 
-      if (linha.decisaoUsuario === 'IGNORAR' || linha.decisaoUsuario === 'MANTER_EXISTENTE') {
-        // Usuário optou por ignorar ou manter existente: não cria pessoa
+      if (linha.decisaoUsuario === 'IGNORAR' || linha.pessoaAcao === 'IGNORAR') {
+        // Usuário optou por ignorar: não cria pessoa
         if (pessoaJaExistenteNoBanco) {
           pessoaId = pessoaJaExistenteNoBanco.id;
           pessoaNome = pessoaJaExistenteNoBanco.nome;
           matricula = pessoaJaExistenteNoBanco.matricula;
         }
       } else if (
-        (linha.pessoaAcao === 'CRIAR_PESSOA' || (!pessoaId && linha.decisaoUsuario !== 'IGNORAR')) &&
+        (linha.pessoaAcao === 'CRIAR_PESSOA' || !pessoaId) &&
         (!pessoaJaExistenteNoBanco || linha.decisaoUsuario === 'CRIAR')
       ) {
         // Verificar se já foi criado em linha anterior deste lote

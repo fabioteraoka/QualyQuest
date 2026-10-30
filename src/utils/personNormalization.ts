@@ -48,9 +48,9 @@ export function normalizeMatriculaOrCanac(rawId: string | undefined | null): str
   return String(rawId)
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, '')
-    .replace(/^IMP-?0*/, '') // Uniformiza prefixos corporativos como IMP-00123 ou IMP123 -> 123
-    .replace(/^CANAC-?0*/, '');
+    .replace(/[^\dA-Za-z]/g, '') // Remove pontos, hífens, barras, espaços e caracteres especiais
+    .replace(/^IMP0*/, '') // Uniformiza prefixos corporativos como IMP-00123 ou IMP123 -> 123
+    .replace(/^CANAC0*/, '');
 }
 
 /**

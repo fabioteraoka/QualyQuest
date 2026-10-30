@@ -360,7 +360,7 @@ export const FichaMecanicoView: React.FC = () => {
           </label>
           <div className="relative">
             <select
-              value={pessoa.id}
+              value={pessoa?.id ?? ''}
               onChange={(e) => setSelectedPessoaId(e.target.value)}
               className="w-full pl-3 pr-8 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-md font-semibold text-slate-900 focus:outline-hidden focus:ring-1 focus:ring-sky-600 cursor-pointer"
             >
@@ -982,7 +982,7 @@ export const FichaMecanicoView: React.FC = () => {
                 <input
                   type="date"
                   required
-                  value={novaLicVencimento}
+                  value={novaLicVencimento ?? ''}
                   onChange={(e) => setNovaLicVencimento(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
                 />
@@ -997,7 +997,7 @@ export const FichaMecanicoView: React.FC = () => {
                 <input
                   type="date"
                   required
-                  value={novaLicExpedicao}
+                  value={novaLicExpedicao ?? ''}
                   onChange={(e) => setNovaLicExpedicao(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
                 />
@@ -1052,7 +1052,7 @@ export const FichaMecanicoView: React.FC = () => {
               <input
                 type="date"
                 required
-                value={renovacaoData}
+                value={renovacaoData ?? ''}
                 onChange={(e) => setRenovacaoData(e.target.value)}
                 className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
               />
@@ -1115,7 +1115,7 @@ export const FichaMecanicoView: React.FC = () => {
                 <input
                   type="text"
                   required
-                  value={editNome}
+                  value={editNome ?? ''}
                   onChange={(e) => setEditNome(e.target.value)}
                   className="w-full text-xs p-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-medium"
                 />
@@ -1127,7 +1127,7 @@ export const FichaMecanicoView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={editCanac}
+                  value={editCanac ?? ''}
                   onChange={(e) => setEditCanac(e.target.value)}
                   placeholder="Ex: 124859"
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
@@ -1140,7 +1140,7 @@ export const FichaMecanicoView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={editImp}
+                  value={editImp ?? ''}
                   onChange={(e) => setEditImp(e.target.value)}
                   placeholder="Ex: IMP-1042"
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-emerald-500"
@@ -1152,7 +1152,7 @@ export const FichaMecanicoView: React.FC = () => {
                   Categoria
                 </label>
                 <select
-                  value={editCategoria}
+                  value={editCategoria ?? 'Mecânico'}
                   onChange={(e) => setEditCategoria(e.target.value as CategoriaPessoa)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                 >
@@ -1166,7 +1166,7 @@ export const FichaMecanicoView: React.FC = () => {
                   Situação Cadastral
                 </label>
                 <select
-                  value={editSituacao}
+                  value={editSituacao ?? 'Ativo'}
                   onChange={(e) => setEditSituacao(e.target.value as SituacaoPessoa)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                 >
@@ -1180,7 +1180,7 @@ export const FichaMecanicoView: React.FC = () => {
                   Base Principal
                 </label>
                 <select
-                  value={editBasePrincipal}
+                  value={editBasePrincipal ?? ''}
                   onChange={(e) => setEditBasePrincipal(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-bold"
                 >
@@ -1197,7 +1197,7 @@ export const FichaMecanicoView: React.FC = () => {
                   Habilitação EASA Type
                 </label>
                 <select
-                  value={editEasaType}
+                  value={editEasaType ?? 'N/A'}
                   onChange={(e) => setEditEasaType(e.target.value as EasaType)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
                 >
@@ -1215,7 +1215,7 @@ export const FichaMecanicoView: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={editClienteOuArea}
+                  value={editClienteOuArea ?? ''}
                   onChange={(e) => setEditClienteOuArea(e.target.value)}
                   placeholder="Ex: Manutenção de Linha / Trânsito"
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"

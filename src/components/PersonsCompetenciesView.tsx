@@ -5,6 +5,7 @@ import {
   Plus,
   Filter,
   Shield,
+  ShieldCheck,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -38,6 +39,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Briefcase,
+  GitMerge,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -83,6 +85,8 @@ import { OperationalBasesView } from './OperationalBasesView';
 import { RoosterModule } from './RoosterModule';
 import { ActiveTab as RoosterActiveTab } from '../rooster/context/AppContext';
 import { RestricaoOperacionalModal } from './competencies/RestricaoOperacionalModal';
+import { MergeColaboradoresModal } from './competencies/MergeColaboradoresModal';
+import { detectarColaboradoresDuplicados } from '../services/mergePersonsService';
 
 interface PersonsCompetenciesViewProps {
   organizationId: string;
@@ -262,6 +266,16 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
   const [acaoLote, setAcaoLote] = useState<TipoAcaoLoteColaborador>('INATIVAR');
   const [analiseLote, setAnaliseLote] = useState<ResultadoAnaliseLote<ColaboradorPessoa> | null>(null);
   const [sucessoLoteMsg, setSucessoLoteMsg] = useState<string | null>(null);
+
+  // Modal de Unificação / Mesclagem de Colaboradores Duplicados
+  const [modalMergeOpen, setModalMergeOpen] = useState(false);
+  const [mergePreSelectedId, setMergePreSelectedId] = useState<string | undefined>(undefined);
+  const [mergeSuccessToast, setMergeSuccessToast] = useState<string | null>(null);
+
+  // Duplicados detectados automaticamente para exibição de alerta e badge
+  const duplicadosDetectados = useMemo(() => {
+    return detectarColaboradoresDuplicados(persons);
+  }, [persons]);
 
   // Modal de Nova / Editar Competência
   const [modalCompetenciaOpen, setModalCompetenciaOpen] = useState(false);
@@ -962,6 +976,23 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
             className="inline-flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-sm font-medium transition"
           >
             <Award className="w-4 h-4 text-emerald-600" /> Nova Competência
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMergePreSelectedId(undefined);
+              setModalMergeOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 rounded-lg text-sm font-semibold transition shadow-2xs"
+            title="Detectar e unificar colaboradores repetidos transferindo treinamentos, licenças e designações"
+          >
+            <GitMerge className="w-4 h-4 text-purple-600" />
+            <span>Unificar Duplicados</span>
+            {duplicadosDetectados.length > 0 && (
+              <span className="px-1.5 py-0.2 bg-purple-600 text-white text-[11px] font-bold rounded-full animate-pulse shadow-xs">
+                {duplicadosDetectados.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -3095,7 +3126,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                         <label className="font-semibold text-slate-700 block mb-1">Nome Completo *</label>
                         <input
                           type="text"
-                          value={novoColabForm.nome}
+                          value={novoColabForm.nome ?? ''}
                           onChange={(e) => {
                             setNovoColabForm({ ...novoColabForm, nome: e.target.value });
                             setErroValidacaoNovoColab(null);
@@ -3109,7 +3140,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                         <label className="font-semibold text-slate-700 block mb-1">Matrícula Interna *</label>
                         <input
                           type="text"
-                          value={novoColabForm.matricula}
+                          value={novoColabForm.matricula ?? ''}
                           onChange={(e) => {
                             setNovoColabForm({ ...novoColabForm, matricula: e.target.value });
                             setErroValidacaoNovoColab(null);
@@ -3122,7 +3153,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                       <div>
                         <label className="font-semibold text-slate-700 block mb-1">Setor Operacional *</label>
                         <select
-                          value={novoColabForm.setor}
+                          value={novoColabForm.setor ?? 'Operações de Manutenção'}
                           onChange={(e) => setNovoColabForm({ ...novoColabForm, setor: e.target.value })}
                           className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                         >
@@ -3140,7 +3171,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                           Base Operacional / Estação *
                         </label>
                         <select
-                          value={novoColabForm.baseOperacional}
+                          value={novoColabForm.baseOperacional ?? ''}
                           onChange={(e) => {
                             setNovoColabForm({ ...novoColabForm, baseOperacional: e.target.value });
                             setErroValidacaoNovoColab(null);
@@ -3166,7 +3197,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                       <div>
                         <label className="font-semibold text-slate-700 block mb-1">Função Primária *</label>
                         <select
-                          value={novoColabForm.funcao}
+                          value={novoColabForm.funcao ?? 'Mecânico'}
                           onChange={(e) => setNovoColabForm({ ...novoColabForm, funcao: e.target.value })}
                           className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
                         >
@@ -3186,7 +3217,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                         <label className="font-semibold text-slate-700 block mb-1">Cargo / Especialidade Técnica</label>
                         <input
                           type="text"
-                          value={novoColabForm.cargoOperacional}
+                          value={novoColabForm.cargoOperacional ?? ''}
                           onChange={(e) => setNovoColabForm({ ...novoColabForm, cargoOperacional: e.target.value })}
                           placeholder="Ex: Mecânico de Célula e GMP"
                           className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -3197,7 +3228,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                         <label className="font-semibold text-slate-700 block mb-1">Data de Admissão</label>
                         <input
                           type="date"
-                          value={novoColabForm.dataAdmissao}
+                          value={novoColabForm.dataAdmissao ?? ''}
                           onChange={(e) => setNovoColabForm({ ...novoColabForm, dataAdmissao: e.target.value })}
                           className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
@@ -3207,7 +3238,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                         <label className="font-semibold text-slate-700 block mb-1">Contato Corporativo</label>
                         <input
                           type="email"
-                          value={novoColabForm.contatoCorporativo}
+                          value={novoColabForm.contatoCorporativo ?? ''}
                           onChange={(e) => setNovoColabForm({ ...novoColabForm, contatoCorporativo: e.target.value })}
                           placeholder="carlos.silva@empresa.com.br"
                           className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -3218,7 +3249,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                     <div>
                       <label className="font-semibold text-slate-700 block mb-1">Observações Gerais</label>
                       <textarea
-                        value={novoColabForm.observacoes}
+                        value={novoColabForm.observacoes ?? ''}
                         onChange={(e) => setNovoColabForm({ ...novoColabForm, observacoes: e.target.value })}
                         rows={2}
                         className="w-full p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -3307,7 +3338,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                           <label className="font-semibold text-slate-700 block mb-1">Número da CHT / Licença *</label>
                           <input
                             type="text"
-                            value={novoColabLicenca.numero}
+                            value={novoColabLicenca.numero ?? ''}
                             onChange={(e) =>
                               setNovoColabLicenca({ ...novoColabLicenca, numero: e.target.value })
                             }
@@ -3320,7 +3351,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                           <label className="font-semibold text-slate-700 block mb-1">Órgão Emissor</label>
                           <input
                             type="text"
-                            value={novoColabLicenca.orgaoEmissor}
+                            value={novoColabLicenca.orgaoEmissor ?? ''}
                             onChange={(e) =>
                               setNovoColabLicenca({ ...novoColabLicenca, orgaoEmissor: e.target.value })
                             }
@@ -3333,7 +3364,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                           <label className="font-semibold text-slate-700 block mb-1">Habilitações / Categorias</label>
                           <input
                             type="text"
-                            value={novoColabLicenca.categorias}
+                            value={novoColabLicenca.categorias ?? ''}
                             onChange={(e) =>
                               setNovoColabLicenca({ ...novoColabLicenca, categorias: e.target.value })
                             }
@@ -3346,7 +3377,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                           <label className="font-semibold text-slate-700 block mb-1">Data de Validade da CHT</label>
                           <input
                             type="date"
-                            value={novoColabLicenca.validadeCHT}
+                            value={novoColabLicenca.validadeCHT ?? ''}
                             onChange={(e) =>
                               setNovoColabLicenca({ ...novoColabLicenca, validadeCHT: e.target.value })
                             }
@@ -3361,7 +3392,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                           <label className="font-semibold text-slate-700 block mb-1">Validade do CMA</label>
                           <input
                             type="date"
-                            value={novoColabLicenca.validadeCMA}
+                            value={novoColabLicenca.validadeCMA ?? ''}
                             onChange={(e) =>
                               setNovoColabLicenca({ ...novoColabLicenca, validadeCMA: e.target.value })
                             }
@@ -3726,7 +3757,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   min={1}
                   max={5}
                   step={1}
-                  value={atribuirCompData.nivel}
+                  value={atribuirCompData.nivel ?? 2}
                   onChange={(e) =>
                     setAtribuirCompData({ ...atribuirCompData, nivel: parseInt(e.target.value, 10) })
                   }
@@ -3745,7 +3776,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 <label className="font-semibold text-slate-700 block mb-1">Data de Validade (opcional)</label>
                 <input
                   type="date"
-                  value={atribuirCompData.validade}
+                  value={atribuirCompData.validade ?? ''}
                   onChange={(e) =>
                     setAtribuirCompData({ ...atribuirCompData, validade: e.target.value })
                   }
@@ -3757,7 +3788,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                 <label className="font-semibold text-slate-700 block mb-1">Observações / Justificativa</label>
                 <textarea
                   rows={2}
-                  value={atribuirCompData.observacoes}
+                  value={atribuirCompData.observacoes ?? ''}
                   onChange={(e) =>
                     setAtribuirCompData({ ...atribuirCompData, observacoes: e.target.value })
                   }
@@ -4028,8 +4059,33 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                       <li key={idx}>{det}</li>
                     ))}
                   </ul>
+
+                  {/* Resolução de Duplicidade: Unificação e Transferência Direta de Vínculos */}
+                  <div className="pt-2.5 mt-2 border-t border-rose-200/80 bg-white/60 p-2.5 rounded-lg space-y-2">
+                    <div className="flex items-center gap-1.5 text-purple-900 font-bold text-xs">
+                      <GitMerge className="w-4 h-4 text-purple-700" />
+                      <span>É um cadastro repetido ou duplicado?</span>
+                    </div>
+                    <p className="text-[11px] text-slate-700 leading-relaxed">
+                      Não perca os treinamentos nem as designações deste cadastro. Unifique-o ao colaborador correto: todos os vínculos serão automaticamente transferidos e este registro duplicado será excluído com segurança.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const idDuplicado = colaboradorParaExcluir.id;
+                        setModalExcluirOpen(false);
+                        setMergePreSelectedId(idDuplicado);
+                        setModalMergeOpen(true);
+                      }}
+                      className="w-full py-2 px-3 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+                    >
+                      <GitMerge className="w-4 h-4" />
+                      <span>🔀 Unificar / Mesclar com Outro Colaborador (Transferir Vínculos)</span>
+                    </button>
+                  </div>
+
                   <p className="text-[11px] text-rose-700 pt-1 border-t border-rose-200/60">
-                    💡 <strong>Solução Normativa:</strong> Utilize a <strong>Inativação Lógica</strong>. O colaborador
+                    💡 <strong>Solução Normativa:</strong> Caso o colaborador não seja duplicado e tenha deixado a empresa, utilize a <strong>Inativação Lógica</strong>. O colaborador
                     deixará de figurar nas escalas ativas, mas todos os registros permanecerão válidos perante a autoridade.
                   </p>
                 </div>
@@ -4074,7 +4130,7 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
                   </label>
                   <input
                     type="text"
-                    value={motivoExclusao}
+                    value={motivoExclusao ?? ''}
                     onChange={(e) => setMotivoExclusao(e.target.value)}
                     placeholder="Ex: Cadastro duplicado por engano de digitação"
                     className="w-full p-2 border border-slate-300 rounded-lg text-xs"
@@ -4132,6 +4188,43 @@ export const PersonsCompetenciesView: React.FC<PersonsCompetenciesViewProps> = (
           onClose={() => setModalRestricaoOpen(false)}
           onSalvar={handleSalvarRestricaoOperacional}
         />
+      )}
+
+      {/* Modal de Unificação / Mesclagem de Colaboradores Duplicados */}
+      <MergeColaboradoresModal
+        isOpen={modalMergeOpen}
+        onClose={() => {
+          setModalMergeOpen(false);
+          setMergePreSelectedId(undefined);
+        }}
+        organizationId={organizationId}
+        userProfile={userProfile}
+        persons={persons}
+        trainingRecords={trainingRecords}
+        qualifications={qualifications}
+        personCompetencies={personCompetencies}
+        documents={documents}
+        nonConformities={nonConformities}
+        preSelectedDuplicadoId={mergePreSelectedId}
+        onSuccess={(msg) => {
+          setMergeSuccessToast(msg);
+          setTimeout(() => setMergeSuccessToast(null), 6000);
+        }}
+      />
+
+      {/* Toast flutuante de sucesso da mesclagem */}
+      {mergeSuccessToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-900 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 border border-emerald-700 animate-slide-up max-w-md">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <p className="text-xs font-medium leading-relaxed">{mergeSuccessToast}</p>
+          <button
+            type="button"
+            onClick={() => setMergeSuccessToast(null)}
+            className="text-emerald-300 hover:text-white ml-auto"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );

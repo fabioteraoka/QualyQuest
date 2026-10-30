@@ -12,11 +12,14 @@ import {
   Undo2,
   UserCheck,
   Users,
+  GitMerge,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { recordAudit, repository } from '../services/storage';
 import { CategoriaPessoa, Pessoa, SituacaoPessoa } from '../types';
 import { formatarDataBr } from '../utils/businessRules';
+import { MergeColaboradoresModal } from '../../components/competencies/MergeColaboradoresModal';
+import { detectarColaboradoresDuplicados } from '../../services/mergePersonsService';
 
 export const PessoasView: React.FC = () => {
   const { db, currentUser, showToast, navigateToFicha } = useApp();
@@ -49,6 +52,66 @@ export const PessoasView: React.FC = () => {
 
   // Undo delete
   const [deletedPessoaBackup, setDeletedPessoaBackup] = useState<Pessoa | null>(null);
+
+  // Modal de Unificação / Mesclagem de Colaboradores Duplicados
+  const [modalMergeOpen, setModalMergeOpen] = useState(false);
+
+  // Formatação compatível com motor de mesclagem SGQ / Rooster
+  const colabsFormatados = useMemo(() => {
+    return db.pessoas.map((p) => ({
+      id: p.id,
+      organizationId: 'impacto-aviation',
+      nome: p.nome,
+      matricula: p.matricula || p.canac || '',
+      canac: p.canac || '',
+      cargo: p.cargo_operacional || p.funcao || p.categoria,
+      funcao: p.funcao || p.categoria,
+      setor: p.setor || p.cliente_ou_area || 'Manutenção',
+      baseOperacional: p.base_principal_id,
+      status: (p.situacao === 'Ativo' ? 'ATIVO' : 'INATIVO') as any,
+      dataAdmissao: p.data_admissao || '',
+      contatoCorporativo: p.contato_corporativo || '',
+      observacoes: p.observacoes || '',
+      possuiRestricao: !!p.possui_restricao,
+      motivoRestricao: p.motivo_restricao || '',
+      createdAt: '',
+      updatedAt: '',
+    }));
+  }, [db.pessoas]);
+
+  const duplicadosDetectados = useMemo(() => {
+    return detectarColaboradoresDuplicados(colabsFormatados);
+  }, [colabsFormatados]);
+
+  const treinosFormatados = useMemo(() => {
+    return db.treinamentos.map((t) => ({
+      id: t.id,
+      organizationId: 'impacto-aviation',
+      colaboradorId: t.pessoa_id,
+      cursoId: t.curso_id,
+      tipoRegistro: 'CURSO' as const,
+      dataConclusao: t.data_realizacao,
+      dataValidade: t.data_validade || '',
+      status: (t.situacao === 'Vencido' ? 'VENCIDO' : 'CONCLUIDO') as any,
+      createdAt: '',
+      updatedAt: '',
+    }));
+  }, [db.treinamentos]);
+
+  const licencasFormatadas = useMemo(() => {
+    return db.licencas.map((l) => ({
+      id: l.id,
+      organizationId: 'impacto-aviation',
+      colaboradorId: l.pessoa_id,
+      numero: l.numero,
+      tipo: l.tipo as any,
+      orgaoEmissor: 'ANAC',
+      dataValidade: l.data_validade || '',
+      status: 'VALIDA' as any,
+      createdAt: '',
+      updatedAt: '',
+    }));
+  }, [db.licencas]);
 
   // Mapeamento de bases para verificação de integridade
   const basesMap = useMemo(() => {
@@ -307,13 +370,29 @@ export const PessoasView: React.FC = () => {
           </select>
 
           {currentUser.perfil !== 'Leitor' && (
-            <button
-              onClick={handleOpenNew}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer shadow-xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Novo Colaborador</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setModalMergeOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 text-purple-900 border border-purple-200 rounded text-xs font-semibold hover:bg-purple-100 cursor-pointer shadow-2xs"
+                title="Detectar e unificar colaboradores repetidos transferindo treinamentos, licenças e designações"
+              >
+                <GitMerge className="w-3.5 h-3.5 text-purple-700" />
+                <span>Unificar Duplicados</span>
+                {duplicadosDetectados.length > 0 && (
+                  <span className="px-1.5 py-0.2 bg-purple-600 text-white text-[10px] font-bold rounded-full animate-pulse shadow-xs">
+                    {duplicadosDetectados.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={handleOpenNew}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-900 text-white rounded text-xs font-semibold hover:bg-sky-800 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Novo Colaborador</span>
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -499,7 +578,7 @@ export const PessoasView: React.FC = () => {
                   type="text"
                   required
                   disabled={!!editingPessoa}
-                  value={id}
+                  value={id ?? ''}
                   onChange={(e) => setId(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono font-bold"
                 />
@@ -510,7 +589,7 @@ export const PessoasView: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Ex.: 105420"
-                  value={canac}
+                  value={canac ?? ''}
                   onChange={(e) => setCanac(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
                 />
@@ -521,7 +600,7 @@ export const PessoasView: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Ex.: MAT-4420"
-                  value={matricula}
+                  value={matricula ?? ''}
                   onChange={(e) => setMatricula(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
                 />
@@ -533,7 +612,7 @@ export const PessoasView: React.FC = () => {
               <input
                 type="text"
                 required
-                value={nome}
+                value={nome ?? ''}
                 onChange={(e) => setNome(e.target.value)}
                 className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
               />
@@ -543,7 +622,7 @@ export const PessoasView: React.FC = () => {
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">Categoria:</label>
                 <select
-                  value={categoria}
+                  value={categoria ?? 'Mecânico'}
                   onChange={(e) => setCategoria(e.target.value as any)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
                 >
@@ -557,7 +636,7 @@ export const PessoasView: React.FC = () => {
                   Base Principal Oficial:
                 </label>
                 <select
-                  value={basePrincipalId}
+                  value={basePrincipalId ?? ''}
                   onChange={(e) => setBasePrincipalId(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-bold text-slate-900"
                 >
@@ -590,7 +669,7 @@ export const PessoasView: React.FC = () => {
               <div>
                 <label className="text-xs font-semibold text-slate-700 block mb-1">Situação / Vínculo:</label>
                 <select
-                  value={situacao}
+                  value={situacao ?? 'Ativo'}
                   onChange={(e) => setSituacao(e.target.value as any)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-semibold"
                 >
@@ -606,7 +685,7 @@ export const PessoasView: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Ex.: Hangar GRU / Linha"
-                  value={setor}
+                  value={setor ?? ''}
                   onChange={(e) => setSetor(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
                 />
@@ -617,7 +696,7 @@ export const PessoasView: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Ex.: Mecânico de Manutenção"
-                  value={funcao}
+                  value={funcao ?? ''}
                   onChange={(e) => setFuncao(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
                 />
@@ -628,7 +707,7 @@ export const PessoasView: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Ex.: Mecânico Pleno B737"
-                  value={cargoOperacional}
+                  value={cargoOperacional ?? ''}
                   onChange={(e) => setCargoOperacional(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
                 />
@@ -640,7 +719,7 @@ export const PessoasView: React.FC = () => {
                 <label className="text-xs font-semibold text-slate-700 block mb-1">Data de Admissão:</label>
                 <input
                   type="date"
-                  value={dataAdmissao}
+                  value={dataAdmissao ?? ''}
                   onChange={(e) => setDataAdmissao(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded font-mono"
                 />
@@ -651,7 +730,7 @@ export const PessoasView: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Ex.: nome@impacto.aero | (11) 98765-4321"
-                  value={contatoCorporativo}
+                  value={contatoCorporativo ?? ''}
                   onChange={(e) => setContatoCorporativo(e.target.value)}
                   className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
                 />
@@ -663,7 +742,7 @@ export const PessoasView: React.FC = () => {
               <input
                 type="text"
                 placeholder="Ex.: EuroAtlantic, Atlas/Kalitta, Diretoria"
-                value={clienteOuArea}
+                value={clienteOuArea ?? ''}
                 onChange={(e) => setClienteOuArea(e.target.value)}
                 className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
               />
@@ -688,7 +767,7 @@ export const PessoasView: React.FC = () => {
                     type="text"
                     required={possuiRestricao}
                     placeholder="Ex.: Apto com restrição para trabalho em altura / Aguardando cheque"
-                    value={motivoRestricao}
+                    value={motivoRestricao ?? ''}
                     onChange={(e) => setMotivoRestricao(e.target.value)}
                     className="w-full text-xs p-2 bg-white border border-amber-300 rounded text-slate-800"
                   />
@@ -701,7 +780,7 @@ export const PessoasView: React.FC = () => {
               <textarea
                 rows={2}
                 placeholder="Histórico técnico, observações relevantes ou anotações SGQ..."
-                value={observacoes}
+                value={observacoes ?? ''}
                 onChange={(e) => setObservacoes(e.target.value)}
                 className="w-full text-xs p-2 bg-slate-50 border border-slate-300 rounded"
               />
@@ -726,6 +805,25 @@ export const PessoasView: React.FC = () => {
           </form>
         </div>
       )}
+
+      {/* Modal de Unificação / Deduplicação de Colaboradores */}
+      <MergeColaboradoresModal
+        isOpen={modalMergeOpen}
+        onClose={() => setModalMergeOpen(false)}
+        organizationId="impacto-aviation"
+        userProfile={{
+          uid: currentUser.id,
+          displayName: currentUser.nome,
+          email: currentUser.email,
+          role: currentUser.perfil as any,
+        } as any}
+        persons={colabsFormatados}
+        trainingRecords={treinosFormatados}
+        qualifications={licencasFormatadas}
+        personCompetencies={[]}
+        documents={[]}
+        onSuccess={(msg) => showToast(msg, 'success')}
+      />
     </div>
   );
 };
