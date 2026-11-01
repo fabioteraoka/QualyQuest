@@ -17,6 +17,9 @@ import {
   Info,
   RefreshCw,
   Search,
+  FileSpreadsheet,
+  Copy,
+  Download,
 } from 'lucide-react';
 import {
   ColaboradorPessoa,
@@ -31,7 +34,9 @@ import {
   obterResumoVinculosColaborador,
   mesclarColaboradores,
   desvincularEExcluirColaborador,
+  gerarRelatorioDiagnosticoDuplicados,
   GrupoDuplicadoDetectado,
+  EtapaMesclagem,
 } from '../../services/mergePersonsService';
 
 interface MergeColaboradoresModalProps {
@@ -81,6 +86,19 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
   const [mesclarCompetencias, setMesclarCompetencias] = useState(true);
   const [mesclarDocumentos, setMesclarDocumentos] = useState(true);
   const [atualizarDadosCadastraisVazios, setAtualizarDadosCadastraisVazios] = useState(true);
+  const [preservarHistoricoInativando, setPreservarHistoricoInativando] = useState(true);
+
+  // Controle de Progresso por Etapas (Requisito 4)
+  const [etapaProgresso, setEtapaProgresso] = useState<{
+    etapa: EtapaMesclagem;
+    progresso: number;
+    detalhe: string;
+  } | null>(null);
+
+  // Relatório de Diagnóstico de Duplicados (Requisito 8)
+  const [modalDiagnosticoOpen, setModalDiagnosticoOpen] = useState(false);
+  const [diagnosticoTexto, setDiagnosticoTexto] = useState('');
+  const [copiadoRelatorio, setCopiadoRelatorio] = useState(false);
 
   // Estado para exclusão forçada com limpeza de vínculos
   const [confirmarDescarteDireto, setConfirmarDescarteDireto] = useState(false);
@@ -129,6 +147,32 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
     }
   }, [preSelectedDuplicadoId, duplicadosDetectados, persons]);
 
+  // Gerar Relatório de Diagnóstico
+  const handleAbrirDiagnostico = () => {
+    const diag = gerarRelatorioDiagnosticoDuplicados(persons, contextoVinculos);
+    setDiagnosticoTexto(diag.relatorioTexto);
+    setModalDiagnosticoOpen(true);
+    setCopiadoRelatorio(false);
+  };
+
+  const handleCopiarDiagnostico = () => {
+    navigator.clipboard.writeText(diagnosticoTexto);
+    setCopiadoRelatorio(true);
+    setTimeout(() => setCopiadoRelatorio(false), 3000);
+  };
+
+  const handleBaixarDiagnostico = () => {
+    const blob = new Blob([diagnosticoTexto], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `diagnostico_colaboradores_duplicados_${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   if (!isOpen) return null;
 
   const colabPrincipal = persons.find((p) => p.id === idPrincipal);
@@ -166,7 +210,7 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
       );
     });
 
-  // Executar Mesclagem Manual ou Automática
+  // Executar Mesclagem Manual ou Automática com Validação Estrita de Persistência
   const handleExecutarMesclagem = async (
     targetPrincipalId: string,
     targetDuplicadoId: string
@@ -174,6 +218,11 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
     setMensagemErro(null);
     setMensagemSucesso(null);
     setIsProcessing(true);
+    setEtapaProgresso({
+      etapa: 'PREPARACAO_E_BACKUP',
+      progresso: 10,
+      detalhe: 'Validando colaboradores e criando snapshot de segurança...',
+    });
 
     try {
       const res = await mesclarColaboradores(
@@ -187,9 +236,20 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
           mesclarCompetencias,
           mesclarDocumentos,
           atualizarDadosCadastraisVazios,
+          preservarHistoricoInativando,
+          excluirDefinitivamente: !preservarHistoricoInativando,
+          onStageChange: (etapa, progresso, detalhe) => {
+            setEtapaProgresso({ etapa, progresso, detalhe });
+          },
         },
         userProfile
       );
+
+      // Requisito 1: Não apresentar sucesso sem confirmação de persistência
+      if (!res.sucesso) {
+        setMensagemErro(res.erro || res.mensagem || 'Falha ao executar unificação de colaboradores.');
+        return;
+      }
 
       setMensagemSucesso(res.mensagem);
       if (onSuccess) onSuccess(res.mensagem);
@@ -197,6 +257,7 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
       setMensagemErro(err?.message || 'Falha ao executar unificação de colaboradores.');
     } finally {
       setIsProcessing(false);
+      setEtapaProgresso(null);
     }
   };
 
@@ -246,13 +307,47 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAbrirDiagnostico}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold border border-slate-200 transition cursor-pointer"
+              title="Gerar e visualizar relatório de diagnóstico de colaboradores duplicados (Requisito 8)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-sky-800" />
+              <span>Diagnóstico de Duplicidades</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {/* Barra de Progresso em Tempo Real (Requisito 4) */}
+        {isProcessing && etapaProgresso && (
+          <div className="p-3 bg-sky-50 border border-sky-300 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-xs font-bold text-sky-950">
+              <span className="flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-sky-700" />
+                <span>{etapaProgresso.detalhe}</span>
+              </span>
+              <span className="font-mono">{etapaProgresso.progresso}%</span>
+            </div>
+            <div className="w-full bg-sky-200 h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-sky-800 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${etapaProgresso.progresso}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-sky-800">
+              <span>Etapa: {etapaProgresso.etapa}</span>
+              <span>Idempotência &amp; Recuperação ativa</span>
+            </div>
+          </div>
+        )}
 
         {/* Mensagens de Feedback */}
         {mensagemSucesso && (
@@ -589,6 +684,17 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
                     />
                     <span>Preencher campos cadastrais vazios do principal</span>
                   </label>
+                  <label className="flex items-center gap-2 cursor-pointer sm:col-span-2 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <input
+                      type="checkbox"
+                      checked={preservarHistoricoInativando}
+                      onChange={(e) => setPreservarHistoricoInativando(e.target.checked)}
+                      className="rounded text-emerald-800"
+                    />
+                    <span className="font-semibold text-emerald-950 text-xs">
+                      Preservar ID duplicado como referência histórica (inativar e vincular ao principal) — Recomendado
+                    </span>
+                  </label>
                 </div>
               </div>
 
@@ -691,6 +797,61 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
           </button>
         </div>
       </div>
+
+      {/* Modal de Diagnóstico de Duplicados (Requisito 8) */}
+      {modalDiagnosticoOpen && (
+        <div className="fixed inset-0 z-60 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4 border border-slate-200 animate-scale-in max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-sky-800" />
+                <h3 className="text-sm font-bold text-slate-900">
+                  Relatório de Diagnóstico de Duplicidades (Requisito 8)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalDiagnosticoOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Diagnóstico detalhado de duplicidades detectadas, incluindo identificadores, matrículas, CANACs e todos os vínculos atrelados.
+            </p>
+
+            <div className="flex-1 overflow-y-auto bg-slate-900 text-slate-100 p-4 rounded-xl font-mono text-xs leading-relaxed whitespace-pre-wrap">
+              {diagnosticoTexto}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <span className="text-[11px] text-slate-500">
+                Pode ser exportado em formato Markdown ou copiado diretamente para a área de transferência.
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopiarDiagnostico}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-xs font-semibold"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{copiadoRelatorio ? 'Copiado!' : 'Copiar Texto'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBaixarDiagnostico}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-sky-900 hover:bg-sky-800 text-white rounded-lg text-xs font-semibold"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Baixar Arquivo .MD</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

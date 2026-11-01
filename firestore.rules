@@ -15,7 +15,7 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
+      return id is string && id.size() > 0 && id.size() <= 128;
     }
 
     function incoming() {
@@ -81,7 +81,8 @@ service cloud.firestore {
     function isUserActive() {
       return isSignedIn() && (
         isSuperPlatformAdmin() ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        (hasValidProfile() &&
+         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          ((!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INATIVO' &&
@@ -160,11 +161,21 @@ service cloud.firestore {
       // ----------------------------------------------------
       // Non-Conformities Subcollection (organizations/{orgId}/nonConformities/{ncId})
       // ----------------------------------------------------
+      // Non-Conformities Subcollection (organizations/{orgId}/nonConformities/{ncId})
+      // ----------------------------------------------------
       match /nonConformities/{ncId} {
         allow get, list: if userBelongsToOrg(organizationId);
         allow create, update: if userBelongsToOrg(organizationId) &&
                                  getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(ncId) &&
                                  (!('organizationId' in request.resource.data) || request.resource.data.organizationId == organizationId);
+        allow delete: if userBelongsToOrg(organizationId) &&
+                         (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(ncId);
+      }
+
+      match /non_conformities/{ncId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) &&
+                                 getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(ncId);
         allow delete: if userBelongsToOrg(organizationId) &&
                          (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(ncId);
       }
@@ -184,9 +195,9 @@ service cloud.firestore {
       // ----------------------------------------------------
       match /auditTrails/{auditId} {
         allow get, list: if userBelongsToOrg(organizationId);
-        allow create: if isSignedIn() && isValidId(organizationId) && isValidId(auditId) &&
+        allow create: if isValidId(organizationId) && isValidId(auditId) &&
                          !exists(/databases/$(database)/documents/organizations/$(organizationId)/auditTrails/$(auditId)) &&
-                         (userBelongsToOrg(organizationId) || 
+                         (userBelongsToOrg(organizationId) ||
                           (request.resource.data.entity == 'USER' && request.resource.data.changedByUid == request.auth.uid));
         allow update, delete: if false; // STRICT IMMUTABILITY: Cannot update or delete any audit log
       }

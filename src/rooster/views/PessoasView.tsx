@@ -20,6 +20,7 @@ import { CategoriaPessoa, Pessoa, SituacaoPessoa } from '../types';
 import { formatarDataBr } from '../utils/businessRules';
 import { MergeColaboradoresModal } from '../../components/competencies/MergeColaboradoresModal';
 import { detectarColaboradoresDuplicados } from '../../services/mergePersonsService';
+import { DEFAULT_ORGANIZATION_ID } from '../../services/firebase/firestore';
 
 export const PessoasView: React.FC = () => {
   const { db, currentUser, showToast, navigateToFicha } = useApp();
@@ -60,7 +61,7 @@ export const PessoasView: React.FC = () => {
   const colabsFormatados = useMemo(() => {
     return db.pessoas.map((p) => ({
       id: p.id,
-      organizationId: 'impacto-aviation',
+      organizationId: DEFAULT_ORGANIZATION_ID,
       nome: p.nome,
       matricula: p.matricula || p.canac || '',
       canac: p.canac || '',
@@ -86,7 +87,7 @@ export const PessoasView: React.FC = () => {
   const treinosFormatados = useMemo(() => {
     return db.treinamentos.map((t) => ({
       id: t.id,
-      organizationId: 'impacto-aviation',
+      organizationId: DEFAULT_ORGANIZATION_ID,
       colaboradorId: t.pessoa_id,
       cursoId: t.curso_id,
       tipoRegistro: 'CURSO' as const,
@@ -101,7 +102,7 @@ export const PessoasView: React.FC = () => {
   const licencasFormatadas = useMemo(() => {
     return db.licencas.map((l) => ({
       id: l.id,
-      organizationId: 'impacto-aviation',
+      organizationId: DEFAULT_ORGANIZATION_ID,
       colaboradorId: l.pessoa_id,
       numero: l.numero,
       tipo: l.tipo as any,
@@ -810,7 +811,7 @@ export const PessoasView: React.FC = () => {
       <MergeColaboradoresModal
         isOpen={modalMergeOpen}
         onClose={() => setModalMergeOpen(false)}
-        organizationId="impacto-aviation"
+        organizationId={DEFAULT_ORGANIZATION_ID}
         userProfile={{
           uid: currentUser.id,
           displayName: currentUser.nome,
@@ -822,7 +823,7 @@ export const PessoasView: React.FC = () => {
         qualifications={licencasFormatadas}
         personCompetencies={[]}
         documents={[]}
-        onSuccess={(msg) => showToast(msg, 'success')}
+        onSuccess={(msg) => showToast(msg)}
       />
     </div>
   );

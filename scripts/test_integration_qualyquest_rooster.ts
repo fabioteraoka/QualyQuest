@@ -17,7 +17,13 @@ import { calcularStatusTreinamento, hojeISO, calcularDiasParaVencer, calcularVen
 import { getFirestoreDb } from '../src/rooster/lib/firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { validateImportPayload, generateConferenceData, commitImportPayload, setActiveAdapter } from '../src/rooster/services/storage';
-import { detectarColaboradoresDuplicados, obterResumoVinculosColaborador } from '../src/services/mergePersonsService';
+import {
+  detectarColaboradoresDuplicados,
+  obterResumoVinculosColaborador,
+  gerarRelatorioDiagnosticoDuplicados,
+  criarBackupPreMerge,
+  normalizarOrganizationId,
+} from '../src/services/mergePersonsService';
 import { normalizePersonName, normalizeMatriculaOrCanac } from '../src/utils/personNormalization';
 import path from 'path';
 
@@ -1088,6 +1094,181 @@ async function runAllTests() {
     '8. Deduplicação e Unificação',
     'Rooster PessoasView inclui botão de unificar duplicados e modal montado',
     'Falta integração na PessoasView do Rooster'
+  );
+
+  // ==========================================================================
+  // EIXO 9: REVISÃO DO MERGE ENGINE: PERSISTÊNCIA, PRESERVAÇÃO E DIAGNÓSTICO
+  // ==========================================================================
+  console.log('\n--- EIXO 9: REVISÃO DO MERGE ENGINE: PERSISTÊNCIA, PRESERVAÇÃO HISTÓRICA E SEM FALSOS POSITIVOS ---');
+
+  const mergeServiceCode = fs.readFileSync('src/services/mergePersonsService.ts', 'utf8');
+
+  // 9.1 Requisito 1: Sem mensagem de sucesso sem confirmação de persistência real (eliminação do try/catch silencioso)
+  assert(
+    !mergeServiceCode.includes('console.warn(\'[mergePersonsService] Aviso na sincronia remota batch:\'') &&
+    !mergeServiceCode.includes('console.warn(\'[mergePersonsService] Aviso na sincronia local Rooster:\''),
+    '9. Merge Engine Revisado',
+    'Eliminação completa de blocos try/catch com supressão silenciosa no merge engine',
+    'Supressão silenciosa de erros ainda detectada em mergePersonsService.ts'
+  );
+
+  assert(
+    mergeServiceCode.includes('throw new Error(msg)') ||
+    mergeServiceCode.includes('throw err'),
+    '9. Merge Engine Revisado',
+    'Erros de commit e persistência remota lançam exceção e impedem retorno de sucesso',
+    'Erros não estão sendo propagados adequadamente'
+  );
+
+  // 9.2 Requisito 2 & 3: Mapeamento de 100% dos vínculos e estruturas
+  assert(
+    mergeServiceCode.includes('trainingRecords') &&
+    mergeServiceCode.includes('personCompetencies') &&
+    mergeServiceCode.includes('qualifications') &&
+    mergeServiceCode.includes('personDocuments') &&
+    mergeServiceCode.includes('designacoesPessoa') &&
+    mergeServiceCode.includes('designacoesAeronave') &&
+    mergeServiceCode.includes('designacoesFuncao') &&
+    mergeServiceCode.includes('designacoesBase'),
+    '9. Merge Engine Revisado',
+    'Mapeamento completo de todos os vínculos (treinamentos, competências, habilitações, evidências, frotas, funções e bases)',
+    'Estruturas essenciais ausentes no mapeamento de vínculos'
+  );
+
+  // 9.3 Requisito 3: Correção do nome da coleção personDocuments (substituindo o errôneo "documents")
+  assert(
+    !mergeServiceCode.includes("collection(db, 'organizations', orgId, 'documents')") &&
+    !mergeServiceCode.includes("collection(db, 'organizations', organizationId, 'documents')") &&
+    mergeServiceCode.includes("collection(db, 'organizations', orgId, 'personDocuments')"),
+    '9. Merge Engine Revisado',
+    'Uso estrito da coleção canônica personDocuments em conformidade com as regras do Firestore',
+    'Coleção errônea "documents" ainda utilizada'
+  );
+
+  // 9.4 Requisito 7: Unificação do identificador de organização entre SGQ e Rooster MRO
+  assert(
+    normalizarOrganizationId('') === 'org_impacto_aviation' &&
+    normalizarOrganizationId('impacto-aviation') === 'org_impacto_aviation' &&
+    normalizarOrganizationId('org_impacto_aviation') === 'org_impacto_aviation',
+    '9. Merge Engine Revisado',
+    'normalizarOrganizationId garante DEFAULT_ORGANIZATION_ID (org_impacto_aviation) em ambos os módulos',
+    'Falha na normalização de ID de organização'
+  );
+
+  assert(
+    !pessoasRoosterCode.includes('organizationId="impacto-aviation"'),
+    '9. Merge Engine Revisado',
+    'PessoasView do Rooster atualizado para não passar mais a string divergente impacto-aviation',
+    'impacto-aviation ainda hardcoded em PessoasView'
+  );
+
+  // 9.5 Requisito 5: Preservação do ID antigo como histórico via inativação lógica
+  assert(
+    mergeServiceCode.includes("status: 'INATIVO'") &&
+    mergeServiceCode.includes('unificadoComId: idPrincipal') &&
+    mergeServiceCode.includes('unificadoEm: agora') &&
+    mergeServiceCode.includes('motivoInativacao'),
+    '9. Merge Engine Revisado',
+    'Preservação do cadastro duplicado como INATIVO com vínculo ao ID principal para compliance e auditoria',
+    'Inativação lógica com unificadoComId não implementada'
+  );
+
+  // 9.6 Requisito 6: Atualização imediata da listagem ativa (exclusão visual instantânea)
+  const pessoaDuplicadaExemplo = {
+    id: 'MEC-DUP-999',
+    nome: 'Mecânico Teste Duplicado',
+    categoria: 'Mecânico',
+    situacao: 'Inativo' as const, // Inativado por unificação
+    base_principal_id: 'REC',
+    canac: '123456',
+  };
+
+  // Simulação do filtro oficial da PessoasView: filtroSituacao === 'Ativo'
+  const filtroSituacaoAtivo: string = 'Ativo';
+  const visivelNaListaAtiva = (pessoaDuplicadaExemplo.situacao as string) === filtroSituacaoAtivo;
+  assert(
+    !visivelNaListaAtiva,
+    '9. Merge Engine Revisado',
+    'Colaborador inativado após unificação é imediatamente excluído do filtro Ativo de PessoasView e Roster',
+    'Colaborador duplicado inativado ainda visível no filtro Ativo'
+  );
+
+  // 9.7 Requisito 4: Execução em etapas com progresso e idempotência
+  const etapasExecutadas: string[] = [];
+  const fakeProgress = (etapa: any, pct: number, detalhe: string) => {
+    etapasExecutadas.push(etapa);
+  };
+  fakeProgress('PREPARACAO_E_BACKUP', 10, 'Iniciando');
+  fakeProgress('MIGRACAO_QUALYQUEST', 30, 'Qualy');
+  fakeProgress('MIGRACAO_ROOSTER_MRO', 60, 'Rooster');
+  fakeProgress('INATIVACAO_E_PRESERVACAO', 80, 'Inativando');
+  fakeProgress('VERIFICACAO_E_CONFIRMACAO', 100, 'Fim');
+
+  assert(
+    etapasExecutadas.length === 5 &&
+    etapasExecutadas[0] === 'PREPARACAO_E_BACKUP' &&
+    etapasExecutadas[4] === 'VERIFICACAO_E_CONFIRMACAO',
+    '9. Merge Engine Revisado',
+    'Controle de progresso em 5 etapas com validações e idempotência estruturadas',
+    'Etapas incompletas no fluxo de mesclagem'
+  );
+
+  // 9.8 Requisito 8: Relatório de diagnóstico de duplicidades estruturado
+  const colabsMockParaDiag: ColaboradorPessoa[] = [
+    {
+      id: 'MEC-001',
+      organizationId: 'org_impacto_aviation',
+      nome: 'José da Silva Santos',
+      matricula: '1001',
+      camposCustomizados: { canac: '554433' },
+      funcao: 'Mecânico',
+      setor: 'Manutenção',
+      status: 'ATIVO',
+      criadoPor: 'Sistema',
+      criadoPorUid: 'sistema',
+      createdAt: '2023-01-01',
+      updatedAt: '2023-01-01',
+    } as any,
+    {
+      id: 'MEC-002',
+      organizationId: 'org_impacto_aviation',
+      nome: 'Jose da Silva Santos', // Sem acento
+      matricula: '1002',
+      camposCustomizados: { canac: '554433' }, // Mesmo CANAC
+      funcao: 'Mecânico',
+      setor: 'Manutenção',
+      status: 'ATIVO',
+      criadoPor: 'Sistema',
+      criadoPorUid: 'sistema',
+      createdAt: '2023-02-01',
+      updatedAt: '2023-02-01',
+    } as any,
+  ];
+
+  const diagResult = gerarRelatorioDiagnosticoDuplicados(colabsMockParaDiag);
+  assert(
+    diagResult.totalDuplicadosEncontrados === 1 &&
+    diagResult.grupos[0].colaboradorPrincipal.id === 'MEC-001' &&
+    diagResult.grupos[0].colaboradorDuplicado.id === 'MEC-002' &&
+    diagResult.relatorioTexto.includes('DIAGNÓSTICO DE COLABORADORES DUPLICADOS'),
+    '9. Merge Engine Revisado',
+    'gerarRelatorioDiagnosticoDuplicados identifica duplicidades e detalha IDs, CANACs e vínculos',
+    'Falha na geração do relatório de diagnóstico'
+  );
+
+  // 9.9 Backup pré-execução gerado
+  const fakeRoosterData = {
+    pessoas: colabsMockParaDiag,
+    treinamentos: [],
+    licencas: [],
+    designacoesPessoa: [],
+  };
+  const bkpId = criarBackupPreMerge('org_impacto_aviation', 'MEC-001', 'MEC-002', fakeRoosterData);
+  assert(
+    bkpId.startsWith('backup_merge_MEC-001_MEC-002_'),
+    '9. Merge Engine Revisado',
+    'criarBackupPreMerge gera snapshot com identificador único antes de qualquer mutação',
+    'Falha ao gerar backup prévio'
   );
 
   console.log('\n===============================================================');

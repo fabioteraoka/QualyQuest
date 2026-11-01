@@ -1,0 +1,4 @@
+# DIAGNÓSTICO DE COLABORADORES DUPLICADOS — QUALYQUEST SGQ / ROOSTER MRO
+Data da Análise: 2026-10-31T09:21:12.324Z
+Total de pares duplicados identificados: 0
+
