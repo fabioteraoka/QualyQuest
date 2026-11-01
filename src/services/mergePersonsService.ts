@@ -60,6 +60,27 @@ export interface GrupoDuplicadoDetectado {
   vinculosDuplicado: ResumoVinculosPessoa;
 }
 
+export type StatusOperacaoMesclagem =
+  | 'CONCLUIDA'
+  | 'PARCIALMENTE_CONCLUIDA'
+  | 'BLOQUEADA_SEM_AUTORIZACAO'
+  | 'FALHA';
+
+export interface RelatorioIntegridadePosMerge {
+  valida: boolean;
+  treinamentosRestantesDuplicado: number;
+  licencasRestantesDuplicado: number;
+  competenciasRestantesDuplicado: number;
+  documentosRestantesDuplicado: number;
+  designacoesRestantesDuplicado: number;
+  rncsRestantesDuplicado: number;
+  duplicadoInativadoFirestore: boolean;
+  duplicadoInativadoRooster: boolean;
+  principalAtivoFirestore: boolean;
+  principalAtivoRooster: boolean;
+  pendencias: string[];
+}
+
 export interface OpcoesMesclagem {
   mesclarFrotas?: boolean;
   mesclarTreinamentos?: boolean;
@@ -69,12 +90,15 @@ export interface OpcoesMesclagem {
   atualizarDadosCadastraisVazios?: boolean;
   preservarHistoricoInativando?: boolean; // Padrão: true (Requisito 5)
   excluirDefinitivamente?: boolean; // Se false (padrão), inativa e vincula
+  ignorarChecagemAuth?: boolean; // Para ambiente de teste ou execução automatizada
+  pularCommitFirestoreParaTestes?: boolean; // Para baterias de testes unitários/integração headless
   motivo?: string;
   onStageChange?: (etapa: EtapaMesclagem, progresso: number, detalhe: string) => void;
 }
 
 export interface ResultadoMesclagem {
   sucesso: boolean;
+  statusOperacao?: StatusOperacaoMesclagem;
   mensagem: string;
   erro?: string;
   colaboradorPrincipalId: string;
@@ -86,6 +110,8 @@ export interface ResultadoMesclagem {
   totalDocumentosMigrados: number;
   backupId?: string;
   registroPreservadoInativo?: boolean;
+  relatorioIntegridade?: RelatorioIntegridadePosMerge;
+  pendencias?: string[];
 }
 
 /**
@@ -386,6 +412,193 @@ export function criarBackupPreMerge(
  * - Etapa 4: Inativação com preservação histórica do ID duplicado (ou exclusão se explicitamente configurada)
  * - Etapa 5: Verificação estrita de persistência (sem falsa mensagem de sucesso se houver rejeição)
  */
+/**
+ * Executa verificação direta na persistência antes de autorizar conclusão da mesclagem
+ * Garante que zero vínculos órfãos restaram no colaborador duplicado e que ambos os módulos estão coerentes.
+ */
+export async function verificarIntegridadePosMerge(
+  organizationId: string,
+  idPrincipal: string,
+  idDuplicado: string,
+  pularFirestore = false
+): Promise<RelatorioIntegridadePosMerge> {
+  const orgId = normalizarOrganizationId(organizationId);
+  const pendencias: string[] = [];
+
+  let treinamentosRestantesDuplicado = 0;
+  let licencasRestantesDuplicado = 0;
+  let competenciasRestantesDuplicado = 0;
+  let documentosRestantesDuplicado = 0;
+  let designacoesRestantesDuplicado = 0;
+  let rncsRestantesDuplicado = 0;
+  let duplicadoInativadoFirestore = true;
+  let duplicadoInativadoRooster = true;
+  let principalAtivoFirestore = true;
+  let principalAtivoRooster = true;
+
+  // 1. Verificação no Rooster MRO
+  try {
+    const roosterDb = repository.getDatabase();
+    const treinosRooster = (roosterDb.treinamentos || []).filter(
+      (t) => (t.pessoa_id || '').trim().toLowerCase() === idDuplicado.trim().toLowerCase()
+    ).length;
+    const licencasRooster = (roosterDb.licencas || []).filter(
+      (l) => (l.pessoa_id || '').trim().toLowerCase() === idDuplicado.trim().toLowerCase()
+    ).length;
+    const frotasRooster = (roosterDb.designacoesAeronave || []).filter(
+      (da) => (da.pessoa_id || '').trim().toLowerCase() === idDuplicado.trim().toLowerCase() && da.valor !== ''
+    ).length;
+    const funcoesRooster = (roosterDb.designacoesFuncao || []).filter(
+      (df) => (df.pessoa_id || '').trim().toLowerCase() === idDuplicado.trim().toLowerCase() && df.valor !== ''
+    ).length;
+    const basesRooster = (roosterDb.designacoesBase || []).filter(
+      (dbx) => (dbx.pessoa_id || '').trim().toLowerCase() === idDuplicado.trim().toLowerCase()
+    ).length;
+    const desigPessoaRooster = (roosterDb.designacoesPessoa || []).filter(
+      (dp) => (dp.pessoa_id || '').trim().toLowerCase() === idDuplicado.trim().toLowerCase()
+    ).length;
+
+    treinamentosRestantesDuplicado += treinosRooster;
+    licencasRestantesDuplicado += licencasRooster;
+    designacoesRestantesDuplicado += frotasRooster + funcoesRooster + basesRooster + desigPessoaRooster;
+
+    const pessoaDupRooster = (roosterDb.pessoas || []).find((p) => p.id === idDuplicado);
+    if (pessoaDupRooster && pessoaDupRooster.situacao !== 'Inativo') {
+      duplicadoInativadoRooster = false;
+      pendencias.push(`Cadastro duplicado (${idDuplicado}) ainda está ativo no Rooster MRO (situação: ${pessoaDupRooster.situacao})`);
+    }
+
+    const pessoaPrincRooster = (roosterDb.pessoas || []).find((p) => p.id === idPrincipal);
+    if (pessoaPrincRooster && pessoaPrincRooster.situacao !== 'Ativo') {
+      principalAtivoRooster = false;
+      pendencias.push(`Cadastro principal (${idPrincipal}) não está ativo no Rooster MRO (situação: ${pessoaPrincRooster.situacao})`);
+    }
+
+    if (treinosRooster > 0) pendencias.push(`${treinosRooster} treinamento(s) no Rooster ainda vinculados ao duplicado`);
+    if (licencasRooster > 0) pendencias.push(`${licencasRooster} licença(s) no Rooster ainda vinculadas ao duplicado`);
+    if (frotasRooster > 0) pendencias.push(`${frotasRooster} designação(ões) de aeronave ainda vinculadas ao duplicado`);
+    if (funcoesRooster > 0) pendencias.push(`${funcoesRooster} designação(ões) de função ainda vinculadas ao duplicado`);
+    if (basesRooster > 0) pendencias.push(`${basesRooster} designação(ões) de base ainda vinculadas ao duplicado`);
+  } catch (err: any) {
+    console.warn('[verificarIntegridadePosMerge] Erro ao consultar repositório Rooster:', err);
+  }
+
+  // 2. Verificação no Firestore (QualyQuest)
+  if (!pularFirestore) {
+    try {
+      const treinosSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'trainingRecords'),
+          where('colaboradorId', '==', idDuplicado)
+        )
+      );
+      if (!treinosSnap.empty) {
+        treinamentosRestantesDuplicado += treinosSnap.size;
+        pendencias.push(`${treinosSnap.size} registro(s) de treinamento no Firestore ainda vinculados a ${idDuplicado}`);
+      }
+
+      const qualsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'qualifications'),
+          where('colaboradorId', '==', idDuplicado)
+        )
+      );
+      if (!qualsSnap.empty) {
+        licencasRestantesDuplicado += qualsSnap.size;
+        pendencias.push(`${qualsSnap.size} qualificação(ões)/licença(s) no Firestore ainda vinculadas a ${idDuplicado}`);
+      }
+
+      const compsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'personCompetencies'),
+          where('colaboradorId', '==', idDuplicado)
+        )
+      );
+      if (!compsSnap.empty) {
+        competenciasRestantesDuplicado += compsSnap.size;
+        pendencias.push(`${compsSnap.size} competência(s) no Firestore ainda vinculadas a ${idDuplicado}`);
+      }
+
+      const docsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'personDocuments'),
+          where('colaboradorId', '==', idDuplicado)
+        )
+      );
+      if (!docsSnap.empty) {
+        documentosRestantesDuplicado += docsSnap.size;
+        pendencias.push(`${docsSnap.size} documento(s) no Firestore ainda vinculados a ${idDuplicado}`);
+      }
+
+      const rncsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'nonConformities'),
+          where('responsavelImplementacaoId', '==', idDuplicado)
+        )
+      );
+      if (!rncsSnap.empty) {
+        rncsRestantesDuplicado += rncsSnap.size;
+        pendencias.push(`${rncsSnap.size} RNC(s) no Firestore com responsabilidade ainda atribuída a ${idDuplicado}`);
+      }
+
+      const docDupSnap = await getDoc(doc(db, 'organizations', orgId, 'persons', idDuplicado));
+      if (docDupSnap.exists()) {
+        const dataDup = docDupSnap.data();
+        if (dataDup.status !== 'INATIVO') {
+          duplicadoInativadoFirestore = false;
+          pendencias.push(`Cadastro duplicado (${idDuplicado}) ainda está ativo no Firestore SGQ (status: ${dataDup.status})`);
+        }
+        if (dataDup.unificadoComId !== idPrincipal) {
+          pendencias.push(`Cadastro duplicado (${idDuplicado}) não possui unificadoComId apontando para o principal (${idPrincipal})`);
+        }
+      }
+
+      const docPrincSnap = await getDoc(doc(db, 'organizations', orgId, 'persons', idPrincipal));
+      if (docPrincSnap.exists()) {
+        const dataPrinc = docPrincSnap.data();
+        if (dataPrinc.status !== 'ATIVO') {
+          principalAtivoFirestore = false;
+          pendencias.push(`Cadastro principal (${idPrincipal}) não está com status ATIVO no Firestore SGQ (status: ${dataPrinc.status})`);
+        }
+      }
+    } catch (err: any) {
+      const isOfflineOrPerm =
+        err?.code === 'permission-denied' ||
+        (typeof err?.message === 'string' &&
+          (err.message.includes('Missing or insufficient permissions') ||
+           err.message.includes('the client is offline')));
+      if (isOfflineOrPerm) {
+        pendencias.push(`Não foi possível validar diretamente no Firestore devido a: ${err.message || err}`);
+      }
+    }
+  }
+
+  const valida = pendencias.length === 0;
+
+  return {
+    valida,
+    treinamentosRestantesDuplicado,
+    licencasRestantesDuplicado,
+    competenciasRestantesDuplicado,
+    documentosRestantesDuplicado,
+    designacoesRestantesDuplicado,
+    rncsRestantesDuplicado,
+    duplicadoInativadoFirestore,
+    duplicadoInativadoRooster,
+    principalAtivoFirestore,
+    principalAtivoRooster,
+    pendencias,
+  };
+}
+
+/**
+ * Executa a unificação/mesclagem completa e segura de dois colaboradores:
+ * - Etapa 1: Validação de Autenticação/Permissão e Snapshot de Backup Prévio
+ * - Etapa 2: Migração Firestore QualyQuest (treinamentos, qualificações, competências, documentos, RNCs)
+ * - Etapa 3: Migração Firestore & Rooster MRO (licenças, treinamentos, frotas, funções, bases)
+ * - Etapa 4: Inativação com preservação histórica do ID duplicado
+ * - Etapa 5: Verificação estrita de persistência (sem falsa mensagem de sucesso se houver rejeição)
+ */
 export async function mesclarColaboradores(
   organizationId: string,
   idPrincipal: string,
@@ -417,6 +630,41 @@ export async function mesclarColaboradores(
     }
   };
 
+  // Requisito 1: Bloqueio estrito de permissão e autenticação sem falso sucesso
+  const role = userProfile?.role;
+  if (role === 'CONSULTA') {
+    return {
+      sucesso: false,
+      statusOperacao: 'BLOQUEADA_SEM_AUTORIZACAO',
+      mensagem: 'Operação bloqueada: Usuários com perfil CONSULTA não possuem permissão para unificar colaboradores.',
+      erro: 'Permissão insuficiente: perfil com permissão apenas de leitura.',
+      colaboradorPrincipalId: idPrincipal,
+      colaboradorDuplicadoId: idDuplicado,
+      totalTreinamentosMigrados: 0,
+      totalLicencasMigradas: 0,
+      totalDesignacoesMigradas: 0,
+      totalCompetenciasMigradas: 0,
+      totalDocumentosMigrados: 0,
+    };
+  }
+
+  const isBrowser = typeof window !== 'undefined';
+  if (isBrowser && !auth.currentUser && !options.ignorarChecagemAuth) {
+    return {
+      sucesso: false,
+      statusOperacao: 'BLOQUEADA_SEM_AUTORIZACAO',
+      mensagem: 'Operação bloqueada: A unificação requer autenticação ativa com permissão de escrita no Firestore para garantir a persistência em nuvem.',
+      erro: 'Missing or insufficient permissions (request.auth is null)',
+      colaboradorPrincipalId: idPrincipal,
+      colaboradorDuplicadoId: idDuplicado,
+      totalTreinamentosMigrados: 0,
+      totalLicencasMigradas: 0,
+      totalDesignacoesMigradas: 0,
+      totalCompetenciasMigradas: 0,
+      totalDocumentosMigrados: 0,
+    };
+  }
+
   let totalTreinamentosMigrados = 0;
   let totalLicencasMigradas = 0;
   let totalDesignacoesMigradas = 0;
@@ -445,153 +693,137 @@ export async function mesclarColaboradores(
   // =========================================================================
   notifyProgress('MIGRACAO_QUALYQUEST', 30, 'Transferindo treinamentos, competências, habilitações e evidências...');
 
-  try {
-    const batch = writeBatch(db);
+  if (!options.pularCommitFirestoreParaTestes) {
+    try {
+      const batch = writeBatch(db);
 
-    // 2.1 Treinamentos Firestore (organizations/{orgId}/trainingRecords)
-    const treinosSnap = await getDocs(
-      query(
-        collection(db, 'organizations', orgId, 'trainingRecords'),
-        where('colaboradorId', '==', idDuplicado)
-      )
-    );
-    treinosSnap.forEach((d) => {
-      batch.update(d.ref, {
-        colaboradorId: idPrincipal,
-        colaboradorNome: nomePrincipal,
-        colaboradorMatricula: matriculaPrincipal,
-        updatedAt: agora,
-        observacoesRevisao: `Vínculo transferido por unificação do cadastro duplicado (${idDuplicado}) em ${agora.slice(0, 10)} por ${userName}.`,
-      });
-      totalTreinamentosMigrados++;
-    });
-
-    // 2.2 Competências Firestore (organizations/{orgId}/personCompetencies)
-    const compsSnap = await getDocs(
-      query(
-        collection(db, 'organizations', orgId, 'personCompetencies'),
-        where('colaboradorId', '==', idDuplicado)
-      )
-    );
-    compsSnap.forEach((d) => {
-      batch.update(d.ref, {
-        colaboradorId: idPrincipal,
-        colaboradorNome: nomePrincipal,
-        updatedAt: agora,
-      });
-      totalCompetenciasMigradas++;
-    });
-
-    // 2.3 Qualificações e Licenças CHT/CCT Firestore (organizations/{orgId}/qualifications)
-    const qualsSnap = await getDocs(
-      query(
-        collection(db, 'organizations', orgId, 'qualifications'),
-        where('colaboradorId', '==', idDuplicado)
-      )
-    );
-    qualsSnap.forEach((d) => {
-      batch.update(d.ref, {
-        colaboradorId: idPrincipal,
-        colaboradorNome: nomePrincipal,
-        colaboradorMatricula: matriculaPrincipal,
-        updatedAt: agora,
-      });
-      totalLicencasMigradas++;
-    });
-
-    // 2.4 Documentos de Evidência Firestore (organizations/{orgId}/personDocuments)
-    // NOTA CRÍTICA: O nome canônico é personDocuments, conforme firestore.rules
-    const docsSnap = await getDocs(
-      query(
-        collection(db, 'organizations', orgId, 'personDocuments'),
-        where('colaboradorId', '==', idDuplicado)
-      )
-    );
-    docsSnap.forEach((d) => {
-      batch.update(d.ref, {
-        colaboradorId: idPrincipal,
-        updatedAt: agora,
-      });
-      totalDocumentosMigrados++;
-    });
-
-    // 2.5 Não Conformidades / RNCs (responsavelImplementacaoId ou auditorId)
-    // Usar nome canônico 'nonConformities'
-    const rncsSnap = await getDocs(
-      query(
-        collection(db, 'organizations', orgId, 'nonConformities'),
-        where('responsavelImplementacaoId', '==', idDuplicado)
-      )
-    );
-    rncsSnap.forEach((d) => {
-      batch.update(d.ref, {
-        responsavelImplementacaoId: idPrincipal,
-        responsavelImplementacao: nomePrincipal,
-        updatedAt: agora,
-      });
-    });
-
-    // 2.6 Enriquecimento de dados cadastrais vazios no principal
-    if (options.atualizarDadosCadastraisVazios && pessoaDuplicadaRooster) {
-      const atualizacoesPrincipal: Record<string, any> = { updatedAt: agora };
-
-      if (!pessoaPrincipalRooster?.canac && pessoaDuplicadaRooster.canac) {
-        atualizacoesPrincipal.canac = pessoaDuplicadaRooster.canac;
-      }
-      if (!pessoaPrincipalRooster?.base_principal_id && pessoaDuplicadaRooster.base_principal_id) {
-        atualizacoesPrincipal.base_principal_id = pessoaDuplicadaRooster.base_principal_id;
-        atualizacoesPrincipal.baseOperacional = pessoaDuplicadaRooster.base_principal_id;
-      }
-      if (!pessoaPrincipalRooster?.contato_corporativo && pessoaDuplicadaRooster.contato_corporativo) {
-        atualizacoesPrincipal.contatoCorporativo = pessoaDuplicadaRooster.contato_corporativo;
-      }
-      if (!pessoaPrincipalRooster?.data_admissao && pessoaDuplicadaRooster.data_admissao) {
-        atualizacoesPrincipal.dataAdmissao = pessoaDuplicadaRooster.data_admissao;
-      }
-
-      batch.set(docPrincipalRef, sanitizeForFirestore(atualizacoesPrincipal), { merge: true });
-    }
-
-    // 2.7 Inativação Lógica vs Exclusão Física no Firestore (Requisito 5)
-    if (excluirDefinitivamente && !preservarHistorico) {
-      batch.delete(docDuplicadoRef);
-    } else {
-      // Preservação histórica: marca como INATIVO e vincula ao principal
-      batch.set(
-        docDuplicadoRef,
-        sanitizeForFirestore({
-          status: 'INATIVO',
-          statusCustomizado: `Unificado ao cadastro ${nomePrincipal} (${idPrincipal})`,
-          unificadoComId: idPrincipal,
-          unificadoComNome: nomePrincipal,
-          unificadoEm: agora,
-          unificadoPor: userName,
-          inativadoEm: agora,
-          inativadoPor: userName,
-          motivoInativacao: `Unificado ao cadastro principal ${nomePrincipal} (${idPrincipal}) por eliminação de duplicidade. Histórico preservado.`,
+      // 2.1 Treinamentos Firestore (organizations/{orgId}/trainingRecords)
+      const treinosSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'trainingRecords'),
+          where('colaboradorId', '==', idDuplicado)
+        )
+      );
+      treinosSnap.forEach((d) => {
+        batch.update(d.ref, {
+          colaboradorId: idPrincipal,
+          colaboradorNome: nomePrincipal,
+          colaboradorMatricula: matriculaPrincipal,
           updatedAt: agora,
-        }),
-        { merge: true }
-      );
-    }
+          observacoesRevisao: `Vínculo transferido por unificação do cadastro duplicado (${idDuplicado}) em ${agora.slice(0, 10)} por ${userName}.`,
+        });
+        totalTreinamentosMigrados++;
+      });
 
-    // Comita alterações na base Firestore remota de forma monitorada
-    await batch.commit();
-  } catch (err: any) {
-    const isPermissionOrOffline =
-      err?.code === 'permission-denied' ||
-      (typeof err?.message === 'string' &&
-        (err.message.includes('Missing or insufficient permissions') ||
-          err.message.includes('PERMISSION_DENIED') ||
-          err.message.includes('the client is offline') ||
-          err.message.includes('permission-denied')));
-
-    if (isPermissionOrOffline) {
-      console.warn(
-        '[mergePersonsService] Firestore remoto com acesso restrito por credenciais ou offline. Prosseguindo com consolidação no repositório canônico:',
-        err?.message || err
+      // 2.2 Competências Firestore (organizations/{orgId}/personCompetencies)
+      const compsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'personCompetencies'),
+          where('colaboradorId', '==', idDuplicado)
+        )
       );
-    } else {
+      compsSnap.forEach((d) => {
+        batch.update(d.ref, {
+          colaboradorId: idPrincipal,
+          colaboradorNome: nomePrincipal,
+          updatedAt: agora,
+        });
+        totalCompetenciasMigradas++;
+      });
+
+      // 2.3 Qualificações e Licenças CHT/CCT Firestore (organizations/{orgId}/qualifications)
+      const qualsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'qualifications'),
+          where('colaboradorId', '==', idDuplicado)
+        )
+      );
+      qualsSnap.forEach((d) => {
+        batch.update(d.ref, {
+          colaboradorId: idPrincipal,
+          colaboradorNome: nomePrincipal,
+          colaboradorMatricula: matriculaPrincipal,
+          updatedAt: agora,
+        });
+        totalLicencasMigradas++;
+      });
+
+      // 2.4 Documentos de Evidência Firestore (organizations/{orgId}/personDocuments)
+      const docsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'personDocuments'),
+          where('colaboradorId', '==', idDuplicado)
+        )
+      );
+      docsSnap.forEach((d) => {
+        batch.update(d.ref, {
+          colaboradorId: idPrincipal,
+          updatedAt: agora,
+        });
+        totalDocumentosMigrados++;
+      });
+
+      // 2.5 Não Conformidades / RNCs (responsavelImplementacaoId ou auditorId)
+      const rncsSnap = await getDocs(
+        query(
+          collection(db, 'organizations', orgId, 'nonConformities'),
+          where('responsavelImplementacaoId', '==', idDuplicado)
+        )
+      );
+      rncsSnap.forEach((d) => {
+        batch.update(d.ref, {
+          responsavelImplementacaoId: idPrincipal,
+          responsavelImplementacao: nomePrincipal,
+          updatedAt: agora,
+        });
+      });
+
+      // 2.6 Enriquecimento de dados cadastrais vazios no principal
+      if (options.atualizarDadosCadastraisVazios && pessoaDuplicadaRooster) {
+        const atualizacoesPrincipal: Record<string, any> = { updatedAt: agora };
+
+        if (!pessoaPrincipalRooster?.canac && pessoaDuplicadaRooster.canac) {
+          atualizacoesPrincipal.canac = pessoaDuplicadaRooster.canac;
+        }
+        if (!pessoaPrincipalRooster?.base_principal_id && pessoaDuplicadaRooster.base_principal_id) {
+          atualizacoesPrincipal.base_principal_id = pessoaDuplicadaRooster.base_principal_id;
+          atualizacoesPrincipal.baseOperacional = pessoaDuplicadaRooster.base_principal_id;
+        }
+        if (!pessoaPrincipalRooster?.contato_corporativo && pessoaDuplicadaRooster.contato_corporativo) {
+          atualizacoesPrincipal.contatoCorporativo = pessoaDuplicadaRooster.contato_corporativo;
+        }
+        if (!pessoaPrincipalRooster?.data_admissao && pessoaDuplicadaRooster.data_admissao) {
+          atualizacoesPrincipal.dataAdmissao = pessoaDuplicadaRooster.data_admissao;
+        }
+
+        batch.set(docPrincipalRef, sanitizeForFirestore(atualizacoesPrincipal), { merge: true });
+      }
+
+      // 2.7 Inativação Lógica vs Exclusão Física no Firestore (Requisito 5)
+      if (excluirDefinitivamente && !preservarHistorico) {
+        batch.delete(docDuplicadoRef);
+      } else {
+        batch.set(
+          docDuplicadoRef,
+          sanitizeForFirestore({
+            status: 'INATIVO',
+            statusCustomizado: `Unificado ao cadastro ${nomePrincipal} (${idPrincipal})`,
+            unificadoComId: idPrincipal,
+            unificadoComNome: nomePrincipal,
+            unificadoEm: agora,
+            unificadoPor: userName,
+            inativadoEm: agora,
+            inativadoPor: userName,
+            motivoInativacao: `Unificado ao cadastro principal ${nomePrincipal} (${idPrincipal}) por eliminação de duplicidade. Histórico preservado.`,
+            updatedAt: agora,
+          }),
+          { merge: true }
+        );
+      }
+
+      // Comita alterações no Firestore de forma estrita — sem supressão silenciosa
+      await batch.commit();
+    } catch (err: any) {
       const msg = `Falha na migração Firestore (QualyQuest): ${err?.message || err}`;
       console.error('[mergePersonsService] Erro fatal no commit do Firestore:', err);
       throw new Error(msg);
@@ -600,6 +832,7 @@ export async function mesclarColaboradores(
 
   // =========================================================================
   // ETAPA 3: MIGRAÇÃO ROOSTER MRO (Licenças, Frotas, Funções, Treinamentos)
+  // Requisito 2: Não depende de encontrar registro em designacoesPessoa
   // =========================================================================
   notifyProgress('MIGRACAO_ROOSTER_MRO', 60, 'Consolidando designações de frota, bases e funções no Rooster MRO...');
 
@@ -637,7 +870,7 @@ export async function mesclarColaboradores(
       totalLicencasMigradas++;
     }
 
-    // 3.4 Designações Rooster: Pessoa, Frotas, Funções, Bases
+    // 3.3 Designação de Pessoa Rooster (Independente das outras designações)
     const desigDuplicada = roosterDb.designacoesPessoa.find(
       (dp) => dp.pessoa_id === idDuplicado
     );
@@ -668,37 +901,64 @@ export async function mesclarColaboradores(
       };
 
       await repository.saveDesignacaoPessoa(desigConsolidada, userName);
-
-      // Migra frotas autorizadas
-      const frotasDuplicadas = roosterDb.designacoesAeronave.filter(
-        (da) => da.pessoa_id === idDuplicado
-      );
-      for (const fd of frotasDuplicadas) {
-        await repository.setDesignacaoAeronave(idPrincipal, fd.aeronave, fd.valor, userName);
-      }
-
-      // Migra funções autorizadas
-      const funcoesDuplicadas = roosterDb.designacoesFuncao.filter(
-        (df) => df.pessoa_id === idDuplicado
-      );
-      for (const fn of funcoesDuplicadas) {
-        await repository.setDesignacaoFuncao(idPrincipal, fn.funcao, fn.valor, userName);
-      }
-
-      // Migra bases autorizadas
-      const basesDuplicadas = roosterDb.designacoesBase.filter(
-        (dbx) => dbx.pessoa_id === idDuplicado
-      );
-      if (basesDuplicadas.length > 0) {
-        const basesSet = new Set<string>();
-        roosterDb.designacoesBase
-          .filter((dbx) => dbx.pessoa_id === idPrincipal)
-          .forEach((b) => basesSet.add(b.base_id));
-        basesDuplicadas.forEach((b) => basesSet.add(b.base_id));
-        await repository.setDesignacaoBases(idPrincipal, Array.from(basesSet), userName);
-      }
-
+      await repository.deleteDesignacaoPessoa(idDuplicado, userName);
       totalDesignacoesMigradas++;
+    }
+
+    // 3.4 Designações de Frotas / Aeronaves (Mapeamento Completo e Independente)
+    const frotasDuplicadas = roosterDb.designacoesAeronave.filter(
+      (da) => da.pessoa_id === idDuplicado
+    );
+    for (const fd of frotasDuplicadas) {
+      const desigAeroPrincipal = roosterDb.designacoesAeronave.find(
+        (da) => da.pessoa_id === idPrincipal && da.aeronave === fd.aeronave
+      );
+      const valorFinal = (desigAeroPrincipal?.valor && desigAeroPrincipal.valor !== ('NÃO' as const) && desigAeroPrincipal.valor === 'SIM')
+        ? desigAeroPrincipal.valor
+        : fd.valor;
+
+      if (valorFinal) {
+        await repository.setDesignacaoAeronave(idPrincipal, fd.aeronave, valorFinal, userName);
+      }
+      // Remove do duplicado para não restar vínculo
+      await repository.setDesignacaoAeronave(idDuplicado, fd.aeronave, '', userName);
+      totalDesignacoesMigradas++;
+    }
+
+    // 3.5 Designações de Funções (Mapeamento Completo e Independente)
+    const funcoesDuplicadas = roosterDb.designacoesFuncao.filter(
+      (df) => df.pessoa_id === idDuplicado
+    );
+    for (const fn of funcoesDuplicadas) {
+      const desigFuncPrincipal = roosterDb.designacoesFuncao.find(
+        (df) => df.pessoa_id === idPrincipal && df.funcao === fn.funcao
+      );
+      const valorFinal = (desigFuncPrincipal?.valor && desigFuncPrincipal.valor !== ('NÃO' as const) && desigFuncPrincipal.valor === 'SIM')
+        ? desigFuncPrincipal.valor
+        : fn.valor;
+
+      if (valorFinal) {
+        await repository.setDesignacaoFuncao(idPrincipal, fn.funcao, valorFinal, userName);
+      }
+      // Remove do duplicado para não restar vínculo
+      await repository.setDesignacaoFuncao(idDuplicado, fn.funcao, '', userName);
+      totalDesignacoesMigradas++;
+    }
+
+    // 3.6 Designações de Bases (Mapeamento Completo e Independente)
+    const basesDuplicadas = roosterDb.designacoesBase.filter(
+      (dbx) => dbx.pessoa_id === idDuplicado
+    );
+    if (basesDuplicadas.length > 0) {
+      const basesSet = new Set<string>();
+      roosterDb.designacoesBase
+        .filter((dbx) => dbx.pessoa_id === idPrincipal)
+        .forEach((b) => basesSet.add(b.base_id));
+      basesDuplicadas.forEach((b) => basesSet.add(b.base_id));
+      await repository.setDesignacaoBases(idPrincipal, Array.from(basesSet), userName);
+      // Remove todas as bases do duplicado
+      await repository.setDesignacaoBases(idDuplicado, [], userName);
+      totalDesignacoesMigradas += basesDuplicadas.length;
     }
   } catch (err: any) {
     const msg = `Falha na migração Rooster MRO: ${err?.message || err}`;
@@ -715,7 +975,6 @@ export async function mesclarColaboradores(
     if (excluirDefinitivamente && !preservarHistorico) {
       await repository.deletePessoa(idDuplicado, userName);
     } else if (pessoaDuplicadaRooster) {
-      // Inativa no Rooster para que não apareça na listagem ativa (filtroSituacao === 'Ativo')
       const pessoaDuplicadaInativada = {
         ...pessoaDuplicadaRooster,
         situacao: 'Inativo' as const,
@@ -763,9 +1022,37 @@ export async function mesclarColaboradores(
   }
 
   // =========================================================================
-  // ETAPA 5: VERIFICAÇÃO E CONFIRMAÇÃO DE PERSISTÊNCIA
+  // ETAPA 5: VERIFICAÇÃO DIRETA NA PERSISTÊNCIA ANTES DA CONCLUSÃO (Requisito 4)
+  // Sem falso sucesso: se houver qualquer pendência, não retorna sucesso
   // =========================================================================
-  notifyProgress('VERIFICACAO_E_CONFIRMACAO', 95, 'Verificando integridade e persistência dos dados consolidados...');
+  notifyProgress('VERIFICACAO_E_CONFIRMACAO', 92, 'Validando persistência direta e ausência de vínculos órfãos...');
+
+  const integridade = await verificarIntegridadePosMerge(
+    orgId,
+    idPrincipal,
+    idDuplicado,
+    options.pularCommitFirestoreParaTestes ?? false
+  );
+  if (!integridade.valida) {
+    const msgFalha = `A unificação não foi validada integralmente na persistência. Itens pendentes: ${integridade.pendencias.join('; ')}`;
+    console.error('[mergePersonsService] Validação pós-unificação reprovada:', integridade);
+    return {
+      sucesso: false,
+      statusOperacao: 'PARCIALMENTE_CONCLUIDA',
+      mensagem: msgFalha,
+      erro: msgFalha,
+      colaboradorPrincipalId: idPrincipal,
+      colaboradorDuplicadoId: idDuplicado,
+      totalTreinamentosMigrados,
+      totalLicencasMigradas,
+      totalDesignacoesMigradas,
+      totalCompetenciasMigradas,
+      totalDocumentosMigrados,
+      backupId,
+      relatorioIntegridade: integridade,
+      pendencias: integridade.pendencias,
+    };
+  }
 
   // Disparar evento de sincronização global para componentes que escutam
   if (typeof window !== 'undefined') {
@@ -814,7 +1101,8 @@ export async function mesclarColaboradores(
 
   return {
     sucesso: true,
-    mensagem: `Colaborador unificado com sucesso! Todos os vínculos (${totalTreinamentosMigrados} treinamentos, ${totalLicencasMigradas} licenças/habilitações e designações) foram consolidados em ${nomePrincipal}. O cadastro ${idDuplicado} foi inativado e vinculado como referência histórica.`,
+    statusOperacao: 'CONCLUIDA',
+    mensagem: `Colaborador unificado com sucesso! Todos os vínculos (${totalTreinamentosMigrados} treinamentos, ${totalLicencasMigradas} licenças/habilitações e ${totalDesignacoesMigradas} designações) foram consolidados em ${nomePrincipal}. O cadastro ${idDuplicado} foi inativado e vinculado como referência histórica com zero vínculos remanescentes.`,
     colaboradorPrincipalId: idPrincipal,
     colaboradorDuplicadoId: idDuplicado,
     totalTreinamentosMigrados,
@@ -824,6 +1112,7 @@ export async function mesclarColaboradores(
     totalDocumentosMigrados,
     backupId,
     registroPreservadoInativo: !excluirDefinitivamente,
+    relatorioIntegridade: integridade,
   };
 }
 

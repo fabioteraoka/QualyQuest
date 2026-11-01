@@ -23,7 +23,10 @@ import {
   gerarRelatorioDiagnosticoDuplicados,
   criarBackupPreMerge,
   normalizarOrganizationId,
+  mesclarColaboradores,
+  verificarIntegridadePosMerge,
 } from '../src/services/mergePersonsService';
+import { repository } from '../src/rooster/services/storage';
 import { normalizePersonName, normalizeMatriculaOrCanac } from '../src/utils/personNormalization';
 import path from 'path';
 
@@ -1269,6 +1272,322 @@ async function runAllTests() {
     '9. Merge Engine Revisado',
     'criarBackupPreMerge gera snapshot com identificador único antes de qualquer mutação',
     'Falha ao gerar backup prévio'
+  );
+
+  // ==========================================================================
+  // EIXO 10: HOMOLOGAÇÃO REAL DO MERGE ENGINE (SEM FALSO SUCESSO)
+  // ==========================================================================
+  console.log('\n--- EIXO 10: HOMOLOGAÇÃO REAL DO MERGE ENGINE (SEM FALSO SUCESSO) ---');
+
+  // 10.1 Bloqueio estrito de permissão (Perfil CONSULTA é bloqueado sem falso sucesso)
+  const resBloqueioConsulta = await mesclarColaboradores(
+    'org_impacto_aviation',
+    'MEC-001',
+    'MEC-002',
+    {},
+    { uid: 'usr_consulta', role: 'CONSULTA', email: 'consulta@impacto.com.br' } as any
+  );
+  assert(
+    resBloqueioConsulta.sucesso === false &&
+    resBloqueioConsulta.statusOperacao === 'BLOQUEADA_SEM_AUTORIZACAO' &&
+    resBloqueioConsulta.mensagem.includes('CONSULTA'),
+    '10. Homologação Real do Merge Engine',
+    'Perfil CONSULTA é bloqueado upfront e não recebe mensagem de falso sucesso',
+    'Perfil CONSULTA não foi bloqueado adequadamente'
+  );
+
+  // 10.2 Migração independente de designações mesmo sem registro prévio em designacoesPessoa
+  const pPrinc1: Pessoa = {
+    id: 'MEC-TEST-PRIN-1',
+    nome: 'Carlos Mecânico Principal',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'REC',
+    cliente_ou_area: 'Manutenção',
+    canac: '998877',
+    matricula: '998877',
+    criado_em: '2023-01-01',
+    atualizado_em: '2023-01-01',
+    atualizado_por: 'Test Runner',
+  };
+  const pDup1: Pessoa = {
+    id: 'MEC-TEST-DUP-1',
+    nome: 'Carlos Mecanico Duplicado',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'FOR',
+    cliente_ou_area: 'Manutenção',
+    canac: '998877',
+    matricula: '998877',
+    criado_em: '2023-02-01',
+    atualizado_em: '2023-02-01',
+    atualizado_por: 'Test Runner',
+  };
+
+  await repository.savePessoa(pPrinc1, 'Test Runner');
+  await repository.savePessoa(pDup1, 'Test Runner');
+
+  // Configura frotas, funções e bases para o duplicado SEM criar designacoesPessoa
+  await repository.setDesignacaoAeronave('MEC-TEST-DUP-1', 'B737', 'SIM', 'Test Runner');
+  await repository.setDesignacaoAeronave('MEC-TEST-DUP-1', 'A320FAM', 'SIM', 'Test Runner');
+  await repository.setDesignacaoFuncao('MEC-TEST-DUP-1', 'Inspetor', 'SIM', 'Test Runner');
+  await repository.setDesignacaoBases('MEC-TEST-DUP-1', ['REC', 'FOR', 'SSA'], 'Test Runner');
+
+  // Confirma que designacoesPessoa do duplicado está vazia/inexistente antes do merge
+  const desigPessoaAntes = repository.getDatabase().designacoesPessoa.find((dp) => dp.pessoa_id === 'MEC-TEST-DUP-1');
+  assert(
+    !desigPessoaAntes,
+    '10. Homologação Real do Merge Engine',
+    'Cenário de teste: duplicado possui designações de frota/função/base sem entrada prévia em designacoesPessoa',
+    'designacoesPessoa já existia'
+  );
+
+  // Executa unificação real
+  const resMerge1 = await mesclarColaboradores(
+    'org_impacto_aviation',
+    'MEC-TEST-PRIN-1',
+    'MEC-TEST-DUP-1',
+    { ignorarChecagemAuth: true, pularCommitFirestoreParaTestes: true },
+    { uid: 'admin_test', role: 'ADMIN', email: 'admin@impacto.com.br' } as any
+  );
+
+  assert(
+    resMerge1.sucesso === true && resMerge1.statusOperacao === 'CONCLUIDA',
+    '10. Homologação Real do Merge Engine',
+    'mesclarColaboradores conclui com sucesso transferindo designações independentes',
+    `Falha no merge: ${resMerge1.mensagem}`
+  );
+
+  const dbAfter1 = repository.getDatabase();
+  const aeroPrincB737 = dbAfter1.designacoesAeronave.find((da) => da.pessoa_id === 'MEC-TEST-PRIN-1' && da.aeronave === 'B737');
+  const aeroPrincA320 = dbAfter1.designacoesAeronave.find((da) => da.pessoa_id === 'MEC-TEST-PRIN-1' && da.aeronave === 'A320FAM');
+  const funcPrincInsp = dbAfter1.designacoesFuncao.find((df) => df.pessoa_id === 'MEC-TEST-PRIN-1' && df.funcao === 'Inspetor');
+  const basesPrinc = dbAfter1.designacoesBase.filter((dbx) => dbx.pessoa_id === 'MEC-TEST-PRIN-1');
+
+  assert(
+    aeroPrincB737?.valor === 'SIM' &&
+    aeroPrincA320?.valor === 'SIM' &&
+    funcPrincInsp?.valor === 'SIM' &&
+    basesPrinc.some((b) => b.base_id === 'FOR') &&
+    basesPrinc.some((b) => b.base_id === 'REC'),
+    '10. Homologação Real do Merge Engine',
+    'Todas as designações de frota, função e bases foram transferidas integralmente para o colaborador principal',
+    'Designações não transferidas corretamente para o principal'
+  );
+
+  // Confirma que duplicado não possui mais designações ativas
+  const aeroDupRestantes = dbAfter1.designacoesAeronave.filter((da) => da.pessoa_id === 'MEC-TEST-DUP-1' && da.valor !== '');
+  const funcDupRestantes = dbAfter1.designacoesFuncao.filter((df) => df.pessoa_id === 'MEC-TEST-DUP-1' && df.valor !== '');
+  const basesDupRestantes = dbAfter1.designacoesBase.filter((dbx) => dbx.pessoa_id === 'MEC-TEST-DUP-1');
+
+  assert(
+    aeroDupRestantes.length === 0 &&
+    funcDupRestantes.length === 0 &&
+    basesDupRestantes.length === 0,
+    '10. Homologação Real do Merge Engine',
+    'Zero designações remanescentes atreladas ao colaborador duplicado pós-unificação',
+    'Restaram designações no colaborador duplicado'
+  );
+
+  // 10.3 Transferência de múltiplos treinamentos e múltiplas licenças preservando IDs originais
+  const pPrinc2: Pessoa = {
+    id: 'MEC-TEST-PRIN-2',
+    nome: 'Lucas Silva Principal',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'REC',
+    cliente_ou_area: 'Manutenção',
+    canac: '112233',
+    matricula: '112233',
+    criado_em: '2023-01-01',
+    atualizado_em: '2023-01-01',
+    atualizado_por: 'Test Runner',
+  };
+  const pDup2: Pessoa = {
+    id: 'MEC-TEST-DUP-2',
+    nome: 'Lucas Silva Duplicado',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'REC',
+    cliente_ou_area: 'Manutenção',
+    canac: '112233',
+    matricula: '112233',
+    criado_em: '2023-02-01',
+    atualizado_em: '2023-02-01',
+    atualizado_por: 'Test Runner',
+  };
+  await repository.savePessoa(pPrinc2, 'Test Runner');
+  await repository.savePessoa(pDup2, 'Test Runner');
+
+  // Adiciona 3 treinamentos distintos e 2 licenças distintas
+  await repository.saveTreinamento({
+    id: 'TRN-TEST-001',
+    pessoa_id: 'MEC-TEST-DUP-2',
+    curso_id: 'CURSO-B737-GENFAM',
+    data_execucao: '2024-01-15',
+    data_validade: '2026-01-15',
+    situacao: 'Válido',
+  } as any, [], 'Test');
+
+  await repository.saveTreinamento({
+    id: 'TRN-TEST-002',
+    pessoa_id: 'MEC-TEST-DUP-2',
+    curso_id: 'CURSO-EWIS',
+    data_execucao: '2024-03-20',
+    data_validade: '2026-03-20',
+    situacao: 'Válido',
+  } as any, [], 'Test');
+
+  await repository.saveTreinamento({
+    id: 'TRN-TEST-003',
+    pessoa_id: 'MEC-TEST-DUP-2',
+    curso_id: 'CURSO-FTS-II',
+    data_execucao: '2024-05-10',
+    data_validade: '2026-05-10',
+    situacao: 'Válido',
+  } as any, [], 'Test');
+
+  await repository.saveLicenca({
+    id: 'LIC-TEST-001',
+    pessoa_id: 'MEC-TEST-DUP-2',
+    orgao: 'ANAC',
+    tipo: 'CHT',
+    numero: '112233',
+    habilitacao: 'GMP',
+    status: 'VALIDA',
+  } as any, 'Test');
+
+  await repository.saveLicenca({
+    id: 'LIC-TEST-002',
+    pessoa_id: 'MEC-TEST-DUP-2',
+    orgao: 'ANAC',
+    tipo: 'CHT',
+    numero: '112233',
+    habilitacao: 'CEL',
+    status: 'VALIDA',
+  } as any, 'Test');
+
+  const resMerge2 = await mesclarColaboradores(
+    'org_impacto_aviation',
+    'MEC-TEST-PRIN-2',
+    'MEC-TEST-DUP-2',
+    { ignorarChecagemAuth: true, pularCommitFirestoreParaTestes: true },
+    { uid: 'admin_test', role: 'ADMIN', email: 'admin@impacto.com.br' } as any
+  );
+
+  assert(
+    resMerge2.sucesso === true &&
+    resMerge2.totalTreinamentosMigrados >= 3 &&
+    resMerge2.totalLicencasMigradas >= 2,
+    '10. Homologação Real do Merge Engine',
+    'Transferência de múltiplos treinamentos e múltiplas licenças concluída com contagem exata',
+    'Contagem incorreta de treinamentos ou licenças migrados'
+  );
+
+  const dbAfter2 = repository.getDatabase();
+  const trn1 = dbAfter2.treinamentos.find((t) => t.id === 'TRN-TEST-001');
+  const trn2 = dbAfter2.treinamentos.find((t) => t.id === 'TRN-TEST-002');
+  const trn3 = dbAfter2.treinamentos.find((t) => t.id === 'TRN-TEST-003');
+  const lic1 = dbAfter2.licencas.find((l) => l.id === 'LIC-TEST-001');
+  const lic2 = dbAfter2.licencas.find((l) => l.id === 'LIC-TEST-002');
+
+  assert(
+    trn1?.pessoa_id === 'MEC-TEST-PRIN-2' &&
+    trn2?.pessoa_id === 'MEC-TEST-PRIN-2' &&
+    trn3?.pessoa_id === 'MEC-TEST-PRIN-2' &&
+    trn1?.data_execucao === '2024-01-15' &&
+    trn1?.data_validade === '2026-01-15' &&
+    lic1?.pessoa_id === 'MEC-TEST-PRIN-2' &&
+    lic2?.pessoa_id === 'MEC-TEST-PRIN-2' &&
+    lic1?.habilitacao === 'GMP' &&
+    lic2?.habilitacao === 'CEL',
+    '10. Homologação Real do Merge Engine',
+    'Preservação integral dos IDs originais, datas de execução, validade e tipos de habilitação',
+    'Dados ou IDs dos treinamentos/licenças foram corrompidos'
+  );
+
+  // 10.4 Verificação direta de ausência de registros órfãos pós-unificação (verificarIntegridadePosMerge)
+  const integridadeCheck = await verificarIntegridadePosMerge(
+    'org_impacto_aviation',
+    'MEC-TEST-PRIN-2',
+    'MEC-TEST-DUP-2',
+    true
+  );
+
+  assert(
+    integridadeCheck.valida === true &&
+    integridadeCheck.treinamentosRestantesDuplicado === 0 &&
+    integridadeCheck.licencasRestantesDuplicado === 0 &&
+    integridadeCheck.designacoesRestantesDuplicado === 0 &&
+    integridadeCheck.duplicadoInativadoRooster === true &&
+    integridadeCheck.principalAtivoRooster === true &&
+    integridadeCheck.pendencias.length === 0,
+    '10. Homologação Real do Merge Engine',
+    'verificarIntegridadePosMerge valida 0 registros remanescentes e coerência entre SGQ e Rooster',
+    `Falhas de integridade detectadas: ${integridadeCheck.pendencias.join(', ')}`
+  );
+
+  // 10.5 Detecção de inconsistência e rejeição de falso sucesso se restar vínculo
+  // Simula injeção espúria de um treinamento no duplicado
+  await repository.saveTreinamento({
+    id: 'TRN-ESPURIO-999',
+    pessoa_id: 'MEC-TEST-DUP-2',
+    curso_id: 'CURSO-LEAK',
+    data_execucao: '2024-06-01',
+    situacao: 'Válido',
+  } as any, [], 'Attacker');
+
+  const integridadeComVazamento = await verificarIntegridadePosMerge(
+    'org_impacto_aviation',
+    'MEC-TEST-PRIN-2',
+    'MEC-TEST-DUP-2',
+    true
+  );
+
+  assert(
+    integridadeComVazamento.valida === false &&
+    integridadeComVazamento.treinamentosRestantesDuplicado === 1 &&
+    integridadeComVazamento.pendencias.some((p) => p.includes('treinamento(s) no Rooster')),
+    '10. Homologação Real do Merge Engine',
+    'verificarIntegridadePosMerge detecta imediatamente vínculo remanescente e impede falso sucesso',
+    'Validador não detectou registro remanescente espúrio'
+  );
+
+  // Limpa o registro de teste espúrio
+  await repository.deleteTreinamento('TRN-ESPURIO-999', 'Cleanup');
+
+  // 10.6 Idempotência e retomada em caso de execução repetida
+  const resMergeRepetido = await mesclarColaboradores(
+    'org_impacto_aviation',
+    'MEC-TEST-PRIN-2',
+    'MEC-TEST-DUP-2',
+    { ignorarChecagemAuth: true, pularCommitFirestoreParaTestes: true },
+    { uid: 'admin_test', role: 'ADMIN', email: 'admin@impacto.com.br' } as any
+  );
+
+  assert(
+    resMergeRepetido.sucesso === true &&
+    resMergeRepetido.statusOperacao === 'CONCLUIDA' &&
+    resMergeRepetido.relatorioIntegridade?.valida === true,
+    '10. Homologação Real do Merge Engine',
+    'Idempotência comprovada: re-execução em par já unificado mantém integridade e conclui sem duplicar',
+    'Falha ao re-executar mesclagem (não idempotente)'
+  );
+
+  // 10.7 Comprovação de que o colaborador duplicado deixa de aparecer na listagem ativa nos dois módulos
+  const dbFinal = repository.getDatabase();
+  const mecDupFinal = dbFinal.pessoas.find((p) => p.id === 'MEC-TEST-DUP-2');
+  const visivelListaAtivaRooster = dbFinal.pessoas
+    .filter((p) => p.situacao === 'Ativo')
+    .some((p) => p.id === 'MEC-TEST-DUP-2');
+
+  assert(
+    mecDupFinal?.situacao === 'Inativo' &&
+    mecDupFinal?.observacoes?.includes('[UNIFICADO]') &&
+    !visivelListaAtivaRooster,
+    '10. Homologação Real do Merge Engine',
+    'Colaborador duplicado está inativo com histórico preservado e não aparece na listagem ativa de Rooster e SGQ',
+    'Colaborador duplicado ainda visível como ativo'
   );
 
   console.log('\n===============================================================');

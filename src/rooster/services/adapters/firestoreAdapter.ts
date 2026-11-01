@@ -1484,6 +1484,17 @@ export class FirestoreAdapter implements StorageAdapter {
     await this.recordAudit('EDITAR', 'designacao_pessoa', dp.pessoa_id, `Atualizou designação pessoa ${dp.pessoa_id}`, null, dp, usuarioNome);
   }
 
+  async deleteDesignacaoPessoa(pessoaId: string, usuarioNome: string): Promise<void> {
+    const db = getFirestoreDb();
+    if (!db) throw new Error('Firestore não inicializado.');
+
+    this.memoryDb.designacoesPessoa = this.memoryDb.designacoesPessoa.filter((d) => d.pessoa_id !== pessoaId);
+    this.notify();
+
+    await deleteDoc(doc(db, 'organizations', this.orgId, 'roster_designacoes_pessoa', pessoaId));
+    await this.recordAudit('EXCLUIR', 'designacao_pessoa', pessoaId, `Removeu designação pessoa ${pessoaId}`, null, null, usuarioNome);
+  }
+
   async setDesignacaoBases(pessoaId: string, bases: string[], usuarioNome: string): Promise<void> {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
@@ -1519,8 +1530,18 @@ export class FirestoreAdapter implements StorageAdapter {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const docId = `${pessoaId}__${funcao}`;
-    const entry = { pessoa_id: pessoaId, funcao, valor };
 
+    if (valor === '') {
+      this.memoryDb.designacoesFuncao = this.memoryDb.designacoesFuncao.filter(
+        (df) => !(df.pessoa_id === pessoaId && df.funcao === funcao)
+      );
+      this.notify();
+      await deleteDoc(doc(db, 'organizations', this.orgId, 'roster_designacoes_funcao', docId));
+      await this.recordAudit('EXCLUIR', 'designacao_funcao', docId, `Removeu designação função ${funcao} de ${pessoaId}`, null, null, usuarioNome);
+      return;
+    }
+
+    const entry = { pessoa_id: pessoaId, funcao, valor };
     const idx = this.memoryDb.designacoesFuncao.findIndex((df) => df.pessoa_id === pessoaId && df.funcao === funcao);
     if (idx >= 0) this.memoryDb.designacoesFuncao[idx].valor = valor;
     else this.memoryDb.designacoesFuncao.push(entry);
@@ -1539,8 +1560,18 @@ export class FirestoreAdapter implements StorageAdapter {
     const db = getFirestoreDb();
     if (!db) throw new Error('Firestore não inicializado.');
     const docId = `${pessoaId}__${aeronave}`;
-    const entry = { pessoa_id: pessoaId, aeronave, valor };
 
+    if (valor === '') {
+      this.memoryDb.designacoesAeronave = this.memoryDb.designacoesAeronave.filter(
+        (da) => !(da.pessoa_id === pessoaId && da.aeronave === aeronave)
+      );
+      this.notify();
+      await deleteDoc(doc(db, 'organizations', this.orgId, 'roster_designacoes_aeronave', docId));
+      await this.recordAudit('EXCLUIR', 'designacao_aeronave', docId, `Removeu designação aeronave ${aeronave} de ${pessoaId}`, null, null, usuarioNome);
+      return;
+    }
+
+    const entry = { pessoa_id: pessoaId, aeronave, valor };
     const idx = this.memoryDb.designacoesAeronave.findIndex((da) => da.pessoa_id === pessoaId && da.aeronave === aeronave);
     if (idx >= 0) this.memoryDb.designacoesAeronave[idx].valor = valor;
     else this.memoryDb.designacoesAeronave.push(entry);

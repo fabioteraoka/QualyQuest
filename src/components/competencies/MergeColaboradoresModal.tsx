@@ -37,7 +37,10 @@ import {
   gerarRelatorioDiagnosticoDuplicados,
   GrupoDuplicadoDetectado,
   EtapaMesclagem,
+  RelatorioIntegridadePosMerge,
+  StatusOperacaoMesclagem,
 } from '../../services/mergePersonsService';
+import { auth } from '../../services/firebase/config';
 
 interface MergeColaboradoresModalProps {
   isOpen: boolean;
@@ -72,6 +75,9 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
   const [isProcessing, setIsProcessing] = useState(false);
   const [mensagemSucesso, setMensagemSucesso] = useState<string | null>(null);
   const [mensagemErro, setMensagemErro] = useState<string | null>(null);
+  const [statusOperacao, setStatusOperacao] = useState<StatusOperacaoMesclagem | null>(null);
+  const [relatorioIntegridade, setRelatorioIntegridade] = useState<RelatorioIntegridadePosMerge | null>(null);
+  const [pendenciasValidacao, setPendenciasValidacao] = useState<string[]>([]);
 
   // Estados de Mesclagem Manual
   const [idPrincipal, setIdPrincipal] = useState<string>('');
@@ -217,6 +223,9 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
   ) => {
     setMensagemErro(null);
     setMensagemSucesso(null);
+    setStatusOperacao(null);
+    setRelatorioIntegridade(null);
+    setPendenciasValidacao([]);
     setIsProcessing(true);
     setEtapaProgresso({
       etapa: 'PREPARACAO_E_BACKUP',
@@ -247,13 +256,22 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
 
       // Requisito 1: Não apresentar sucesso sem confirmação de persistência
       if (!res.sucesso) {
+        setStatusOperacao(res.statusOperacao || 'FALHA');
         setMensagemErro(res.erro || res.mensagem || 'Falha ao executar unificação de colaboradores.');
+        if (res.pendencias && res.pendencias.length > 0) {
+          setPendenciasValidacao(res.pendencias);
+        }
         return;
       }
 
+      setStatusOperacao(res.statusOperacao || 'CONCLUIDA');
       setMensagemSucesso(res.mensagem);
+      if (res.relatorioIntegridade) {
+        setRelatorioIntegridade(res.relatorioIntegridade);
+      }
       if (onSuccess) onSuccess(res.mensagem);
     } catch (err: any) {
+      setStatusOperacao('FALHA');
       setMensagemErro(err?.message || 'Falha ao executar unificação de colaboradores.');
     } finally {
       setIsProcessing(false);
@@ -266,6 +284,9 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
     if (!targetId) return;
     setMensagemErro(null);
     setMensagemSucesso(null);
+    setStatusOperacao(null);
+    setRelatorioIntegridade(null);
+    setPendenciasValidacao([]);
     setIsProcessing(true);
 
     try {
@@ -286,6 +307,9 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
     }
   };
 
+  const isAuthOnline = typeof window === 'undefined' ? true : !!auth.currentUser;
+  const isReadOnlyRole = userProfile?.role === 'CONSULTA';
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl space-y-5 border border-slate-200 animate-scale-in max-h-[92vh] flex flex-col">
@@ -299,7 +323,7 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
               <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
                 <span>Unificação &amp; Eliminação de Colaboradores Duplicados</span>
                 <span className="text-xs bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full">
-                  Preservação de Vínculos 100%
+                  Validação Estrita de Vínculos 100%
                 </span>
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
@@ -326,6 +350,31 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
           </div>
         </div>
 
+        {/* Avisos Prévios de Bloqueio por Autenticação ou Permissão (Requisito 1) */}
+        {!isAuthOnline && (
+          <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl flex items-start gap-2.5 text-xs text-amber-950 font-medium">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="block font-bold">Atenção: Sessão Sem Autenticação Ativa no Firestore</strong>
+              <span className="text-[11px] text-amber-900 leading-relaxed">
+                Para que a unificação seja persistida na nuvem sem falha de permissão, é necessário estar conectado com uma conta autenticada. A unificação requer persistência remota para evitar divergência de dados.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {isReadOnlyRole && (
+          <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-start gap-2.5 text-xs text-rose-950 font-medium">
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+            <div>
+              <strong className="block font-bold">Perfil Somente Leitura (Consulta)</strong>
+              <span className="text-[11px] text-rose-900 leading-relaxed">
+                Seu perfil não possui permissão de escrita para unificar ou inativar registros. Solicite acesso a um Gestor SGQ ou Administrador.
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Barra de Progresso em Tempo Real (Requisito 4) */}
         {isProcessing && etapaProgresso && (
           <div className="p-3 bg-sky-50 border border-sky-300 rounded-xl space-y-2">
@@ -349,18 +398,54 @@ export const MergeColaboradoresModal: React.FC<MergeColaboradoresModalProps> = (
           </div>
         )}
 
-        {/* Mensagens de Feedback */}
+        {/* Mensagens de Feedback Detalhadas com Relatório de Integridade */}
         {mensagemSucesso && (
-          <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center gap-2.5 text-xs text-emerald-950 font-medium">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{mensagemSucesso}</span>
+          <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl space-y-2 text-xs text-emerald-950">
+            <div className="flex items-center gap-2 font-bold text-emerald-900">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Unificação Concluída e Validada na Persistência</span>
+            </div>
+            <p className="text-[11px] text-emerald-850 leading-relaxed">{mensagemSucesso}</p>
+            {relatorioIntegridade && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-emerald-200 text-[10px]">
+                <div className="bg-white/80 p-1.5 rounded border border-emerald-200">
+                  <span className="text-emerald-700 font-semibold block">Treinos no Duplicado:</span>
+                  <span className="font-bold text-emerald-950">{relatorioIntegridade.treinamentosRestantesDuplicado} (0 pendentes)</span>
+                </div>
+                <div className="bg-white/80 p-1.5 rounded border border-emerald-200">
+                  <span className="text-emerald-700 font-semibold block">Licenças no Duplicado:</span>
+                  <span className="font-bold text-emerald-950">{relatorioIntegridade.licencasRestantesDuplicado} (0 pendentes)</span>
+                </div>
+                <div className="bg-white/80 p-1.5 rounded border border-emerald-200">
+                  <span className="text-emerald-700 font-semibold block">Designações:</span>
+                  <span className="font-bold text-emerald-950">{relatorioIntegridade.designacoesRestantesDuplicado} (0 pendentes)</span>
+                </div>
+                <div className="bg-white/80 p-1.5 rounded border border-emerald-200">
+                  <span className="text-emerald-700 font-semibold block">Status Duplicado:</span>
+                  <span className="font-bold text-emerald-950">Inativado / Vinculado</span>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {mensagemErro && (
-          <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl flex items-center gap-2.5 text-xs text-rose-950 font-medium">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{mensagemErro}</span>
+          <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-xl space-y-2 text-xs text-rose-950">
+            <div className="flex items-center gap-2 font-bold text-rose-900">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>Operação Não Concluída</span>
+            </div>
+            <p className="text-[11px] text-rose-850 leading-relaxed">{mensagemErro}</p>
+            {pendenciasValidacao.length > 0 && (
+              <div className="p-2 bg-white/80 rounded border border-rose-200 text-[11px] space-y-1">
+                <span className="font-bold text-rose-900 block">Itens pendentes que impediram o sucesso:</span>
+                <ul className="list-disc pl-4 space-y-0.5 text-rose-800">
+                  {pendenciasValidacao.map((item, idx) => (
+                    <li key={idx}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         )}
 

@@ -334,6 +334,13 @@ export class LocalAdapter implements StorageAdapter {
     recordAudit('EDITAR', 'designacao_pessoa', dp.pessoa_id, `Atualizou designação pessoa ${dp.pessoa_id}`, null, dp, usuarioNome);
   }
 
+  async deleteDesignacaoPessoa(pessoaId: string, usuarioNome: string): Promise<void> {
+    const db = loadDatabase();
+    db.designacoesPessoa = db.designacoesPessoa.filter((d) => d.pessoa_id !== pessoaId);
+    persistDatabase(db);
+    recordAudit('EXCLUIR', 'designacao_pessoa', pessoaId, `Removeu designação pessoa ${pessoaId}`, null, null, usuarioNome);
+  }
+
   async setDesignacaoBases(pessoaId: string, bases: string[], usuarioNome: string): Promise<void> {
     const db = loadDatabase();
     db.designacoesBase = db.designacoesBase.filter((b) => b.pessoa_id !== pessoaId);
@@ -351,9 +358,15 @@ export class LocalAdapter implements StorageAdapter {
     usuarioNome: string
   ): Promise<void> {
     const db = loadDatabase();
-    const idx = db.designacoesFuncao.findIndex((df) => df.pessoa_id === pessoaId && df.funcao === funcao);
-    if (idx >= 0) db.designacoesFuncao[idx].valor = valor;
-    else db.designacoesFuncao.push({ pessoa_id: pessoaId, funcao, valor });
+    if (valor === '') {
+      db.designacoesFuncao = db.designacoesFuncao.filter(
+        (df) => !(df.pessoa_id === pessoaId && df.funcao === funcao)
+      );
+    } else {
+      const idx = db.designacoesFuncao.findIndex((df) => df.pessoa_id === pessoaId && df.funcao === funcao);
+      if (idx >= 0) db.designacoesFuncao[idx].valor = valor;
+      else db.designacoesFuncao.push({ pessoa_id: pessoaId, funcao, valor });
+    }
     persistDatabase(db);
     recordAudit('EDITAR', 'designacao_funcao', `${pessoaId}-${funcao}`, `Função ${funcao} = ${valor}`, null, { funcao, valor }, usuarioNome);
   }
@@ -365,9 +378,15 @@ export class LocalAdapter implements StorageAdapter {
     usuarioNome: string
   ): Promise<void> {
     const db = loadDatabase();
-    const idx = db.designacoesAeronave.findIndex((da) => da.pessoa_id === pessoaId && da.aeronave === aeronave);
-    if (idx >= 0) db.designacoesAeronave[idx].valor = valor;
-    else db.designacoesAeronave.push({ pessoa_id: pessoaId, aeronave, valor });
+    if (valor === '') {
+      db.designacoesAeronave = db.designacoesAeronave.filter(
+        (da) => !(da.pessoa_id === pessoaId && da.aeronave === aeronave)
+      );
+    } else {
+      const idx = db.designacoesAeronave.findIndex((da) => da.pessoa_id === pessoaId && da.aeronave === aeronave);
+      if (idx >= 0) db.designacoesAeronave[idx].valor = valor;
+      else db.designacoesAeronave.push({ pessoa_id: pessoaId, aeronave, valor });
+    }
     persistDatabase(db);
     recordAudit('EDITAR', 'designacao_aeronave', `${pessoaId}-${aeronave}`, `Aeronave ${aeronave} = ${valor}`, null, { aeronave, valor }, usuarioNome);
   }

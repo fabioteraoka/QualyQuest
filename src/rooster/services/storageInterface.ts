@@ -54,6 +54,7 @@ export interface StorageAdapter {
 
   // Designation methods
   saveDesignacaoPessoa(dp: DesignacaoPessoa, usuarioNome: string): Promise<void>;
+  deleteDesignacaoPessoa(pessoaId: string, usuarioNome: string): Promise<void>;
   setDesignacaoBases(pessoaId: string, bases: string[], usuarioNome: string): Promise<void>;
   setDesignacaoFuncao(
     pessoaId: string,

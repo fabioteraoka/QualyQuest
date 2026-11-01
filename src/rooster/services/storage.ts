@@ -2228,6 +2228,16 @@ export const repository = {
     persistDatabase(db);
     recordAudit('EDITAR', 'designacao_pessoa', dp.pessoa_id, `Atualizou designação pessoa ${dp.pessoa_id} (IMP: ${dp.imp})`, null, dp, usuarioNome);
   },
+  deleteDesignacaoPessoa: async (pessoaId: string, usuarioNome = 'Admin'): Promise<void> => {
+    if (activeAdapter && activeAdapter.isCloud) {
+      await (activeAdapter as any).deleteDesignacaoPessoa(pessoaId, usuarioNome);
+      return;
+    }
+    const db = loadDatabase();
+    db.designacoesPessoa = db.designacoesPessoa.filter((d) => d.pessoa_id !== pessoaId);
+    persistDatabase(db);
+    recordAudit('EXCLUIR', 'designacao_pessoa', pessoaId, `Removeu designação pessoa ${pessoaId}`, null, null, usuarioNome);
+  },
   setDesignacaoBases: async (pessoaId: string, bases: string[], usuarioNome = 'Admin'): Promise<void> => {
     if (activeAdapter && activeAdapter.isCloud) {
       await activeAdapter.setDesignacaoBases(pessoaId, bases, usuarioNome);
