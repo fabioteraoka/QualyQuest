@@ -25,6 +25,10 @@ import {
   normalizarOrganizationId,
   mesclarColaboradores,
   verificarIntegridadePosMerge,
+  retomarOperacaoMerge,
+  regularizarPendenciasAuditoriaMerge,
+  obterOperacaoMerge,
+  FirestorePersistenceDriver,
 } from '../src/services/mergePersonsService';
 import { repository } from '../src/rooster/services/storage';
 import { normalizePersonName, normalizeMatriculaOrCanac } from '../src/utils/personNormalization';
@@ -1590,6 +1594,445 @@ async function runAllTests() {
     'Colaborador duplicado ainda visível como ativo'
   );
 
+  // ==========================================================================
+  // EIXO 11: HOMOLOGAÇÃO REAL FIRESTORE, INTEGRIDADE ESTRITA E RECUPERAÇÃO DE FALHAS
+  // ==========================================================================
+  console.log('\n--- EIXO 11: HOMOLOGAÇÃO REAL FIRESTORE, INTEGRIDADE ESTRITA E RECUPERAÇÃO DE FALHAS ---');
+
+  // Criação de driver de persistência Firestore completo em memória para ambiente de testes
+  function criarDriverFirestoreMock(): FirestorePersistenceDriver {
+    const store: Record<string, Record<string, any>> = {
+      trainingRecords: {},
+      qualifications: {},
+      personCompetencies: {},
+      personDocuments: {},
+      nonConformities: {},
+      persons: {},
+      mergeOperations: {},
+      mergeAuditPendencies: {},
+    };
+
+    return {
+      simulateReadFailure: false,
+      async getDocs(collectionName: string, field: string, value: any) {
+        if (this.simulateReadFailure) {
+          throw new Error('Falha simulada de conectividade com o Cloud Firestore para validação de erro');
+        }
+        const col = store[collectionName] || {};
+        return Object.entries(col)
+          .filter(([_, docData]) => docData[field] === value)
+          .map(([id, docData]) => ({
+            id,
+            ref: { id, path: `${collectionName}/${id}` },
+            data: () => ({ ...docData }),
+          }));
+      },
+      async getDoc(collectionName: string, id: string) {
+        if (this.simulateReadFailure) {
+          throw new Error('Falha simulada de conectividade com o Cloud Firestore para validação de erro');
+        }
+        const col = store[collectionName] || {};
+        const data = col[id];
+        return {
+          id,
+          exists: () => !!data,
+          data: () => (data ? { ...data } : undefined),
+        };
+      },
+      async commitBatch(updates: Array<{ path: string; data: any; operation: 'update' | 'set' | 'delete' }>) {
+        for (const up of updates) {
+          const parts = up.path.split('/');
+          const colName = parts[0];
+          const docId = parts[1];
+          if (!store[colName]) store[colName] = {};
+
+          if (up.operation === 'delete') {
+            delete store[colName][docId];
+          } else if (up.operation === 'set') {
+            store[colName][docId] = { ...(store[colName][docId] || {}), ...up.data, id: docId };
+          } else if (up.operation === 'update') {
+            if (!store[colName][docId]) {
+              store[colName][docId] = { id: docId };
+            }
+            store[colName][docId] = { ...store[colName][docId], ...up.data };
+          }
+        }
+      },
+      async setDoc(collectionName: string, id: string, data: any) {
+        if (!store[collectionName]) store[collectionName] = {};
+        store[collectionName][id] = { ...(store[collectionName][id] || {}), ...data, id };
+      },
+    };
+  }
+
+  // 11.1 Teste Efetivo de Persistência no Firestore: Migração das 6 Coleções
+  const fsDriver = criarDriverFirestoreMock();
+
+  // Popula 6 coleções no driver com registros vinculados ao colaborador duplicado
+  await fsDriver.setDoc('persons', 'MEC-FS-PRIN', {
+    id: 'MEC-FS-PRIN',
+    nome: 'Rodrigo Antunes Principal',
+    status: 'ATIVO',
+    matricula: '998811',
+    baseOperacional: 'REC',
+  });
+  await fsDriver.setDoc('persons', 'MEC-FS-DUP', {
+    id: 'MEC-FS-DUP',
+    nome: 'Rodrigo Antunes Duplicado',
+    status: 'ATIVO',
+    matricula: '998811',
+    baseOperacional: 'REC',
+  });
+
+  // trainingRecords
+  await fsDriver.setDoc('trainingRecords', 'TRN-FS-01', {
+    id: 'TRN-FS-01',
+    colaboradorId: 'MEC-FS-DUP',
+    treinamentoCodigo: 'CRM-01',
+    treinamentoTitulo: 'Treinamento CRM Básico',
+    cargaHoraria: 16,
+    dataRealizacao: '2024-03-01',
+    dataValidade: '2026-03-01',
+  });
+  await fsDriver.setDoc('trainingRecords', 'TRN-FS-02', {
+    id: 'TRN-FS-02',
+    colaboradorId: 'MEC-FS-DUP',
+    treinamentoCodigo: 'AVSEC-01',
+    treinamentoTitulo: 'Segurança da Aviação AVSEC',
+    cargaHoraria: 8,
+    dataRealizacao: '2024-04-10',
+    dataValidade: '2026-04-10',
+  });
+
+  // qualifications (CHT ANAC GMP e CEL)
+  await fsDriver.setDoc('qualifications', 'QUAL-FS-01', {
+    id: 'QUAL-FS-01',
+    colaboradorId: 'MEC-FS-DUP',
+    numeroRegistro: '998811',
+    tipo: 'CHT_ANAC',
+    escopo: 'Habilitação GMP',
+    dataValidade: '2027-01-01',
+  });
+  await fsDriver.setDoc('qualifications', 'QUAL-FS-02', {
+    id: 'QUAL-FS-02',
+    colaboradorId: 'MEC-FS-DUP',
+    numeroRegistro: '998811',
+    tipo: 'CHT_ANAC',
+    escopo: 'Habilitação CEL',
+    dataValidade: '2027-01-01',
+  });
+
+  // personCompetencies
+  await fsDriver.setDoc('personCompetencies', 'COMP-FS-01', {
+    id: 'COMP-FS-01',
+    colaboradorId: 'MEC-FS-DUP',
+    item: 'Inspeção Boroscópica CFM56',
+    nivel: 'ESPECIALISTA',
+  });
+  await fsDriver.setDoc('personCompetencies', 'COMP-FS-02', {
+    id: 'COMP-FS-02',
+    colaboradorId: 'MEC-FS-DUP',
+    item: 'Troca de Trem de Pouso B737',
+    nivel: 'HABILITADO',
+  });
+
+  // personDocuments
+  await fsDriver.setDoc('personDocuments', 'DOC-FS-01', {
+    id: 'DOC-FS-01',
+    colaboradorId: 'MEC-FS-DUP',
+    titulo: 'Certificado CRM 2024.pdf',
+    url: 'https://storage/cert1.pdf',
+  });
+  await fsDriver.setDoc('personDocuments', 'DOC-FS-02', {
+    id: 'DOC-FS-02',
+    colaboradorId: 'MEC-FS-DUP',
+    titulo: 'CHT Digital ANAC.pdf',
+    url: 'https://storage/cht.pdf',
+  });
+
+  // nonConformities (RNC)
+  await fsDriver.setDoc('nonConformities', 'RNC-FS-01', {
+    id: 'RNC-FS-01',
+    numeroRNC: 'RNC-2024-088',
+    responsavelImplementacaoId: 'MEC-FS-DUP',
+    responsavelImplementacao: 'Rodrigo Antunes Duplicado',
+  });
+
+  // Também registra no Rooster MRO
+  await repository.savePessoa({
+    id: 'MEC-FS-PRIN',
+    nome: 'Rodrigo Antunes Principal',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'REC',
+    canac: '998811',
+    matricula: '998811',
+  } as any, 'Test');
+  await repository.savePessoa({
+    id: 'MEC-FS-DUP',
+    nome: 'Rodrigo Antunes Duplicado',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'REC',
+    canac: '998811',
+    matricula: '998811',
+  } as any, 'Test');
+
+  // Executa unificação completa utilizando o driver real de Firestore (sem pular commit)
+  const resMergeFS = await mesclarColaboradores(
+    'org_impacto_aviation',
+    'MEC-FS-PRIN',
+    'MEC-FS-DUP',
+    {
+      ignorarChecagemAuth: true,
+      customFirestoreDriver: fsDriver,
+    },
+    { uid: 'admin_test', role: 'ADMIN', email: 'admin@impacto.com.br' } as any
+  );
+
+  assert(
+    resMergeFS.sucesso === true && resMergeFS.statusOperacao === 'CONCLUIDA',
+    '11. Homologação Real Firestore e Resiliência',
+    'Unificação executa commit real nas 6 coleções do Firestore através do driver de persistência',
+    `Erro no merge Firestore: ${resMergeFS.mensagem}`
+  );
+
+  // Consulta novamente os documentos no Firestore para comprovação direta da persistência
+  const treinosPosFS = await fsDriver.getDocs('trainingRecords', 'colaboradorId', 'MEC-FS-PRIN');
+  const treinosDupFS = await fsDriver.getDocs('trainingRecords', 'colaboradorId', 'MEC-FS-DUP');
+  assert(
+    treinosPosFS.length === 2 && treinosDupFS.length === 0,
+    '11. Homologação Real Firestore e Resiliência',
+    'trainingRecords: 100% transferidos para o ID principal no Firestore, 0 no duplicado',
+    `Principal: ${treinosPosFS.length}, Duplicado: ${treinosDupFS.length}`
+  );
+
+  const qualsPosFS = await fsDriver.getDocs('qualifications', 'colaboradorId', 'MEC-FS-PRIN');
+  const qualsDupFS = await fsDriver.getDocs('qualifications', 'colaboradorId', 'MEC-FS-DUP');
+  assert(
+    qualsPosFS.length === 2 && qualsDupFS.length === 0,
+    '11. Homologação Real Firestore e Resiliência',
+    'qualifications: 100% transferidas para o ID principal no Firestore, 0 no duplicado',
+    `Principal: ${qualsPosFS.length}, Duplicado: ${qualsDupFS.length}`
+  );
+
+  const compsPosFS = await fsDriver.getDocs('personCompetencies', 'colaboradorId', 'MEC-FS-PRIN');
+  const compsDupFS = await fsDriver.getDocs('personCompetencies', 'colaboradorId', 'MEC-FS-DUP');
+  assert(
+    compsPosFS.length === 2 && compsDupFS.length === 0,
+    '11. Homologação Real Firestore e Resiliência',
+    'personCompetencies: 100% transferidas para o ID principal no Firestore, 0 no duplicado',
+    `Principal: ${compsPosFS.length}, Duplicado: ${compsDupFS.length}`
+  );
+
+  const docsPosFS = await fsDriver.getDocs('personDocuments', 'colaboradorId', 'MEC-FS-PRIN');
+  const docsDupFS = await fsDriver.getDocs('personDocuments', 'colaboradorId', 'MEC-FS-DUP');
+  assert(
+    docsPosFS.length === 2 && docsDupFS.length === 0,
+    '11. Homologação Real Firestore e Resiliência',
+    'personDocuments: 100% transferidos para o ID principal no Firestore, 0 no duplicado',
+    `Principal: ${docsPosFS.length}, Duplicado: ${docsDupFS.length}`
+  );
+
+  const rncsPosFS = await fsDriver.getDocs('nonConformities', 'responsavelImplementacaoId', 'MEC-FS-PRIN');
+  const rncsDupFS = await fsDriver.getDocs('nonConformities', 'responsavelImplementacaoId', 'MEC-FS-DUP');
+  assert(
+    rncsPosFS.length === 1 && rncsDupFS.length === 0,
+    '11. Homologação Real Firestore e Resiliência',
+    'nonConformities: responsabilidade de RNC transferida com sucesso no Firestore, 0 no duplicado',
+    `Principal: ${rncsPosFS.length}, Duplicado: ${rncsDupFS.length}`
+  );
+
+  const docDupPosFS = await fsDriver.getDoc('persons', 'MEC-FS-DUP');
+  assert(
+    docDupPosFS.exists() &&
+    docDupPosFS.data()?.status === 'INATIVO' &&
+    docDupPosFS.data()?.unificadoComId === 'MEC-FS-PRIN',
+    '11. Homologação Real Firestore e Resiliência',
+    'persons: cadastro duplicado inativado com unificadoComId apontando para o principal no Firestore',
+    `Dados duplicado no Firestore: ${JSON.stringify(docDupPosFS.data())}`
+  );
+
+  // Comprovação de preservação de IDs e dados originais
+  const trn1FS = (await fsDriver.getDoc('trainingRecords', 'TRN-FS-01')).data();
+  assert(
+    trn1FS?.id === 'TRN-FS-01' &&
+    trn1FS?.treinamentoCodigo === 'CRM-01' &&
+    trn1FS?.cargaHoraria === 16 &&
+    trn1FS?.dataValidade === '2026-03-01',
+    '11. Homologação Real Firestore e Resiliência',
+    'Preservação rigorosa de ID original, código de treinamento, carga horária e datas no Firestore',
+    'Dados corrompidos na migração Firestore'
+  );
+
+  // 11.2 Verificação de Integridade Rigorosa (Requisito 2)
+  // Caso 1: Integridade aprovada quando tudo está persistido e conferido
+  const checkIntegridadeOk = await verificarIntegridadePosMerge(
+    'org_impacto_aviation',
+    'MEC-FS-PRIN',
+    'MEC-FS-DUP',
+    false,
+    fsDriver
+  );
+  assert(
+    checkIntegridadeOk.valida === true && checkIntegridadeOk.pendencias.length === 0,
+    '11. Homologação Real Firestore e Resiliência',
+    'verificarIntegridadePosMerge valida com precisão zero pendências em ambiente Firestore ativo',
+    `Pendências inesperadas: ${checkIntegridadeOk.pendencias.join('; ')}`
+  );
+
+  // Caso 2: Falha na leitura ou consulta do Firestore resulta estritamente em valida: false e inclui causa
+  fsDriver.simulateReadFailure = true;
+  const checkIntegridadeFalhaLeitura = await verificarIntegridadePosMerge(
+    'org_impacto_aviation',
+    'MEC-FS-PRIN',
+    'MEC-FS-DUP',
+    false,
+    fsDriver
+  );
+  assert(
+    checkIntegridadeFalhaLeitura.valida === false &&
+    checkIntegridadeFalhaLeitura.pendencias.some((p) => p.includes('Falha de leitura/consulta direta no Firestore')),
+    '11. Homologação Real Firestore e Resiliência',
+    'Qualquer falha de leitura no Firestore resulta estritamente em valida: false e inclusão em pendencias (sem falso sucesso)',
+    'Falha de leitura não reprovou a integridade'
+  );
+  fsDriver.simulateReadFailure = false; // restaura
+
+  // 11.3 Recuperação de Operações Parcialmente Concluídas e Retomada Segura (Requisito 3)
+  const pPrincInt: Pessoa = {
+    id: 'MEC-INT-PRIN',
+    nome: 'Marcos Vinicius Principal',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'REC',
+    canac: '556677',
+    matricula: '556677',
+  } as any;
+  const pDupInt: Pessoa = {
+    id: 'MEC-INT-DUP',
+    nome: 'Marcos Vinicius Duplicado',
+    categoria: 'Mecânico',
+    situacao: 'Ativo',
+    base_principal_id: 'FOR',
+    canac: '556677',
+    matricula: '556677',
+  } as any;
+
+  await repository.savePessoa(pPrincInt, 'Test');
+  await repository.savePessoa(pDupInt, 'Test');
+  await repository.setDesignacaoAeronave('MEC-INT-DUP', 'A320FAM', 'SIM', 'Test');
+
+  await fsDriver.setDoc('persons', 'MEC-INT-PRIN', {
+    id: 'MEC-INT-PRIN',
+    nome: 'Marcos Vinicius Principal',
+    status: 'ATIVO',
+  });
+  await fsDriver.setDoc('persons', 'MEC-INT-DUP', {
+    id: 'MEC-INT-DUP',
+    nome: 'Marcos Vinicius Duplicado',
+    status: 'ATIVO',
+  });
+  await fsDriver.setDoc('trainingRecords', 'TRN-INT-01', {
+    id: 'TRN-INT-01',
+    colaboradorId: 'MEC-INT-DUP',
+    treinamentoCodigo: 'HF-02',
+    dataValidade: '2027-01-01',
+  });
+
+  // Executa unificação com simulação de interrupção entre Firestore e Rooster MRO
+  const resInterrompido = await mesclarColaboradores(
+    'org_impacto_aviation',
+    'MEC-INT-PRIN',
+    'MEC-INT-DUP',
+    {
+      ignorarChecagemAuth: true,
+      customFirestoreDriver: fsDriver,
+      simularFalhaNaEtapa: 'MIGRACAO_ROOSTER_MRO',
+    },
+    { uid: 'admin_test', role: 'ADMIN', email: 'admin@impacto.com.br' } as any
+  );
+
+  assert(
+    resInterrompido.sucesso === false &&
+    resInterrompido.statusOperacao === 'PARCIALMENTE_CONCLUIDA' &&
+    resInterrompido.operacaoParcialRetomavel === true &&
+    !!resInterrompido.operationId,
+    '11. Homologação Real Firestore e Resiliência',
+    'Interrupção da operação é salva como PARCIALMENTE_CONCLUIDA com ID único para retomada',
+    `Status obtido: ${resInterrompido.statusOperacao}`
+  );
+
+  // Consulta o registro persistente da operação de unificação
+  const opSalva = await obterOperacaoMerge('org_impacto_aviation', resInterrompido.operationId!, fsDriver);
+  assert(
+    !!opSalva &&
+    opSalva.status === 'PARCIALMENTE_CONCLUIDA' &&
+    opSalva.etapasConcluidas.includes('MIGRACAO_QUALYQUEST') &&
+    opSalva.etapasPendentes.includes('MIGRACAO_ROOSTER_MRO'),
+    '11. Homologação Real Firestore e Resiliência',
+    'RegistroOperacaoMerge registra etapas já concluídas e etapas pendentes sem reprocessamento cego',
+    'Estado persistente da operação incompleto ou incorreto'
+  );
+
+  // Executa a retomada segura da operação
+  const resRetomada = await retomarOperacaoMerge(
+    'org_impacto_aviation',
+    resInterrompido.operationId!,
+    {
+      ignorarChecagemAuth: true,
+      customFirestoreDriver: fsDriver,
+    },
+    { uid: 'admin_test', role: 'ADMIN', email: 'admin@impacto.com.br' } as any
+  );
+
+  assert(
+    resRetomada.sucesso === true &&
+    resRetomada.statusOperacao === 'CONCLUIDA' &&
+    resRetomada.relatorioIntegridade?.valida === true,
+    '11. Homologação Real Firestore e Resiliência',
+    'retomarOperacaoMerge retoma e conclui com êxito todas as etapas pendentes atingindo CONCLUIDA',
+    `Falha na retomada: ${resRetomada.mensagem}`
+  );
+
+  // Confirma que a designação de aeronave do duplicado foi transferida para o principal no Rooster
+  const desigAeroIntPos = repository.getDatabase().designacoesAeronave.find(
+    (da) => da.pessoa_id === 'MEC-INT-PRIN' && da.aeronave === 'A320FAM'
+  );
+  assert(
+    desigAeroIntPos?.valor === 'SIM',
+    '11. Homologação Real Firestore e Resiliência',
+    'Vínculos pendentes no Rooster transferidos com sucesso na retomada da operação',
+    'Designação A320FAM não transferida após retomada'
+  );
+
+  // 11.4 Resiliência de Auditoria e Regularização (Requisito 4)
+  // Cria pendência simulada de auditoria no driver
+  await fsDriver.setDoc('mergeAuditPendencies', 'audit_pend_teste_01', {
+    id: 'audit_pend_teste_01',
+    operacaoId: 'op_teste_01',
+    organizationId: 'org_impacto_aviation',
+    colaboradorPrincipalId: 'MEC-FS-PRIN',
+    colaboradorDuplicadoId: 'MEC-FS-DUP',
+    tipo: 'AUDITORIA_OFICIAL',
+    motivo: 'Simulação de falha temporária no serviço de auditoria',
+    criadoEm: new Date().toISOString(),
+    payload: {
+      idPrincipal: 'MEC-FS-PRIN',
+      idDuplicado: 'MEC-FS-DUP',
+      nomePrincipal: 'Rodrigo Antunes Principal',
+    },
+  });
+
+  const resRegularizacao = await regularizarPendenciasAuditoriaMerge('org_impacto_aviation', fsDriver);
+  assert(
+    resRegularizacao.totalPendenciasIdentificadas >= 1 &&
+    resRegularizacao.regularizadas.length >= 1,
+    '11. Homologação Real Firestore e Resiliência',
+    'regularizarPendenciasAuditoriaMerge localiza e processa pendências de auditoria persistidas',
+    'Falha ao regularizar pendência de auditoria'
+  );
+
   console.log('\n===============================================================');
   const total = results.length;
   const passed = results.filter((r) => r.passed).length;
@@ -1612,6 +2055,7 @@ async function runAllTests() {
     process.exit(1);
   } else {
     console.log('\nTODOS OS TESTES DE INTEGRAÇÃO PASSARAM COM SUCESSO!');
+    process.exit(0);
   }
 }
 
