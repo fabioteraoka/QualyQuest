@@ -17,6 +17,16 @@ import { executarTesteEspelho, RelatorioTesteEspelho, executarCertificacaoIntegr
 import { SAFE_BOUNDS_WIDESCREEN, executarAuditoriaVisual } from './presentationGeometryValidator';
 import { SEVERIDADES, PROBABILIDADES, calcularNivelRisco } from './qualityHelpers';
 import PptxGenJS from 'pptxgenjs';
+import {
+  COR_IMPACTO_AZUL_LINHA,
+  COR_IMPACTO_NAVY_TITULO,
+  COR_IMPACTO_CIANO_ANAC,
+  COR_IMPACTO_MUTED,
+  TEXTO_REGULATORIO_RODAPE,
+  LOGO_IMPACTO_DATA_URL,
+  TEMPLATE_BG_WIDESCREEN_DATA_URL,
+  TEMPLATE_MASTER_WIDESCREEN_DATA_URL,
+} from './impactoTemplateAssets';
 
 export type { DadosContextoApresentacao };
 
@@ -401,9 +411,10 @@ export function validarEstruturaPPTXReal(pptx: PptxGenJS): RelatorioAuditoriaPPT
         continue;
       }
 
+      const isSlideBackgroundObj = (x <= 0.05 && y <= 0.05 && w >= 13.0 && h >= 7.4);
       const isTopBar = (y <= 0.05 && h <= 0.35);
-      const isHeader = (y <= 1.35 && !isTopBar);
-      const isFooter = (y >= 6.95);
+      const isHeader = (y <= 1.35 && !isTopBar && !isSlideBackgroundObj);
+      const isFooter = (y >= 6.95 && !isSlideBackgroundObj);
 
       // Limites físicos do slide widescreen (13.333" x 7.50")
       if (right > 13.35) {
@@ -414,7 +425,7 @@ export function validarEstruturaPPTXReal(pptx: PptxGenJS): RelatorioAuditoriaPPT
       }
 
       // Safe Area para elementos de conteúdo (margens e folga do rodapé)
-      if (!isTopBar && !isHeader && !isFooter) {
+      if (!isTopBar && !isHeader && !isFooter && !isSlideBackgroundObj) {
         if (bottom > 6.90) {
           infracoes.push(`Slide ${String(slideNum).padStart(2, '0')} (${obj._type}): Invade margem do rodapé (bottom=${bottom.toFixed(2)}" > 6.85")`);
         }
@@ -451,6 +462,23 @@ export async function exportarApresentacaoPPTX(
   // No PptxGenJS, 'LAYOUT_16x9' é o legado 10" x 5.625". 'LAYOUT_WIDE' é 13.333" x 7.50" (12.192.000 x 6.858.000 EMUs)
   pptx.layout = 'LAYOUT_WIDE';
 
+  // Definição do Slide Master Corporativo Oficial (Padrão matriz.pdf)
+  pptx.defineSlideMaster({
+    title: 'IMPACTO_MASTER',
+    background: { color: 'FFFFFF' },
+    objects: [
+      {
+        image: {
+          x: 0,
+          y: 0,
+          w: 13.333,
+          h: 7.50,
+          data: TEMPLATE_MASTER_WIDESCREEN_DATA_URL,
+        },
+      },
+    ],
+  });
+
   // Paleta Executiva Corporativa
   const COR_NAVY = '0F172A';
   const COR_BLUE = '1E40AF';
@@ -462,61 +490,59 @@ export async function exportarApresentacaoPPTX(
   const COR_ROSE = 'DC2626';
   const COR_AMBER = 'D97706';
 
-  // SLIDE DE CAPA
-  const slideCapa = pptx.addSlide();
-  slideCapa.background = { color: COR_NAVY };
-
-  // Faixa decorativa superior
-  slideCapa.addShape(pptx.ShapeType.rect, {
+  // SLIDE DE CAPA (Padrão Corporativo Oficial Impacto Aviation - matriz.pdf)
+  const slideCapa = pptx.addSlide({ masterName: 'IMPACTO_MASTER' });
+  slideCapa.background = { color: 'FFFFFF' };
+  slideCapa.addImage({
+    data: TEMPLATE_MASTER_WIDESCREEN_DATA_URL,
     x: 0,
     y: 0,
-    w: 13.33,
-    h: 0.25,
-    fill: { color: COR_BLUE },
+    w: 13.333,
+    h: 7.50,
   });
 
-  // Título e Subtítulo
-  slideCapa.addText('QUALIGEST SGQ', {
-    x: 1.0,
-    y: 1.8,
-    w: 11.33,
-    h: 0.5,
-    fontSize: 18,
+  // Título e Subtítulo Institucional
+  slideCapa.addText('QUALYQUEST / ROOSTER SGQ • IMPACTO AVIATION', {
+    x: 0.80,
+    y: 1.60,
+    w: 11.73,
+    h: 0.35,
+    fontSize: 13,
     fontFace: 'Arial',
-    color: '93C5FD',
+    color: COR_IMPACTO_AZUL_LINHA,
     bold: true,
-    charSpacing: 2,
+    charSpacing: 1.5,
   });
 
   slideCapa.addText('APRESENTAÇÃO GERENCIAL DA QUALIDADE', {
-    x: 1.0,
-    y: 2.3,
-    w: 11.33,
-    h: 1.2,
+    x: 0.80,
+    y: 2.05,
+    w: 11.73,
+    h: 1.1,
     fontSize: 28,
     fontFace: 'Arial',
-    color: 'FFFFFF',
+    color: COR_IMPACTO_NAVY_TITULO,
     bold: true,
   });
 
   slideCapa.addText('Espelho Executivo da Garantia da Qualidade Aeronáutica e Segurança Operacional', {
-    x: 1.0,
-    y: 3.5,
-    w: 11.33,
-    h: 0.6,
-    fontSize: 14,
+    x: 0.80,
+    y: 3.25,
+    w: 11.73,
+    h: 0.5,
+    fontSize: 13.5,
     fontFace: 'Arial',
-    color: 'CBD5E1',
+    color: COR_IMPACTO_MUTED,
   });
 
-  // Caixa de Metadados Institucionais
+  // Caixa de Metadados Institucionais (Estilo Corporativo Limpo)
   slideCapa.addShape(pptx.ShapeType.roundRect, {
-    x: 1.0,
-    y: 4.5,
-    w: 11.33,
-    h: 1.9,
-    fill: { color: '1E293B' },
-    line: { color: '334155', width: 1 },
+    x: 0.80,
+    y: 4.10,
+    w: 11.73,
+    h: 2.15,
+    fill: { color: 'F8FAFC' },
+    line: { color: 'CBD5E1', width: 1.2 },
     rectRadius: 0.08,
   });
 
@@ -534,93 +560,103 @@ export async function exportarApresentacaoPPTX(
   ];
 
   metaItems.forEach((m, idx) => {
-    const colW = 2.65;
-    const colX = 1.25 + idx * 2.75;
+    const colW = 2.75;
+    const colX = 1.05 + idx * 2.85;
     slideCapa.addText(m.rotulo, {
       x: colX,
-      y: 4.8,
+      y: 4.45,
       w: colW,
       h: 0.3,
       fontSize: 8.5,
       fontFace: 'Arial',
-      color: '94A3B8',
+      color: COR_IMPACTO_MUTED,
       bold: true,
     });
     slideCapa.addText(truncarTexto(m.valor, 30), {
       x: colX,
-      y: 5.15,
+      y: 4.85,
       w: colW,
-      h: 0.8,
-      fontSize: 11,
+      h: 1.0,
+      fontSize: 11.5,
       fontFace: 'Arial',
-      color: 'FFFFFF',
+      color: COR_IMPACTO_NAVY_TITULO,
       bold: true,
     });
   });
 
-  // Rodapé da Capa
-  slideCapa.addText(`QualyQuest / Rooster SGQ ${apresentacao.versaoSistema} | Documento Oficial Auditável | RBAC 145 / ISO 9001:2015`, {
-    x: 1.0,
-    y: 6.8,
-    w: 11.33,
-    h: 0.3,
-    fontSize: 9,
+  // Rodapé da Capa (Padrão Oficial matriz.pdf: Credencial ANAC já integrada no Master Template)
+  slideCapa.addText(`QualyQuest / Rooster SGQ ${apresentacao.versaoSistema} • Documento Oficial Auditável • RBAC 145 / EASA 145`, {
+    x: 6.8,
+    y: 7.05,
+    w: 5.73,
+    h: 0.28,
+    fontSize: 8.5,
     fontFace: 'Arial',
-    color: '64748B',
+    color: COR_IMPACTO_MUTED,
+    align: 'right',
   });
 
   // SLIDES DE CONTEÚDO (DO SLIDE 2 AO FINAL, GERAÇÃO DINÂMICA)
   apresentacao.slides.slice(1).forEach((slideData) => {
-    const slide = pptx.addSlide();
+    const slide = pptx.addSlide({ masterName: 'IMPACTO_MASTER' });
     slide.background = { color: 'FFFFFF' };
 
-    // Barra de Cabeçalho Superior
-    slide.addShape(pptx.ShapeType.rect, {
+    // Camada Master Oficial (Logo, Linha Azul #0284C7, Marca d'água e Rodapé ANAC #38BDF8 integrados)
+    slide.addImage({
+      data: TEMPLATE_MASTER_WIDESCREEN_DATA_URL,
       x: 0,
       y: 0,
-      w: 13.33,
-      h: 0.15,
-      fill: { color: COR_NAVY },
+      w: 13.333,
+      h: 7.50,
     });
 
     // Número e Categoria do Slide
     slide.addText(`SLIDE ${slideData.numero} • ${slideData.categoria.toUpperCase()}`, {
-      x: 0.8,
-      y: 0.30,
-      w: 10.0,
-      h: 0.22,
+      x: 0.80,
+      y: 0.32,
+      w: 9.8,
+      h: 0.20,
       fontSize: 8.5,
       fontFace: 'Arial',
-      color: COR_BLUE,
+      color: COR_IMPACTO_AZUL_LINHA,
       bold: true,
-      charSpacing: 1.5,
+      charSpacing: 1.2,
     });
 
     // Título do Slide com Dimensionamento Adaptativo (FASE 12.3)
     const titleLen = (slideData.titulo || '').length;
     const titleFontSize = titleLen > 65 ? 13 : titleLen > 45 ? 14.5 : 16;
     slide.addText(slideData.titulo, {
-      x: 0.8,
+      x: 0.80,
       y: 0.52,
-      w: 11.7,
-      h: 0.45,
+      w: 9.8,
+      h: 0.36,
       fontSize: titleFontSize,
       fontFace: 'Arial',
       bold: true,
-      color: COR_NAVY,
+      color: COR_IMPACTO_NAVY_TITULO,
     });
 
     // Subtítulo do Slide
     const subLen = (slideData.subtitulo || '').length;
-    const subFontSize = subLen > 110 ? 8.5 : 9.5;
+    const subFontSize = subLen > 110 ? 8.0 : 8.8;
     slide.addText(truncarTexto(slideData.subtitulo, 130), {
-      x: 0.8,
-      y: 0.98,
-      w: 11.7,
-      h: 0.32,
+      x: 0.80,
+      y: 0.88,
+      w: 9.8,
+      h: 0.24,
       fontSize: subFontSize,
       fontFace: 'Arial',
-      color: COR_TEXT_MUTED,
+      color: COR_IMPACTO_MUTED,
+    });
+
+    // Linha Divisória Azul Impacto (Padrão Oficial matriz.pdf)
+    slide.addShape(pptx.ShapeType.rect, {
+      x: 0.80,
+      y: 1.15,
+      w: 11.73,
+      h: 0.035,
+      fill: { color: COR_IMPACTO_AZUL_LINHA },
     });
 
     // CARDS DE MÉTRICAS NO TOPO (Até 6 Cards)
@@ -1198,15 +1234,17 @@ export async function exportarApresentacaoPPTX(
       }
     }
 
-    // RODAPÉ DO SLIDE
-    slide.addText(`QualyQuest / Rooster SGQ v2.8.0 | Organização: ${apresentacao.organizacao} | Fonte: ${slideData.origemRastreabilidade}`, {
-      x: 0.8,
+    // RODAPÉ DO SLIDE (Padrão Corporativo Oficial Impacto Aviation - matriz.pdf)
+    // Canto Inferior Direito: Paginação e Rastreabilidade do Sistema (Credencial ANAC no canto esquerdo já integrada ao Master Template)
+    slide.addText(`Slide ${slideData.numero} / ${apresentacao.slides.length} • QualyQuest / Rooster SGQ`, {
+      x: 6.8,
       y: 7.05,
-      w: 11.7,
-      h: 0.30,
-      fontSize: 8,
+      w: 5.73,
+      h: 0.28,
+      fontSize: 8.0,
       fontFace: 'Arial',
-      color: COR_TEXT_MUTED,
+      color: COR_IMPACTO_MUTED,
+      align: 'right',
     });
   });
 

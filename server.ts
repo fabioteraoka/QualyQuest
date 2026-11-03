@@ -1,4 +1,5 @@
 import express from "express";
+import http from "http";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
@@ -5325,9 +5326,17 @@ app.get("/api/impacto/ordens-servico/:id/contexto-qualidade", (req, res) => {
 
 
 async function startServer() {
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== "production") {
+    const isHmrDisabled = process.env.DISABLE_HMR === "true";
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        // Disable standalone WebSocket on port 24678 by attaching to httpServer or disabling when DISABLE_HMR is true
+        hmr: isHmrDisabled ? false : { server: httpServer },
+        watch: isHmrDisabled ? null : {},
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -5339,7 +5348,15 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE") {
+      console.warn(`[SERVER] Porta ${PORT} já está em uso por processo ativo.`);
+    } else {
+      console.error("[SERVER] Erro no servidor HTTP:", err);
+    }
+  });
+
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`QualiGest Server running on http://localhost:${PORT}`);
   });
 }

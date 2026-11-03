@@ -681,46 +681,54 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
       {/* 6. Active Slide Interactive Canvas (16:9 Aspect Ratio) */}
       {viewMode === 'slides' ? (
         <div className="bg-white border-2 border-slate-300 rounded-[12px] shadow-md overflow-hidden">
-          {/* Slide Header Bar */}
-          <div className="bg-slate-950 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold">
-                {activeSlide.categoria}
+          {/* Slide Header Bar (Padrão Corporativo Oficial Impacto Aviation - matriz.pdf) */}
+          <div className="bg-white px-6 pt-5 pb-3 border-b-2 border-[#0284C7] relative">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-widest text-[#0284C7] font-bold">
+                  SLIDE {activeSlide.numero} • {activeSlide.categoria}
+                </div>
+                <h2 className="text-xl font-bold tracking-tight text-[#0F2B48] mt-0.5">
+                  {activeSlide.titulo}
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5 max-w-3xl">
+                  {activeSlide.subtitulo}
+                </p>
               </div>
-              <h2 className="text-xl font-bold tracking-tight text-white mt-0.5">
-                {activeSlide.titulo}
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                {activeSlide.subtitulo}
-              </p>
-            </div>
 
-            <div className="text-right flex flex-col items-end gap-1">
-              <div className="flex items-center gap-2">
-                {(() => {
-                  const auditSlide = relatorioValidacao.relatorioVisual?.detalhesPorSlide?.find(r => r.slideId === activeSlide.id);
-                  const densidade = auditSlide?.classificacaoDensidade || 'ADEQUADO';
-                  const folga = auditSlide?.margemInferiorRodape ?? 0.25;
-                  const isOverflow = !auditSlide?.aprovado;
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <div className="flex items-center gap-3">
+                  {(() => {
+                    const auditSlide = relatorioValidacao.relatorioVisual?.detalhesPorSlide?.find(r => r.slideId === activeSlide.id);
+                    const densidade = auditSlide?.classificacaoDensidade || 'ADEQUADO';
+                    const folga = auditSlide?.margemInferiorRodape ?? 0.25;
+                    const isOverflow = !auditSlide?.aprovado;
 
-                  return (
-                    <span 
-                      className={`px-2 py-0.5 rounded-[4px] text-[10px] font-mono font-bold border flex items-center gap-1 ${
-                        isOverflow
-                          ? 'bg-rose-950/80 border-rose-500 text-rose-300'
-                          : densidade === 'ALTA_DENSIDADE'
-                          ? 'bg-amber-950/80 border-amber-500 text-amber-300'
-                          : 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
-                      }`}
-                      title={`Auditoria Geométrica: ${auditSlide?.infracoes?.length || 0} infrações. Folga para rodapé: ${folga.toFixed(2)}" / Margem Segura: ≥0.15"`}
-                    >
-                      <span>{isOverflow ? '🔴 OVERFLOW' : densidade === 'ALTA_DENSIDADE' ? '🟡 ALTA DENSIDADE' : '🟢 ADEQUADO'}</span>
-                      <span className="opacity-75">(folga {folga.toFixed(2)}")</span>
-                    </span>
-                  );
-                })()}
+                    return (
+                      <span 
+                        className={`px-2 py-0.5 rounded-[4px] text-[10px] font-mono font-bold border flex items-center gap-1 ${
+                          isOverflow
+                            ? 'bg-rose-50 border-rose-300 text-rose-700'
+                            : densidade === 'ALTA_DENSIDADE'
+                            ? 'bg-amber-50 border-amber-300 text-amber-700'
+                            : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                        }`}
+                        title={`Auditoria Geométrica: ${auditSlide?.infracoes?.length || 0} infrações. Folga para rodapé: ${folga.toFixed(2)}" / Margem Segura: ≥0.15"`}
+                      >
+                        <span>{isOverflow ? '🔴 OVERFLOW' : densidade === 'ALTA_DENSIDADE' ? '🟡 ALTA DENSIDADE' : '🟢 ADEQUADO'}</span>
+                        <span className="opacity-75">(folga {folga.toFixed(2)}")</span>
+                      </span>
+                    );
+                  })()}
 
-                <span className="px-2.5 py-1 rounded-[6px] bg-slate-800 text-slate-300 text-xs font-mono font-bold border border-slate-700">
+                  <img 
+                    src="/assets/logo_impacto_template.jpg" 
+                    alt="Impacto Aviation" 
+                    className="h-8 w-auto object-contain"
+                  />
+                </div>
+
+                <span className="text-[10px] font-mono text-slate-400 font-semibold">
                   Slide {activeSlide.numero} / {apresentacao.slides.length}
                 </span>
               </div>
@@ -872,13 +880,16 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
             )}
           </div>
 
-          {/* Slide Footer */}
-          <div className="bg-slate-100 px-6 py-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between text-[11px] text-slate-500 gap-2">
-            <div>
-              <strong>Rastreabilidade dos Dados:</strong> {activeSlide.origemRastreabilidade}
+          {/* Slide Footer (Padrão Corporativo Oficial Impacto Aviation - matriz.pdf) */}
+          <div className="bg-white px-6 py-2.5 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between text-[11px] gap-2">
+            <div className="font-mono font-bold text-[#0284C7] flex items-center gap-2">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#0284C7]"></span>
+              <span>COM 200607-05 ANAC / EASA.145.1003</span>
             </div>
-            <div className="font-mono">
-              Certificação: <strong>Auto-Fit Homologado (maxBottomY ≤ 6.85")</strong>
+            <div className="text-slate-500 flex items-center gap-3">
+              <span>Fonte: {activeSlide.origemRastreabilidade}</span>
+              <span>•</span>
+              <span className="font-mono">QualyQuest / Rooster SGQ v2.8.0</span>
             </div>
           </div>
         </div>
@@ -892,7 +903,7 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
             </div>
             <button
               onClick={handlePrintPDF}
-              className="px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 flex items-center gap-1.5"
+              className="px-3 py-1.5 bg-[#0284C7] text-white rounded text-xs font-semibold hover:bg-sky-700 flex items-center gap-1.5"
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Imprimir / Gerar PDF</span>
@@ -901,21 +912,28 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
 
           {apresentacao.slides.map((s, idx) => (
             <div key={s.id} className="bg-white border-2 border-slate-300 rounded-[12px] shadow-sm overflow-hidden page-break-after">
-              <div className="bg-slate-950 text-white px-6 py-3.5 flex items-center justify-between border-b border-slate-800">
+              <div className="bg-white px-6 pt-5 pb-3 border-b-2 border-[#0284C7] flex items-start justify-between gap-4">
                 <div>
-                  <div className="text-[10px] font-mono uppercase tracking-widest text-blue-400 font-bold">
-                    {s.categoria}
+                  <div className="text-[10px] font-mono uppercase tracking-widest text-[#0284C7] font-bold">
+                    SLIDE {s.numero} • {s.categoria}
                   </div>
-                  <h3 className="text-lg font-bold tracking-tight text-white mt-0.5">
+                  <h3 className="text-lg font-bold tracking-tight text-[#0F2B48] mt-0.5">
                     {s.numero}. {s.titulo}
                   </h3>
-                  <p className="text-xs text-slate-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     {s.subtitulo}
                   </p>
                 </div>
-                <span className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 text-xs font-mono font-bold">
-                  Slide {s.numero} / {apresentacao.slides.length}
-                </span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <img 
+                    src="/assets/logo_impacto_template.jpg" 
+                    alt="Impacto Aviation" 
+                    className="h-7 w-auto object-contain"
+                  />
+                  <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-600 text-xs font-mono font-bold border border-slate-200">
+                    Slide {s.numero} / {apresentacao.slides.length}
+                  </span>
+                </div>
               </div>
 
               <div className="p-6 bg-slate-50/50 space-y-5">
@@ -1005,9 +1023,16 @@ export const QualityPresentationGeneratorView: React.FC<QualityPresentationGener
                 )}
               </div>
 
-              <div className="bg-slate-100 px-6 py-2 border-t border-slate-200 text-[11px] text-slate-500 flex justify-between">
-                <span>Origem: {s.origemRastreabilidade}</span>
-                <span className="font-mono">Auto-Fit Homologado (maxBottomY ≤ 6.85")</span>
+              <div className="bg-white px-6 py-2.5 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between text-[11px] gap-2">
+                <div className="font-mono font-bold text-[#0284C7] flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-[#0284C7]"></span>
+                  <span>COM 200607-05 ANAC / EASA.145.1003</span>
+                </div>
+                <div className="text-slate-500 flex items-center gap-3">
+                  <span>Origem: {s.origemRastreabilidade}</span>
+                  <span>•</span>
+                  <span className="font-mono">QualyQuest / Rooster SGQ v2.8.0</span>
+                </div>
               </div>
             </div>
           ))}
