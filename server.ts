@@ -26,6 +26,28 @@ import {
   CHECKLIST_PARSE_SCHEMA,
   AUDIT_DOCUMENT_PARSE_SCHEMA,
 } from "./server/gemini/index.ts";
+import {
+  validarSintaxeEEstruturaJSON,
+  obterExemploSchemaJSONValido,
+  ESQUEMA_JSON_IMPORTACAO_OFICIAL,
+} from "./src/services/aiKnowledge/jsonSchemaValidator.ts";
+import { repositorioFragmentos } from "./src/services/aiKnowledge/fragmentsRepository.ts";
+import {
+  pipelineIngestaoDocumental,
+  executarIngestaoDocumental,
+  iniciarTarefaIngestaoAssincrona,
+  obterStatusTarefaIngestao,
+  retomarTarefaIngestao,
+  listarTarefasIngestao,
+} from "./src/services/aiKnowledge/documentIngestionPipeline.ts";
+import {
+  enquadrarNCNoAcervo,
+  pesquisarFragmentosHibrido,
+} from "./src/services/aiKnowledge/aiEnquadramentoEngine.ts";
+import {
+  compararRevisoesDocumentaisAcervo,
+  aplicarControleVersaoManual,
+} from "./src/services/aiKnowledge/versionControlEngine.ts";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -2052,6 +2074,16 @@ ${fullBody ? fullBody.substring(0, 10000) : 'Requisitos acima'}
   }).join("\n\n");
 
   try {
+    // Integrar busca híbrida nos fragmentos do repositório para enriquecer a consulta
+    const fragmentosRelevantes = await pesquisarFragmentosHibrido(pergunta, { limite: 8 });
+    let fragmentosContexto = "";
+    if (fragmentosRelevantes.length > 0) {
+      fragmentosContexto = "\nFRAGMENTOS TÉCNICOS PRECISOS LOCALIZADOS NO ACERVO:\n" +
+        fragmentosRelevantes.map((f, i) => 
+          `[Item ${f.fragmento.subitem}] Manual: ${f.fragmento.codigo} (${f.fragmento.revisao}), Pág. ${f.fragmento.pagina || 'N/A'}\n${f.fragmento.conteudo}`
+        ).join("\n---\n");
+    }
+
     const prompt = `Você é o Auditor Chefe e Sistema Especialista em Procedimentos Internos e Manuais Regulatórios (SGQ / Aeronáutica / ISO 9001 / RBAC 145 / MOMQ).
 Um usuário está consultando a BIBLIOTECA COMPLETA DE MANUAIS E PROCEDIMENTOS INTERNOS DA EMPRESA com a seguinte dúvida ou cenário operacional:
 
@@ -2060,6 +2092,7 @@ PERGUNTA / CENÁRIO:
 
 BIBLIOTECA COMPLETA DE MANUAIS E PROCEDIMENTOS CADASTRADOS:
 ${manualsContext || 'Utilizar como base as normas vigentes MOMQ Rev. 14, RBAC 145 Emenda 07, ISO 9001:2015.'}
+${fragmentosContexto}
 
 SUA MISSÃO:
 1. Responder com clareza, objetividade e rigor técnico, indicando o procedimento interno correto da empresa para agir ou solucionar a questão.
@@ -2105,27 +2138,390 @@ SUA MISSÃO:
     });
 
     const parsed = JSON.parse(response.text?.trim() || "{}");
+    
+    // Se a IA não incluiu as citações diretas dos fragmentos recuperados, anexar as citações exatas
+    const citacoesFinais = parsed.citacoes && parsed.citacoes.length > 0 
+      ? parsed.citacoes 
+      : fragmentosRelevantes.slice(0, 3).map(f => ({
+          capitulo: `${f.fragmento.codigo} - Item ${f.fragmento.subitem}`,
+          titulo: `Cap. ${f.fragmento.capitulo} Seção ${f.fragmento.secao}`,
+          trecho: f.fragmento.conteudo.substring(0, 300) + '...',
+        }));
+
     return res.json({
       success: true,
       consulta: {
         pergunta,
         resposta: parsed.resposta,
-        manualConsultado: parsed.manualConsultado || "Manuais Internos SGQ",
-        revisaoConsultada: parsed.revisaoConsultada || "Vigente",
-        citacoes: parsed.citacoes || [],
+        manualConsultado: parsed.manualConsultado || (fragmentosRelevantes[0]?.fragmento?.codigo ? `${fragmentosRelevantes[0].fragmento.codigo} (${fragmentosRelevantes[0].fragmento.revisao})` : "Manuais Internos SGQ"),
+        revisaoConsultada: parsed.revisaoConsultada || (fragmentosRelevantes[0]?.fragmento?.revisao || "Vigente"),
+        citacoes: citacoesFinais,
         recomendacoesAuditoria: parsed.recomendacoesAuditoria || [],
         nivelConfianca: parsed.nivelConfianca || 95,
+        fragmentosEncontrados: fragmentosRelevantes.length,
         dataConsulta: new Date().toISOString(),
       },
     });
   } catch (error: any) {
     console.warn("Gemini API error during manuals consultation, using heuristic:", error.message);
+    const fallbackAnswer = getHeuristicAnswer();
+    // Enriquecer resposta heurística com fragmentos exatos
+    const fragmentosRelevantesFallback = await pesquisarFragmentosHibrido(pergunta, { limite: 3 });
+    if (fragmentosRelevantesFallback.length > 0 && (!fallbackAnswer.citacoes || fallbackAnswer.citacoes.length === 0)) {
+      fallbackAnswer.citacoes = fragmentosRelevantesFallback.map(f => ({
+        capitulo: `${f.fragmento.codigo} - Item ${f.fragmento.subitem}`,
+        titulo: `Cap. ${f.fragmento.capitulo} Seção ${f.fragmento.secao}`,
+        trecho: f.fragmento.conteudo,
+      }));
+    }
     return res.json({
       success: true,
-      consulta: getHeuristicAnswer(),
-      notice: "Consulta processada via motor heurístico SGQ.",
+      consulta: fallbackAnswer,
+      notice: "Consulta processada via motor híbrido SGQ com fragmentos indexados.",
     });
   }
+});
+
+// =====================================================================
+// ACERVO DE IA: PIPELINE DE INGESTÃO DOCUMENTAL COMPLETA & UPLOAD JSON
+// =====================================================================
+
+// 1. Obter especificação oficial do schema JSON e exemplo válido
+app.get("/api/manuals/schema-json", (req, res) => {
+  return res.json({
+    success: true,
+    schema: ESQUEMA_JSON_IMPORTACAO_OFICIAL,
+    exemplo: obterExemploSchemaJSONValido(),
+    instrucoes: {
+      descricao: "Schema oficial para importação estruturada de manuais técnicos e regulatórios no Acervo de IA.",
+      camposObrigatorios: [
+        "documento.codigo (Código do manual, ex: MNT-001 ou MOMQ)",
+        "documento.nome (Título completo)",
+        "documento.revisao (Número da revisão, ex: 14)",
+        "documento.idioma (Ex: pt-BR)",
+        "secoes (Array com ao menos 1 item com capitulo, secao, subitem, conteudo)",
+      ],
+      regras: [
+        "Tabelas podem ser incluídas no campo 'tabelas' com colunas e linhas estruturadas",
+        "O sistema gera fragmentação inteligente hierárquica preservando capítulo, seção, subitem e página",
+        "A importação de nova revisão torna a anterior obsoleta automaticamente mantendo rastreabilidade",
+      ],
+    },
+  });
+});
+
+// 2. Validador independente de sintaxe e schema JSON
+app.post("/api/manuals/validate-json", (req, res) => {
+  const { jsonString } = req.body;
+  if (!jsonString || typeof jsonString !== "string") {
+    return res.status(400).json({
+      valido: false,
+      erros: [{ campo: "root", mensagem: "Conteúdo JSON ausente ou vazio." }],
+    });
+  }
+
+  const resultado = validarSintaxeEEstruturaJSON(jsonString);
+  return res.json(resultado);
+});
+
+// 3. Upload e Ingestão Estruturada de JSON no Acervo de IA
+app.post("/api/manuals/upload-json", async (req, res) => {
+  const { jsonString, nomeArquivo, tamanhoBytes } = req.body;
+
+  if (!jsonString || typeof jsonString !== "string") {
+    return res.status(400).json({
+      success: false,
+      error: "O conteúdo JSON do manual é obrigatório.",
+    });
+  }
+
+  // 1. Validação prévia de sintaxe e estrutura
+  const validacao = validarSintaxeEEstruturaJSON(jsonString);
+  if (!validacao.valido) {
+    return res.status(422).json({
+      success: false,
+      error: "Arquivo JSON inválido perante o esquema oficial.",
+      errosValidacao: validacao.erros,
+      avisos: validacao.avisos,
+      schemaVersao: validacao.schemaVersao,
+    });
+  }
+
+  const dadosDoc = validacao.dadosValidados!;
+  const docId = `manual-json-${dadosDoc.documento.codigo.toLowerCase().replace(/[^a-z0-9]/g, '-')}-rev-${dadosDoc.documento.revisao.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
+
+  try {
+    // 2. Executar o pipeline completo de 10 etapas
+    const resultado = await executarIngestaoDocumental({
+      documentoId: docId,
+      nomeArquivo: nomeArquivo || `${dadosDoc.documento.codigo}_Rev_${dadosDoc.documento.revisao}.json`,
+      formato: "json",
+      tamanhoBytes: tamanhoBytes || Buffer.byteLength(jsonString, 'utf8'),
+      conteudoTexto: jsonString,
+      jsonEstruturado: dadosDoc,
+    });
+
+    // 3. Montar registro do manual compatível com o frontend
+    const manualRecord = {
+      id: docId,
+      codigo: dadosDoc.documento.codigo,
+      titulo: dadosDoc.documento.nome,
+      revisao: `Rev. ${dadosDoc.documento.revisao.replace(/^Rev\.?\s*/i, '')}`,
+      dataVigencia: dadosDoc.documento.dataVigencia || new Date().toISOString().split('T')[0],
+      orgaoRegulador: dadosDoc.documento.orgaoRegulador || "SGQ Interno / ANAC",
+      setoresAplicaveis: ["Qualidade / SGQ", "Manutenção", "Engenharia"],
+      descricaoResumo: `Manual ${dadosDoc.documento.nome} (${dadosDoc.documento.codigo} Rev. ${dadosDoc.documento.revisao}) estruturado e indexado integralmente no Acervo de IA.`,
+      status: "Vigente",
+      fonte: "Importação Estruturada JSON",
+      conteudoTexto: jsonString,
+      arquivoNome: nomeArquivo || `${dadosDoc.documento.codigo}.json`,
+      arquivoTamanho: `${((tamanhoBytes || jsonString.length) / 1024).toFixed(1)} KB`,
+      arquivoMimeType: "application/json",
+      formatoOrigem: "json",
+      schemaVersao: validacao.schemaVersao || "1.0.0",
+      fragmentosTotal: resultado.fragmentosCriados,
+      fragmentosIndexados: resultado.fragmentosIndexados,
+      relatorioCobertura: resultado.relatorio,
+      capitulos: dadosDoc.secoes.map((s, idx) => ({
+        id: `sec-${idx}`,
+        numero: `${s.capitulo}.${s.secao}${s.subitem ? `.${s.subitem}` : ''}`,
+        titulo: s.titulo || `Capítulo ${s.capitulo} Seção ${s.secao}`,
+        requisitoTexto: s.conteudo,
+      })),
+    };
+
+    return res.json({
+      success: true,
+      manual: manualRecord,
+      relatorio: resultado.relatorio,
+      fragmentosTotal: resultado.fragmentosCriados,
+      fragmentosIndexados: resultado.fragmentosIndexados,
+      tarefa: resultado.tarefa,
+      notice: "Manual JSON importado, fragmentado e indexado com sucesso no Acervo de IA.",
+    });
+  } catch (err: any) {
+    console.error("Erro na ingestão de manual JSON:", err);
+    return res.status(500).json({
+      success: false,
+      error: `Falha no processamento da ingestão: ${err.message}`,
+    });
+  }
+});
+
+// 4. Ingestão Geral de Arquivos no Pipeline (JSON, PDF, DOCX, TXT) com suporte a lotes
+app.post("/api/manuals/ingest-pipeline", async (req, res) => {
+  const {
+    documentoId,
+    nomeArquivo,
+    formato,
+    tamanhoBytes,
+    conteudoTexto,
+    fileBase64,
+    mimeType,
+    assincrono,
+  } = req.body;
+
+  if (!nomeArquivo) {
+    return res.status(400).json({ error: "Nome do arquivo é obrigatório." });
+  }
+
+  // Dedução de formato
+  let fmt: "json" | "pdf" | "docx" | "txt" = "txt";
+  const ext = nomeArquivo.toLowerCase().split('.').pop() || "";
+  if (ext === "json") fmt = "json";
+  else if (ext === "pdf") fmt = "pdf";
+  else if (["docx", "doc", "dotx"].includes(ext)) fmt = "docx";
+  else fmt = "txt";
+
+  let textoFinal = conteudoTexto || "";
+  if (fmt === "docx" && fileBase64 && !textoFinal) {
+    textoFinal = await extractTextFromBase64Docx(fileBase64);
+  }
+
+  const docId = documentoId || `doc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+
+  // Se solicitado processamento assíncrono para arquivos muito grandes
+  if (assincrono) {
+    const tarefa = iniciarTarefaIngestaoAssincrona({
+      documentoId: docId,
+      nomeArquivo,
+      formato: fmt,
+      tamanhoBytes: tamanhoBytes || textoFinal.length,
+      conteudoTexto: textoFinal,
+      arquivoBase64: fileBase64,
+    });
+    return res.json({
+      success: true,
+      assincrono: true,
+      tarefaId: tarefa.id,
+      documentoId: docId,
+      status: tarefa.status,
+    });
+  }
+
+  try {
+    const resultado = await executarIngestaoDocumental({
+      documentoId: docId,
+      nomeArquivo,
+      formato: fmt,
+      tamanhoBytes: tamanhoBytes || textoFinal.length,
+      conteudoTexto: textoFinal,
+      arquivoBase64: fileBase64,
+    });
+
+    return res.json({
+      success: true,
+      resultado,
+      relatorio: resultado.relatorio,
+      fragmentosCriados: resultado.fragmentosCriados,
+      fragmentosIndexados: resultado.fragmentosIndexados,
+    });
+  } catch (err: any) {
+    console.error("Erro no pipeline de ingestão documental:", err);
+    return res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+// 5. Consultar status de tarefa de ingestão
+app.get("/api/manuals/tasks/:taskId", (req, res) => {
+  const { taskId } = req.params;
+  const tarefa = obterStatusTarefaIngestao(taskId);
+  if (!tarefa) {
+    return res.status(404).json({ error: "Tarefa de ingestão não encontrada." });
+  }
+  return res.json({ success: true, tarefa });
+});
+
+// 6. Retomar tarefa de ingestão interrompida
+app.post("/api/manuals/tasks/:taskId/resume", async (req, res) => {
+  const { taskId } = req.params;
+  try {
+    const tarefa = await retomarTarefaIngestao(taskId);
+    return res.json({ success: true, tarefa });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// 7. Listar tarefas recentes de ingestão
+app.get("/api/manuals/tasks", (req, res) => {
+  const tarefas = listarTarefasIngestao();
+  return res.json({ success: true, tarefas });
+});
+
+// 8. Consultar fragmentos indexados de um documento (com busca e paginação)
+app.get("/api/manuals/:docId/fragments", (req, res) => {
+  const { docId } = req.params;
+  const { q, capitulo, secao, subitem, limite, pagina } = req.query;
+
+  const termo = typeof q === "string" ? q.trim() : "";
+  let fragmentos = repositorioFragmentos.obterPorDocumento(docId);
+
+  // Filtros estruturais
+  if (capitulo) {
+    fragmentos = fragmentos.filter(f => f.capitulo === String(capitulo));
+  }
+  if (secao) {
+    fragmentos = fragmentos.filter(f => f.secao === String(secao));
+  }
+  if (subitem) {
+    fragmentos = fragmentos.filter(f => f.subitem === String(subitem));
+  }
+  if (termo) {
+    const termoLower = termo.toLowerCase();
+    fragmentos = fragmentos.filter(f => 
+      f.conteudo.toLowerCase().includes(termoLower) ||
+      f.titulo.toLowerCase().includes(termoLower) ||
+      f.subitem.toLowerCase().includes(termoLower) ||
+      (f.procedimentoRelacionado && f.procedimentoRelacionado.toLowerCase().includes(termoLower))
+    );
+  }
+
+  const limitNum = Math.min(parseInt(String(limite || "50"), 10), 200);
+  const pageNum = Math.max(parseInt(String(pagina || "1"), 10), 1);
+  const total = fragmentos.length;
+  const paginados = fragmentos.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
+  return res.json({
+    success: true,
+    total,
+    pagina: pageNum,
+    limite: limitNum,
+    totalPaginas: Math.ceil(total / limitNum),
+    fragmentos: paginados,
+  });
+});
+
+// 9. Relatório de cobertura documental de um manual
+app.get("/api/manuals/:docId/coverage-report", (req, res) => {
+  const { docId } = req.params;
+  const relatorio = repositorioFragmentos.obterRelatorioCobertura(docId);
+  if (!relatorio) {
+    return res.status(404).json({ error: "Relatório de cobertura não encontrado para este documento." });
+  }
+  return res.json({ success: true, relatorio });
+});
+
+// 10. Enquadramento de Não Conformidade (NC) no Acervo de IA com Anti-Alucinação
+app.post("/api/manuals/enquadrar-nc", async (req, res) => {
+  const {
+    descricaoNC,
+    tituloNC,
+    setor,
+    categoria,
+    manualCitado,
+    subitemCitado,
+    dataOcorrencia,
+    limiteEvidencias,
+  } = req.body;
+
+  if (!descricaoNC && !tituloNC) {
+    return res.status(400).json({ error: "Descrição da Não Conformidade ou título é obrigatório para enquadramento." });
+  }
+
+  try {
+    const resultado = await enquadrarNCNoAcervo({
+      descricaoNC: `${tituloNC ? `[${tituloNC}] ` : ''}${descricaoNC || ''}${subitemCitado ? ` (Subitem: ${subitemCitado})` : ''}`,
+      normaReferencia: manualCitado,
+      setor,
+      manualCodigoFiltro: manualCitado,
+    });
+
+    return res.json({
+      success: true,
+      resultado,
+    });
+  } catch (err: any) {
+    console.error("Erro no enquadramento de NC:", err);
+    return res.status(500).json({
+      success: false,
+      error: `Falha ao processar enquadramento: ${err.message}`,
+    });
+  }
+});
+
+// 11. Comparação de revisões de um manual no acervo
+app.post("/api/manuals/compare-revisions", async (req, res) => {
+  const { docIdA, docIdB, docId, revisaoA, revisaoB } = req.body;
+  const targetDoc = docId || docIdA || docIdB || "MOMQ";
+  const revA = revisaoA || "Rev. 14";
+  const revB = revisaoB || "Rev. 15";
+
+  try {
+    const comparativo = await compararRevisoesDocumentaisAcervo(targetDoc, revA, revB);
+    return res.json({ success: true, comparativo });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// 12. Estatísticas globais do Acervo de IA
+app.get("/api/manuals/stats", (req, res) => {
+  const estatisticas = repositorioFragmentos.obterEstatisticas();
+  return res.json({ success: true, estatisticas });
 });
 
 // =====================================================================

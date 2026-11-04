@@ -593,6 +593,13 @@ export interface ManualRecord {
   arquivoNome?: string;
   arquivoTamanho?: string;
   capitulos?: ManualCapitulo[];
+  fragmentosTotal?: number;
+  fragmentosIndexados?: number;
+  relatorioCobertura?: any; // RelatorioCoberturaDocumental
+  formatoOrigem?: 'JSON' | 'PDF' | 'DOCX' | 'TXT' | 'OUTRO';
+  schemaVersao?: string;
+  isRevisaoVigente?: boolean;
+  revisoesHistorico?: any[];
   versoesConfiguracao?: VersaoDocumentoConfig[]; // Controle de configuração de versões (Seção 3)
   status: StatusManual;
   criadoEm: string;
@@ -607,6 +614,8 @@ export interface ManualRecord {
     novoValor?: string;
   }>;
 }
+
+export * from './types/aiKnowledgeBase';
 
 export interface ConsultaManualResposta {
   pergunta: string;

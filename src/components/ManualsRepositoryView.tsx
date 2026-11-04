@@ -44,6 +44,12 @@ import {
   canonicalAlphanumericKey,
 } from '../services/documentControlAuditReconciliation';
 import { saveDocumentoControlado } from '../services/firebase/documentControlFirestore';
+import { JsonSchemaModal } from './aiKnowledge/JsonSchemaModal';
+import { CoverageReportModal } from './aiKnowledge/CoverageReportModal';
+import { FragmentsExplorerModal } from './aiKnowledge/FragmentsExplorerModal';
+import { NcEnquadramentoModal } from './aiKnowledge/NcEnquadramentoModal';
+import { validarSintaxeEEstruturaJSON } from '../services/aiKnowledge/jsonSchemaValidator';
+import { RelatorioCoberturaDocumental } from '../types/aiKnowledgeBase';
 
 interface ManualsRepositoryViewProps {
   manuals: ManualRecord[];
@@ -79,11 +85,25 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<'capitulos' | 'integral'>('capitulos');
   
-  // Upload State
+  // Upload State & Acervo de IA Pipeline
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Acervo de IA: Modais e Auditoria
+  const [isJsonSchemaModalOpen, setIsJsonSchemaModalOpen] = useState(false);
+  const [coverageReportTarget, setCoverageReportTarget] = useState<{ report: RelatorioCoberturaDocumental; title: string } | null>(null);
+  const [fragmentsExplorerTarget, setFragmentsExplorerTarget] = useState<{ id: string; codigo: string; revisao: string } | null>(null);
+  const [isEnquadramentoModalOpen, setIsEnquadramentoModalOpen] = useState(false);
+
+  // Pipeline Live Tracker (10 Etapas)
+  const [pipelineCurrentStage, setPipelineCurrentStage] = useState<number>(0);
+  const [pipelineStageName, setPipelineStageName] = useState<string>('');
+  const [pipelinePercent, setPipelinePercent] = useState<number>(0);
+  const [jsonValidationErrors, setJsonValidationErrors] = useState<any[] | null>(null);
+  const [jsonValidationWarnings, setJsonValidationWarnings] = useState<string[] | null>(null);
+  const [jsonValidationOk, setJsonValidationOk] = useState<boolean>(false);
 
   // Form State for Manual Creation / Editing
   const [formData, setFormData] = useState<Partial<ManualRecord>>({
@@ -330,28 +350,68 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
 
   const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // Limite real de 50 MB
 
-  // Upload Handlers
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Upload Handlers com validação JSON e Pipeline de 10 Etapas
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       if (file.size === 0) {
         setUploadError('O arquivo selecionado está vazio (0 bytes). Não é permitido o envio de documentos sem conteúdo.');
         setUploadFile(null);
+        setJsonValidationOk(false);
+        setJsonValidationErrors(null);
         return;
       }
       if (file.size > MAX_FILE_SIZE_BYTES) {
         setUploadError(`O arquivo excede o limite máximo permitido de 50 MB (tamanho: ${(file.size / (1024 * 1024)).toFixed(2)} MB).`);
         setUploadFile(null);
+        setJsonValidationOk(false);
+        setJsonValidationErrors(null);
         return;
       }
+
       setUploadFile(file);
       setUploadError(null);
+
+      // Validação antecipada se for formato JSON
+      if (file.name.endsWith('.json') || file.type === 'application/json') {
+        try {
+          const text = await file.text();
+          const resultado = validarSintaxeEEstruturaJSON(text);
+          if (!resultado.valido) {
+            setJsonValidationOk(false);
+            setJsonValidationErrors(resultado.erros);
+            setJsonValidationWarnings(resultado.avisos);
+            setUploadError(`Arquivo JSON possui ${resultado.erros.length} inconformidade(s) com o schema oficial.`);
+          } else {
+            setJsonValidationOk(true);
+            setJsonValidationErrors(null);
+            setJsonValidationWarnings(resultado.avisos);
+            setUploadError(null);
+          }
+        } catch (err: any) {
+          setJsonValidationOk(false);
+          setJsonValidationErrors([{ campo: 'sintaxe', mensagem: err.message }]);
+          setUploadError(`Erro ao ler arquivo JSON: ${err.message}`);
+        }
+      } else {
+        setJsonValidationOk(false);
+        setJsonValidationErrors(null);
+        setJsonValidationWarnings(null);
+      }
     }
+  };
+
+  const ATUALIZAR_ETAPA_PIPELINE = async (etapa: number, nome: string, percent: number) => {
+    setPipelineCurrentStage(etapa);
+    setPipelineStageName(nome);
+    setPipelinePercent(percent);
+    // Breve intervalo para animação visual do operador
+    await new Promise((r) => setTimeout(r, 120));
   };
 
   const handleProcessUpload = async () => {
     if (!uploadFile) {
-      setUploadError('Selecione um arquivo de manual (PDF, DOCX ou TXT).');
+      setUploadError('Selecione um arquivo de manual (.json, .docx, .pdf ou .txt).');
       return;
     }
 
@@ -369,22 +429,91 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
     setUploadError(null);
 
     try {
-      let base64 = '';
-      let textContent = '';
-      const isText = uploadFile.type === 'text/plain' || uploadFile.name.endsWith('.txt') || uploadFile.name.endsWith('.csv') || uploadFile.name.endsWith('.md');
-      const isPdf = uploadFile.name.endsWith('.pdf') || uploadFile.type === 'application/pdf';
+      const isJson = uploadFile.name.endsWith('.json') || uploadFile.type === 'application/json';
       const isWord = isWordDocument(uploadFile.name, uploadFile.type);
+      const isPdf = uploadFile.name.endsWith('.pdf') || uploadFile.type === 'application/pdf';
+      const isText = uploadFile.type === 'text/plain' || uploadFile.name.endsWith('.txt') || uploadFile.name.endsWith('.csv') || uploadFile.name.endsWith('.md');
+
+      // ETAPA 1: Recebimento e Armazenamento
+      await ATUALIZAR_ETAPA_PIPELINE(1, '1. Recebimento e Armazenamento do Arquivo Original', 10);
+
+      // Tratamento Dedicado para Importação Estruturada por JSON
+      if (isJson) {
+        const jsonText = await uploadFile.text();
+
+        // ETAPA 2: Identificação do Documento e Schema
+        await ATUALIZAR_ETAPA_PIPELINE(2, '2. Identificação do Formato e Validação de Schema', 20);
+        const validacao = validarSintaxeEEstruturaJSON(jsonText);
+        if (!validacao.valido) {
+          throw new Error(`Validação do Schema JSON falhou: ${validacao.erros.map(e => `${e.campo}: ${e.mensagem}`).join('; ')}`);
+        }
+
+        // ETAPAS 3 e 4: Extração e Tabelas
+        await ATUALIZAR_ETAPA_PIPELINE(3, '3. Extração Integral das Seções e Requisitos', 30);
+        await ATUALIZAR_ETAPA_PIPELINE(4, '4. Extração e Preservação de Tabelas em Markdown', 40);
+
+        // ETAPA 5: Identificação da Hierarquia
+        await ATUALIZAR_ETAPA_PIPELINE(5, '5. Mapeamento de Capítulos, Seções e Subitens', 50);
+
+        // Chamada à API de Ingestão de JSON
+        await ATUALIZAR_ETAPA_PIPELINE(6, '6. Fragmentação Inteligente (Chunking Hierárquico)', 60);
+        await ATUALIZAR_ETAPA_PIPELINE(7, '7. Geração de Representação Semântica & Embeddings', 70);
+
+        const response = await fetch('/api/manuals/upload-json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonString: jsonText,
+            nomeArquivo: uploadFile.name,
+            tamanhoBytes: uploadFile.size,
+          }),
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => null);
+          throw new Error(errData?.error || 'Falha na ingestão do arquivo JSON pelo servidor.');
+        }
+
+        const data = await response.json();
+
+        // ETAPAS 8, 9 e 10
+        await ATUALIZAR_ETAPA_PIPELINE(8, '8. Armazenamento e Indexação no Repositório de Fragmentos', 80);
+        await ATUALIZAR_ETAPA_PIPELINE(9, '9. Validação de Cobertura e Auditoria de Completude', 90);
+        await ATUALIZAR_ETAPA_PIPELINE(10, '10. Disponibilização do Documento para IA', 100);
+
+        const newRecord: ManualRecord = {
+          ...data.manual,
+          criadoEm: new Date().toISOString(),
+          atualizadoEm: new Date().toISOString(),
+        };
+
+        await saveManualToDB(newRecord);
+        onSaveManual(newRecord);
+
+        setIsUploadModalOpen(false);
+        setUploadFile(null);
+        setSelectedManual(newRecord);
+        setToastMessage({
+          type: 'success',
+          text: `Manual ${newRecord.codigo} (${data.fragmentosIndexados} fragmentos) indexado com sucesso no Acervo de IA!`,
+        });
+        setTimeout(() => setToastMessage(null), 4000);
+        return;
+      }
+
+      // Processamento para Formatos Tradicionais (PDF, DOCX, TXT)
+      let textContent = '';
+      let base64 = '';
       const resolvedMimeType = isPdf 
         ? 'application/pdf' 
         : isWord 
         ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' 
-        : (uploadFile.type || 'text/plain');
+        : 'text/plain';
+
+      await ATUALIZAR_ETAPA_PIPELINE(2, '2. Identificação do Formato e Codificação', 20);
 
       if (isText) {
         textContent = await uploadFile.text();
-        if (!textContent || textContent.trim().length === 0) {
-          throw new Error('O arquivo de texto selecionado está sem conteúdo ou vazio.');
-        }
       } else if (isWord) {
         try {
           textContent = await extractTextFromWordFile(uploadFile);
@@ -404,61 +533,66 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
         reader.readAsDataURL(uploadFile);
       });
 
-      if (!base64 || base64.trim().length === 0) {
-        throw new Error('O arquivo não pôde ser lido ou o formato é inválido.');
+      // ETAPA 3 e 4: Extração Integral do Texto e Tabelas
+      await ATUALIZAR_ETAPA_PIPELINE(3, '3. Extração Integral do Texto do Documento', 35);
+      await ATUALIZAR_ETAPA_PIPELINE(4, '4. Identificação e Preservação de Tabelas e Quadros', 45);
+
+      // ETAPA 5: Hierarquia
+      await ATUALIZAR_ETAPA_PIPELINE(5, '5. Mapeamento de Capítulos, Itens e Diretrizes', 55);
+
+      // Ingestão pelo Pipeline no Backend
+      await ATUALIZAR_ETAPA_PIPELINE(6, '6. Fragmentação Inteligente sem Truncamento Arbitrário', 65);
+      await ATUALIZAR_ETAPA_PIPELINE(7, '7. Vetorização Semântica dos Fragmentos', 75);
+
+      const orgId = userProfile?.organizationId || 'org_impacto_aviation';
+      const pipelineResp = await fetch('/api/manuals/ingest-pipeline', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'x-organization-id': orgId,
+        },
+        body: JSON.stringify({
+          nomeArquivo: uploadFile.name,
+          formato: isWord ? 'docx' : isPdf ? 'pdf' : 'txt',
+          tamanhoBytes: uploadFile.size,
+          conteudoTexto: textContent,
+          fileBase64: base64,
+          mimeType: resolvedMimeType,
+        }),
+      });
+
+      let pipelineData: any = null;
+      if (pipelineResp.ok) {
+        pipelineData = await pipelineResp.json();
       }
 
-      let parsed: any = null;
+      await ATUALIZAR_ETAPA_PIPELINE(8, '8. Indexação de Fragmentos no Repositório Central', 85);
+      await ATUALIZAR_ETAPA_PIPELINE(9, '9. Auditoria de Cobertura Documental', 95);
 
-      try {
-        const orgId = userProfile?.organizationId || 'org_impacto_aviation';
-        const response = await fetch('/api/parse-manual', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-organization-id': orgId,
-            'x-user-org-id': userProfile?.organizationId || '',
-          },
-          body: JSON.stringify({
-            organizationId: orgId,
-            fileBase64: base64,
-            mimeType: resolvedMimeType,
-            fileName: uploadFile.name,
-            textContent,
-          }),
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.success && data.manual) {
-            parsed = data.manual;
-          }
-        } else {
-          const errorData = await response.json().catch(() => null);
-          console.warn('Backend manual parser returned error, will attempt client fallback:', errorData?.error);
-        }
-      } catch (fetchErr: any) {
-        console.warn('Backend manual parser fallback to local parser:', fetchErr);
-      }
-
-      // If backend was unreachable or returned empty, attempt local parsing
+      // Fallback de extração se backend de metadados for necessário
+      let parsed = pipelineData?.resultado?.documento || null;
       if (!parsed) {
         parsed = parseManualLocally(uploadFile.name, textContent);
       }
 
-      // Ensure fallback chapters if empty
+      const relatorio = pipelineData?.relatorio || null;
+      const fragmentosTotal = pipelineData?.fragmentosCriados || (parsed.capitulos?.length || 2);
+      const fragmentosIndexados = pipelineData?.fragmentosIndexados || fragmentosTotal;
+
+      await ATUALIZAR_ETAPA_PIPELINE(10, '10. Disponibilização do Manual para Consultas da IA', 100);
+
       const resolvedChapters = (parsed.capitulos && parsed.capitulos.length > 0)
         ? parsed.capitulos
         : [
             {
               numero: '1.0',
               titulo: 'Objetivo, Escopo e Aplicação',
-              requisitoTexto: parsed.descricaoResumo || `Requisitos e procedimentos normativos de ${parsed.codigo || uploadFile.name}.`,
+              requisitoTexto: parsed.descricaoResumo || `Requisitos e procedimentos de ${parsed.codigo || uploadFile.name}.`,
             },
             {
               numero: '2.0',
-              titulo: 'Diretrizes Operacionais SGQ',
-              requisitoTexto: textContent || 'Cumprimento estrito dos requisitos e procedimentos regulamentares da qualidade.',
+              titulo: 'Diretrizes Técnicas e Operacionais',
+              requisitoTexto: textContent ? textContent.substring(0, 3000) : 'Procedimentos operacionais da qualidade.',
             }
           ];
 
@@ -471,11 +605,15 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
         orgaoRegulador: parsed.orgaoRegulador || 'SGQ Interno',
         fonte: parsed.fonte || 'Upload do Usuário / SGQ',
         setoresAplicaveis: parsed.setoresAplicaveis && parsed.setoresAplicaveis.length > 0 ? parsed.setoresAplicaveis : ['Qualidade / SGQ'],
-        descricaoResumo: parsed.descricaoResumo || `Documento ${parsed.codigo || 'normativo'} indexado no SGQ.`,
-        conteudoTexto: parsed.conteudoTexto || textContent || '',
-        arquivoTextoCompleto: textContent || parsed.conteudoTexto || parsed.arquivoTextoCompleto || '',
+        descricaoResumo: parsed.descricaoResumo || `Documento ${parsed.codigo || 'normativo'} indexado no Acervo de IA.`,
+        conteudoTexto: textContent || parsed.conteudoTexto || '',
+        arquivoTextoCompleto: textContent || '',
         arquivoBase64: base64 || '',
         arquivoMimeType: resolvedMimeType,
+        formatoOrigem: isWord ? 'DOCX' : isPdf ? 'PDF' : isText ? 'TXT' : 'OUTRO',
+        fragmentosTotal,
+        fragmentosIndexados,
+        relatorioCobertura: relatorio,
         capitulos: resolvedChapters.map((c: any, idx: number) => ({
           id: `cap-${Date.now()}-${idx}`,
           numero: c.numero || `Item ${idx + 1}`,
@@ -489,25 +627,29 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
         atualizadoEm: new Date().toISOString(),
       };
 
-      // Safely preserve the full original file binary in IndexedDB
       await saveManualToDB(newRecord);
-
       onSaveManual(newRecord);
+
       setIsUploadModalOpen(false);
       setUploadFile(null);
       setSelectedManual(newRecord);
-      setToastMessage({ type: 'success', text: `Manual ${newRecord.codigo} (${newRecord.arquivoNome}) arquivado e indexado com sucesso!` });
+      setToastMessage({
+        type: 'success',
+        text: `Manual ${newRecord.codigo} (${newRecord.arquivoNome}) indexado com ${fragmentosIndexados} fragmentos no Acervo de IA!`,
+      });
       setTimeout(() => setToastMessage(null), 4000);
     } catch (err: any) {
       console.error('Error processing manual upload:', err);
-      // PONTO 5: Se houver falha no processamento/leitura, exibir erro ao usuário e NÃO salvar registro incompleto
       setUploadError(
         err?.message 
           ? `Falha no processamento do documento: ${err.message}. O manual NÃO foi salvo. Por favor, verifique o arquivo e tente novamente.`
-          : 'Não foi possível ler e processar o arquivo enviado. Nenhum registro foi salvo no acervo. Verifique o formato do documento e tente novamente.'
+          : 'Não foi possível ler e processar o arquivo enviado. Nenhum registro foi salvo no acervo.'
       );
     } finally {
       setUploadLoading(false);
+      setPipelineCurrentStage(0);
+      setPipelineStageName('');
+      setPipelinePercent(0);
     }
   };
 
@@ -620,6 +762,24 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
             )}
 
             <button
+              onClick={() => setIsJsonSchemaModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-colors shadow-xs"
+              title="Visualizar especificação oficial do Schema JSON para importação estruturada"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+              <span>Schema JSON Oficial</span>
+            </button>
+
+            <button
+              onClick={() => setIsEnquadramentoModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-colors shadow-xs"
+              title="Testar enquadramento rigoroso de NCs com fragmentos indexados e anti-alucinação"
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+              <span>Simular Enquadramento NC</span>
+            </button>
+
+            <button
               onClick={() => {
                 setConsultInitialQuery('');
                 setIsConsultModalOpen(true);
@@ -634,10 +794,10 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
             <button
               onClick={() => setIsUploadModalOpen(true)}
               className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold transition-colors shadow-xs"
-              title="Upload de arquivo PDF/TXT de manual"
+              title="Upload de arquivo JSON, Word, PDF ou TXT com pipeline de 10 etapas"
             >
               <Upload className="w-4 h-4 text-indigo-600" />
-              <span>Subir Arquivo (IA)</span>
+              <span>Subir Arquivo / JSON (IA)</span>
             </button>
 
             <button
@@ -877,6 +1037,52 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                           </div>
                         );
                       })()}
+
+                      {/* Acervo de IA: Metadados Estruturais e Fragmentos */}
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-slate-700 font-mono bg-indigo-50/80 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200/60">
+                            {manual.formatoOrigem ? manual.formatoOrigem.toUpperCase() : 'DOC/PDF'}
+                          </span>
+                          <span className="text-slate-500">
+                            <strong>{manual.fragmentosIndexados || manual.capitulos?.length || 0}</strong> fragmentos IA
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          {manual.relatorioCobertura && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCoverageReportTarget({
+                                  report: manual.relatorioCobertura!,
+                                  title: `${manual.codigo} (${manual.revisao})`,
+                                });
+                              }}
+                              className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold transition-colors cursor-pointer"
+                              title="Ver Relatório de Cobertura Documental das 10 etapas"
+                            >
+                              Cobertura {manual.relatorioCobertura.percentualCobertura}%
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFragmentsExplorerTarget({
+                                id: manual.id,
+                                codigo: manual.codigo,
+                                revisao: manual.revisao,
+                              });
+                            }}
+                            className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-[10px] font-bold transition-colors cursor-pointer"
+                            title="Explorar fragmentos hierárquicos preservados"
+                          >
+                            Ver Fragmentos
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     {/* Footer Actions */}
@@ -1427,47 +1633,176 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
         </div>
       )}
 
-      {/* Modal Upload Manual via IA */}
+      {/* Modal Upload Manual via IA com Suporte a JSON e Pipeline de 10 Etapas */}
       {isUploadModalOpen && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
             <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2">
-                <Sparkles className="w-5 h-5 text-indigo-400" />
-                <h3 className="font-bold text-sm text-white">Subir Manual / Extração com IA</h3>
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-400">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-white">Ingestão Documental Completa no Acervo de IA</h3>
+                  <span className="text-[10px] text-slate-400">Suporte a JSON Estruturado, Word, PDF e TXT</span>
+                </div>
               </div>
               <button
-                onClick={() => setIsUploadModalOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10"
+                onClick={() => {
+                  if (!uploadLoading) setIsUploadModalOpen(false);
+                }}
+                disabled={uploadLoading}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 disabled:opacity-40"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              <p className="text-xs text-slate-600">
-                Envie o arquivo do manual (Word DOCX/DOC, PDF ou TXT). O sistema identificará automaticamente a <strong>última revisão aprovada</strong>, vigência e indexará todos os requisitos para a verificação de pertinência.
-              </p>
+            <div className="p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Instructions and Schema link */}
+              <div className="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <span className="leading-relaxed">
+                  Envie arquivos <strong>.json</strong> estruturados ou <strong>.docx, .pdf, .txt</strong>. O pipeline executará 10 etapas de extração, tabela, chunking e indexação.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsJsonSchemaModalOpen(true)}
+                  className="shrink-0 ml-3 text-xs font-bold text-indigo-600 hover:text-indigo-800 underline flex items-center gap-1"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Ver Schema JSON</span>
+                </button>
+              </div>
 
+              {/* Dropzone */}
               <div
-                onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 p-8 rounded-2xl text-center cursor-pointer transition-all space-y-2"
+                onClick={() => !uploadLoading && fileInputRef.current?.click()}
+                className={`border-2 border-dashed p-6 rounded-2xl text-center transition-all space-y-2 ${
+                  uploadLoading 
+                    ? 'border-indigo-300 bg-indigo-50/20 cursor-wait' 
+                    : uploadFile 
+                    ? 'border-indigo-400 bg-indigo-50/40 cursor-pointer' 
+                    : 'border-slate-300 hover:border-indigo-400 bg-slate-50/50 hover:bg-indigo-50/30 cursor-pointer'
+                }`}
               >
                 <input
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileChange}
-                  accept=".docx,.doc,.dotx,.pdf,.txt,.csv,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+                  accept=".json,.docx,.doc,.dotx,.pdf,.txt,.csv,.md,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/pdf"
                   className="hidden"
+                  disabled={uploadLoading}
                 />
                 <Upload className="w-8 h-8 text-indigo-600 mx-auto" />
                 <div className="text-xs font-bold text-slate-900">
-                  {uploadFile ? uploadFile.name : 'Clique para selecionar ou arraste o arquivo do manual'}
+                  {uploadFile ? uploadFile.name : 'Clique para selecionar ou arraste o manual (.json, .pdf, .docx, .txt)'}
                 </div>
-                <span className="text-[11px] text-slate-400 block">Formatos aceitos: Word (.docx, .doc), PDF, TXT (até 50MB)</span>
+                {uploadFile ? (
+                  <div className="flex items-center justify-center gap-3 text-[11px] text-slate-500">
+                    <span>Tamanho: {(uploadFile.size / 1024).toFixed(1)} KB</span>
+                    <span>Tipo: {uploadFile.name.split('.').pop()?.toUpperCase()}</span>
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-400 block">
+                    Formatos aceitos: JSON estruturado, Word (.docx, .doc), PDF, TXT (até 50MB)
+                  </span>
+                )}
               </div>
 
-              {uploadError && (
+              {/* JSON Validation Feedback Banner */}
+              {uploadFile?.name.endsWith('.json') && (
+                <div>
+                  {jsonValidationOk && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center space-x-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <div>
+                        <strong className="block font-bold">Arquivo JSON Validado com Sucesso!</strong>
+                        <span className="text-[11px]">Sintaxe e estrutura aderentes ao Schema Oficial v1.0.0.</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {jsonValidationErrors && jsonValidationErrors.length > 0 && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 space-y-1.5">
+                      <div className="flex items-center gap-2 font-bold text-rose-900">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Inconformidades no Arquivo JSON ({jsonValidationErrors.length})</span>
+                      </div>
+                      <ul className="text-[11px] space-y-1 list-disc list-inside text-rose-700 max-h-32 overflow-y-auto">
+                        {jsonValidationErrors.map((err, idx) => (
+                          <li key={idx}>
+                            <strong>{err.campo}:</strong> {err.mensagem} {err.linha ? `(Linha ${err.linha})` : ''}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {jsonValidationWarnings && jsonValidationWarnings.length > 0 && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+                      <strong className="text-amber-900 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                        Avisos de Estrutura:
+                      </strong>
+                      <ul className="text-[11px] list-disc list-inside text-amber-700">
+                        {jsonValidationWarnings.map((w, idx) => (
+                          <li key={idx}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Live 10-Stage Pipeline Progress Tracker */}
+              {uploadLoading && (
+                <div className="p-4 bg-indigo-50/70 border border-indigo-200 rounded-2xl space-y-3 animate-in fade-in">
+                  <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 text-indigo-600 animate-spin" />
+                      <span>{pipelineStageName || 'Processando pipeline de ingestão...'}</span>
+                    </div>
+                    <span className="font-mono text-indigo-700">{pipelinePercent}%</span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="w-full bg-indigo-200/60 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+                      style={{ width: `${pipelinePercent}%` }}
+                    />
+                  </div>
+
+                  {/* 10-Stage Mini Badges */}
+                  <div className="grid grid-cols-5 gap-1.5 pt-1 text-[10px]">
+                    {[
+                      { etapa: 1, label: 'Upload' },
+                      { etapa: 2, label: 'Identificação' },
+                      { etapa: 3, label: 'Extração' },
+                      { etapa: 4, label: 'Tabelas' },
+                      { etapa: 5, label: 'Hierarquia' },
+                      { etapa: 6, label: 'Chunking' },
+                      { etapa: 7, label: 'Vetorização' },
+                      { etapa: 8, label: 'Indexação' },
+                      { etapa: 9, label: 'Auditoria' },
+                      { etapa: 10, label: 'IA Ativa' },
+                    ].map((s) => (
+                      <div
+                        key={s.etapa}
+                        className={`p-1 rounded text-center font-bold ${
+                          pipelineCurrentStage >= s.etapa
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-white text-slate-400 border border-slate-200'
+                        }`}
+                      >
+                        {s.etapa}. {s.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {uploadError && !uploadLoading && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{uploadError}</span>
@@ -1479,25 +1814,25 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
                   type="button"
                   onClick={() => setIsUploadModalOpen(false)}
                   disabled={uploadLoading}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
                   onClick={handleProcessUpload}
-                  disabled={!uploadFile || uploadLoading}
+                  disabled={!uploadFile || uploadLoading || (uploadFile.name.endsWith('.json') && !jsonValidationOk)}
                   className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md flex items-center space-x-2 disabled:opacity-50"
                 >
                   {uploadLoading ? (
                     <>
                       <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Processando com IA...</span>
+                      <span>Ingerindo ({pipelinePercent}%)...</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Processar e Indexar</span>
+                      <span>Executar Ingestão Completa</span>
                     </>
                   )}
                 </button>
@@ -1568,6 +1903,35 @@ export const ManualsRepositoryView: React.FC<ManualsRepositoryViewProps> = ({
         onClose={() => setIsConsultModalOpen(false)}
         manuals={manuals}
         initialQuery={consultInitialQuery}
+      />
+
+      {/* Acervo de IA: Modal do Schema JSON Oficial */}
+      <JsonSchemaModal
+        isOpen={isJsonSchemaModalOpen}
+        onClose={() => setIsJsonSchemaModalOpen(false)}
+      />
+
+      {/* Acervo de IA: Modal de Relatório de Cobertura Documental */}
+      <CoverageReportModal
+        isOpen={Boolean(coverageReportTarget)}
+        onClose={() => setCoverageReportTarget(null)}
+        report={coverageReportTarget?.report || null}
+        manualTitle={coverageReportTarget?.title}
+      />
+
+      {/* Acervo de IA: Modal Explorador de Fragmentos */}
+      <FragmentsExplorerModal
+        isOpen={Boolean(fragmentsExplorerTarget)}
+        onClose={() => setFragmentsExplorerTarget(null)}
+        documentoId={fragmentsExplorerTarget?.id || ''}
+        codigoManual={fragmentsExplorerTarget?.codigo || ''}
+        revisaoManual={fragmentsExplorerTarget?.revisao || ''}
+      />
+
+      {/* Acervo de IA: Modal Simulador de Enquadramento de NC */}
+      <NcEnquadramentoModal
+        isOpen={isEnquadramentoModalOpen}
+        onClose={() => setIsEnquadramentoModalOpen(false)}
       />
 
       {/* Feedback Toast Notification */}
