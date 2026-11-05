@@ -19,8 +19,69 @@ import { fragmentsRepository } from './fragmentsRepository';
 // Versão do mecanismo de extração documental
 export const MECANISMO_EXTRACAO_VERSAO = 'v2.8-enterprise-chunker';
 
-// Memória de tarefas ativas para acompanhamento em tempo real e retomada
+// Memória e persistência de tarefas para acompanhamento e retomada pós-reinício
+const TASKS_STORAGE_KEY = 'qualyquest_tasks_ingestao_cache';
 const tarefasAtivas = new Map<string, TarefaIngestaoDocumento>();
+
+function carregarTarefasDoStorage(): void {
+  // Node.js file system
+  try {
+    if (typeof process !== 'undefined' && (process as any).versions?.node) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require('fs');
+      if (fs.existsSync('.tasks_cache.json')) {
+        const raw = fs.readFileSync('.tasks_cache.json', 'utf8');
+        const list: TarefaIngestaoDocumento[] = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list.forEach((t) => tarefasAtivas.set(t.id, t));
+        }
+      }
+    }
+  } catch {
+    // Ignore in browser
+  }
+
+  // Browser localStorage
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const raw = localStorage.getItem(TASKS_STORAGE_KEY);
+      if (raw) {
+        const list: TarefaIngestaoDocumento[] = JSON.parse(raw);
+        if (Array.isArray(list)) {
+          list.forEach((t) => tarefasAtivas.set(t.id, t));
+        }
+      }
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+function persistirTarefasNoStorage(): void {
+  const lista = Array.from(tarefasAtivas.values());
+  // Node.js
+  try {
+    if (typeof process !== 'undefined' && (process as any).versions?.node) {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const fs = require('fs');
+      fs.writeFileSync('.tasks_cache.json', JSON.stringify(lista, null, 2), 'utf8');
+    }
+  } catch {
+    // Ignore
+  }
+
+  // Browser
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.setItem(TASKS_STORAGE_KEY, JSON.stringify(lista));
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+// Inicializa no carregamento do módulo
+carregarTarefasDoStorage();
 
 /**
  * Cria ou recupera uma tarefa de ingestão documental
@@ -56,14 +117,19 @@ export function registrarTarefaIngestao(
   };
 
   tarefasAtivas.set(id, tarefa);
+  persistirTarefasNoStorage();
   return tarefa;
 }
 
 export function obterTarefaIngestao(taskId: string): TarefaIngestaoDocumento | null {
+  if (!tarefasAtivas.has(taskId)) {
+    carregarTarefasDoStorage();
+  }
   return tarefasAtivas.get(taskId) || null;
 }
 
 export function listarTarefasIngestao(): TarefaIngestaoDocumento[] {
+  carregarTarefasDoStorage();
   return Array.from(tarefasAtivas.values()).sort(
     (a, b) => new Date(b.atualizadoEm).getTime() - new Date(a.atualizadoEm).getTime()
   );
@@ -73,7 +139,11 @@ export function atualizarStatusTarefa(
   taskId: string,
   updates: Partial<TarefaIngestaoDocumento>
 ): TarefaIngestaoDocumento | null {
-  const tarefa = tarefasAtivas.get(taskId);
+  let tarefa = tarefasAtivas.get(taskId);
+  if (!tarefa) {
+    carregarTarefasDoStorage();
+    tarefa = tarefasAtivas.get(taskId);
+  }
   if (!tarefa) return null;
 
   const atualizada: TarefaIngestaoDocumento = {
@@ -83,6 +153,7 @@ export function atualizarStatusTarefa(
   };
 
   tarefasAtivas.set(taskId, atualizada);
+  persistirTarefasNoStorage();
   return atualizada;
 }
 
@@ -112,17 +183,13 @@ export function extrairTokensBusca(texto: string, contexto: string = ''): string
   return Array.from(unicos);
 }
 
+import { calcularHashSHA256 } from '../../utils/hashUtils';
+
 /**
- * Cria hash simples SHA-256 ou FNV-1a para integridade do conteúdo
+ * Cria hash criptográfico SHA-256 canônico (64 hex caracteres) para integridade do conteúdo
  */
 export function gerarHashConteudo(texto: string): string {
-  let hash = 0;
-  for (let i = 0; i < texto.length; i++) {
-    const char = texto.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0; // converte para 32bit int
-  }
-  return `h_${Math.abs(hash).toString(16)}`;
+  return calcularHashSHA256(texto);
 }
 
 /**
@@ -325,6 +392,8 @@ export async function processarPipelineIngestaoDocumento(params: {
     ? obterTarefaIngestao(params.taskIdExistente) || registrarTarefaIngestao(docIdTemp, params.nomeArquivo, params.conteudoBruto.length, params.formato, orgId)
     : registrarTarefaIngestao(docIdTemp, params.nomeArquivo, params.conteudoBruto.length, params.formato, orgId);
 
+  const docIdEfetivo = params.documentoId || (tarefa.documentoId && !tarefa.documentoId.startsWith('doc_') ? tarefa.documentoId : undefined);
+
   atualizarStatusTarefa(tarefa.id, {
     etapaAtual: 1,
     nomeEtapa: 'Recebimento e Validação de Formato',
@@ -363,6 +432,15 @@ export async function processarPipelineIngestaoDocumento(params: {
     nomeEtapa: 'Extração Integral de Texto e Tabelas',
     progressoPercentual: 35,
   });
+
+  if (params.simularFalhaNaEtapa === 3) {
+    atualizarStatusTarefa(tarefa.id, {
+      status: 'PAUSADO_ERRO',
+      erroDetalhe: 'Simulação de interrupção na etapa 3 (Extração integral)',
+      canResume: true,
+    });
+    throw new Error('Falha simulada na etapa 3 do pipeline documental');
+  }
 
   if (params.formato === 'JSON') {
     // 1. Valida Sintaxe JSON
@@ -405,19 +483,53 @@ export async function processarPipelineIngestaoDocumento(params: {
     paginasExtraidas = paginasTotais;
   } else {
     // PDF, DOCX, TXT
-    const textoCru = params.conteudoBruto;
+    let textoCru = params.conteudoBruto;
+
+    // Se for PDF e o conteúdo bruto for binário ou base64 ou se contiver o cabeçalho PDF (%PDF)
+    if (params.formato === 'PDF') {
+      try {
+        if (typeof process !== 'undefined' && (process as any).versions?.node) {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const pdfParse = require('pdf-parse');
+          let pdfBuffer: Buffer | null = null;
+          if (Buffer.isBuffer(textoCru)) {
+            pdfBuffer = textoCru;
+          } else if (typeof textoCru === 'string') {
+            if (textoCru.startsWith('%PDF') || textoCru.includes('%PDF-')) {
+              pdfBuffer = Buffer.from(textoCru, 'binary');
+            } else if (/^[A-Za-z0-9+/=]{100,}/.test(textoCru.substring(0, 150))) {
+              pdfBuffer = Buffer.from(textoCru, 'base64');
+            }
+          }
+
+          if (pdfBuffer) {
+            const parsed = await pdfParse(pdfBuffer);
+            if (parsed && parsed.text) {
+              textoCru = parsed.text;
+              paginasTotais = parsed.numpages || 1;
+              paginasExtraidas = paginasTotais;
+            }
+          }
+        }
+      } catch (pdfErr) {
+        avisos.push(`Extração binária PDF utilizou mecanismo textual alternativo: ${(pdfErr as any)?.message || String(pdfErr)}`);
+      }
+    }
+
     if (!textoCru || textoCru.trim().length === 0) {
       throw new Error('O arquivo não contém texto extraível.');
     }
 
-    // Identifica páginas
-    const matchPags = textoCru.match(/---\s*(?:Página|Page|Pag)\s*(\d+)\s*---/gi);
-    if (matchPags) {
-      paginasTotais = matchPags.length;
-      paginasExtraidas = matchPags.length;
-    } else {
-      paginasTotais = Math.max(1, Math.ceil(textoCru.length / 2500));
-      paginasExtraidas = paginasTotais;
+    // Identifica páginas se ainda não definido por pdf-parse
+    if (paginasTotais <= 1) {
+      const matchPags = textoCru.match(/---\s*(?:Página|Page|Pag)\s*(\d+)\s*---/gi);
+      if (matchPags) {
+        paginasTotais = matchPags.length;
+        paginasExtraidas = matchPags.length;
+      } else {
+        paginasTotais = Math.max(1, Math.ceil(textoCru.length / 2500));
+        paginasExtraidas = paginasTotais;
+      }
     }
 
     // ETAPA 5: Identificação de Capítulos, Seções e Subitens
@@ -452,7 +564,8 @@ export async function processarPipelineIngestaoDocumento(params: {
     fragmentosTotais: secoesProcessadas.length,
   });
 
-  const docId = params.documentoId || `man_${(metaDocFinal.codigo || 'MAN').toLowerCase().replace(/\s+/g, '_')}_${(metaDocFinal.revisao || 'rev1').toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+  const docId = docIdEfetivo || `man_${(metaDocFinal.codigo || 'MAN').toLowerCase().replace(/\s+/g, '_')}`;
+  const revSlug = (metaDocFinal.revisao || 'rev1').toLowerCase().replace(/[^a-z0-9]/g, '');
   const totalSecoes = secoesProcessadas.length;
   const fragmentos: FragmentoDocumento[] = [];
 
@@ -460,7 +573,7 @@ export async function processarPipelineIngestaoDocumento(params: {
     const s = secoesProcessadas[idx];
     const ordem = idx + 1;
     const subClean = String(s.subitem).replace(/[^a-zA-Z0-9._-]/g, '_');
-    const fragId = `frag_${docId}_${subClean}_ord${ordem}`;
+    const fragId = `frag_${docId}_${revSlug}_${subClean}_ord${ordem}`;
 
     const contextoHierarquico = `${metaDocFinal.codigo} (${metaDocFinal.revisao || 'Vigente'}) > Cap. ${s.capitulo}${s.capituloTitulo ? ' - ' + s.capituloTitulo : ''} > Seção ${s.secao} > Subitem ${s.subitem}: ${s.titulo}`;
     const hash = gerarHashConteudo(`${s.subitem}_${s.titulo}_${s.conteudo}`);
@@ -541,13 +654,30 @@ export async function processarPipelineIngestaoDocumento(params: {
     progressoPercentual: 95,
   });
 
+  // Validação independente de persistência (leitura pós-gravação)
+  const fragmentosConfirmados = await fragmentsRepository.getFragmentsByDocumentId(docId, metaDocFinal.revisao);
+  const idsOriginais = new Set(fragmentos.map((f) => f.id));
+  const confirmadosValidos = fragmentosConfirmados.filter((f) => idsOriginais.has(f.id));
+  const fragmentosEfetivamenteIndexados = confirmadosValidos.length;
+  const fragmentosComFalha = Math.max(0, fragmentos.length - fragmentosEfetivamenteIndexados);
+
   const capitulosUnicos = new Set(fragmentos.map((f) => f.capitulo));
   const secoesUnicas = new Set(fragmentos.map((f) => f.secao));
   const subitensUnicos = new Set(fragmentos.map((f) => f.subitem));
 
-  // Cobertura calculada
-  const percentualCobertura = fragmentos.length > 0 ? 100.0 : 0.0;
-  const statusValidacao = percentualCobertura >= 95 ? 'APROVADO' : 'REQUER_REVISAO';
+  // Cálculo real da cobertura documental ponderando extração de páginas e fragmentos indexados
+  const taxaPaginas = paginasTotais > 0 ? (paginasExtraidas - paginasComFalha - paginasSemConteudo) / paginasTotais : 1.0;
+  const taxaFragmentos = fragmentos.length > 0 ? fragmentosEfetivamenteIndexados / fragmentos.length : 0.0;
+  
+  // Percentual com 1 casa decimal (ex: 98.5 ou 100.0)
+  const percentualCobertura = Math.min(
+    100.0,
+    Math.max(0.0, Math.round(((taxaPaginas * 0.5) + (taxaFragmentos * 0.5)) * 1000) / 10)
+  );
+
+  const statusValidacao = (percentualCobertura >= 95.0 && fragmentosComFalha === 0 && paginasComFalha === 0)
+    ? 'APROVADO'
+    : 'REQUER_REVISAO';
 
   const relatorioCobertura: RelatorioCoberturaDocumental = {
     id: `cov_${docId}_${Date.now()}`,
@@ -565,12 +695,12 @@ export async function processarPipelineIngestaoDocumento(params: {
     secoesIdentificadas: secoesUnicas.size,
     subitensIdentificados: subitensUnicos.size,
     fragmentosCriados: fragmentos.length,
-    fragmentosIndexados: fragmentos.length,
-    fragmentosComFalha: 0,
+    fragmentosIndexados: fragmentosEfetivamenteIndexados,
+    fragmentosComFalha,
     percentualCobertura,
     avisosELimitacoes: avisos,
     statusValidacao,
-    statusEtapa: 'VALIDACAO_APROVADA',
+    statusEtapa: statusValidacao === 'APROVADO' ? 'VALIDACAO_APROVADA' : 'VALIDACAO_COM_AVISOS',
     tabelasExtraidasTotal,
     ocrAplicado: false,
     tempoProcessamentoMs: Date.now() - inicioTimestamp,

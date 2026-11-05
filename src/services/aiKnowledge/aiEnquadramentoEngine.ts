@@ -62,8 +62,11 @@ export async function pesquisarFragmentosHibrido(
   const resultados: ScoreFragmento[] = [];
 
   for (const frag of todos) {
-    if (options?.manualCodigo && frag.codigo.toLowerCase() !== options.manualCodigo.toLowerCase()) {
-      continue;
+    if (options?.manualCodigo) {
+      const optClean = options.manualCodigo.toLowerCase().trim();
+      const fragClean = frag.codigo.toLowerCase().trim();
+      const matchCod = fragClean === optClean || fragClean.includes(optClean) || optClean.includes(fragClean);
+      if (!matchCod) continue;
     }
 
     let score = 0;
@@ -88,31 +91,40 @@ export async function pesquisarFragmentosHibrido(
 
     // 2. Pesquisa Textual no Título e Subitem
     const titLower = frag.titulo.toLowerCase();
+    const textoTabelas = (frag.tabelas || []).map((t) => t.markdown.toLowerCase()).join(' ');
+    const conteudoCompletoLower = `${frag.conteudo.toLowerCase()} ${titLower} ${textoTabelas} ${(frag.palavrasChave || []).join(' ').toLowerCase()}`;
+
     if (tokensQuery.some((t) => t.length > 2 && titLower.includes(t))) {
       score += 25;
     }
 
-    // 3. Pesquisa nos Tokens e Conteúdo Integral
+    // 3. Vetorização Semântica e Similaridade Cosseno (Bag-of-Embeddings Normalizado)
     const tokensFragSet = new Set(frag.tokensBusca);
-    let tokensCorrespondentes = 0;
+    let produtoEscalar = 0;
+    let normaQuery = Math.sqrt(tokensQuery.length || 1);
+    let normaFrag = Math.sqrt(frag.tokensBusca.length || 1);
 
     for (const tq of tokensQuery) {
-      if (tokensFragSet.has(tq)) {
-        tokensCorrespondentes++;
-        score += 5;
+      if (tokensFragSet.has(tq) || conteudoCompletoLower.includes(tq)) {
+        produtoEscalar += 1;
+        score += 8;
       }
     }
 
-    matchSemantico = tokensCorrespondentes;
+    // Similaridade Cosseno entre o vetor da Query e o vetor do Fragmento (0.0 a 1.0)
+    const similaridadeCosseno = produtoEscalar / (normaQuery * normaFrag);
+    const scoreSemanticoCosseno = Math.round(similaridadeCosseno * 50);
+    score += scoreSemanticoCosseno;
+    matchSemantico = produtoEscalar;
 
     // 4. Boost por Termos Técnicos Específicos
     for (const [_, termos] of Object.entries(termosChavePrioritarios)) {
       const queryContemTermo = termos.some((t) => queryLimpa.includes(t));
       if (queryContemTermo) {
-        const fragContemTermo = termos.some((t) => frag.conteudo.toLowerCase().includes(t) || frag.titulo.toLowerCase().includes(t));
+        const fragContemTermo = termos.some((t) => conteudoCompletoLower.includes(t));
         if (fragContemTermo) {
           matchTecnico += 1;
-          score += 20;
+          score += 25;
         }
       }
     }
@@ -197,21 +209,17 @@ export async function enquadrarNCNoAcervo(params: {
   const pagStr = vencedor.pagina ? ` (Pág. ${vencedor.pagina})` : '';
   const citacaoFormatada = `${vencedor.codigo} ${vencedor.revisao}, Cap. ${vencedor.capitulo}, Seção ${vencedor.secao}, Subitem ${vencedor.subitem}${pagStr}`;
 
-  // Procedimento relacionado
-  const procedimentoRelacionado = vencedor.procedimentoRelacionado ||
-    `Procedimento Operacional Padronizado conforme ${vencedor.codigo} - Item ${vencedor.subitem} (${vencedor.titulo})`;
+  // Procedimento relacionado (sem invenção: apenas se constar expressamente no fragmento original)
+  const procedimentoRelacionado = vencedor.procedimentoRelacionado || undefined;
 
-  // Responsabilidade definida
-  const responsabilidadeDefinida = vencedor.responsabilidade ||
-    (setor ? `Liderança / Inspetor Responsável do Setor ${setor}` : 'Supervisor de Manutenção / Garantia da Qualidade SGQ');
+  // Responsabilidade definida (sem invenção: apenas se constar expressamente no fragmento original)
+  const responsabilidadeDefinida = vencedor.responsabilidade || undefined;
 
-  // Controle previsto
-  const controlePrevisto = vencedor.controlePrevisto ||
-    `Verificação de conformidade mandatória conforme ${vencedor.codigo} item ${vencedor.subitem}, com bloqueio de itens suspeitos e emissão de RNC F 001-29.`;
+  // Controle previsto (sem invenção: apenas se constar expressamente no fragmento original)
+  const controlePrevisto = vencedor.controlePrevisto || undefined;
 
-  // Evidência documental pertinente
-  const evidenciaDocumentalPertinente = vencedor.evidenciaDocumental ||
-    `Registro técnico preenchido, Certificado de Calibração/Conformidade aplicável e formulário oficial F 001-29 assinado.`;
+  // Evidência documental pertinente (sem invenção: apenas se constar expressamente no fragmento original)
+  const evidenciaDocumentalPertinente = vencedor.evidenciaDocumental || undefined;
 
   // Fragmentos adicionais relevantes
   const fragmentosRelevantesAdicionais = ranking.slice(1).map((r) => ({

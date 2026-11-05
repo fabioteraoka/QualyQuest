@@ -78,6 +78,25 @@ export class FragmentsRepository {
       }
     }
 
+    // Tenta carregar do arquivo local no ambiente Node.js / servidor
+    try {
+      if (typeof process !== 'undefined' && (process as any).versions?.node) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        if (fs.existsSync('.fragments_cache.json')) {
+          const raw = fs.readFileSync('.fragments_cache.json', 'utf8');
+          const list: FragmentoDocumento[] = JSON.parse(raw);
+          if (Array.isArray(list) && list.length > 0) {
+            list.forEach((f) => this.memoryStore.set(f.id, f));
+            this.initialized = true;
+            return;
+          }
+        }
+      }
+    } catch {
+      // Ignora erro
+    }
+
     // Se estiver vazio, popula com os fragmentos estruturados dos manuais iniciais oficiais (MOMQ e RBAC 145)
     if (this.memoryStore.size === 0) {
       INITIAL_SEEDED_FRAGMENTS.forEach((f) => this.memoryStore.set(f.id, f));
@@ -95,6 +114,18 @@ export class FragmentsRepository {
       const tx = db.transaction(STORE_NAME, 'readwrite');
       const store = tx.objectStore(STORE_NAME);
       store.put(fragment);
+    } catch {
+      // Fallback
+    }
+
+    // Node.js file system para persistência no servidor e compartilhamento
+    try {
+      if (typeof process !== 'undefined' && (process as any).versions?.node) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require('fs');
+        const all = Array.from(this.memoryStore.values());
+        fs.writeFileSync('.fragments_cache.json', JSON.stringify(all, null, 2), 'utf8');
+      }
     } catch {
       // Fallback
     }
@@ -147,7 +178,7 @@ export class FragmentsRepository {
       .filter((f) => {
         const fDocId = (f.documentoId || '').toLowerCase();
         const fCodigo = (f.codigo || '').toLowerCase();
-        const matchDoc = fDocId === cleanId || fCodigo === cleanId || cleanId.includes(fCodigo);
+        const matchDoc = fDocId === cleanId || (fCodigo === cleanId && (!cleanRev || f.revisao?.toLowerCase().includes(cleanRevNorm || '')));
         if (!matchDoc) return false;
         if (cleanRev) {
           const fRev = (f.revisao || '').toLowerCase();
