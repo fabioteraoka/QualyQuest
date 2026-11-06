@@ -81,10 +81,11 @@ export class FragmentsRepository {
     // Tenta carregar do arquivo local no ambiente Node.js / servidor
     try {
       if (typeof process !== 'undefined' && (process as any).versions?.node) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const fs = require('fs');
-        if (fs.existsSync('.fragments_cache.json')) {
-          const raw = fs.readFileSync('.fragments_cache.json', 'utf8');
+        const fs = await import('fs');
+        const path = await import('path');
+        const cachePath = path.resolve(process.cwd(), '.fragments_cache.json');
+        if (fs.existsSync(cachePath)) {
+          const raw = fs.readFileSync(cachePath, 'utf8');
           const list: FragmentoDocumento[] = JSON.parse(raw);
           if (Array.isArray(list) && list.length > 0) {
             list.forEach((f) => this.memoryStore.set(f.id, f));
@@ -121,10 +122,11 @@ export class FragmentsRepository {
     // Node.js file system para persistência no servidor e compartilhamento
     try {
       if (typeof process !== 'undefined' && (process as any).versions?.node) {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const fs = require('fs');
+        const fs = await import('fs');
+        const path = await import('path');
+        const cachePath = path.resolve(process.cwd(), '.fragments_cache.json');
         const all = Array.from(this.memoryStore.values());
-        fs.writeFileSync('.fragments_cache.json', JSON.stringify(all, null, 2), 'utf8');
+        fs.writeFileSync(cachePath, JSON.stringify(all, null, 2), 'utf8');
       }
     } catch {
       // Fallback

@@ -23,14 +23,15 @@ export const MECANISMO_EXTRACAO_VERSAO = 'v2.8-enterprise-chunker';
 const TASKS_STORAGE_KEY = 'qualyquest_tasks_ingestao_cache';
 const tarefasAtivas = new Map<string, TarefaIngestaoDocumento>();
 
-function carregarTarefasDoStorage(): void {
+async function carregarTarefasDoStorage(): Promise<void> {
   // Node.js file system
   try {
     if (typeof process !== 'undefined' && (process as any).versions?.node) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require('fs');
-      if (fs.existsSync('.tasks_cache.json')) {
-        const raw = fs.readFileSync('.tasks_cache.json', 'utf8');
+      const fs = await import('fs');
+      const path = await import('path');
+      const taskCachePath = path.resolve(process.cwd(), '.tasks_cache.json');
+      if (fs.existsSync(taskCachePath)) {
+        const raw = fs.readFileSync(taskCachePath, 'utf8');
         const list: TarefaIngestaoDocumento[] = JSON.parse(raw);
         if (Array.isArray(list)) {
           list.forEach((t) => tarefasAtivas.set(t.id, t));
@@ -57,14 +58,15 @@ function carregarTarefasDoStorage(): void {
   }
 }
 
-function persistirTarefasNoStorage(): void {
+async function persistirTarefasNoStorage(): Promise<void> {
   const lista = Array.from(tarefasAtivas.values());
   // Node.js
   try {
     if (typeof process !== 'undefined' && (process as any).versions?.node) {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const fs = require('fs');
-      fs.writeFileSync('.tasks_cache.json', JSON.stringify(lista, null, 2), 'utf8');
+      const fs = await import('fs');
+      const path = await import('path');
+      const taskCachePath = path.resolve(process.cwd(), '.tasks_cache.json');
+      fs.writeFileSync(taskCachePath, JSON.stringify(lista, null, 2), 'utf8');
     }
   } catch {
     // Ignore

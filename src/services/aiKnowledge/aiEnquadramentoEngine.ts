@@ -177,14 +177,12 @@ export async function enquadrarNCNoAcervo(params: {
     limite: 5,
   });
 
-  // Limiar de confiança para declarar enquadramento seguro
-  const LIMIAR_MINIMO_SCORE = 20;
-
-  // Anti-alucinação rigoroso: precisa haver correspondência de subitem específico, OU termos técnicos comprovados, OU ao menos 2 termos semânticos da descrição do desvio
+  // Anti-alucinação rigoroso: precisa haver correspondência de subitem específico, OU termos técnicos aeronáuticos comprovados, OU ao menos 4 termos semânticos com pontuação robusta (>= 50)
   const temEvidenciaSuficiente =
     ranking.length > 0 &&
-    ranking[0].scoreTotal >= LIMIAR_MINIMO_SCORE &&
-    (ranking[0].matchExatoSubitem || ranking[0].matchTermosTecnicos > 0 || ranking[0].matchSemantico >= 2);
+    (ranking[0].matchExatoSubitem ||
+      (ranking[0].matchTermosTecnicos > 0 && ranking[0].scoreTotal >= 35) ||
+      (ranking[0].matchSemantico >= 4 && ranking[0].scoreTotal >= 50));
 
   if (!temEvidenciaSuficiente) {
     return {

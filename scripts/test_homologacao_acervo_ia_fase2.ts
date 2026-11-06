@@ -21,6 +21,7 @@ import {
   processarPipelineIngestaoDocumento,
   obterTarefaIngestao,
   retomarTarefaIngestao,
+  listarTarefasIngestao,
 } from '../src/services/aiKnowledge/documentIngestionPipeline';
 import { fragmentsRepository, FragmentsRepository } from '../src/services/aiKnowledge/fragmentsRepository';
 import {
@@ -159,7 +160,7 @@ async function executarHomologacaoFase2() {
         cobertura: rel.percentualCobertura,
       },
     });
-    console.log(`[PASS] Teste 2: MOMQ indexado com 17 fragmentos cobrindo Início, Meio e Fim.\n`);
+    console.log(`[PASS] Teste 2: MOMQ indexado com ${rel.fragmentosIndexados} fragmentos cobrindo Início, Meio e Fim.\n`);
   } catch (err: any) {
     resultados.push({
       id: 2,
@@ -185,9 +186,10 @@ async function executarHomologacaoFase2() {
     const auditoriaDetalhada: Array<{ subitem: string; match: boolean; titulo: string; hashMatch: boolean }> = [];
 
     for (const secaoOriginal of CANONICAL_MOMQ_MNT001_REV14.secoes) {
-      const frag = mapaIndexados.get(secaoOriginal.subitem);
+      const subitemStr = String(secaoOriginal.subitem);
+      const frag = mapaIndexados.get(subitemStr);
       if (!frag) {
-        auditoriaDetalhada.push({ subitem: secaoOriginal.subitem, match: false, titulo: secaoOriginal.titulo, hashMatch: false });
+        auditoriaDetalhada.push({ subitem: subitemStr, match: false, titulo: secaoOriginal.titulo, hashMatch: false });
         continue;
       }
 
@@ -198,9 +200,9 @@ async function executarHomologacaoFase2() {
 
       if (matchConteudo && matchTitulo && matchCapitulo && matchHash) {
         conferidosComSucesso++;
-        auditoriaDetalhada.push({ subitem: secaoOriginal.subitem, match: true, titulo: frag.titulo, hashMatch: true });
+        auditoriaDetalhada.push({ subitem: subitemStr, match: true, titulo: frag.titulo, hashMatch: true });
       } else {
-        auditoriaDetalhada.push({ subitem: secaoOriginal.subitem, match: false, titulo: frag.titulo, hashMatch: matchHash });
+        auditoriaDetalhada.push({ subitem: subitemStr, match: false, titulo: frag.titulo, hashMatch: matchHash });
       }
     }
 
@@ -334,7 +336,11 @@ async function executarHomologacaoFase2() {
         fragmentosLidosClienteB: fragmentosLidosPeloClienteB.length,
       },
     });
-    console.log(`[PASS] Teste 6: Cliente B acessou os 17 fragmentos indexados sem perda de contexto.\n`);
+    if (sucesso) {
+      console.log(`[PASS] Teste 6: Cliente B acessou os ${fragmentosLidosPeloClienteB.length} fragmentos indexados sem perda de contexto.\n`);
+    } else {
+      console.error(`[FAIL] Teste 6: Cliente B carregou ${fragmentosLidosPeloClienteB.length} fragmentos (esperado: 18).\n`);
+    }
   } catch (err: any) {
     resultados.push({
       id: 6,
@@ -365,12 +371,14 @@ async function executarHomologacaoFase2() {
       });
     } catch (e: any) {
       // Captura o taskId que falhou
-      const tarefas = fs.existsSync('.tasks_cache.json')
-        ? JSON.parse(fs.readFileSync('.tasks_cache.json', 'utf8'))
-        : [];
-      const tarefaPausada = tarefas.find((t: any) => t.documentoId === docIdTeste);
+      const tarefas = listarTarefasIngestao();
+      const tarefaPausada = tarefas.find((t: any) => t.documentoId === docIdTeste || t.status === 'PAUSADO_ERRO');
       if (tarefaPausada) {
         taskIdInterrompida = tarefaPausada.id;
+      } else if (fs.existsSync('.tasks_cache.json')) {
+        const raw = JSON.parse(fs.readFileSync('.tasks_cache.json', 'utf8'));
+        const f = raw.find((t: any) => t.documentoId === docIdTeste || t.status === 'PAUSADO_ERRO');
+        if (f) taskIdInterrompida = f.id;
       }
     }
 
@@ -400,13 +408,17 @@ async function executarHomologacaoFase2() {
       id: 7,
       nome: 'Interrupção e retomada de tarefas persistidas após reinicialização',
       sucesso,
-      detalhes: `Tarefa ${taskIdInterrompida} pausada com erro na etapa 5, persistida em disco, recarregada pós-reboot e retomada até conclusão com 100% de cobertura.`,
+      detalhes: `Tarefa ${taskIdInterrompida} pausada com erro na etapa 3, persistida em disco, recarregada pós-reboot e retomada até conclusão com 100% de cobertura.`,
       metricas: {
         taskId: taskIdInterrompida,
         statusFinal: resRetomada.tarefa.status,
       },
     });
-    console.log(`[PASS] Teste 7: Tarefa retomada e concluída com sucesso após reinicialização.\n`);
+    if (sucesso) {
+      console.log(`[PASS] Teste 7: Tarefa retomada e concluída com sucesso após reinicialização.\n`);
+    } else {
+      console.error(`[FAIL] Teste 7: Tarefa não concluiu com 100% de cobertura.\n`);
+    }
   } catch (err: any) {
     resultados.push({
       id: 7,
@@ -462,7 +474,11 @@ async function executarHomologacaoFase2() {
         casoEstranhoRejeitado: declarouSemEvidencia,
       },
     });
-    console.log(`[PASS] Teste 8: Anti-invenção comprovada (valores ausentes retornam undefined; consultas fora de escopo são rejeitadas).\n`);
+    if (sucesso) {
+      console.log(`[PASS] Teste 8: Anti-invenção comprovada (valores ausentes retornam undefined; consultas fora de escopo são rejeitadas).\n`);
+    } else {
+      console.error(`[FAIL] Teste 8: Falha nas asserções anti-invenção.\n`);
+    }
   } catch (err: any) {
     resultados.push({
       id: 8,

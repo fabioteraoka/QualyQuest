@@ -7,9 +7,11 @@
 import { ManualStructuredImportJSON } from '../types/aiKnowledgeBase';
 
 export const CANONICAL_MOMQ_MNT001_REV14: ManualStructuredImportJSON = {
+  versaoSchema: '1.0',
   documento: {
     codigo: 'MOMQ MNT-001',
     nome: 'Manual de Organização da Manutenção e da Qualidade',
+    titulo: 'Manual de Organização da Manutenção e da Qualidade',
     revisao: 'Rev. 14',
     idioma: 'pt-BR',
     tipoDocumento: 'Manual da Organização',
@@ -298,9 +300,11 @@ export const CANONICAL_MOMQ_MNT001_REV14: ManualStructuredImportJSON = {
  * Adiciona um novo subitem (3.4.5) e altera o subitem (3.4.3) para comprovar detecção de diff
  */
 export const CANONICAL_MOMQ_MNT001_REV15: ManualStructuredImportJSON = {
+  versaoSchema: '1.0',
   documento: {
     codigo: 'MOMQ MNT-001',
     nome: 'Manual de Organização da Manutenção e da Qualidade',
+    titulo: 'Manual de Organização da Manutenção e da Qualidade',
     revisao: 'Rev. 15',
     idioma: 'pt-BR',
     tipoDocumento: 'Manual da Organização',

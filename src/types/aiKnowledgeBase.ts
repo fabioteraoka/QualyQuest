@@ -15,7 +15,8 @@ export type EstagioEtapaProcessamento =
   | 'EXTRACAO_CONCLUIDA'
   | 'ESTRUTURA_IDENTIFICADA'
   | 'INDEXACAO_CONCLUIDA'
-  | 'VALIDACAO_APROVADA';
+  | 'VALIDACAO_APROVADA'
+  | 'VALIDACAO_COM_AVISOS';
 
 export type StatusTarefaIngestao = 
   | 'EM_FILA'
@@ -162,8 +163,9 @@ export interface SecaoImportacaoJSON {
 export interface DocumentoMetadadosJSON {
   codigo: string;
   nome?: string;
-  titulo: string;
+  titulo?: string;
   revisao: string;
+  tipoDocumento?: string;
   idioma?: string;
   orgaoRegulador?: string;
   dataVigencia?: string;
@@ -178,7 +180,7 @@ export interface DocumentoMetadadosJSON {
 
 export interface ManualStructuredImportJSON {
   $schema?: string;
-  versaoSchema: string; // Ex: '1.0'
+  versaoSchema?: string; // Ex: '1.0'
   documento: DocumentoMetadadosJSON;
   secoes: SecaoImportacaoJSON[];
 }
