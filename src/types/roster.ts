@@ -203,3 +203,5 @@ export interface RosterDatabaseState {
   usuarios: UsuarioRoster[];
   auditoria: AuditoriaRoster[];
 }
+
+export const ROSTER_MODULE = true;

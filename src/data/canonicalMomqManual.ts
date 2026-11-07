@@ -4,7 +4,7 @@
  * Utilizado para testes de homologação operacional de ponta a ponta (Início, Meio e Fim)
  */
 
-import { ManualStructuredImportJSON } from '../types/aiKnowledgeBase';
+import { ManualStructuredImportJSON } from '../types/aiKnowledgeBase.ts';
 
 export const CANONICAL_MOMQ_MNT001_REV14: ManualStructuredImportJSON = {
   versaoSchema: '1.0',

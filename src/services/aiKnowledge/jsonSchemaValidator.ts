@@ -3,7 +3,7 @@
  * Acervo de IA — QualyQuest SGQ
  */
 
-import { ManualStructuredImportJSON, SecaoImportacaoJSON } from '../../types/aiKnowledgeBase';
+import type { ManualStructuredImportJSON, SecaoImportacaoJSON } from '../../types/aiKnowledgeBase.ts';
 
 export interface ResultadoValidacaoJSON {
   valido: boolean;

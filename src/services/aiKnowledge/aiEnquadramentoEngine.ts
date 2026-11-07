@@ -4,9 +4,9 @@
  * Acervo de IA — QualyQuest SGQ
  */
 
-import { FragmentoDocumento, ResultadoEnquadramentoNC } from '../../types/aiKnowledgeBase';
-import { fragmentsRepository } from './fragmentsRepository';
-import { extrairTokensBusca } from './documentIngestionPipeline';
+import type { FragmentoDocumento, ResultadoEnquadramentoNC } from '../../types/aiKnowledgeBase.ts';
+import { fragmentsRepository } from './fragmentsRepository.ts';
+import { extrairTokensBusca } from './documentIngestionPipeline.ts';
 
 export interface ScoreFragmento {
   fragmento: FragmentoDocumento;

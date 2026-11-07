@@ -253,3 +253,5 @@ export interface ComparativoRevisoesManual {
   totalFragmentosNovo: number;
   dataComparacao: string;
 }
+
+export const AI_KNOWLEDGE_BASE_MODULE = true;

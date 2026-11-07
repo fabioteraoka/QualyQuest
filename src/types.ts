@@ -1,4 +1,4 @@
-import { VinculoImpactoMro } from './types/impactoMro';
+import { VinculoImpactoMro } from './types/impactoMro.ts';
 
 export type TipoAcao = 'Corretiva' | 'Preventiva' | 'Oportunidade de Melhoria';
 
@@ -400,7 +400,7 @@ export interface NCRecord {
   origemImpactoMro?: VinculoImpactoMro;
 }
 
-export * from './types/impactoMro';
+export * from './types/impactoMro.ts';
 
 export interface VinculoRequisitoCliente {
   clienteId: string;
@@ -615,7 +615,7 @@ export interface ManualRecord {
   }>;
 }
 
-export * from './types/aiKnowledgeBase';
+export * from './types/aiKnowledgeBase.ts';
 
 export interface ConsultaManualResposta {
   pergunta: string;
@@ -3217,7 +3217,7 @@ export interface SystemDesignerRule {
   exemploPratico: string;
 }
 
-export * from './types/auditRequirements';
+export * from './types/auditRequirements.ts';
 
 // =========================================================================
 // AUDITORIA E RECONCILIAÇÃO DE DUPLICIDADES NO CONTROLE DOCUMENTAL
@@ -3359,7 +3359,7 @@ export interface ResultadoReconstrucaoIndices {
   mensagem: string;
 }
 
-export * from './types/roster';
+export * from './types/roster.ts';
 
 
 

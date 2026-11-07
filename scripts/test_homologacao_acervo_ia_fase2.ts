@@ -16,22 +16,22 @@
  */
 
 import { jsPDF } from 'jspdf';
-import { calcularHashSHA256 } from '../src/utils/hashUtils';
+import { calcularHashSHA256 } from '../src/utils/hashUtils.ts';
 import {
   processarPipelineIngestaoDocumento,
   obterTarefaIngestao,
   retomarTarefaIngestao,
   listarTarefasIngestao,
-} from '../src/services/aiKnowledge/documentIngestionPipeline';
-import { fragmentsRepository, FragmentsRepository } from '../src/services/aiKnowledge/fragmentsRepository';
+} from '../src/services/aiKnowledge/documentIngestionPipeline.ts';
+import { fragmentsRepository, FragmentsRepository } from '../src/services/aiKnowledge/fragmentsRepository.ts';
 import {
   pesquisarFragmentosHibrido,
   enquadrarNCNoAcervo,
-} from '../src/services/aiKnowledge/aiEnquadramentoEngine';
+} from '../src/services/aiKnowledge/aiEnquadramentoEngine.ts';
 import {
   CANONICAL_MOMQ_MNT001_REV14,
   CANONICAL_MOMQ_MNT001_REV15,
-} from '../src/data/canonicalMomqManual';
+} from '../src/data/canonicalMomqManual.ts';
 import * as fs from 'fs';
 
 interface ResultadoTeste {

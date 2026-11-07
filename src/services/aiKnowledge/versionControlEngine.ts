@@ -3,13 +3,13 @@
  * Acervo de IA — QualyQuest SGQ
  */
 
-import {
+import type {
   FragmentoDocumento,
   RegistroHistoricoRevisaoManual,
   ComparativoRevisoesManual,
-} from '../../types/aiKnowledgeBase';
-import { ManualRecord } from '../../types';
-import { fragmentsRepository } from './fragmentsRepository';
+} from '../../types/aiKnowledgeBase.ts';
+import type { ManualRecord } from '../../types.ts';
+import { fragmentsRepository } from './fragmentsRepository.ts';
 
 /**
  * Normaliza string de revisão (ex: "Rev. 14" -> "14", "Emenda 07" -> "7")

@@ -1,6 +1,6 @@
 [
   {
-    "id": "task_ingest_doc_pdf_sample_extract_1793955072824",
+    "id": "task_ingest_doc_pdf_sample_extract_1794046833104",
     "organizationId": "org_impacto_aviation",
     "documentoId": "doc_pdf_sample_extract",
     "nomeArquivo": "MOMQ_MNT001_Amostra_Oficial.pdf",
@@ -15,12 +15,12 @@
     "fragmentosTotais": 31,
     "status": "CONCLUIDO",
     "avisos": [],
-    "iniciadoEm": "2026-11-06T08:51:12.825Z",
-    "atualizadoEm": "2026-11-06T08:51:12.876Z",
+    "iniciadoEm": "2026-11-07T10:20:33.104Z",
+    "atualizadoEm": "2026-11-07T10:20:33.150Z",
     "canResume": true,
     "lastSuccessfulChunkIndex": 30,
     "relatorioCobertura": {
-      "id": "cov_doc_pdf_sample_extract_1793955072875",
+      "id": "cov_doc_pdf_sample_extract_1794046833150",
       "documentoId": "doc_pdf_sample_extract",
       "codigo": "PDF-SAMPLE",
       "revisao": "Rev. 01",
@@ -45,15 +45,15 @@
       "statusEtapa": "VALIDACAO_APROVADA",
       "tabelasExtraidasTotal": 0,
       "ocrAplicado": false,
-      "tempoProcessamentoMs": 51,
-      "timestamp": "2026-11-06T08:51:12.875Z"
+      "tempoProcessamentoMs": 46,
+      "timestamp": "2026-11-07T10:20:33.150Z"
     },
-    "concluidoEm": "2026-11-06T08:51:12.876Z"
+    "concluidoEm": "2026-11-07T10:20:33.150Z"
   },
   {
-    "id": "task_ingest_doc_MOMQ MNT-001_1793955072876_1793955072876",
+    "id": "task_ingest_doc_MOMQ MNT-001_1794046833151_1794046833151",
     "organizationId": "org_impacto_aviation",
-    "documentoId": "doc_MOMQ MNT-001_1793955072876",
+    "documentoId": "doc_MOMQ MNT-001_1794046833151",
     "nomeArquivo": "MOMQ_MNT-001_Rev14_Oficial_IMPACTO.json",
     "tamanhoBytes": 19788,
     "formato": "JSON",
@@ -66,12 +66,12 @@
     "fragmentosTotais": 18,
     "status": "CONCLUIDO",
     "avisos": [],
-    "iniciadoEm": "2026-11-06T08:51:12.876Z",
-    "atualizadoEm": "2026-11-06T08:51:12.917Z",
+    "iniciadoEm": "2026-11-07T10:20:33.151Z",
+    "atualizadoEm": "2026-11-07T10:20:33.192Z",
     "canResume": true,
     "lastSuccessfulChunkIndex": 17,
     "relatorioCobertura": {
-      "id": "cov_man_momq_mnt-001_1793955072917",
+      "id": "cov_man_momq_mnt-001_1794046833192",
       "documentoId": "man_momq_mnt-001",
       "codigo": "MOMQ MNT-001",
       "revisao": "Rev. 14",
@@ -95,12 +95,12 @@
       "tabelasExtraidasTotal": 2,
       "ocrAplicado": false,
       "tempoProcessamentoMs": 41,
-      "timestamp": "2026-11-06T08:51:12.917Z"
+      "timestamp": "2026-11-07T10:20:33.192Z"
     },
-    "concluidoEm": "2026-11-06T08:51:12.917Z"
+    "concluidoEm": "2026-11-07T10:20:33.192Z"
   },
   {
-    "id": "task_ingest_doc_momq_retomada_restart_test_1793955072920",
+    "id": "task_ingest_doc_momq_retomada_restart_test_1794046833195",
     "organizationId": "org_impacto_aviation",
     "documentoId": "doc_momq_retomada_restart_test",
     "nomeArquivo": "MOMQ_Teste_Interrupcao.json",
@@ -115,13 +115,13 @@
     "fragmentosTotais": 18,
     "status": "CONCLUIDO",
     "avisos": [],
-    "iniciadoEm": "2026-11-06T08:51:12.920Z",
-    "atualizadoEm": "2026-11-06T08:51:12.951Z",
+    "iniciadoEm": "2026-11-07T10:20:33.195Z",
+    "atualizadoEm": "2026-11-07T10:20:33.246Z",
     "canResume": true,
     "lastSuccessfulChunkIndex": 17,
     "erroDetalhe": "Simulação de interrupção na etapa 3 (Extração integral)",
     "relatorioCobertura": {
-      "id": "cov_man_momq_mnt-001_1793955072951",
+      "id": "cov_man_momq_mnt-001_1794046833246",
       "documentoId": "man_momq_mnt-001",
       "codigo": "MOMQ MNT-001",
       "revisao": "Rev. 14",
@@ -144,15 +144,15 @@
       "statusEtapa": "VALIDACAO_APROVADA",
       "tabelasExtraidasTotal": 2,
       "ocrAplicado": false,
-      "tempoProcessamentoMs": 30,
-      "timestamp": "2026-11-06T08:51:12.951Z"
+      "tempoProcessamentoMs": 50,
+      "timestamp": "2026-11-07T10:20:33.246Z"
     },
-    "concluidoEm": "2026-11-06T08:51:12.951Z"
+    "concluidoEm": "2026-11-07T10:20:33.246Z"
   },
   {
-    "id": "task_ingest_doc_MOMQ MNT-001_1793955072956_1793955072956",
+    "id": "task_ingest_doc_MOMQ MNT-001_1794046833251_1794046833251",
     "organizationId": "org_impacto_aviation",
-    "documentoId": "doc_MOMQ MNT-001_1793955072956",
+    "documentoId": "doc_MOMQ MNT-001_1794046833251",
     "nomeArquivo": "MOMQ_MNT-001_Rev15_Oficial_IMPACTO.json",
     "tamanhoBytes": 20803,
     "formato": "JSON",
@@ -165,12 +165,12 @@
     "fragmentosTotais": 19,
     "status": "CONCLUIDO",
     "avisos": [],
-    "iniciadoEm": "2026-11-06T08:51:12.956Z",
-    "atualizadoEm": "2026-11-06T08:51:13.018Z",
+    "iniciadoEm": "2026-11-07T10:20:33.251Z",
+    "atualizadoEm": "2026-11-07T10:20:33.312Z",
     "canResume": true,
     "lastSuccessfulChunkIndex": 18,
     "relatorioCobertura": {
-      "id": "cov_man_momq_mnt-001_1793955073018",
+      "id": "cov_man_momq_mnt-001_1794046833312",
       "documentoId": "man_momq_mnt-001",
       "codigo": "MOMQ MNT-001",
       "revisao": "Rev. 15",
@@ -193,9 +193,9 @@
       "statusEtapa": "VALIDACAO_APROVADA",
       "tabelasExtraidasTotal": 2,
       "ocrAplicado": false,
-      "tempoProcessamentoMs": 62,
-      "timestamp": "2026-11-06T08:51:13.018Z"
+      "tempoProcessamentoMs": 61,
+      "timestamp": "2026-11-07T10:20:33.312Z"
     },
-    "concluidoEm": "2026-11-06T08:51:13.018Z"
+    "concluidoEm": "2026-11-07T10:20:33.312Z"
   }
 ]

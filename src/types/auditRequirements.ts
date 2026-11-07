@@ -9,7 +9,7 @@
  * - Campo próprio para Decisão Organizacional (Manter, Implementar, Melhorar, etc.).
  */
 
-import { EvidenciaAuditoriaItem } from '../types';
+import { EvidenciaAuditoriaItem } from '../types.ts';
 
 export type SituacaoAtendimentoRequisito =
   | 'ATENDIDO'                  // Existe evidência suficiente e aplicável
@@ -438,3 +438,5 @@ export interface PropostaPreparacaoRequisitoOutput {
     observacao?: string;
   };
 }
+
+export const AUDIT_REQUIREMENTS_MODULE = true;

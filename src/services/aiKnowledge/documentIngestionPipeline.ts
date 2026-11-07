@@ -3,7 +3,7 @@
  * Acervo de IA — QualyQuest SGQ
  */
 
-import {
+import type {
   FragmentoDocumento,
   RelatorioCoberturaDocumental,
   TarefaIngestaoDocumento,
@@ -11,10 +11,11 @@ import {
   ManualStructuredImportJSON,
   SecaoImportacaoJSON,
   TabelaEstruturada,
-} from '../../types/aiKnowledgeBase';
-import { ManualRecord, ManualCapitulo } from '../../types';
-import { validarSintaxeJSON, validarSchemaManualJSON } from './jsonSchemaValidator';
-import { fragmentsRepository } from './fragmentsRepository';
+} from '../../types/aiKnowledgeBase.ts';
+import type { ManualRecord, ManualCapitulo } from '../../types.ts';
+import { validarSintaxeJSON, validarSchemaManualJSON } from './jsonSchemaValidator.ts';
+import { fragmentsRepository } from './fragmentsRepository.ts';
+import { calcularHashSHA256 } from '../../utils/hashUtils.ts';
 
 // Versão do mecanismo de extração documental
 export const MECANISMO_EXTRACAO_VERSAO = 'v2.8-enterprise-chunker';
@@ -184,8 +185,6 @@ export function extrairTokensBusca(texto: string, contexto: string = ''): string
 
   return Array.from(unicos);
 }
-
-import { calcularHashSHA256 } from '../../utils/hashUtils';
 
 /**
  * Cria hash criptográfico SHA-256 canônico (64 hex caracteres) para integridade do conteúdo

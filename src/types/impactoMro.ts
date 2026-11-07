@@ -235,3 +235,5 @@ export interface VinculoImpactoMro {
   dataVinculo: string; // Data ISO em que o vínculo foi criado
   vinculadoPor?: string; // Auditor / usuário que realizou o vínculo
 }
+
+export const IMPACTO_MRO_MODULE = true;

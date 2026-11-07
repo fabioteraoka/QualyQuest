@@ -3,7 +3,7 @@
  * Acervo de IA — QualyQuest SGQ
  */
 
-import { FragmentoDocumento } from '../../types/aiKnowledgeBase';
+import type { FragmentoDocumento } from '../../types/aiKnowledgeBase.ts';
 
 const DB_NAME = 'QualyQuest_Fragments_DB';
 const DB_VERSION = 1;
