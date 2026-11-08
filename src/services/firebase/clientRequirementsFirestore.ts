@@ -13,6 +13,10 @@ import {
   ProgramaChecklistCliente,
   ControleCentralSGQ,
   RequisitoClienteItem,
+  TipoOrigemRequisito,
+  SituacaoAplicabilidadeImpacto,
+  AplicabilidadeContextualImpacto,
+  HistoricoAlteracaoRequisitoItem,
   AvaliacaoRequisitoCliente,
   ClientesControlesDashboardMetrics,
   MatrizCoberturaItem,
@@ -661,6 +665,10 @@ export async function saveRequisitoCliente(
   requisito: Partial<RequisitoClienteItem>,
   currentUser?: UserProfile | null
 ): Promise<string> {
+  if (currentUser?.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil de CONSULTA não possui autorização para criar ou editar requisitos.');
+  }
+
   const reqId = requisito.id || `REQ-${Date.now()}`;
   const now = new Date().toISOString();
 
@@ -688,6 +696,29 @@ export async function saveRequisitoCliente(
     observacoes: requisito.observacoes,
     createdAt: requisito.createdAt || now,
     updatedAt: now,
+
+    // --- FASE 1: Biblioteca Central de Requisitos Multi-Fontes ---
+    fonteOrigem: requisito.fonteOrigem || 'CONTRATUAL_CLIENTE',
+    fonteDocumentoNome: requisito.fonteDocumentoNome,
+    edicaoRevisaoFonte: requisito.edicaoRevisaoFonte,
+    dataVigenciaFonte: requisito.dataVigenciaFonte,
+    codigoReferenciaOriginal: requisito.codigoReferenciaOriginal,
+    perguntaAuditoria: requisito.perguntaAuditoria,
+    interpretacaoInterna: requisito.interpretacaoInterna,
+    procedimentoInternoRef: requisito.procedimentoInternoRef,
+    processoResponsavel: requisito.processoResponsavel,
+    responsavelValidacaoNome: requisito.responsavelValidacaoNome,
+    responsavelValidacaoUid: requisito.responsavelValidacaoUid,
+    dataUltimaValidacao: requisito.dataUltimaValidacao,
+    aplicabilidadeContexto: requisito.aplicabilidadeContexto || {
+      situacao: 'APLICAVEL',
+    },
+    isIosaSetorial: requisito.isIosaSetorial,
+    contratoOuEscopoIncorporacaoIosa: requisito.contratoOuEscopoIncorporacaoIosa,
+    historicoAlteracoesRequisito: requisito.historicoAlteracoesRequisito || [],
+    totalAuditoriasVinculadasCount: requisito.totalAuditoriasVinculadasCount,
+    ultimaAuditoriaData: requisito.ultimaAuditoriaData,
+    auditoriasRelacionadasIds: requisito.auditoriasRelacionadasIds,
   };
 
   const docRef = doc(db, 'organizations', organizationId, 'client_requirements', reqId);
@@ -697,12 +728,77 @@ export async function saveRequisitoCliente(
     entity: 'CLIENT_REQUIREMENT',
     entityId: reqId,
     action: 'UPDATE',
-    summary: `Requisito de cliente salvo: ${record.numeroItem} - ${record.tituloCurto}`,
+    summary: `Requisito mestre salvo [${record.fonteOrigem || 'GERAL'}]: ${record.numeroItem} - ${record.tituloCurto}`,
     changedByUid: currentUser?.uid || auth.currentUser?.uid || 'system',
     changedByEmail: currentUser?.displayName || auth.currentUser?.email || 'SGQ Auditor',
   });
 
   return reqId;
+}
+
+/**
+ * Atualiza formalmente a aplicabilidade de um requisito mestre com justificativa obrigatória e histórico rastreável
+ */
+export async function updateAplicabilidadeRequisitoMestre(
+  organizationId: string,
+  requisitoId: string,
+  novaAplicabilidade: AplicabilidadeContextualImpacto,
+  requisitoAtual: RequisitoClienteItem,
+  currentUser?: UserProfile | null
+): Promise<void> {
+  if (currentUser?.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil de CONSULTA não pode homologar aplicabilidade.');
+  }
+
+  if (
+    (novaAplicabilidade.situacao === 'NAO_APLICAVEL' || novaAplicabilidade.situacao === 'PARCIALMENTE_APLICAVEL') &&
+    (!novaAplicabilidade.justificativaFormal || !novaAplicabilidade.justificativaFormal.trim())
+  ) {
+    throw new Error('Justificativa formal é obrigatória para requisitos Não Aplicáveis ou Parcialmente Aplicáveis.');
+  }
+
+  const now = new Date().toISOString();
+  const valorAnterior = requisitoAtual.aplicabilidadeContexto?.situacao || 'APLICAVEL';
+
+  const novoHistoricoItem: HistoricoAlteracaoRequisitoItem = {
+    id: `HIST-${Date.now()}`,
+    dataHora: now,
+    usuarioNome: currentUser?.displayName || auth.currentUser?.email || 'Gestor SGQ',
+    usuarioUid: currentUser?.uid || auth.currentUser?.uid || 'system',
+    campoAlterado: 'aplicabilidadeContexto.situacao',
+    valorAnterior,
+    valorNovo: novaAplicabilidade.situacao,
+    justificativa: novaAplicabilidade.justificativaFormal || 'Atualização da aplicabilidade pelo SGQ',
+    revisaoFonteRelacionada: requisitoAtual.edicaoRevisaoFonte || requisitoAtual.fonteDocumentoNome,
+  };
+
+  const historicoAtualizado = [
+    novoHistoricoItem,
+    ...(requisitoAtual.historicoAlteracoesRequisito || []),
+  ];
+
+  const payload: Partial<RequisitoClienteItem> = {
+    aplicabilidadeContexto: {
+      ...novaAplicabilidade,
+      aprovadoPorNome: currentUser?.displayName || 'Gestor SGQ',
+      aprovadoPorUid: currentUser?.uid || 'system',
+      dataAprovacao: now,
+    },
+    historicoAlteracoesRequisito: historicoAtualizado,
+    updatedAt: now,
+  };
+
+  const docRef = doc(db, 'organizations', organizationId, 'client_requirements', requisitoId);
+  await setDoc(docRef, sanitizeForFirestore(payload), { merge: true });
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'CLIENT_REQUIREMENT',
+    entityId: requisitoId,
+    action: 'UPDATE',
+    summary: `Aplicabilidade alterada de ${valorAnterior} para ${novaAplicabilidade.situacao}: ${requisitoAtual.numeroItem}`,
+    changedByUid: currentUser?.uid || auth.currentUser?.uid || 'system',
+    changedByEmail: currentUser?.displayName || auth.currentUser?.email || 'SGQ Auditor',
+  });
 }
 
 export async function deleteRequisitoCliente(

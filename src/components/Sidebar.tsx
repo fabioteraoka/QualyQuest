@@ -8,6 +8,7 @@ import {
   Sparkles, 
   Plus, 
   ShieldCheck,
+  BookMarked,
   Activity,
   LogIn,
   X,
@@ -317,6 +318,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           label: 'Auditoria Inteligente & Clientes',
           aliases: ['clientes-requisitos'],
           icon: <Sparkles className="w-4 h-4 text-purple-400" />,
+        },
+        {
+          id: 'biblioteca-requisitos',
+          label: 'Biblioteca de Requisitos',
+          aliases: ['requisitos-mestre', 'requisitos-normativos'],
+          icon: <BookMarked className="w-4 h-4 text-emerald-400" />,
+          badge: 'Multi-Fontes',
+          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
         },
         {
           id: 'manuais',

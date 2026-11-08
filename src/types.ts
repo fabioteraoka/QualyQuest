@@ -2628,6 +2628,47 @@ export interface ControleCentralSGQ {
   updatedAt: string;
 }
 
+export type TipoOrigemRequisito =
+  | 'REGULATORIO_ANAC'      // ANAC — RBAC 145 e documentos complementares
+  | 'REGULATORIO_EASA'      // EASA — Part-145
+  | 'PADRAO_SETORIAL_IOSA'  // IOSA — ISM MNT / ORG (Padrão setorial IATA de operadores aéreos)
+  | 'CONTRATUAL_CLIENTE'    // Clientes contratuais (Avion Express, Kalitta, Swiss, Atlas, Placar, etc.)
+  | 'INTERNO_IMPACTO'       // Requisitos internos da IMPACTO (MOMQ, MPO, ITs)
+  | 'BOA_PRATICA_REFERENCIA'; // Referência técnica ou boa prática recomendada
+
+export type SituacaoAplicabilidadeImpacto =
+  | 'APLICAVEL'
+  | 'PARCIALMENTE_APLICAVEL'
+  | 'NAO_APLICAVEL'
+  | 'AGUARDANDO_AVALIACAO';
+
+export interface HistoricoAlteracaoRequisitoItem {
+  id: string;
+  dataHora: string;
+  usuarioNome: string;
+  usuarioUid: string;
+  campoAlterado: string;
+  valorAnterior?: string;
+  valorNovo: string;
+  justificativa?: string;
+  revisaoFonteRelacionada?: string;
+}
+
+export interface AplicabilidadeContextualImpacto {
+  situacao: SituacaoAplicabilidadeImpacto;
+  justificativaFormal?: string;
+  clientesAplicaveis?: string[];
+  contratosAplicaveis?: string[];
+  basesAplicaveis?: string[];
+  escoposAplicaveis?: string[];
+  escoposOperacionaisAplicaveis?: string[];
+  modelosAeronave?: string[];
+  modelosAeronaveAplicaveis?: string[];
+  aprovadoPorNome?: string;
+  aprovadoPorUid?: string;
+  dataAprovacao?: string;
+}
+
 export interface RequisitoClienteItem {
   id: string;
   organizationId: string;
@@ -2642,6 +2683,7 @@ export interface RequisitoClienteItem {
   aplicabilidadeRegras: {
     basesAplicaveis?: string[];
     tiposEstacao?: string[];
+    modelosAeronave?: string[];
     requerRII?: boolean;
     requerETOPS?: boolean;
     justificativaNaoAplicavelPadrao?: string;
@@ -2659,7 +2701,38 @@ export interface RequisitoClienteItem {
   observacoes?: string;
   createdAt: string;
   updatedAt: string;
+
+  // --- FASE 1: Biblioteca Central de Requisitos Multi-Fontes ---
+  fonteOrigem?: TipoOrigemRequisito;
+  fonteDocumentoNome?: string; // Ex: 'ANAC RBAC 145 Emenda 07', 'IATA ISM Ed. 16', 'MOMQ MNT-001'
+  edicaoRevisaoFonte?: string; // Ex: 'Emenda 07', 'Edição 16', 'Rev. 04'
+  dataVigenciaFonte?: string; // YYYY-MM-DD
+  codigoReferenciaOriginal?: string; // Ex: '145.109(a)', 'MNT 1.11.1', 'QA-14 Item 1'
+  perguntaAuditoria?: string;
+  interpretacaoInterna?: string;
+  procedimentoInternoRef?: string; // Ex: 'MOMQ Seção 3.4.2'
+  processoResponsavel?: string; // Ex: 'Garantia da Qualidade', 'Manutenção de Linha', 'Almoxarifado'
+  responsavelValidacaoNome?: string;
+  responsavelValidacaoUid?: string;
+  dataUltimaValidacao?: string;
+
+  // Aplicabilidade Contextual à IMPACTO
+  aplicabilidadeContexto?: AplicabilidadeContextualImpacto;
+
+  // Governança IOSA: Requisitos IOSA não são obrigação regulatória primária automática da IMPACTO
+  isIosaSetorial?: boolean;
+  contratoOuEscopoIncorporacaoIosa?: string;
+
+  // Histórico Rastreável de Alterações
+  historicoAlteracoesRequisito?: HistoricoAlteracaoRequisitoItem[];
+
+  // Métricas de Relação com Auditorias Anteriores
+  totalAuditoriasVinculadasCount?: number;
+  ultimaAuditoriaData?: string;
+  auditoriasRelacionadasIds?: string[];
 }
+
+export type RequisitoMestreSGQ = RequisitoClienteItem;
 
 export interface EvidenciaRequisitoItem {
   id: string;

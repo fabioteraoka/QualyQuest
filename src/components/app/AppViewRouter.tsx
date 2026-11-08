@@ -66,6 +66,7 @@ import { ClientAuditsManagementView } from '../ClientAuditsManagementView';
 import { FerramentasMetrologiaView } from '../FerramentasMetrologiaView';
 import { SmartImportMigrationView } from '../SmartImportMigrationView';
 import { SmartAuditView } from '../SmartAuditView';
+import { RequirementsLibraryView } from '../RequirementsLibraryView';
 import { SystemDesignerOfficialView } from '../SystemDesignerOfficialView';
 import { RoosterModule } from '../RoosterModule';
 
@@ -953,6 +954,23 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           onSaveProgram={async (prog) => {
             props.setProgramasClientes((prev) => [prog, ...prev.filter((p) => p.id !== prog.id)]);
           }}
+          onNavigateToTab={(tab) => setActiveTab(tab as any)}
+        />
+      );
+
+    case 'biblioteca-requisitos':
+    case 'requisitos-mestre':
+    case 'requisitos-normativos':
+      return (
+        <RequirementsLibraryView
+          requisitos={props.requisitosClientes}
+          setRequisitos={props.setRequisitosClientes}
+          clientes={props.clientesExternos}
+          bases={props.basesOperacionais}
+          controles={props.controlesCentrais}
+          programas={props.programasClientes}
+          activeOrganization={props.activeOrganization}
+          userProfile={props.userProfile}
           onNavigateToTab={(tab) => setActiveTab(tab as any)}
         />
       );
