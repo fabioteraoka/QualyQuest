@@ -2702,15 +2702,16 @@ export interface RequisitoClienteItem {
   createdAt: string;
   updatedAt: string;
 
-  // --- FASE 1: Biblioteca Central de Requisitos Multi-Fontes ---
+  // --- FASE 1 & FASE 1.2: Biblioteca Central de Requisitos Multi-Fontes ---
   fonteOrigem?: TipoOrigemRequisito;
-  entidadeEmissora?: string; // Ex: 'ANAC', 'EASA', 'IATA', 'Kalitta Air', 'Atlas Air', 'IMPACTO'
+  entidadeEmissora?: string; // Ex: 'ANAC', 'EASA', 'FAA', 'IATA', 'Kalitta Air', 'Atlas Air', 'IMPACTO'
   capituloSecaoSubitem?: string; // Ex: 'Seção 1 - General Operations', 'Subparte C - Requisitos Gerais'
   tipoRequisitoNormativo?: 'REGULATORIO' | 'CONTRATUAL' | 'PADRAO_SETORIAL' | 'INTERNO' | 'BOA_PRATICA';
   statusValidacaoConteudo?: 'VALIDADO' | 'PENDENTE_VALIDACAO' | 'AGUARDANDO_PROTOCOLO';
-  fonteDocumentoNome?: string; // Ex: 'ANAC RBAC 145 Emenda 07', 'IATA ISM Ed. 16', 'MOMQ MNT-001'
-  edicaoRevisaoFonte?: string; // Ex: 'Emenda 07', 'Edição 16', 'Rev. 04'
+  fonteDocumentoNome?: string; // Ex: 'ANAC RBAC 145 Emenda 09', 'IATA ISM Ed. 18 Rev 1', 'MOMQ MNT-001'
+  edicaoRevisaoFonte?: string; // Ex: 'Emenda 09', 'Edição 18 Rev 1', 'Rev. 08'
   dataVigenciaFonte?: string; // YYYY-MM-DD
+  dataPublicacao?: string; // Data de publicação original
   codigoReferenciaOriginal?: string; // Ex: '145.109(a)', 'MNT 1.11.1', 'QA-14 Item 1'
   perguntaAuditoria?: string;
   interpretacaoInterna?: string;
@@ -2719,6 +2720,18 @@ export interface RequisitoClienteItem {
   responsavelValidacaoNome?: string;
   responsavelValidacaoUid?: string;
   dataUltimaValidacao?: string;
+
+  // --- FASE 1.2: Rastreabilidade de Fontes Externas, Acesso e Atualização ---
+  idiomaOriginal?: 'PT_BR' | 'EN' | 'ES' | 'OUTRO';
+  urlOficialFonte?: string;
+  documentoOrigemIdentificacao?: string; // Código/Nome oficial do documento pesquisado
+  dataUltimaConsulta?: string; // ISO string ou YYYY-MM-DD da verificação
+  statusAcessoConteudo?: StatusAcessoConteudo;
+  statusValidacao?: StatusValidacaoRequisito;
+  justificativaAplicabilidade?: string;
+  tipoAcessoFonte?: TipoAcessoFonte;
+  atualizacaoPossivel?: boolean;
+  modalidadeAtualizacao?: 'AUTOMATICA_API_XML' | 'MANUAL_CONFERENCIA_PORTAL' | 'UPLOAD_ARQUIVO_NOVA_EDICAO';
 
   // Aplicabilidade Contextual à IMPACTO
   aplicabilidadeContexto?: AplicabilidadeContextualImpacto;
@@ -2735,6 +2748,29 @@ export interface RequisitoClienteItem {
   ultimaAuditoriaData?: string;
   auditoriasRelacionadasIds?: string[];
 }
+
+export type StatusAcessoConteudo =
+  | 'FONTE_IDENTIFICADA'
+  | 'CONTEUDO_EXTRAIDO'
+  | 'PENDENTE_VALIDACAO'
+  | 'VALIDADO_QUALIDADE'
+  | 'DESATUALIZADO'
+  | 'AGUARDANDO_DOCUMENTO'
+  | 'AGUARDANDO_ACESSO_AUTORIZADO'
+  | 'SUSPENSO';
+
+export type StatusValidacaoRequisito =
+  | 'PENDENTE_VALIDACAO'
+  | 'VALIDADO_QUALIDADE'
+  | 'REQUER_REVISAO'
+  | 'REJEITADO';
+
+export type TipoAcessoFonte =
+  | 'PUBLICA_AUTOMATICA'
+  | 'PUBLICA_MANUAL'
+  | 'PRIVADA_LICENCIADA'
+  | 'CLIENTE_ENVIO_PENDENTE'
+  | 'INTERNO_CONTROLADO';
 
 export type RequisitoMestreSGQ = RequisitoClienteItem;
 

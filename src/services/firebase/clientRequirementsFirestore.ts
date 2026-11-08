@@ -697,7 +697,7 @@ export async function saveRequisitoCliente(
     createdAt: requisito.createdAt || now,
     updatedAt: now,
 
-    // --- FASE 1: Biblioteca Central de Requisitos Multi-Fontes ---
+    // --- FASE 1 & FASE 1.2: Biblioteca Central de Requisitos Multi-Fontes ---
     fonteOrigem: requisito.fonteOrigem || 'CONTRATUAL_CLIENTE',
     entidadeEmissora: requisito.entidadeEmissora,
     capituloSecaoSubitem: requisito.capituloSecaoSubitem,
@@ -706,6 +706,7 @@ export async function saveRequisitoCliente(
     fonteDocumentoNome: requisito.fonteDocumentoNome,
     edicaoRevisaoFonte: requisito.edicaoRevisaoFonte,
     dataVigenciaFonte: requisito.dataVigenciaFonte,
+    dataPublicacao: requisito.dataPublicacao,
     codigoReferenciaOriginal: requisito.codigoReferenciaOriginal,
     perguntaAuditoria: requisito.perguntaAuditoria,
     interpretacaoInterna: requisito.interpretacaoInterna,
@@ -714,6 +715,19 @@ export async function saveRequisitoCliente(
     responsavelValidacaoNome: requisito.responsavelValidacaoNome,
     responsavelValidacaoUid: requisito.responsavelValidacaoUid,
     dataUltimaValidacao: requisito.dataUltimaValidacao,
+
+    // Rastreabilidade de Fontes Externas e Atualização (FASE 1.2)
+    idiomaOriginal: requisito.idiomaOriginal || 'PT_BR',
+    urlOficialFonte: requisito.urlOficialFonte,
+    documentoOrigemIdentificacao: requisito.documentoOrigemIdentificacao,
+    dataUltimaConsulta: requisito.dataUltimaConsulta || now,
+    statusAcessoConteudo: requisito.statusAcessoConteudo || 'CONTEUDO_EXTRAIDO',
+    statusValidacao: requisito.statusValidacao || 'VALIDADO_QUALIDADE',
+    justificativaAplicabilidade: requisito.justificativaAplicabilidade,
+    tipoAcessoFonte: requisito.tipoAcessoFonte || 'PUBLICA_MANUAL',
+    atualizacaoPossivel: requisito.atualizacaoPossivel !== undefined ? requisito.atualizacaoPossivel : true,
+    modalidadeAtualizacao: requisito.modalidadeAtualizacao || 'MANUAL_CONFERENCIA_PORTAL',
+
     aplicabilidadeContexto: requisito.aplicabilidadeContexto || {
       situacao: 'APLICAVEL',
     },
