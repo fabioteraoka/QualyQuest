@@ -9,6 +9,21 @@
     <meta property="og:description" content="Sistema Integrado de Gestão da Qualidade (SGQ) da Impacto Aviation MRO (RBAC 145 / EASA) para controle de Não Conformidades (RNC F 001-29), Auditorias de Clientes, Auditoria Inteligente por Requisitos com Resolução por Exceção, System Designer Permanente (ADRs) e Importação Inteligente (FASE 15)." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('qualyquest_theme_mode');
+          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (saved === 'dark' || (!saved && prefersDark)) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

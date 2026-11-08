@@ -43,6 +43,7 @@ import {
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
+import { ThemeToggle } from './common/ThemeToggle';
 
 export interface NavSubItem {
   id: string;
@@ -642,7 +643,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {/* System Info / User Profile Footer */}
-      <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 text-xs shrink-0">
+      <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 text-xs shrink-0 space-y-2">
+        {!isCompact && (
+          <div className="px-1">
+            <ThemeToggle variant="sidebar" />
+          </div>
+        )}
         {user ? (
           <div
             onClick={() => {

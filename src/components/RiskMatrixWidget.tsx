@@ -46,20 +46,20 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
     let bgClass = '';
     if (level === 'Crítico') {
       bgClass = isCurrent
-        ? 'bg-rose-700 text-white font-bold ring-2 ring-slate-900 shadow-sm'
-        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100';
+        ? 'bg-rose-700 text-white font-bold ring-2 ring-slate-900 dark:ring-white shadow-sm'
+        : 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-900/60 hover:bg-rose-100 hover:dark:bg-rose-900/40';
     } else if (level === 'Alto') {
       bgClass = isCurrent
-        ? 'bg-amber-600 text-white font-bold ring-2 ring-slate-900 shadow-sm'
-        : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100';
+        ? 'bg-amber-600 text-white font-bold ring-2 ring-slate-900 dark:ring-white shadow-sm'
+        : 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-900/60 hover:bg-amber-100 hover:dark:bg-amber-900/40';
     } else if (level === 'Médio') {
       bgClass = isCurrent
-        ? 'bg-yellow-500 text-slate-950 font-bold ring-2 ring-slate-900 shadow-sm'
-        : 'bg-yellow-50 text-yellow-900 border-yellow-200 hover:bg-yellow-100';
+        ? 'bg-yellow-500 text-slate-950 font-bold ring-2 ring-slate-900 dark:ring-white shadow-sm'
+        : 'bg-yellow-50 dark:bg-yellow-950/30 text-yellow-900 dark:text-yellow-200 border-yellow-200 dark:border-yellow-900/60 hover:bg-yellow-100 hover:dark:bg-yellow-900/40';
     } else {
       bgClass = isCurrent
-        ? 'bg-emerald-700 text-white font-bold ring-2 ring-slate-900 shadow-sm'
-        : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100';
+        ? 'bg-emerald-700 text-white font-bold ring-2 ring-slate-900 dark:ring-white shadow-sm'
+        : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-900/60 hover:bg-emerald-100 hover:dark:bg-emerald-900/40';
     }
 
     return { bgClass, level, code, isCurrent };
@@ -90,15 +90,15 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
   };
 
   return (
-    <div className="bg-white rounded-[10px] border border-slate-200 p-5 shadow-[0_1px_3px_0_rgba(15,23,42,0.04)]">
+    <div className="bg-white dark:bg-slate-900 rounded-[10px] border border-slate-200 dark:border-slate-800 p-5 shadow-[0_1px_3px_0_rgba(15,23,42,0.04)] dark:shadow-none transition-colors">
       {/* Header com destaque executivo ao resultado */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-100 dark:border-slate-800">
         <div>
           <div className="flex items-center gap-2">
             <h4 className={DS.typography.sectionTitle}>
               Matriz de Avaliação de Risco 5x5
             </h4>
-            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
               MOMQ / RBAC 145
             </span>
           </div>
@@ -111,7 +111,7 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
 
         {/* Destaque do Resultado Calculado (em modo formulário) */}
         {value?.codigo && (
-          <div className="p-2.5 rounded-[8px] bg-slate-900 text-white flex items-center gap-3 shrink-0">
+          <div className="p-2.5 rounded-[8px] bg-slate-900 dark:bg-slate-800 text-white flex items-center gap-3 shrink-0 border border-slate-800 dark:border-slate-700">
             <div className="text-left">
               <span className="text-[10px] uppercase font-semibold text-slate-400 block tracking-wider">
                 Nível de Risco
@@ -131,25 +131,25 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
       {/* Resumo Executivo das RNCs por Nível de Risco (quando records fornecidos) */}
       {records.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
-          <div className="p-2.5 rounded-lg border border-rose-200 bg-rose-50/70 text-center">
-            <span className="text-[11px] font-bold text-rose-800 uppercase block">Crítico</span>
-            <span className="text-xl font-extrabold text-rose-900">{dadosConsolidados.totalCriticos}</span>
+          <div className="p-2.5 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/30 text-center">
+            <span className="text-[11px] font-bold text-rose-800 dark:text-rose-300 uppercase block">Crítico</span>
+            <span className="text-xl font-extrabold text-rose-900 dark:text-rose-200">{dadosConsolidados.totalCriticos}</span>
           </div>
-          <div className="p-2.5 rounded-lg border border-amber-200 bg-amber-50/70 text-center">
-            <span className="text-[11px] font-bold text-amber-800 uppercase block">Alto</span>
-            <span className="text-xl font-extrabold text-amber-900">{dadosConsolidados.totalAltos}</span>
+          <div className="p-2.5 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/30 text-center">
+            <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 uppercase block">Alto</span>
+            <span className="text-xl font-extrabold text-amber-900 dark:text-amber-200">{dadosConsolidados.totalAltos}</span>
           </div>
-          <div className="p-2.5 rounded-lg border border-yellow-200 bg-yellow-50/70 text-center">
-            <span className="text-[11px] font-bold text-yellow-900 uppercase block">Médio</span>
-            <span className="text-xl font-extrabold text-yellow-950">{dadosConsolidados.totalMedios}</span>
+          <div className="p-2.5 rounded-lg border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50/70 dark:bg-yellow-950/30 text-center">
+            <span className="text-[11px] font-bold text-yellow-900 dark:text-yellow-300 uppercase block">Médio</span>
+            <span className="text-xl font-extrabold text-yellow-950 dark:text-yellow-100">{dadosConsolidados.totalMedios}</span>
           </div>
-          <div className="p-2.5 rounded-lg border border-emerald-200 bg-emerald-50/70 text-center">
-            <span className="text-[11px] font-bold text-emerald-800 uppercase block">Baixo</span>
-            <span className="text-xl font-extrabold text-emerald-900">{dadosConsolidados.totalBaixos}</span>
+          <div className="p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/70 dark:bg-emerald-950/30 text-center">
+            <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 uppercase block">Baixo</span>
+            <span className="text-xl font-extrabold text-emerald-900 dark:text-emerald-200">{dadosConsolidados.totalBaixos}</span>
           </div>
-          <div className="p-2.5 rounded-lg border border-slate-200 bg-slate-50 text-center col-span-2 sm:col-span-1">
-            <span className="text-[11px] font-bold text-slate-600 uppercase block">Sem Avaliação</span>
-            <span className="text-xl font-extrabold text-slate-700">{dadosConsolidados.totalSemAvaliacao}</span>
+          <div className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-850 text-center col-span-2 sm:col-span-1">
+            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase block">Sem Avaliação</span>
+            <span className="text-xl font-extrabold text-slate-700 dark:text-slate-200">{dadosConsolidados.totalSemAvaliacao}</span>
           </div>
         </div>
       )}
@@ -159,17 +159,17 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
         <table className="w-full text-center border-collapse min-w-[340px]">
           <thead>
             <tr>
-              <th className="p-2.5 text-xs font-semibold text-slate-600 bg-slate-50 border border-slate-200 w-32 text-left">
+              <th className="p-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 w-32 text-left">
                 Severidade \ Prob.
               </th>
               {PROBABILIDADES.map((p) => (
                 <th
                   key={p.valor}
-                  className="p-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200"
+                  className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800"
                   title={p.desc}
                 >
                   <span className="font-bold">{p.valor}</span>
-                  <span className="hidden sm:block text-[10px] text-slate-500 font-normal truncate max-w-[80px]">
+                  <span className="hidden sm:block text-[10px] text-slate-500 dark:text-slate-400 font-normal truncate max-w-[80px]">
                     {p.label.split('-')[1] || p.label}
                   </span>
                 </th>
@@ -180,11 +180,11 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
             {SEVERIDADES.map((s) => (
               <tr key={s.valor}>
                 <td
-                  className="p-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 text-left"
+                  className="p-2 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-850/80 border border-slate-200 dark:border-slate-800 text-left"
                   title={s.desc}
                 >
                   <span className="font-bold">{s.valor}</span>
-                  <span className="text-[10px] text-slate-500 font-normal hidden sm:inline ml-1">
+                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal hidden sm:inline ml-1">
                     {s.label.split('-')[1] || s.label}
                   </span>
                 </td>
@@ -198,7 +198,7 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
                     <td
                       key={p.valor}
                       onClick={() => handleCellClick(s.valor, p.valor)}
-                      className={`p-2 border border-slate-200 transition-colors ${bgClass} ${
+                      className={`p-2 border border-slate-200 dark:border-slate-800 transition-colors ${bgClass} ${
                         isClickable ? 'cursor-pointer hover:opacity-90' : ''
                       }`}
                       title={`Posição ${code} (${level}): ${count} RNC(s) registradas. Clique para detalhar.`}
@@ -206,11 +206,11 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
                       <div className="flex flex-col items-center justify-center min-h-[44px]">
                         <span className="text-xs font-bold">{code}</span>
                         {count > 0 ? (
-                          <span className="mt-1 px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-extrabold shadow-xs">
+                          <span className="mt-1 px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-[10px] font-extrabold shadow-xs">
                             {count} RNC{count > 1 ? 's' : ''}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400 mt-1">0</span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">0</span>
                         )}
                         {isCurrent && !count && (
                           <span className="text-[10px] font-bold opacity-90 mt-0.5">✓</span>
@@ -226,7 +226,7 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
       </div>
 
       {/* Legenda de Risco Corporativa */}
-      <div className="flex items-center justify-between text-xs text-slate-500 mt-3 pt-3 border-t border-slate-100 flex-wrap gap-2">
+      <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className="flex items-center gap-1.5 font-medium">
             <span className="w-2.5 h-2.5 rounded-[2px] bg-rose-700"></span> Crítico
@@ -241,17 +241,17 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
             <span className="w-2.5 h-2.5 rounded-[2px] bg-emerald-700"></span> Baixo
           </span>
         </div>
-        <span className="text-[11px] text-slate-400">
-          Total de RNCs avaliadas: <strong>{dadosConsolidados.totalRNCsAvaliadas}</strong> de <strong>{records.length}</strong>
+        <span className="text-[11px] text-slate-400 dark:text-slate-500">
+          Total de RNCs avaliadas: <strong className="text-slate-700 dark:text-slate-300">{dadosConsolidados.totalRNCsAvaliadas}</strong> de <strong className="text-slate-700 dark:text-slate-300">{records.length}</strong>
         </span>
       </div>
 
       {/* Modal de Detalhamento das RNCs da Célula Clicada */}
       {modalCelulaAberta && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[85vh] text-slate-800 dark:text-slate-100">
             {/* Topo do Modal */}
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/60">
               <div className="flex items-center gap-2.5">
                 <span className={`px-2.5 py-1 rounded-lg text-xs font-bold text-white ${
                   modalCelulaAberta.nivel === 'Crítico' ? 'bg-rose-700' :
@@ -261,10 +261,10 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
                   {modalCelulaAberta.codigo} • Risco {modalCelulaAberta.nivel}
                 </span>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                     RNCs na Célula {modalCelulaAberta.codigo} (Sev {modalCelulaAberta.severidade} x Prob {modalCelulaAberta.probabilidade})
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
                     {modalCelulaAberta.quantidade} registro{modalCelulaAberta.quantidade > 1 ? 's' : ''} mapeado{modalCelulaAberta.quantidade > 1 ? 's' : ''} nesta classificação
                   </p>
                 </div>
@@ -272,7 +272,7 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
 
               <button
                 onClick={() => setModalCelulaAberta(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -285,15 +285,15 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
                 return (
                   <div
                     key={rnc.id}
-                    className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition flex flex-col gap-1.5"
+                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-50 dark:hover:bg-slate-800/70 transition flex flex-col gap-1.5"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white border border-slate-300 text-slate-800">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200">
                           {rnc.numero}
                         </span>
-                        <span className="text-xs font-medium text-slate-500">
-                          Setor: <strong>{rnc.setor || 'Geral'}</strong>
+                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                          Setor: <strong className="text-slate-700 dark:text-slate-200">{rnc.setor || 'Geral'}</strong>
                         </span>
                       </div>
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold border ${corStatus.bg} ${corStatus.text}`}>
@@ -301,7 +301,7 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
                       </span>
                     </div>
 
-                    <p className="text-xs text-slate-800 font-medium line-clamp-2">
+                    <p className="text-xs text-slate-800 dark:text-slate-200 font-medium line-clamp-2">
                       {rnc.titulo}
                     </p>
                   </div>
@@ -310,10 +310,10 @@ export const RiskMatrixWidget: React.FC<RiskMatrixWidgetProps> = ({
             </div>
 
             {/* Rodapé do Modal */}
-            <div className="p-3 border-t border-slate-200 bg-slate-50 flex justify-end">
+            <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 flex justify-end">
               <button
                 onClick={() => setModalCelulaAberta(null)}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 transition"
+                className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:bg-slate-800 hover:dark:bg-white transition cursor-pointer"
               >
                 Fechar
               </button>

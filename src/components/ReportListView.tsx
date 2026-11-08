@@ -229,23 +229,25 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
   return (
     <div className="space-y-6">
       {/* Header Bar */}
-      <div className="bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 transition-colors">
         <div>
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 tracking-tight">
             Relatório de Não Conformidades & Ações Corretivas
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Visão gerencial consolidada com exclusão de registros, exportação completa para Excel (.xlsx) e controle de fluxo.
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* Toggle View Mode */}
-          <div className="flex items-center bg-slate-100/80 p-1 rounded-xl border border-slate-200/70 text-xs shrink-0">
+          <div className="flex items-center bg-slate-100/80 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200/70 dark:border-slate-700 text-xs shrink-0">
             <button
               onClick={() => setViewMode('tabela')}
               className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-bold transition-all ${
-                viewMode === 'tabela' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/50' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'tabela' 
+                  ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 shadow-xs border border-slate-200/50 dark:border-slate-700' 
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
               <TableIcon className="w-3.5 h-3.5" />
@@ -254,7 +256,9 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
             <button
               onClick={() => setViewMode('kanban')}
               className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg font-bold transition-all ${
-                viewMode === 'kanban' ? 'bg-white text-indigo-700 shadow-xs border border-slate-200/50' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'kanban' 
+                  ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 shadow-xs border border-slate-200/50 dark:border-slate-700' 
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
               }`}
             >
               <Kanban className="w-3.5 h-3.5" />
@@ -265,7 +269,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
           {/* Quick Excel Export */}
           <button
             onClick={handleQuickExcel}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-100 transition-all hover:scale-[1.02] cursor-pointer"
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-md shadow-emerald-950/20 transition-all hover:scale-[1.02] cursor-pointer"
             title="Exportar base completa para planilha Excel (.xlsx)"
           >
             <FileSpreadsheet className="w-4 h-4 shrink-0" />
@@ -276,16 +280,16 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
           {/* Advanced Export Options Modal */}
           <button
             onClick={() => setIsExportModalOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
             title="Opções de exportação (Excel, CSV, JSON)"
           >
-            <Download className="w-4 h-4 text-emerald-700 shrink-0" />
+            <Download className="w-4 h-4 text-emerald-700 dark:text-emerald-400 shrink-0" />
             <span className="hidden sm:inline">Exportação</span>
           </button>
 
           <button
             onClick={handlePrintConsolidated}
-            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+            className="flex items-center space-x-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold transition-colors cursor-pointer"
             title="Imprimir visualização"
           >
             <Printer className="w-4 h-4 shrink-0" />
@@ -294,7 +298,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
 
           <button
             onClick={onNewNC}
-            className="flex items-center space-x-1.5 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-lg shadow-indigo-100 transition-all hover:scale-[1.02] cursor-pointer"
+            className="flex items-center space-x-1.5 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-lg shadow-indigo-950/30 transition-all hover:scale-[1.02] cursor-pointer"
           >
             <PlusCircle className="w-4 h-4 shrink-0" />
             <span>+ Nova NC</span>
@@ -341,7 +345,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
       )}
 
       {/* Filter Bar */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-3 transition-colors">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
           {/* Search */}
           <div className="sm:col-span-2 relative">
@@ -351,7 +355,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por Nº NC, título, norma, auditor ou descrição..."
-              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-slate-50/50"
+              className="w-full text-xs pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:outline-none bg-slate-50/50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500"
             />
           </div>
 
@@ -360,7 +364,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-slate-700"
+              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 font-medium text-slate-700 dark:text-slate-200"
             >
               <option value="ALL">Status: Todos</option>
               <option value="Aberta">Aberta</option>
@@ -378,7 +382,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
             <select
               value={riscoFilter}
               onChange={(e) => setRiscoFilter(e.target.value)}
-              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-slate-700"
+              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 font-medium text-slate-700 dark:text-slate-200"
             >
               <option value="ALL">Risco: Todos</option>
               <option value="Crítico">Crítico (1A, 2A, 1C)</option>
@@ -393,7 +397,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
             <select
               value={setorFilter}
               onChange={(e) => setSetorFilter(e.target.value)}
-              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-slate-700 truncate"
+              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 font-medium text-slate-700 dark:text-slate-200 truncate"
             >
               <option value="ALL">Setor: Todos</option>
               {setores.map(s => (
@@ -407,7 +411,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
             <select
               value={categoriaFilter}
               onChange={(e) => setCategoriaFilter(e.target.value)}
-              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-slate-700 truncate"
+              className="w-full text-xs py-2 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 bg-white dark:bg-slate-950 font-medium text-slate-700 dark:text-slate-200 truncate"
             >
               <option value="ALL">Categoria: Todas</option>
               {categorias.map(c => (
@@ -418,14 +422,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
         </div>
 
         {/* Quick Filter Tags & Reset */}
-        <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-100 text-xs">
+        <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setOnlyOverdue(!onlyOverdue)}
               className={`flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
                 onlyOverdue
                   ? 'bg-rose-600 text-white'
-                  : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-800'
               }`}
             >
               <AlertTriangle className="w-3.5 h-3.5" />
@@ -442,14 +446,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                   setCategoriaFilter('ALL');
                   setOnlyOverdue(false);
                 }}
-                className="text-slate-500 hover:text-slate-800 underline ml-2"
+                className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 underline ml-2"
               >
                 Limpar Filtros
               </button>
             )}
           </div>
 
-          <span className="text-slate-500 font-medium">
+          <span className="text-slate-500 dark:text-slate-400 font-medium">
             Exibindo <strong>{filteredRecords.length}</strong> de <strong>{records.length}</strong> Não Conformidades
           </span>
         </div>
@@ -489,12 +493,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                 return (
                   <div
                     key={nc.id}
-                    className={`bg-white rounded-xl border p-4 shadow-xs transition-colors ${
-                      isSelected ? 'border-indigo-400 bg-indigo-50/40' : 'border-slate-200'
+                    className={`bg-white dark:bg-slate-900 rounded-xl border p-4 shadow-xs transition-colors ${
+                      isSelected 
+                        ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/30' 
+                        : 'border-slate-200 dark:border-slate-800'
                     }`}
                   >
                     {/* Card Top Row: Checkbox + NC Number + Status */}
-                    <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                    <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-slate-800">
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
@@ -504,11 +510,11 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                         />
                         <button
                           onClick={() => onSelectNC(nc)}
-                          className="font-mono font-bold text-xs text-indigo-600 hover:underline"
+                          className="font-mono font-bold text-xs text-indigo-600 dark:text-indigo-400 hover:underline"
                         >
                           #{nc.numeroNC}
                         </button>
-                        <span className="text-[10px] text-slate-400 font-medium">({nc.tipoAcao})</span>
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium">({nc.tipoAcao})</span>
                       </div>
 
                       <div className="flex items-center gap-1.5">
@@ -531,19 +537,19 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
 
                     {/* Card Content */}
                     <div className="py-2.5 space-y-1.5" onClick={() => onSelectNC(nc)}>
-                      <h4 className="font-semibold text-xs text-slate-900 line-clamp-1 cursor-pointer hover:text-indigo-600">
+                      <h4 className="font-semibold text-xs text-slate-900 dark:text-slate-100 line-clamp-1 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400">
                         {nc.titulo}
                       </h4>
-                      <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
                         {nc.descricaoNC}
                       </p>
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-500">
-                        <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-700 font-medium">
+                      <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-700 dark:text-slate-300 font-medium">
                           {nc.setor || 'Setor N/A'}
                         </span>
                         {nc.normaReferencia && (
-                          <span className="bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-medium">
+                          <span className="bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded font-medium">
                             {nc.normaReferencia}
                           </span>
                         )}
@@ -554,14 +560,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                               e.stopPropagation();
                               setSelectedImpactoOsId(nc.origemImpactoMro?.ordemServicoId || '');
                             }}
-                            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            className="bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded font-bold flex items-center gap-1 cursor-pointer transition-colors"
                             title={`Consultar contexto da OS #${nc.origemImpactoMro.numeroOS} no Impacto Aviation MRO`}
                           >
-                            <Wrench className="w-2.5 h-2.5 text-indigo-600" />
+                            <Wrench className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
                             <span>Impacto: {nc.origemImpactoMro.numeroOS}</span>
                           </button>
                         )}
-                        <span className={`font-semibold ml-auto ${isOverdue ? 'text-rose-600' : 'text-slate-600'}`}>
+                        <span className={`font-semibold ml-auto ${isOverdue ? 'text-rose-600 dark:text-rose-400' : 'text-slate-600 dark:text-slate-400'}`}>
                           {isEncerrada ? (
                             `Encerrada: ${formatarData(nc.dataEncerramento || nc.verificacaoEficacia?.dataVerificacao || nc.atualizadoEm)}`
                           ) : isAguardandoEficacia ? (
@@ -574,9 +580,9 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                     </div>
 
                     {/* Card Actions Footer */}
-                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 gap-2">
-                      <div className="text-[10px] text-slate-400 truncate">
-                        Auditor: <strong className="text-slate-600">{nc.auditor || '-'}</strong>
+                    <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-800 gap-2">
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                        Auditor: <strong className="text-slate-600 dark:text-slate-300">{nc.auditor || '-'}</strong>
                       </div>
 
                       <div className="flex items-center gap-1">
@@ -624,11 +630,11 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
           </div>
 
           {/* Desktop Table Layout (>= md screens) */}
-          <div className="hidden md:block bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="hidden md:block bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden transition-colors">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="text-slate-400 uppercase text-[10px] font-bold border-b border-slate-100 bg-slate-50/50">
+                  <tr className="text-slate-400 dark:text-slate-500 uppercase text-[10px] font-bold border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
                     <th className="py-3 px-3 w-10 text-center">
                       <input
                         type="checkbox"
@@ -649,7 +655,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                     <th className="py-3 px-3 text-right">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-50">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                   {filteredRecords.length > 0 ? (
                     filteredRecords.map((nc) => {
                       const isEncerrada =
@@ -679,7 +685,11 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                       return (
                         <tr 
                           key={nc.id} 
-                          className={`transition-colors ${isSelected ? 'bg-indigo-50/60' : 'hover:bg-slate-50/80'}`}
+                          className={`transition-colors ${
+                            isSelected 
+                              ? 'bg-indigo-50/60 dark:bg-indigo-950/40' 
+                              : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/40'
+                          }`}
                         >
                           <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                             <input
@@ -690,27 +700,27 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                             />
                           </td>
 
-                          <td className="py-3 px-3 font-mono font-bold text-slate-800 whitespace-nowrap">
+                          <td className="py-3 px-3 font-mono font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                             <button
                               onClick={() => onSelectNC(nc)}
-                              className="hover:text-indigo-600 hover:underline font-mono font-bold"
+                              className="hover:text-indigo-600 dark:hover:text-indigo-400 hover:underline font-mono font-bold"
                             >
                               #{nc.numeroNC}
                             </button>
-                            <div className="text-[10px] text-slate-400 font-normal">
+                            <div className="text-[10px] text-slate-400 dark:text-slate-500 font-normal">
                               {nc.tipoAcao}
                             </div>
                           </td>
 
                           <td className="py-3 px-3 max-w-[280px]">
-                            <div className="font-medium text-slate-900 truncate">
+                            <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
                               {nc.titulo}
                             </div>
-                            <div className="text-[11px] text-slate-500 line-clamp-1">
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
                               {nc.descricaoNC}
                             </div>
                             {nc.normaReferencia && (
-                              <span className="text-[10px] text-indigo-700 font-semibold bg-indigo-50 px-1.5 py-0.2 rounded mt-0.5 inline-block">
+                              <span className="text-[10px] text-indigo-700 dark:text-indigo-300 font-semibold bg-indigo-50 dark:bg-indigo-950/50 px-1.5 py-0.2 rounded mt-0.5 inline-block">
                                 {nc.normaReferencia}
                               </span>
                             )}
@@ -722,14 +732,14 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                                     e.stopPropagation();
                                     setSelectedImpactoOsId(nc.origemImpactoMro?.ordemServicoId || '');
                                   }}
-                                  className="text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer"
+                                  className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer"
                                   title={`Consultar contexto da OS #${nc.origemImpactoMro.numeroOS} (${nc.origemImpactoMro.ordemServicoId}) no Impacto Aviation MRO`}
                                 >
-                                  <Wrench className="w-2.5 h-2.5 text-indigo-600" />
+                                  <Wrench className="w-2.5 h-2.5 text-indigo-600 dark:text-indigo-400" />
                                   <span>Impacto: {nc.origemImpactoMro.numeroOS}</span>
                                 </button>
                                 {nc.origemImpactoMro.prefixoAeronave && (
-                                  <span className="text-[10px] text-slate-500 font-mono">
+                                  <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
                                     ({nc.origemImpactoMro.prefixoAeronave})
                                   </span>
                                 )}
@@ -737,9 +747,9 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                             )}
                           </td>
 
-                          <td className="py-3 px-3 whitespace-nowrap text-slate-600">
+                          <td className="py-3 px-3 whitespace-nowrap text-slate-600 dark:text-slate-300">
                             <div className="font-medium">{nc.setor}</div>
-                            <div className="text-[10px] text-slate-400">{nc.categoria}</div>
+                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{nc.categoria}</div>
                           </td>
 
                           <td className="py-3 px-3 whitespace-nowrap">
@@ -860,13 +870,13 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
             return (
               <div
                 key={col.status}
-                className="bg-slate-100/70 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col min-h-[450px]"
+                className="bg-slate-100/70 dark:bg-slate-900/80 rounded-2xl p-3.5 border border-slate-200/80 dark:border-slate-800 flex flex-col min-h-[450px] transition-colors"
               >
-                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80 mb-3">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200/80 dark:border-slate-800 mb-3">
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
                     {col.title}
                   </h4>
-                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-white text-slate-700 border border-slate-200 shadow-xs">
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-xs">
                     {colRecords.length}
                   </span>
                 </div>
@@ -900,10 +910,10 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                       <div
                         key={nc.id}
                         onClick={() => onSelectNC(nc)}
-                        className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs hover:shadow-md hover:border-indigo-300 cursor-pointer transition-all space-y-2 group relative"
+                        className="bg-white dark:bg-slate-800/90 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 shadow-xs hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-500 cursor-pointer transition-all space-y-2 group relative"
                       >
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-xs font-mono font-bold text-slate-900">
+                          <span className="text-xs font-mono font-bold text-slate-900 dark:text-slate-100">
                             #{nc.numeroNC}
                           </span>
                           <div className="flex items-center space-x-1">
@@ -915,7 +925,7 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                                 e.stopPropagation();
                                 setItemToDelete(nc);
                               }}
-                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-opacity"
+                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-opacity"
                               title="Excluir Não Conformidade"
                             >
                               <Trash2 className="w-3 h-3" />
@@ -923,16 +933,16 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                           </div>
                         </div>
 
-                        <h5 className="text-xs font-bold text-slate-800 line-clamp-2">
+                        <h5 className="text-xs font-bold text-slate-800 dark:text-slate-100 line-clamp-2">
                           {nc.titulo}
                         </h5>
 
-                        <p className="text-[11px] text-slate-500 line-clamp-2">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
                           {nc.descricaoNC}
                         </p>
 
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-500">
-                          <span>Setor: <strong>{(nc.setor || 'Geral').split('-')[0]}</strong></span>
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-700/70 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                          <span>Setor: <strong className="text-slate-700 dark:text-slate-300">{(nc.setor || 'Geral').split('-')[0]}</strong></span>
                           <div className="flex items-center gap-1.5">
                             {onAuditNC && (
                               <button
@@ -940,13 +950,13 @@ export const ReportListView: React.FC<ReportListViewProps> = ({
                                   e.stopPropagation();
                                   onAuditNC(nc);
                                 }}
-                                className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+                                className="p-1 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded"
                                 title="Auditar Pertinência com IA"
                               >
                                 <Sparkles className="w-3 h-3" />
                               </button>
                             )}
-                            <span className={isOverdue ? 'text-rose-600 font-bold' : isEncerrada ? 'text-emerald-700 font-semibold' : isAguardandoEficacia ? 'text-blue-700 font-semibold' : 'font-medium'}>
+                            <span className={isOverdue ? 'text-rose-600 dark:text-rose-400 font-bold' : isEncerrada ? 'text-emerald-700 dark:text-emerald-400 font-semibold' : isAguardandoEficacia ? 'text-blue-700 dark:text-blue-400 font-semibold' : 'font-medium'}>
                               {isEncerrada
                                 ? `Encerrada (${formatarData(nc.dataEncerramento || nc.atualizadoEm)})`
                                 : isAguardandoEficacia

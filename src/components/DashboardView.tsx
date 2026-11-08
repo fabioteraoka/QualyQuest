@@ -192,15 +192,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 3. Alertas Triados (Ação Imediata, Atenção, Acompanhamento) */}
       {(vencidas.length > 0 || vencendoHoje.length > 0 || vencendo7d.length > 0) && (
-        <Card padding="none" className="overflow-hidden border-slate-200">
-          <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+        <Card padding="none" className="overflow-hidden border-slate-200 dark:border-slate-800">
+          <div className="p-4 bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-600" />
-              <h3 className="text-sm font-semibold text-slate-800">Alertas de Prazos e Monitoramento SGQ</h3>
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Alertas de Prazos e Monitoramento SGQ</h3>
             </div>
             <button
               onClick={onOpenAlertsTab}
-              className="text-xs font-semibold text-slate-700 hover:text-slate-900 flex items-center gap-1"
+              className="text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-slate-900 hover:dark:text-white flex items-center gap-1 cursor-pointer"
             >
               <span>Ver todos ({alertas.length})</span>
               <ArrowRight className="w-3 h-3" />
@@ -209,12 +209,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* Bloco 1: Ação Imediata */}
-            <div className={`p-3 rounded-[8px] border ${vencidas.length > 0 ? 'bg-rose-50/60 border-rose-200' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`p-3 rounded-[8px] border ${vencidas.length > 0 ? 'bg-rose-50/60 dark:bg-rose-950/40 border-rose-200 dark:border-rose-900/60' : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60'}`}>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700">Ação Imediata</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">Ação Imediata</span>
                 <Badge variant="critical" size="sm">{vencidas.length} Vencida(s)</Badge>
               </div>
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                 {vencidas.length > 0
                   ? 'Existem Não Conformidades com prazo expirado necessitando intervenção e contenção imediata.'
                   : 'Nenhuma Não Conformidade com prazo estourado.'}
@@ -222,23 +222,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             {/* Bloco 2: Atenção */}
-            <div className={`p-3 rounded-[8px] border ${vencendo7d.length > 0 ? 'bg-amber-50/60 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+            <div className={`p-3 rounded-[8px] border ${vencendo7d.length > 0 ? 'bg-amber-50/60 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900/60' : 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60'}`}>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Atenção (7 Dias)</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Atenção (7 Dias)</span>
                 <Badge variant="warning" size="sm">{vencendo7d.length + vencendoHoje.length} Próximas</Badge>
               </div>
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                 Acompanhar envio de causas raízes e planos de ação antes do vencimento do prazo regulatório.
               </p>
             </div>
 
             {/* Bloco 3: Acompanhamento */}
-            <div className="p-3 rounded-[8px] border bg-slate-50 border-slate-200">
+            <div className="p-3 rounded-[8px] border bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Acompanhamento</span>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Acompanhamento</span>
                 <Badge variant="neutral" size="sm">{total - abertas} Concluídas</Badge>
               </div>
-              <p className="text-xs text-slate-600 mt-1">
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1">
                 Verificação de eficácia e encerramento documental conforme cronograma de auditoria.
               </p>
             </div>
@@ -260,21 +260,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <SectionHeader
                 title="Incidências por Setor"
                 subtitle="Concentração de Não Conformidades por área de operação"
-                icon={<Building2 className="w-4 h-4 text-slate-600" />}
+                icon={<Building2 className="w-4 h-4 text-slate-600 dark:text-slate-400" />}
               />
 
               <div className="space-y-3.5 mt-4">
                 {departmentStats.map((item) => (
                   <div key={item.name} className="space-y-1.5">
-                    <div className="flex justify-between text-xs font-medium text-slate-700">
+                    <div className="flex justify-between text-xs font-medium text-slate-700 dark:text-slate-300">
                       <span>{item.name}</span>
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-slate-900 dark:text-slate-100">
                         {item.count} NCs ({item.percent}%)
                       </span>
                     </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-slate-800 rounded-full transition-all duration-300"
+                        className="h-full bg-slate-800 dark:bg-blue-600 rounded-full transition-all duration-300"
                         style={{ width: `${item.percent}%` }}
                       ></div>
                     </div>
@@ -283,11 +283,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </div>
             </div>
 
-            <div className="pt-4 mt-6 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <div className="pt-4 mt-6 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
               <span>Auditorias MOMQ / RBAC 145 ativas</span>
               <button
                 onClick={() => onOpenReportTab()}
-                className="font-semibold text-slate-800 hover:text-blue-700"
+                className="font-semibold text-slate-800 dark:text-slate-200 hover:text-blue-700 hover:dark:text-blue-400 cursor-pointer"
               >
                 Detalhar por área →
               </button>
@@ -298,7 +298,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* 5. Tabela de Registros Recentes */}
       <Card padding="none" className="overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+        <div className="p-4 sm:p-5 border-b border-slate-200/90 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 dark:bg-slate-800/40">
           <div>
             <h3 className={DS.typography.sectionTitle}>Não Conformidades Recentes</h3>
             <p className={DS.typography.sectionSubtitle}>
@@ -319,7 +319,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 font-semibold uppercase text-[11px] tracking-wider">
+              <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-semibold uppercase text-[11px] tracking-wider">
                 <th className="py-3 px-4">Código / NC</th>
                 <th className="py-3 px-4">Descrição & Ocorrência</th>
                 <th className="py-3 px-4">Setor</th>
@@ -329,7 +329,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <th className="py-3 px-4 text-right">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
               {safeRecords.slice(0, 6).map((nc) => {
                 const isEncerrada =
                   Boolean(nc.dataEncerramento) ||
@@ -351,18 +351,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 const eficaciaJaComprovada = Boolean(nc.verificacaoEficacia?.dataVerificacao) || nc.verificacaoEficacia?.resultado === 'EFICAZ' || nc.statusGeral === 'Eficácia Comprovada';
                 const isTratamentoVencido = !isEncerrada && !isAguardandoEficacia && diasTratamento < 0;
                 const isEficaciaVencida = isAguardandoEficacia && !eficaciaJaComprovada && diasEficacia !== null && diasEficacia < 0;
-                const isOverdue = isTratamentoVencido || isEficaciaVencida;
 
                 return (
-                  <tr key={nc.id} className="hover:bg-slate-50/70 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900 text-xs">
+                  <tr key={nc.id} className="hover:bg-slate-50/70 hover:dark:bg-slate-800/50 transition-colors">
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">
                       #{nc.numeroNC}
                     </td>
                     <td className="py-3.5 px-4 max-w-[280px]">
-                      <div className="font-semibold text-slate-900 truncate">{nc.titulo}</div>
-                      <div className="text-slate-500 truncate text-[11px]">{nc.descricaoNC}</div>
+                      <div className="font-semibold text-slate-900 dark:text-slate-100 truncate">{nc.titulo}</div>
+                      <div className="text-slate-500 dark:text-slate-400 truncate text-[11px]">{nc.descricaoNC}</div>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-600">{nc.setor}</td>
+                    <td className="py-3.5 px-4 text-slate-600 dark:text-slate-300">{nc.setor}</td>
                     <td className="py-3.5 px-4">
                       <Badge variant="risk" value={nc.avaliacaoRiscoInicial.nivel} size="sm">
                         {nc.avaliacaoRiscoInicial.codigo}
@@ -371,19 +370,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <td className="py-3.5 px-4">
                       {isEncerrada ? (
                         <div>
-                          <span className="font-semibold text-emerald-700 block text-xs">
+                          <span className="font-semibold text-emerald-700 dark:text-emerald-400 block text-xs">
                             Encerrada
                           </span>
-                          <span className="text-[10px] text-slate-400 block">
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
                             {nc.dataEncerramento ? `Em ${formatarData(nc.dataEncerramento)}` : 'Concluída'}
                           </span>
                         </div>
                       ) : isAguardandoEficacia ? (
                         <div>
-                          <span className={`font-semibold block text-xs ${isEficaciaVencida ? 'text-rose-600 font-bold' : 'text-blue-700'}`}>
+                          <span className={`font-semibold block text-xs ${isEficaciaVencida ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-blue-700 dark:text-blue-400'}`}>
                             {dataPrazoEficacia ? `Eficácia: ${formatarData(dataPrazoEficacia)}` : 'Eficácia Agendada'}
                           </span>
-                          <span className="text-[10px] text-slate-400 block">
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
                             {isEficaciaVencida
                               ? '(AUDITORIA VENCIDA)'
                               : diasEficacia !== null ? `${diasEficacia}d p/ auditoria` : 'Aguardando avaliação'}
@@ -391,10 +390,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         </div>
                       ) : (
                         <div>
-                          <span className={`font-medium block text-xs ${isTratamentoVencido ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
+                          <span className={`font-medium block text-xs ${isTratamentoVencido ? 'text-rose-600 dark:text-rose-400 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
                             {formatarData(nc.prazoResposta)}
                           </span>
-                          <span className="text-[10px] text-slate-400 block">
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 block">
                             {isTratamentoVencido ? '(TRATAMENTO VENCIDO)' : `${diasTratamento}d restantes`}
                           </span>
                         </div>
@@ -410,7 +409,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         {onAuditNC && (
                           <button
                             onClick={() => onAuditNC(nc)}
-                            className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-[6px] transition-colors"
+                            className="p-1.5 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 hover:dark:bg-indigo-950/50 rounded-[6px] transition-colors cursor-pointer"
                             title="Auditar com IA contra Manuais"
                           >
                             <Sparkles className="w-3.5 h-3.5" />
@@ -418,7 +417,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         )}
                         <button
                           onClick={() => onViewOfficial(nc)}
-                          className="p-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-[6px] transition-colors"
+                          className="p-1.5 text-slate-600 dark:text-slate-400 hover:text-slate-900 hover:dark:text-white hover:bg-slate-100 hover:dark:bg-slate-800 rounded-[6px] transition-colors cursor-pointer"
                           title="Visualizar Ficha F 001-29"
                         >
                           <Printer className="w-3.5 h-3.5" />

@@ -1,4 +1,67 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --app-bg: #f8fafc;
+  --app-surface: #ffffff;
+  --app-border: #e2e8f0;
+  --app-text: #0f172a;
+  --app-text-muted: #64748b;
+}
+
+html.dark {
+  color-scheme: dark;
+  --app-bg: #090d16;
+  --app-surface: #111827;
+  --app-border: #1e293b;
+  --app-text: #f1f5f9;
+  --app-text-muted: #94a3b8;
+}
+
+/* Smooth background transition when toggling */
+body {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* Global Dark Form Controls Defaults */
+html.dark input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="button"]):not([type="submit"]),
+html.dark select,
+html.dark textarea {
+  background-color: #0b1324;
+  border-color: #1e293b;
+  color: #f1f5f9;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b;
+}
+
+html.dark select option {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+
+/* Custom dark scrollbars */
+html.dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: #090d16;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 4px;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
 
 @layer base {
   @media print {

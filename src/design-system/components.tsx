@@ -21,7 +21,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   actions,
 }) => {
   return (
-    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-slate-200/80 mb-6">
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 pb-6 border-b border-slate-200/80 dark:border-slate-800 mb-6">
       <div>
         <div className="flex items-center gap-3">
           <h1 className={DS.typography.pageTitle}>{title}</h1>
@@ -29,16 +29,16 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
             <span
               className={`inline-flex items-center px-2 py-0.5 text-xs font-semibold rounded-[6px] border ${
                 badgeVariant === 'info'
-                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                   : badgeVariant === 'success'
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                   : badgeVariant === 'warning'
-                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                   : badgeVariant === 'critical'
-                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                  ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
                   : badgeVariant === 'ai'
-                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                  : 'bg-slate-100 text-slate-700 border-slate-200'
+                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
               }`}
             >
               {badge}
@@ -73,7 +73,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   return (
     <div className={`flex items-center justify-between gap-3 mb-3.5 ${className}`}>
       <div className="flex items-center gap-2">
-        {icon && <span className="text-slate-500 flex-shrink-0">{icon}</span>}
+        {icon && <span className="text-slate-500 dark:text-slate-400 flex-shrink-0">{icon}</span>}
         <div>
           <h2 className={DS.typography.sectionTitle}>{title}</h2>
           {subtitle && <p className={DS.typography.sectionSubtitle}>{subtitle}</p>}
@@ -118,13 +118,13 @@ export const Card: React.FC<CardProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white border border-slate-200/90 rounded-[10px] shadow-[0_1px_3px_0_rgba(15,23,42,0.03)] transition-all ${
-        hoverable ? 'hover:border-slate-300 hover:shadow-[0_2px_8px_0_rgba(15,23,42,0.06)] cursor-pointer' : ''
+      className={`bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-[10px] shadow-[0_1px_3px_0_rgba(15,23,42,0.03)] dark:shadow-none transition-all ${
+        hoverable ? 'hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-[0_2px_8px_0_rgba(15,23,42,0.06)] dark:hover:shadow-none cursor-pointer' : ''
       } ${className}`}
     >
-      {header && <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/50 rounded-t-[9px]">{header}</div>}
+      {header && <div className="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 rounded-t-[9px]">{header}</div>}
       <div className={paddingClass}>{children}</div>
-      {footer && <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/40 rounded-b-[9px] text-xs text-slate-500">{footer}</div>}
+      {footer && <div className="px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/30 rounded-b-[9px] text-xs text-slate-500 dark:text-slate-400">{footer}</div>}
     </div>
   );
 };
@@ -156,31 +156,31 @@ export const StatCard: React.FC<StatCardProps> = ({
   onClick,
 }) => {
   const variantStyles = {
-    default: 'border-slate-200/90',
-    critical: 'border-rose-200/90 bg-rose-50/20',
-    warning: 'border-amber-200/90 bg-amber-50/20',
-    success: 'border-emerald-200/90 bg-emerald-50/20',
-    info: 'border-blue-200/90 bg-blue-50/20',
+    default: 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900',
+    critical: 'border-rose-200/90 dark:border-rose-900/60 bg-rose-50/20 dark:bg-rose-950/20',
+    warning: 'border-amber-200/90 dark:border-amber-900/60 bg-amber-50/20 dark:bg-amber-950/20',
+    success: 'border-emerald-200/90 dark:border-emerald-900/60 bg-emerald-50/20 dark:bg-emerald-950/20',
+    info: 'border-blue-200/90 dark:border-blue-900/60 bg-blue-50/20 dark:bg-blue-950/20',
   };
 
   const textStyles = {
-    default: 'text-slate-900',
-    critical: 'text-rose-900',
-    warning: 'text-amber-900',
-    success: 'text-emerald-900',
-    info: 'text-blue-900',
+    default: 'text-slate-900 dark:text-slate-100',
+    critical: 'text-rose-900 dark:text-rose-300',
+    warning: 'text-amber-900 dark:text-amber-300',
+    success: 'text-emerald-900 dark:text-emerald-300',
+    info: 'text-blue-900 dark:text-blue-300',
   };
 
   return (
     <div
       onClick={onClick}
-      className={`bg-white border rounded-[10px] p-5 shadow-[0_1px_3px_0_rgba(15,23,42,0.04)] ${variantStyles[variant]} ${
-        onClick ? 'cursor-pointer hover:border-slate-300 hover:shadow-md transition-all' : ''
+      className={`border rounded-[10px] p-5 shadow-[0_1px_3px_0_rgba(15,23,42,0.04)] dark:shadow-none transition-all ${variantStyles[variant]} ${
+        onClick ? 'cursor-pointer hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-md transition-all' : ''
       }`}
     >
-      <div className="flex items-center justify-between text-slate-500 mb-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{label}</span>
-        {icon && <div className="text-slate-400">{icon}</div>}
+      <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</span>
+        {icon && <div className="text-slate-400 dark:text-slate-400">{icon}</div>}
       </div>
       <div className="flex items-baseline justify-between gap-2">
         <div className={`text-2xl sm:text-3xl font-bold tracking-tight ${textStyles[variant]}`}>
@@ -190,17 +190,17 @@ export const StatCard: React.FC<StatCardProps> = ({
           <span
             className={`text-xs font-medium px-1.5 py-0.5 rounded ${
               trend.isPositive
-                ? 'text-emerald-700 bg-emerald-50'
+                ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60'
                 : trend.isNeutral
-                ? 'text-slate-600 bg-slate-100'
-                : 'text-rose-700 bg-rose-50'
+                ? 'text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800'
+                : 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/60'
             }`}
           >
             {trend.value}
           </span>
         )}
       </div>
-      {subtext && <p className="text-xs text-slate-500 mt-1.5 leading-tight">{subtext}</p>}
+      {subtext && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-tight">{subtext}</p>}
     </div>
   );
 };
@@ -223,22 +223,22 @@ export const Badge: React.FC<BadgeProps> = ({
   size = 'md',
   className = '',
 }) => {
-  let style = 'bg-slate-100 text-slate-700 border-slate-200';
+  let style = 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700';
 
   if (variant === 'status') {
     style = getStatusBadgeStyle(value || String(children));
   } else if (variant === 'risk') {
     style = getRiskBadgeStyle(value || String(children));
   } else if (variant === 'success') {
-    style = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+    style = 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/80';
   } else if (variant === 'warning') {
-    style = 'bg-amber-50 text-amber-800 border-amber-200';
+    style = 'bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/80';
   } else if (variant === 'critical') {
-    style = 'bg-rose-50 text-rose-800 border-rose-200';
+    style = 'bg-rose-50 dark:bg-rose-950/50 text-rose-800 dark:text-rose-300 border-rose-200 dark:border-rose-800/80';
   } else if (variant === 'info') {
-    style = 'bg-blue-50 text-blue-800 border-blue-200';
+    style = 'bg-blue-50 dark:bg-blue-950/50 text-blue-800 dark:text-blue-300 border-blue-200 dark:border-blue-800/80';
   } else if (variant === 'ai') {
-    style = 'bg-indigo-50 text-indigo-800 border-indigo-200';
+    style = 'bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/80';
   }
 
   const sizeClass = size === 'sm' ? 'px-1.5 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs';
@@ -273,7 +273,7 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const base =
-    'inline-flex items-center justify-center font-medium rounded-[8px] transition-all select-none focus:outline-none focus:ring-2 focus:ring-slate-400/40 disabled:opacity-50 disabled:cursor-not-allowed';
+    'inline-flex items-center justify-center font-medium rounded-[8px] transition-all select-none focus:outline-none focus:ring-2 focus:ring-slate-400/40 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer';
 
   const sizeClasses = {
     sm: 'px-2.5 py-1.5 text-xs gap-1.5',
@@ -282,11 +282,11 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   const variantClasses = {
-    primary: 'bg-slate-900 hover:bg-slate-800 text-white shadow-xs',
-    secondary: 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 shadow-xs',
-    outline: 'border border-slate-300 hover:bg-slate-50 text-slate-700',
+    primary: 'bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 hover:dark:bg-white text-white dark:text-slate-900 shadow-xs',
+    secondary: 'bg-white dark:bg-slate-800 hover:bg-slate-50 hover:dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 shadow-xs',
+    outline: 'border border-slate-300 dark:border-slate-700 hover:bg-slate-50 hover:dark:bg-slate-800 text-slate-700 dark:text-slate-200',
     danger: 'bg-rose-600 hover:bg-rose-700 text-white shadow-xs',
-    ghost: 'text-slate-600 hover:bg-slate-100 hover:text-slate-900',
+    ghost: 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 hover:dark:bg-slate-800 hover:text-slate-900 hover:dark:text-white',
     ai: 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs',
   };
 
@@ -342,23 +342,23 @@ export const Modal: React.FC<ModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs overflow-y-auto">
       <div
-        className={`w-full ${widthMap[maxWidth]} bg-white rounded-[12px] border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto animate-in fade-in zoom-in-95 duration-150`}
+        className={`w-full ${widthMap[maxWidth]} bg-white dark:bg-slate-900 rounded-[12px] border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto animate-in fade-in zoom-in-95 duration-150 text-slate-800 dark:text-slate-100`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/80 bg-slate-50/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
           <div className="flex items-center gap-3">
-            {icon && <div className="p-2 rounded-[8px] bg-slate-100 text-slate-700">{icon}</div>}
+            {icon && <div className="p-2 rounded-[8px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">{icon}</div>}
             <div>
-              <h3 className="text-base font-semibold text-slate-900 tracking-tight">{title}</h3>
-              {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 tracking-tight">{title}</h3>
+              {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{subtitle}</p>}
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-[6px] transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-[6px] transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -369,7 +369,7 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-3 px-6 py-3.5 border-t border-slate-200/80 bg-slate-50/60">
+          <div className="flex items-center justify-end gap-3 px-6 py-3.5 border-t border-slate-200/80 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/40">
             {footer}
           </div>
         )}

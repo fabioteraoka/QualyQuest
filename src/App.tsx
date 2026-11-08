@@ -281,7 +281,7 @@ export default function App() {
       setActiveTab={setActiveTab}
       setActiveOrganization={setActiveOrganization}
     >
-      <div className="min-h-screen bg-slate-100/70 text-slate-800 flex font-sans antialiased selection:bg-blue-600 selection:text-white">
+      <div className="min-h-screen bg-slate-100/70 dark:bg-slate-950 text-slate-800 dark:text-slate-100 flex font-sans antialiased selection:bg-blue-600 selection:text-white transition-colors duration-150">
         {/* Sidebar */}
         <Sidebar
           activeTab={activeTab as any}
@@ -485,12 +485,12 @@ export default function App() {
           />
 
           {/* Footer */}
-          <footer className="bg-white border-t border-slate-200 py-3.5 px-4 sm:px-6 text-center text-xs text-slate-500">
+          <footer className="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 py-3.5 px-4 sm:px-6 text-center text-xs text-slate-500 dark:text-slate-400 transition-colors">
             <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
               <span>
-                <strong className="text-slate-700">QUALIGEST SGQ</strong> — Sistema de Garantia da Qualidade, Auditorias Regulatórias & Não Conformidades
+                <strong className="text-slate-700 dark:text-slate-200">QUALIGEST SGQ</strong> — Sistema de Garantia da Qualidade, Auditorias Regulatórias & Não Conformidades
               </span>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-[11px] text-slate-400 dark:text-slate-500">
                 Padrão Aeronáutico F 001-29 | Cloud Firestore Multi-Tenant | Sincronização em Tempo Real
               </span>
             </div>
