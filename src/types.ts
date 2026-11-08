@@ -2545,7 +2545,7 @@ export interface DocumentosDashboardMetrics {
 
 export type StatusClienteExterno = 'ATIVO' | 'INATIVO' | 'EM_HOMOLOGACAO';
 export type PeriodicidadeAvaliacao = 'MENSAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'ANUAL' | 'EVENTUAL' | 'PERSONALIZADA';
-export type MetodoVerificacaoRequisito = 'AUTOMATICO' | 'ASSISTIDO' | 'MANUAL' | 'DOCUMENTAL';
+export type MetodoVerificacaoRequisito = 'AUTOMATICO' | 'ASSISTIDO' | 'MANUAL' | 'DOCUMENTAL' | 'INSPECAO_FISICA' | 'AMOSTRAGEM' | 'DEMONSTRACAO';
 export type CriticidadeRequisito = 'CRITICO' | 'ALTO' | 'MEDIO' | 'BAIXO';
 export type ResultadoAvaliacaoRequisito = 'CONFORME' | 'ATENCAO' | 'NAO_CONFORME' | 'NA' | 'PENDENTE' | 'VERIFICACAO_NECESSARIA';
 export type StatusDeterminacaoPrevia = 'VERDE' | 'AMARELO' | 'VERMELHO' | 'CINZA' | 'AZUL';
@@ -2680,7 +2680,7 @@ export interface RequisitoClienteItem {
   tituloCurto: string;
   textoOriginal: string;
   categoria: string; // Ex: 'Housekeeping', 'Tooling / Calibration', 'Training', etc.
-  aplicabilidadeRegras: {
+  aplicabilidadeRegras?: {
     basesAplicaveis?: string[];
     tiposEstacao?: string[];
     modelosAeronave?: string[];
@@ -2704,6 +2704,10 @@ export interface RequisitoClienteItem {
 
   // --- FASE 1: Biblioteca Central de Requisitos Multi-Fontes ---
   fonteOrigem?: TipoOrigemRequisito;
+  entidadeEmissora?: string; // Ex: 'ANAC', 'EASA', 'IATA', 'Kalitta Air', 'Atlas Air', 'IMPACTO'
+  capituloSecaoSubitem?: string; // Ex: 'Seção 1 - General Operations', 'Subparte C - Requisitos Gerais'
+  tipoRequisitoNormativo?: 'REGULATORIO' | 'CONTRATUAL' | 'PADRAO_SETORIAL' | 'INTERNO' | 'BOA_PRATICA';
+  statusValidacaoConteudo?: 'VALIDADO' | 'PENDENTE_VALIDACAO' | 'AGUARDANDO_PROTOCOLO';
   fonteDocumentoNome?: string; // Ex: 'ANAC RBAC 145 Emenda 07', 'IATA ISM Ed. 16', 'MOMQ MNT-001'
   edicaoRevisaoFonte?: string; // Ex: 'Emenda 07', 'Edição 16', 'Rev. 04'
   dataVigenciaFonte?: string; // YYYY-MM-DD

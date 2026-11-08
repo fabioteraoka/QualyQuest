@@ -27,7 +27,9 @@ import {
   Lock,
   Globe,
   Sliders,
-  Plane
+  Plane,
+  DownloadCloud,
+  FileSpreadsheet
 } from 'lucide-react';
 import {
   RequisitoClienteItem,
@@ -47,6 +49,12 @@ import {
   updateAplicabilidadeRequisitoMestre,
   deleteRequisitoCliente
 } from '../services/firebase/clientRequirementsFirestore';
+import { RequirementsDiagnosticTab } from './requirements/RequirementsDiagnosticTab';
+import { RequirementsDataLoadTab } from './requirements/RequirementsDataLoadTab';
+import { RequirementsCentralControlsMatrixTab } from './requirements/RequirementsCentralControlsMatrixTab';
+import {
+  executarDiagnosticoRequisitos
+} from '../services/requirementsDataLoadService';
 
 export interface RequirementsLibraryViewProps {
   requisitos: RequisitoClienteItem[];
@@ -152,6 +160,9 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
   const isConsulta = userProfile?.role === 'CONSULTA' || userProfile?.role === 'VIEWER';
 
+  // Sub-Navigation Tabs state (Acervo, Diagnóstico, Carga Segura, Matriz)
+  const [activeLibraryTab, setActiveLibraryTab] = useState<'acervo' | 'diagnostico' | 'carga' | 'matriz'>('acervo');
+
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFonte, setSelectedFonte] = useState<string>('TODAS');
@@ -167,6 +178,11 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Diagnóstico em tempo real
+  const diagnostico = useMemo(() => {
+    return executarDiagnosticoRequisitos(requisitos, clientes, programas, controles);
+  }, [requisitos, clientes, programas, controles]);
 
   // Metrics summary
   const metrics = useMemo(() => {
@@ -365,8 +381,117 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
         </div>
       </div>
 
-      {/* IOSA Architectural Mandatory Notice Callout */}
-      <div className="bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/80 rounded-xl p-4 flex items-start gap-3 text-xs">
+      {/* Sub-Navigation Tabs: Acervo, Diagnóstico, Carga Segura, Matriz */}
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto text-xs font-semibold">
+        <button
+          onClick={() => setActiveLibraryTab('acervo')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'acervo'
+              ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Acervo de Requisitos ({requisitos.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveLibraryTab('diagnostico')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'diagnostico'
+              ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Diagnóstico & Inventário</span>
+          {(diagnostico.duplicidadesIdentificadas.length > 0 || diagnostico.requisitosPrecisamRevisao.length > 0) && (
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveLibraryTab('carga')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'carga'
+              ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <DownloadCloud className="w-4 h-4" />
+          <span>Carga & Importação Segura</span>
+        </button>
+
+        <button
+          onClick={() => setActiveLibraryTab('matriz')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'matriz'
+              ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Layers className="w-4 h-4" />
+          <span>Matriz Controle ↔ Requisitos</span>
+        </button>
+      </div>
+
+      {/* VIEW: Diagnóstico & Inventário */}
+      {activeLibraryTab === 'diagnostico' && (
+        <RequirementsDiagnosticTab
+          diagnostico={diagnostico}
+          onSelectRequirement={(reqId) => {
+            const req = requisitos.find((r) => r.id === reqId);
+            if (req) {
+              setSelectedReqForEdit(req);
+              setIsCreatingNew(false);
+            }
+          }}
+          onFilterSource={(src) => {
+            setSelectedFonte(src);
+            setActiveLibraryTab('acervo');
+          }}
+          onFilterApplicability={(app) => {
+            setSelectedAplicabilidade(app);
+            setActiveLibraryTab('acervo');
+          }}
+        />
+      )}
+
+      {/* VIEW: Carga e Importação Segura de Pacotes Homologados */}
+      {activeLibraryTab === 'carga' && (
+        <RequirementsDataLoadTab
+          requisitosExistentes={requisitos}
+          onCargaConcluida={(novosItens) => {
+            if (setRequisitos) {
+              setRequisitos(novosItens);
+            }
+          }}
+          userProfile={userProfile}
+          organizationId={orgId}
+        />
+      )}
+
+      {/* VIEW: Matriz Controle Central SGQ ↔ Requisitos */}
+      {activeLibraryTab === 'matriz' && (
+        <RequirementsCentralControlsMatrixTab
+          controles={controles}
+          requisitos={requisitos}
+          onSelectRequirement={(reqId) => {
+            const req = requisitos.find((r) => r.id === reqId);
+            if (req) {
+              setSelectedReqForEdit(req);
+              setIsCreatingNew(false);
+            }
+          }}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
+
+      {/* VIEW: Acervo Principal de Requisitos */}
+      {activeLibraryTab === 'acervo' && (
+        <>
+          {/* IOSA Architectural Mandatory Notice Callout */}
+          <div className="bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/80 rounded-xl p-4 flex items-start gap-3 text-xs">
         <Info className="w-5 h-5 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
         <div className="space-y-1">
           <p className="font-semibold text-purple-900 dark:text-purple-200">
@@ -874,6 +999,8 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           })
         )}
       </div>
+        </>
+      )}
 
       {/* MODAL 1: Gestão de Aplicabilidade Contextual */}
       {selectedReqForApplicability && (

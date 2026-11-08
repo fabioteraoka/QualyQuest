@@ -699,6 +699,10 @@ export async function saveRequisitoCliente(
 
     // --- FASE 1: Biblioteca Central de Requisitos Multi-Fontes ---
     fonteOrigem: requisito.fonteOrigem || 'CONTRATUAL_CLIENTE',
+    entidadeEmissora: requisito.entidadeEmissora,
+    capituloSecaoSubitem: requisito.capituloSecaoSubitem,
+    tipoRequisitoNormativo: requisito.tipoRequisitoNormativo,
+    statusValidacaoConteudo: requisito.statusValidacaoConteudo || 'VALIDADO',
     fonteDocumentoNome: requisito.fonteDocumentoNome,
     edicaoRevisaoFonte: requisito.edicaoRevisaoFonte,
     dataVigenciaFonte: requisito.dataVigenciaFonte,
@@ -734,6 +738,65 @@ export async function saveRequisitoCliente(
   });
 
   return reqId;
+}
+
+/**
+ * Salva múltiplos requisitos mestres em lote preservando integridade e audit trail
+ */
+export async function saveRequisitosLote(
+  organizationId: string,
+  requisitos: RequisitoClienteItem[],
+  currentUser?: UserProfile | null,
+  motivoCarga: string = 'Carga e atualização da Biblioteca Central de Requisitos'
+): Promise<{ gravados: number; erros: string[] }> {
+  if (currentUser?.role === 'CONSULTA') {
+    throw new Error('Permissão negada: Perfil de CONSULTA não possui autorização para importar requisitos.');
+  }
+
+  if (!requisitos || requisitos.length === 0) {
+    return { gravados: 0, erros: [] };
+  }
+
+  const erros: string[] = [];
+  let gravados = 0;
+  const CHUNK_SIZE = 100;
+  const now = new Date().toISOString();
+
+  for (let i = 0; i < requisitos.length; i += CHUNK_SIZE) {
+    const chunk = requisitos.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+
+    chunk.forEach((req) => {
+      const reqId = req.id || `REQ-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const docRef = doc(db, 'organizations', organizationId, 'client_requirements', reqId);
+      const record: RequisitoClienteItem = {
+        ...req,
+        id: reqId,
+        organizationId,
+        createdAt: req.createdAt || now,
+        updatedAt: now,
+      };
+      batch.set(docRef, sanitizeForFirestore(record), { merge: true });
+      gravados++;
+    });
+
+    try {
+      await batch.commit();
+    } catch (err: any) {
+      erros.push(`Falha no lote ${Math.floor(i / CHUNK_SIZE) + 1}: ${err.message || String(err)}`);
+    }
+  }
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'CLIENT_REQUIREMENT',
+    entityId: `BATCH-IMPORT-${Date.now()}`,
+    action: 'CREATE',
+    summary: `${motivoCarga}: ${gravados} requisitos processados com sucesso.`,
+    changedByUid: currentUser?.uid || auth.currentUser?.uid || 'system',
+    changedByEmail: currentUser?.displayName || auth.currentUser?.email || 'SGQ Auditor',
+  });
+
+  return { gravados, erros };
 }
 
 /**
