@@ -411,7 +411,7 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
 
       // 2. Gravar os Requisitos individuais vinculados
       const reqsToSave: RequisitoAuditoriaExterna[] = dadosRevisados.itens.map((it, idx) => ({
-        id: `REQ-${cleanClienteTag}-${it.numeroItem.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}-${idx + 1}`,
+        id: it.tempId || `REQ-${cleanClienteTag}-${it.numeroItem.replace(/[^a-zA-Z0-9]/g, '_')}-${Date.now()}-${idx + 1}-${Math.random().toString(36).substring(2, 8)}`,
         organizationId: orgId,
         auditId,
         numeroAuditoria,
@@ -596,7 +596,7 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
       if (incorporarRequisitos && onSaveRequirement && dadosExtraidos.requisitosChecklist) {
         for (const [rIdx, r] of dadosExtraidos.requisitosChecklist.entries()) {
           const reqItem: RequisitoClienteItem = {
-            id: `REQ-${Date.now()}-${rIdx}`,
+            id: r.id || `REQ-${Date.now()}-${rIdx}-${Math.random().toString(36).substring(2, 8)}`,
             organizationId: orgId,
             clienteId: `CLI-${(audDados.clienteNome || 'EXT').toUpperCase().slice(0, 4)}`,
             clienteNome: audDados.clienteNome || 'Cliente Aéreo',
@@ -626,7 +626,7 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
       if (incorporarLicoes && onSaveLesson && dadosExtraidos.licoesAprendidas) {
         for (const [lIdx, l] of dadosExtraidos.licoesAprendidas.entries()) {
           const licao: LicaoAprendidaAuditoria = {
-            id: `LESSON-${Date.now()}-${lIdx}`,
+            id: `LESSON-${Date.now()}-${lIdx}-${Math.random().toString(36).substring(2, 8)}`,
             auditId,
             organizationId: orgId,
             titulo: l.titulo || 'Lição de Auditoria',

@@ -54,8 +54,15 @@ export function subscribeToAuditRequirements(
     q,
     (snapshot) => {
       const list: RequisitoAuditoriaExterna[] = [];
+      const seenIds = new Set<string>();
       snapshot.forEach((docSnap) => {
-        list.push({ id: docSnap.id, ...docSnap.data() } as RequisitoAuditoriaExterna);
+        const data = docSnap.data();
+        const id = docSnap.id || data.id;
+        const item = { ...data, id } as RequisitoAuditoriaExterna;
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          list.push(item);
+        }
       });
 
       // Ordenar por ordem ou número do item

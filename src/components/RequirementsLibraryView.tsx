@@ -212,7 +212,11 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
 
   // Filtered requirements
   const filteredRequirements = useMemo(() => {
+    const seenIds = new Set<string>();
     return requisitos.filter((req) => {
+      if (!req || !req.id || seenIds.has(req.id)) return false;
+      seenIds.add(req.id);
+
       // Search text
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
@@ -725,7 +729,7 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
             </button>
           </div>
         ) : (
-          filteredRequirements.map((req) => {
+          filteredRequirements.map((req, idx) => {
             const fonteCfg = ORIGEM_CONFIG[req.fonteOrigem || 'CONTRATUAL_CLIENTE'] || ORIGEM_CONFIG.CONTRATUAL_CLIENTE;
             const aplicSit: SituacaoAplicabilidadeImpacto = req.aplicabilidadeContexto?.situacao || 'APLICAVEL';
             const aplicCfg = APLICABILIDADE_CONFIG[aplicSit] || APLICABILIDADE_CONFIG.APLICAVEL;
@@ -735,7 +739,7 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
 
             return (
               <div
-                key={req.id}
+                key={`${req.id}-${idx}`}
                 className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 rounded-xl p-5 shadow-xs transition-all space-y-4"
               >
                 {/* Header Row */}

@@ -749,9 +749,9 @@ export const AuditsManagementView: React.FC<AuditsManagementViewProps> = ({
 
             {/* Lista com Rolagem */}
             <div className="overflow-y-auto space-y-2.5 pr-1 flex-1">
-              {filteredAuditReqs.map((req) => (
+              {filteredAuditReqs.map((req, idx) => (
                 <div
-                  key={req.id}
+                  key={`${req.id}-${idx}`}
                   className="p-3 rounded-xl border border-slate-200 hover:border-slate-300 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
                 >
                   <div className="space-y-1 flex-1">

@@ -165,7 +165,7 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
 
       {/* Lista de Itens com Estrutura Completa de Análise */}
       <div className="space-y-4">
-        {itens.map((item) => {
+        {itens.map((item, idx) => {
           const req = item.requisito;
           const hist = item.respostaHistorica;
           const temHist = Boolean(hist);
@@ -173,7 +173,7 @@ export const SmartAuditPreparationView: React.FC<SmartAuditPreparationViewProps>
 
           return (
             <div
-              key={req.id}
+              key={`${req.id}-${idx}`}
               className={`bg-slate-900 border rounded-2xl overflow-hidden transition-all ${
                 item.resultado === 'NAO_CONFORME'
                   ? 'border-rose-900/60 shadow-lg shadow-rose-950/10'

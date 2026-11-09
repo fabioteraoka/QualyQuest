@@ -145,9 +145,9 @@ export const RequirementsCentralControlsMatrixTab: React.FC<RequirementsCentralC
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {requisitosSemControle.map((req) => (
+            {requisitosSemControle.map((req, idx) => (
               <div
-                key={req.id}
+                key={`${req.id}-${idx}`}
                 className="bg-white dark:bg-slate-900 p-3.5 rounded-lg border border-rose-200 dark:border-rose-800/60 space-y-2 flex flex-col justify-between"
               >
                 <div>
@@ -282,9 +282,9 @@ export const RequirementsCentralControlsMatrixTab: React.FC<RequirementsCentralC
               </span>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-                {ctrl.vinculados.map((req) => (
+                {ctrl.vinculados.map((req, idx) => (
                   <div
-                    key={req.id}
+                    key={`${req.id}-${idx}`}
                     className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950/40 border border-slate-200 dark:border-slate-800 flex items-start justify-between gap-2"
                   >
                     <div className="space-y-0.5 truncate">

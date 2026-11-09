@@ -747,13 +747,13 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
               </button>
             </div>
           ) : (
-            itensExibidos.map((item) => {
+            itensExibidos.map((item, idx) => {
               const req = item.requisito;
               const isException = item.isExcecao;
 
               return (
                 <div
-                  key={req.id}
+                  key={`${req.id}-${idx}`}
                   className={`bg-slate-900 border rounded-2xl p-5 transition-all ${
                     item.resultado === 'NAO_CONFORME'
                       ? 'border-rose-800/60 hover:border-rose-600/80 shadow-lg shadow-rose-950/20'

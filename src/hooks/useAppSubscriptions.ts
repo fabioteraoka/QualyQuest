@@ -330,7 +330,13 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
 
     // 8.1 Subscribe to Audit Requirements (Fase 8 & 15)
     const unsubscribeAuditReqs = subscribeToAuditRequirements(activeOrgId, null, (reqsList) => {
-      setAuditRequirements(reqsList);
+      const map = new Map<string, RequisitoAuditoriaExterna>();
+      reqsList.forEach((r) => {
+        if (r && r.id && !map.has(r.id)) {
+          map.set(r.id, r);
+        }
+      });
+      setAuditRequirements(Array.from(map.values()));
     });
 
     // 9. Subscribe to Phase 9: Pessoas, Competências, Treinamentos e Qualificações
@@ -394,7 +400,13 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
       setControlesCentrais(list.length > 0 ? list : INITIAL_CENTRAL_CONTROLS);
     });
     const unsubscribeRequisitos = subscribeToRequisitosClientes(activeOrgId, (list) => {
-      setRequisitosClientes(list.length > 0 ? list : INITIAL_CLIENT_REQUIREMENTS);
+      const map = new Map<string, RequisitoClienteItem>();
+      (list.length > 0 ? list : INITIAL_CLIENT_REQUIREMENTS).forEach((r) => {
+        if (r && r.id && !map.has(r.id)) {
+          map.set(r.id, r);
+        }
+      });
+      setRequisitosClientes(Array.from(map.values()));
     });
     const unsubscribeAvaliacoes = subscribeToAvaliacoesRequisitos(activeOrgId, (list) => {
       setAvaliacoesRequisitos(list.length > 0 ? list : INITIAL_CLIENT_EVALUATIONS);

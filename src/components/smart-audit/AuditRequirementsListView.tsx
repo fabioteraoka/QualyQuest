@@ -88,7 +88,11 @@ export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps>
 
   // Filtragem dos requisitos
   const filteredRequirements = useMemo(() => {
+    const seenIds = new Set<string>();
     return requirements.filter((r) => {
+      if (!r || !r.id || seenIds.has(r.id)) return false;
+      seenIds.add(r.id);
+
       if (r.statusRegistro === 'CANCELADO') return false;
 
       const matchAudit = selectedAuditId === 'TODAS' || r.auditId === selectedAuditId;
@@ -468,7 +472,7 @@ export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps>
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredRequirements.map((req) => {
+          {filteredRequirements.map((req, idx) => {
             const isAtendido = req.situacaoAtendimento === 'ATENDIDO';
             const isParcial = req.situacaoAtendimento === 'PARCIALMENTE_ATENDIDO';
             const isNaoAtendido = req.situacaoAtendimento === 'NAO_ATENDIDO';
@@ -476,7 +480,7 @@ export const AuditRequirementsListView: React.FC<AuditRequirementsListViewProps>
 
             return (
               <div
-                key={req.id}
+                key={`${req.id}-${idx}`}
                 className="bg-white rounded-xl border border-slate-200 hover:border-slate-300 p-4 shadow-xs transition-all hover:shadow-sm"
               >
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">

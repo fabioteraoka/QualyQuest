@@ -401,9 +401,9 @@ export const RequirementsDataLoadTab: React.FC<RequirementsDataLoadTabProps> = (
                   Amostra dos Itens do Pacote:
                 </span>
                 <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                  {selectedPacoteParaPreview.requisitos.slice(0, 15).map((r) => (
+                  {selectedPacoteParaPreview.requisitos.slice(0, 15).map((r, idx) => (
                     <div
-                      key={r.id}
+                      key={`${r.id}-${idx}`}
                       className="p-2 rounded bg-slate-50 dark:bg-slate-950/50 border border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs"
                     >
                       <div className="flex items-center gap-2 truncate">

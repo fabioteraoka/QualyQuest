@@ -522,7 +522,7 @@ export const ClientAuditsManagementView: React.FC<ClientAuditsManagementViewProp
                 <p className="text-xs text-slate-400 mt-1">Tente ajustar a busca ou o cliente selecionado.</p>
               </div>
             ) : (
-              filteredRequisitos.map((req) => {
+              filteredRequisitos.map((req, idx) => {
                 // Avaliação recente
                 const avaliacaoRecente = avaliacoes.find((a) => a.requisitoId === req.id);
                 const controleAssoc = controles.find((c) => c.id === req.controleCentralId || c.codigo === req.controleCentralCodigo);
@@ -530,7 +530,7 @@ export const ClientAuditsManagementView: React.FC<ClientAuditsManagementViewProp
 
                 return (
                   <div
-                    key={req.id}
+                    key={`${req.id}-${idx}`}
                     className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-xs hover:border-slate-300 transition-colors"
                   >
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">

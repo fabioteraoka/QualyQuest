@@ -337,9 +337,9 @@ export const RequirementsDiagnosticTab: React.FC<RequirementsDiagnosticTabProps>
           </div>
 
           <div className="space-y-2 text-xs">
-            {diagnostico.requisitosPrecisamRevisao.slice(0, 8).map((rev) => (
+            {diagnostico.requisitosPrecisamRevisao.slice(0, 8).map((rev, idx) => (
               <div
-                key={rev.id}
+                key={`${rev.id}-${idx}`}
                 className="p-3 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
               >
                 <div>

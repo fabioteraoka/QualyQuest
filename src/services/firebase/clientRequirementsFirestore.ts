@@ -648,8 +648,15 @@ export function subscribeToRequisitosClientes(
       }
 
       const list: RequisitoClienteItem[] = [];
+      const seenIds = new Set<string>();
       snapshot.forEach((d) => {
-        list.push({ id: d.id, ...d.data() } as RequisitoClienteItem);
+        const data = d.data();
+        const id = d.id || data.id;
+        const item = { ...data, id } as RequisitoClienteItem;
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          list.push(item);
+        }
       });
       callback(list);
     },

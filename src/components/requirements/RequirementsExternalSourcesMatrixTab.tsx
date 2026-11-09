@@ -511,9 +511,9 @@ export const RequirementsExternalSourcesMatrixTab: React.FC<RequirementsExternal
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {requisitosPesquisados
               .filter((r) => filtroOrigemRequisitos === 'TODOS' || r.fonteOrigem === filtroOrigemRequisitos)
-              .map((req) => (
+              .map((req, idx) => (
                 <div
-                  key={req.id}
+                  key={`${req.id}-${idx}`}
                   className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between"
                 >
                   <div className="space-y-2">
