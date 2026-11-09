@@ -53,6 +53,7 @@ import { RequirementsDiagnosticTab } from './requirements/RequirementsDiagnostic
 import { RequirementsDataLoadTab } from './requirements/RequirementsDataLoadTab';
 import { RequirementsCentralControlsMatrixTab } from './requirements/RequirementsCentralControlsMatrixTab';
 import { RequirementsExternalSourcesMatrixTab } from './requirements/RequirementsExternalSourcesMatrixTab';
+import { RequirementsOrganizationsTab } from './requirements/RequirementsOrganizationsTab';
 import {
   executarDiagnosticoRequisitos
 } from '../services/requirementsDataLoadService';
@@ -161,8 +162,8 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
   const isConsulta = userProfile?.role === 'CONSULTA' || userProfile?.role === 'VIEWER';
 
-  // Sub-Navigation Tabs state (Acervo, Matriz Fontes, Diagnóstico, Carga Segura, Matriz Controles)
-  const [activeLibraryTab, setActiveLibraryTab] = useState<'acervo' | 'fontes_externas' | 'diagnostico' | 'carga' | 'matriz'>('acervo');
+  // Sub-Navigation Tabs state (Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles)
+  const [activeLibraryTab, setActiveLibraryTab] = useState<'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'>('acervo');
 
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -409,9 +410,24 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           }`}
         >
           <Globe className="w-4 h-4" />
-          <span>Matriz de Fontes & Rastreabilidade</span>
+          <span>Monitoramento de Fontes & Revisões</span>
           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-200 border border-blue-400/30">
-            Fase 1.2
+            Fase 1.3
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveLibraryTab('organizacoes')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'organizacoes'
+              ? 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Building2 className="w-4 h-4" />
+          <span>Organizações & Clientes</span>
+          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+            {clientes.length}
           </span>
         </button>
 
@@ -455,10 +471,13 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
         </button>
       </div>
 
-      {/* VIEW: Matriz Central de Fontes & Rastreabilidade (Fase 1.2) */}
+      {/* VIEW: Monitoramento de Fontes & Revisões (Fase 1.3) */}
       {activeLibraryTab === 'fontes_externas' && (
         <RequirementsExternalSourcesMatrixTab
+          organizationId={orgId}
+          currentUser={userProfile}
           requisitosCadastrados={requisitos}
+          clientes={clientes}
           onOpenRequirementDetail={(reqId) => {
             const req = requisitos.find((r) => r.id === reqId);
             if (req) {
@@ -466,6 +485,18 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
               setIsCreatingNew(false);
             }
           }}
+        />
+      )}
+
+      {/* VIEW: Gestão Multicliente e Organizações */}
+      {activeLibraryTab === 'organizacoes' && (
+        <RequirementsOrganizationsTab
+          organizationId={orgId}
+          clientes={clientes}
+          programas={programas}
+          requisitos={requisitos}
+          bases={bases}
+          currentUser={userProfile}
         />
       )}
 

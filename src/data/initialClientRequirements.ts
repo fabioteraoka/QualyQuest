@@ -88,6 +88,9 @@ export const INITIAL_CLIENTS: ClienteExterno[] = [
     nome: 'Atlas Air, Inc.',
     sigla: '5Y',
     status: 'ATIVO',
+    tipoOrganizacao: 'OPERADOR_AEREO',
+    pais: 'Estados Unidos',
+    codigoIcaoIata: 'GTI/5Y',
     contatoPrincipal: {
       nome: 'Mark Henderson',
       cargo: 'Director of Quality Assurance & Maintenance Operations',
@@ -111,6 +114,9 @@ export const INITIAL_CLIENTS: ClienteExterno[] = [
     nome: 'Kalitta Air, LLC',
     sigla: 'K4',
     status: 'ATIVO',
+    tipoOrganizacao: 'OPERADOR_AEREO',
+    pais: 'Estados Unidos',
+    codigoIcaoIata: 'CKS/K4',
     contatoPrincipal: {
       nome: 'David Vance',
       cargo: 'Quality Assurance Station Audit Manager',
@@ -134,6 +140,9 @@ export const INITIAL_CLIENTS: ClienteExterno[] = [
     nome: 'SWISS International Air Lines',
     sigla: 'LX',
     status: 'EM_HOMOLOGACAO',
+    tipoOrganizacao: 'OPERADOR_AEREO',
+    pais: 'Suíça',
+    codigoIcaoIata: 'SWR/LX',
     contatoPrincipal: {
       nome: 'Hans Peter Meier',
       cargo: 'Station Quality Compliance Engineer',
@@ -157,6 +166,9 @@ export const INITIAL_CLIENTS: ClienteExterno[] = [
     nome: 'Avion Express',
     sigla: 'X9',
     status: 'ATIVO',
+    tipoOrganizacao: 'OPERADOR_AEREO',
+    pais: 'Lituânia / UE',
+    codigoIcaoIata: 'NVD/X9',
     contatoPrincipal: {
       nome: 'Tomas Vaitkevicius',
       cargo: 'Director of Maintenance Quality & Compliance',
@@ -180,6 +192,9 @@ export const INITIAL_CLIENTS: ClienteExterno[] = [
     nome: 'Placar Linhas Aéreas',
     sigla: 'PL',
     status: 'ATIVO',
+    tipoOrganizacao: 'OPERADOR_AEREO',
+    pais: 'Brasil',
+    codigoIcaoIata: 'PLB/PL',
     contatoPrincipal: {
       nome: 'Carlos Eduardo Ramos',
       cargo: 'Gerente da Garantia da Qualidade Operacional',
@@ -196,7 +211,34 @@ export const INITIAL_CLIENTS: ClienteExterno[] = [
     createdAt: '2026-02-15T00:00:00.000Z',
     updatedAt: '2026-03-01T00:00:00.000Z',
   },
+  {
+    id: 'CLI-CABOVERDE',
+    organizationId: 'org_impacto_aviation',
+    codigo: 'TACV',
+    nome: 'Cabo Verde Airlines (TACV)',
+    sigla: 'VR',
+    status: 'ATIVO',
+    tipoOrganizacao: 'OPERADOR_AEREO',
+    pais: 'Cabo Verde',
+    codigoIcaoIata: 'TCV/VR',
+    contatoPrincipal: {
+      nome: 'Manuel Tavares',
+      cargo: 'Head of Quality & Safety Audits',
+      email: 'quality.line@caboverdeairlines.com',
+      telefone: '+238 260 8200',
+    },
+    idiomaPadrao: 'PT',
+    basesRelacionadasIds: ['BASE-GRU', 'BASE-GIG'],
+    observacoes: 'Operador aéreo de bandeira de Cabo Verde (frota Boeing 737 MAX). Atendimento em linha internacional em GRU com requisitos da autoridade aeronáutica de Cabo Verde (AAC) e conformidade IOSA.',
+    responsavelInterno: 'Paulo Okubo (Gerente da Garantia da Qualidade)',
+    programasAtivosCount: 1,
+    totalRequisitosCount: 2,
+    taxaConformidade: 100,
+    createdAt: '2026-03-01T00:00:00.000Z',
+    updatedAt: '2026-03-08T10:00:00.000Z',
+  },
 ];
+
 
 export const INITIAL_CLIENT_PROGRAMS: ProgramaChecklistCliente[] = [
   {

@@ -2569,13 +2569,26 @@ export interface BaseEstacaoOperacao {
   updatedAt: string;
 }
 
+export type TipoOrganizacaoExterna =
+  | 'OPERADOR_AEREO'
+  | 'CLIENTE_CONTRATUAL'
+  | 'AUTORIDADE_AERONAUTICA'
+  | 'ORGANISMO_AUDITOR'
+  | 'CERTIFICADORA'
+  | 'LESSOR'
+  | 'OUTRO';
+
 export interface ClienteExterno {
   id: string;
   organizationId: string;
-  codigo: string; // Ex: 'ATLAS', 'KALITTA', 'SWISS'
-  nome: string; // Ex: 'Atlas Air, Inc.', 'Kalitta Air, LLC', 'SWISS International Air Lines'
+  codigo: string; // Ex: 'ATLAS', 'KALITTA', 'SWISS', 'TACV'
+  nome: string; // Ex: 'Atlas Air, Inc.', 'Kalitta Air, LLC', 'SWISS International Air Lines', 'Cabo Verde Airlines'
   sigla: string;
   status: StatusClienteExterno;
+  tipoOrganizacao?: TipoOrganizacaoExterna;
+  pais?: string;
+  codigoIcaoIata?: string; // Ex: 'TCV/VR', 'GTI/5Y', 'CKS/K4', 'SWR/LX'
+  documentosAssociadosIds?: string[];
   contatoPrincipal?: {
     nome: string;
     cargo: string;
@@ -2771,6 +2784,110 @@ export type TipoAcessoFonte =
   | 'PRIVADA_LICENCIADA'
   | 'CLIENTE_ENVIO_PENDENTE'
   | 'INTERNO_CONTROLADO';
+
+// --- FASE 1.3: Monitoramento Periódico de Fontes e Gestão de Impacto SGQ ---
+
+export type PeriodicidadeMonitoramento = 'MENSAL' | 'TRIMESTRAL' | 'SEMESTRAL' | 'MANUAL';
+
+export type StatusMonitoramentoFonte =
+  | 'EM_DIA'
+  | 'PROXIMO_DO_VENCIMENTO'
+  | 'PENDENTE_VERIFICACAO'
+  | 'DIVERGENCIA_IDENTIFICADA'
+  | 'FALHA_CONSULTA'
+  | 'AGUARDANDO_DOCUMENTO_EXTERNO';
+
+export interface FonteNormativaPersistente {
+  id: string;
+  organizationId: string;
+  autoridadeOuEntidade: string;
+  codigoDocumento: string;
+  tituloDocumento: string;
+  familia: 'ANAC' | 'EASA' | 'FAA' | 'IOSA' | 'CLIENTE' | 'INTERNO_IMPACTO' | 'OUTRA_AUTORIDADE';
+  tipoAcesso: TipoAcessoFonte;
+  statusAcesso: StatusAcessoConteudo;
+  periodicidadeMonitoramento: PeriodicidadeMonitoramento;
+  revisaoVigenteIdentificada: string;
+  dataPublicacao?: string;
+  dataVigencia?: string;
+  dataUltimaConsulta: string;
+  dataProximaConsulta: string;
+  urlOficialConsulta: string;
+  atualizacaoPossivel: boolean;
+  modalidadeAtualizacao: 'AUTOMATICA_API_XML' | 'MANUAL_CONFERENCIA_PORTAL' | 'UPLOAD_ARQUIVO_NOVA_EDICAO';
+  limitaAcesso?: string;
+  totalItensExtraidos: number;
+  totalEstimadoItens?: number;
+  aplicabilidadePadraoImpacto: SituacaoAplicabilidadeImpacto;
+  justificativaAplicabilidade: string;
+  observacoesIntegridade: string;
+  clienteRelacionadoId?: string;
+  clienteRelacionadoNome?: string;
+  statusMonitoramento?: StatusMonitoramentoFonte;
+  ultimaDivergenciaDetectada?: boolean;
+  detalhesUltimaDivergencia?: string;
+  falhaUltimaConsulta?: string;
+  resultadoUltimaConsulta?: {
+    data: string;
+    sucesso: boolean;
+    mensagem: string;
+    detalhesApi?: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AnaliseImpactoQualidadeRecord {
+  id: string;
+  organizationId: string;
+  fonteId: string;
+  codigoDocumento: string;
+  revisaoAnterior: string;
+  revisaoNova: string;
+  dataDeteccao: string;
+  status: 'PENDENTE' | 'APROVADO' | 'REJEITADO' | 'INCORPORADO';
+  
+  // Avaliação de Impacto nos Pilares do SGQ
+  impactoMOMQ: { afetado: boolean; capitulosAfetados?: string; observacoes?: string };
+  impactoPTM: { afetado: boolean; treinamentosAfetados?: string; observacoes?: string };
+  impactoFormularios: { afetado: boolean; formulariosAfetados?: string; observacoes?: string };
+  impactoFerramental: { afetado: boolean; ferramentasAfetadas?: string; observacoes?: string };
+  impactoProcessosManutencao: { afetado: boolean; processosAfetados?: string; observacoes?: string };
+  
+  // Diffs detalhados de requisitos
+  itensNovosCount: number;
+  itensAlteradosCount: number;
+  itensRevogadosCount: number;
+  itensInalteradosCount: number;
+  detalhesDiff: {
+    codigoItem: string;
+    titulo: string;
+    tipoMudanca: 'ITEM_NOVO' | 'TEXTO_ALTERADO' | 'VIGENCIA_ALTERADA' | 'REVOGADO_SUBSTITUIDO';
+    textoAnterior?: string;
+    textoNovo?: string;
+    revisaoAnterior?: string;
+    revisaoNova?: string;
+    impactoSugerido?: string;
+    decisaoItem?: 'APLICAVEL' | 'NAO_APLICAVEL' | 'PARCIALMENTE_APLICAVEL' | 'EM_AVALIACAO';
+    justificativaItem?: string;
+  }[];
+  
+  // Homologação da Gerência da Qualidade
+  decisaoGeral?: 'APLICAVEL' | 'NAO_APLICAVEL' | 'PARCIALMENTE_APLICAVEL' | 'EM_AVALIACAO';
+  justificativaDecisao?: string;
+  responsavelQualidadeNome?: string;
+  responsavelQualidadeUid?: string;
+  dataDecisao?: string;
+  prazoImplementacao?: string; // YYYY-MM-DD
+  
+  // Incorporação ao acervo
+  incorporadoEm?: string;
+  incorporadoPorNome?: string;
+  totalRequisitosAtualizados?: number;
+  
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type RequisitoMestreSGQ = RequisitoClienteItem;
 
