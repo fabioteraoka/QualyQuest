@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   BookOpen,
   Search,
@@ -42,7 +42,9 @@ import {
   ControleCentralSGQ,
   ProgramaChecklistCliente,
   UserProfile,
-  OrganizationRecord
+  OrganizationRecord,
+  RespostaInstitucionalAprovada,
+  EvidenciaRequisitoItem
 } from '../types';
 import {
   saveRequisitoCliente,
@@ -54,6 +56,13 @@ import { RequirementsDataLoadTab } from './requirements/RequirementsDataLoadTab'
 import { RequirementsCentralControlsMatrixTab } from './requirements/RequirementsCentralControlsMatrixTab';
 import { RequirementsExternalSourcesMatrixTab } from './requirements/RequirementsExternalSourcesMatrixTab';
 import { RequirementsOrganizationsTab } from './requirements/RequirementsOrganizationsTab';
+import { RequirementsCorporateComplianceMatrixTab } from './requirements/RequirementsCorporateComplianceMatrixTab';
+import {
+  subscribeToInstitutionalResponses,
+  subscribeToComplianceEvidences,
+  INITIAL_INSTITUTIONAL_RESPONSES,
+  INITIAL_COMPLIANCE_EVIDENCES
+} from '../services/corporateComplianceMatrixService';
 import {
   executarDiagnosticoRequisitos
 } from '../services/requirementsDataLoadService';
@@ -162,8 +171,30 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
   const isConsulta = userProfile?.role === 'CONSULTA' || userProfile?.role === 'VIEWER';
 
-  // Sub-Navigation Tabs state (Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles)
-  const [activeLibraryTab, setActiveLibraryTab] = useState<'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'>('acervo');
+  // Sub-Navigation Tabs state (Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles)
+  const [activeLibraryTab, setActiveLibraryTab] = useState<'conformidade' | 'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'>('conformidade');
+
+  // Respostas Institucionais Aprovadas e Evidências Objetivas (Fase 1.4)
+  const [respostasInstitucionais, setRespostasInstitucionais] = useState<RespostaInstitucionalAprovada[]>(INITIAL_INSTITUTIONAL_RESPONSES);
+  const [evidencias, setEvidencias] = useState<EvidenciaRequisitoItem[]>(INITIAL_COMPLIANCE_EVIDENCES);
+
+  useEffect(() => {
+    if (!orgId) return;
+    const unsubResp = subscribeToInstitutionalResponses(orgId, (resps) => {
+      if (resps && resps.length > 0) {
+        setRespostasInstitucionais(resps);
+      }
+    });
+    const unsubEvid = subscribeToComplianceEvidences(orgId, (evids) => {
+      if (evids && evids.length > 0) {
+        setEvidencias(evids);
+      }
+    });
+    return () => {
+      unsubResp();
+      unsubEvid();
+    };
+  }, [orgId]);
 
   // Filters state
   const [searchTerm, setSearchTerm] = useState('');
@@ -387,8 +418,23 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
         </div>
       </div>
 
-      {/* Sub-Navigation Tabs: Acervo, Matriz Fontes, Diagnóstico, Carga Segura, Matriz Controles */}
+      {/* Sub-Navigation Tabs: Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto text-xs font-semibold">
+        <button
+          onClick={() => setActiveLibraryTab('conformidade')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'conformidade'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Matriz de Conformidade SGQ</span>
+          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-100 border border-emerald-400/30">
+            Fase 1.4
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveLibraryTab('acervo')}
           className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
@@ -470,6 +516,26 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           <span>Matriz Controle ↔ Requisitos</span>
         </button>
       </div>
+
+      {/* VIEW: Matriz Corporativa de Conformidade (Fase 1.4) */}
+      {activeLibraryTab === 'conformidade' && (
+        <RequirementsCorporateComplianceMatrixTab
+          organizationId={orgId}
+          requisitos={requisitos}
+          controles={controles}
+          clientes={clientes}
+          respostasInstitucionais={respostasInstitucionais}
+          evidencias={evidencias}
+          currentUser={userProfile}
+          onSelectRequisito={(reqId) => {
+            const req = requisitos.find((r) => r.id === reqId);
+            if (req) {
+              setSelectedReqForEdit(req);
+              setIsCreatingNew(false);
+            }
+          }}
+        />
+      )}
 
       {/* VIEW: Monitoramento de Fontes & Revisões (Fase 1.3) */}
       {activeLibraryTab === 'fontes_externas' && (

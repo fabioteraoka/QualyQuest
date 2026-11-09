@@ -2626,6 +2626,48 @@ export interface ProgramaChecklistCliente {
   updatedAt: string;
 }
 
+export type StatusConformidadeSGQ =
+  | 'NAO_AVALIADO'
+  | 'CONFORME'
+  | 'PARCIALMENTE_CONFORME'
+  | 'NAO_CONFORME'
+  | 'AGUARDANDO_EVIDENCIA'
+  | 'REAVALIACAO_NECESSARIA';
+
+export type StatusRespostaInstitucional =
+  | 'RASCUNHO'
+  | 'EM_VALIDACAO'
+  | 'APROVADA'
+  | 'DESATUALIZADA'
+  | 'SUSPENSA';
+
+export interface RespostaInstitucionalAprovada {
+  id: string;
+  organizationId: string;
+  titulo: string;
+  textoResposta: string;
+  controleCentralId?: string;
+  controleCentralCodigo?: string;
+  requisitosRelacionadosIds: string[];
+  documentosEvidenciasIds?: string[];
+  referenciasProcedimentos?: string[]; // Ex: MOMQ Seção 3.4, PTM Seção 2.1
+  elaboradoPorNome: string;
+  elaboradoPorUid?: string;
+  aprovadoPorNome?: string;
+  aprovadoPorUid?: string;
+  dataAprovacao?: string;
+  versao: string; // Ex: '1.0', '2.0'
+  status: StatusRespostaInstitucional;
+  historicoVersoes?: Array<{
+    versao: string;
+    data: string;
+    autor: string;
+    resumoAlteracao: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ControleCentralSGQ {
   id: string;
   organizationId: string;
@@ -2637,6 +2679,20 @@ export interface ControleCentralSGQ {
   evidenciasTipicas: string[];
   status: 'ATIVO' | 'EM_REVISAO';
   requisitosVinculadosCount?: number;
+
+  // --- FASE 1.4: Matriz Corporativa de Conformidade ---
+  processoRelacionado?: string; // Ex: 'Garantia da Qualidade', 'Metrologia', 'Treinamento', 'Almoxarifado'
+  documentosInternosRelacionados?: string[]; // Ex: ['MOMQ Seção 3.4.2', 'F 001-06']
+  periodicidadeAcompanhamento?: PeriodicidadeAvaliacao | string;
+  respostaInstitucionalPadraoId?: string;
+  respostaInstitucionalTexto?: string;
+  statusConformidade?: StatusConformidadeSGQ;
+  dataUltimaAvaliacao?: string;
+  dataProximaAvaliacao?: string;
+  pendenciasPlanoAcao?: string;
+  evidenciasVinculadasIds?: string[];
+  totalEvidenciasValidasCount?: number;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -2760,6 +2816,16 @@ export interface RequisitoClienteItem {
   totalAuditoriasVinculadasCount?: number;
   ultimaAuditoriaData?: string;
   auditoriasRelacionadasIds?: string[];
+
+  // --- FASE 1.4: Matriz Corporativa de Conformidade & Resposta Institucional ---
+  statusConformidade?: StatusConformidadeSGQ;
+  constatacaoConformidade?: string;
+  dataUltimaAvaliacaoConformidade?: string;
+  responsavelAvaliacaoConformidadeNome?: string;
+  respostaInstitucionalId?: string;
+  respostaInstitucionalTexto?: string;
+  evidenciasVinculadasIds?: string[];
+  pendenciaEvidencia?: boolean;
 }
 
 export type StatusAcessoConteudo =
@@ -2917,6 +2983,14 @@ export interface EvidenciaRequisitoItem {
   controleCodigo?: string;
   usuarioUid?: string;
   usuarioNome?: string;
+  // --- FASE 1.4: Controle de Vigência e Abrangência da Evidência ---
+  dataEmissao?: string;
+  dataValidade?: string;
+  baseOperacional?: string;
+  aeronaveEquipamento?: string;
+  processoSetor?: string;
+  statusValidade?: 'VALIDO' | 'PROXIMO_VENCIMENTO' | 'VENCIDO' | 'NAO_APLICAVEL';
+  aprovadoPorAuditor?: boolean;
 }
 
 export interface PerguntaInteligenteResolucao {
