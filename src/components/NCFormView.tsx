@@ -131,6 +131,12 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
         decisoesSugestoes: ncComCiclos.decisoesSugestoes || [],
         trilhaAuditoria: ncComCiclos.trilhaAuditoria || [],
         analiseSetor: ncComCiclos.analiseSetor || undefined,
+        avaliacaoRiscoInicial: ncComCiclos.avaliacaoRiscoInicial?.codigo ? ncComCiclos.avaliacaoRiscoInicial : {
+          severidade: '2',
+          probabilidade: 'C',
+          codigo: '2C',
+          nivel: 'Médio',
+        },
       };
     }
     const freshNC: NCRecord = {
@@ -234,7 +240,24 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
     if (initialTab) {
       setActiveTab(initialTab);
     }
-  }, [initialTab, initialData?.id]);
+    if (initialData) {
+      const ncComCiclos = garantirCiclosInicializados(initialData);
+      setFormData(prev => ({
+        ...prev,
+        ...ncComCiclos,
+        responsavel: ncComCiclos.responsavel || ncComCiclos.acaoCorretiva?.responsavel || ncComCiclos.preAnaliseContencao?.responsavel || '',
+        decisoesSugestoes: ncComCiclos.decisoesSugestoes || [],
+        trilhaAuditoria: ncComCiclos.trilhaAuditoria || [],
+        analiseSetor: ncComCiclos.analiseSetor || undefined,
+        avaliacaoRiscoInicial: ncComCiclos.avaliacaoRiscoInicial?.codigo ? ncComCiclos.avaliacaoRiscoInicial : (prev.avaliacaoRiscoInicial || {
+          severidade: '2',
+          probabilidade: 'C',
+          codigo: '2C',
+          nivel: 'Médio',
+        }),
+      }));
+    }
+  }, [initialTab, initialData]);
 
   // Dynamic Normative and Version Identification
   const dataReferenciaOcorrencia = formData.dataIdentificacao || formData.dataEmissaoFormulario || new Date().toISOString().split('T')[0];
@@ -1355,7 +1378,7 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 text-xs font-semibold">
           {[
             { id: 'dados', num: '1', label: 'Identificação', icon: <FileText className="w-3.5 h-3.5" /> },
-            { id: 'risco', num: '2', label: `Risco (${formData.avaliacaoRiscoInicial.codigo})`, icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+            { id: 'risco', num: '2', label: `Risco (${formData.avaliacaoRiscoInicial?.codigo || '2C'})`, icon: <ShieldCheck className="w-3.5 h-3.5" /> },
             { id: 'contencao', num: '3', label: 'Contenção', icon: <Clock className="w-3.5 h-3.5" /> },
             { id: 'causa', num: '4', label: 'Investigação', icon: <Search className="w-3.5 h-3.5" /> },
             { id: 'acao', num: '5', label: 'Ação 5W2H', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
@@ -1964,13 +1987,20 @@ export const NCFormView: React.FC<NCFormViewProps> = ({
         {activeTab === 'risco' && (
           <div className="space-y-4">
             <RiskMatrixWidget
-              value={formData.avaliacaoRiscoInicial}
+              value={formData.avaliacaoRiscoInicial || {
+                severidade: '2',
+                probabilidade: 'C',
+                codigo: '2C',
+                nivel: 'Médio',
+              }}
               interactive={true}
               onChange={(risco) => handleChange('avaliacaoRiscoInicial', risco)}
             />
 
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 space-y-1">
-              <p><strong>Avaliação Atual:</strong> Severidade {formData.avaliacaoRiscoInicial.severidade} x Probabilidade {formData.avaliacaoRiscoInicial.probabilidade} = <strong>{formData.avaliacaoRiscoInicial.codigo}</strong> ({formData.avaliacaoRiscoInicial.nivel})</p>
+              <p>
+                <strong>Avaliação Atual:</strong> Severidade {formData.avaliacaoRiscoInicial?.severidade || '2'} x Probabilidade {formData.avaliacaoRiscoInicial?.probabilidade || 'C'} = <strong>{formData.avaliacaoRiscoInicial?.codigo || '2C'}</strong> ({formData.avaliacaoRiscoInicial?.nivel || 'Médio'})
+              </p>
               <p className="text-[11px] text-slate-500">
                 A classificação de risco orienta a priorização das ações corretivas e os prazos de escalonamento para a diretoria da qualidade.
               </p>

@@ -67,6 +67,7 @@ import { FerramentasMetrologiaView } from '../FerramentasMetrologiaView';
 import { SmartImportMigrationView } from '../SmartImportMigrationView';
 import { SmartAuditView } from '../SmartAuditView';
 import { RequirementsLibraryView } from '../RequirementsLibraryView';
+import { AuditChecklistsLibraryView } from '../checklists/AuditChecklistsLibraryView';
 import { SystemDesignerOfficialView } from '../SystemDesignerOfficialView';
 import { RoosterModule } from '../RoosterModule';
 
@@ -954,6 +955,17 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           onSaveProgram={async (prog) => {
             props.setProgramasClientes((prev) => [prog, ...prev.filter((p) => p.id !== prog.id)]);
           }}
+          onNavigateToTab={(tab) => setActiveTab(tab as any)}
+        />
+      );
+
+    case 'biblioteca-checklists':
+    case 'checklists-auditoria':
+    case 'checklists-corporativos':
+      return (
+        <AuditChecklistsLibraryView
+          organizationId={props.activeOrgId}
+          currentUser={props.userProfile}
           onNavigateToTab={(tab) => setActiveTab(tab as any)}
         />
       );

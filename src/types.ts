@@ -2626,6 +2626,91 @@ export interface ProgramaChecklistCliente {
   updatedAt: string;
 }
 
+export type TipoEntidadeChecklist =
+  | 'AUTORIDADE_ANAC'
+  | 'AUTORIDADE_EASA'
+  | 'AUTORIDADE_FAA'
+  | 'PADRAO_IOSA'
+  | 'CLIENTE_OPERADOR'
+  | 'INTERNO_SGQ';
+
+export interface ChecklistAuditoriaMestre {
+  id: string;
+  organizationId: string;
+  codigo: string;
+  nome: string;
+  tipoEntidade: TipoEntidadeChecklist;
+  autoridadeOuCliente: string;
+  normaDocumentoReferencia: string;
+  revisao: string;
+  dataVigencia: string;
+  status: 'VIGENTE' | 'EM_REVISAO' | 'OBSOLETO';
+  escopoAplicabilidade: string;
+  modulos: string[];
+  totalItens: number;
+  observacoes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CriterioChecklistMestre {
+  id: string;
+  checklistId: string;
+  checklistCodigo: string;
+  numeroItem: string;
+  moduloOuSecao: string;
+  referenciaNormativa: string;
+  perguntaOuCriterio: string;
+  textoOriginal?: string;
+  orientacaoEvidencia: string;
+  controleCentralId?: string;
+  controleCentralNome?: string;
+  criticidade: 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA';
+  ordem: number;
+}
+
+export interface ItemAvaliadoExecucaoChecklist {
+  criterioId: string;
+  numeroItem: string;
+  moduloOuSecao: string;
+  referenciaNormativa: string;
+  perguntaOuCriterio: string;
+  status: 'C' | 'NC' | 'NA' | 'PENDENTE';
+  evidenciasVinculadasIds?: string[];
+  observacoesAuditor?: string;
+  responsavelCorrecao?: string;
+  prazoCorrecao?: string;
+  rncId?: string;
+  rncNumero?: string;
+}
+
+export interface ExecucaoChecklistAuditoria {
+  id: string;
+  organizationId: string;
+  checklistId: string;
+  checklistCodigo: string;
+  checklistNome: string;
+  numeroAuditoria: string;
+  dataAuditoria: string;
+  auditorLider: string;
+  auditoresAcompanhantes?: string[];
+  baseOperacional: string;
+  escopoAuditado: string;
+  statusExecucao: 'EM_ANDAMENTO' | 'CONCLUIDA' | 'CANCELADA';
+  itensAvaliados: Record<string, ItemAvaliadoExecucaoChecklist>;
+  totalItens: number;
+  totalConforme: number;
+  totalNaoConforme: number;
+  totalNaoAplicavel: number;
+  totalPendente: number;
+  taxaConformidade: number;
+  resumoConstatacoes?: string;
+  concluidaEm?: string;
+  concluidaPorNome?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type StatusConformidadeSGQ =
   | 'NAO_AVALIADO'
   | 'CONFORME'

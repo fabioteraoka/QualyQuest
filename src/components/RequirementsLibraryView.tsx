@@ -57,6 +57,7 @@ import { RequirementsCentralControlsMatrixTab } from './requirements/Requirement
 import { RequirementsExternalSourcesMatrixTab } from './requirements/RequirementsExternalSourcesMatrixTab';
 import { RequirementsOrganizationsTab } from './requirements/RequirementsOrganizationsTab';
 import { RequirementsCorporateComplianceMatrixTab } from './requirements/RequirementsCorporateComplianceMatrixTab';
+import { AuditChecklistsLibraryView } from './checklists/AuditChecklistsLibraryView';
 import {
   subscribeToInstitutionalResponses,
   subscribeToComplianceEvidences,
@@ -171,8 +172,8 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
   const isConsulta = userProfile?.role === 'CONSULTA' || userProfile?.role === 'VIEWER';
 
-  // Sub-Navigation Tabs state (Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles)
-  const [activeLibraryTab, setActiveLibraryTab] = useState<'conformidade' | 'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'>('conformidade');
+  // Sub-Navigation Tabs state (Checklists de Auditoria, Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles)
+  const [activeLibraryTab, setActiveLibraryTab] = useState<'checklists' | 'conformidade' | 'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'>('checklists');
 
   // Respostas Institucionais Aprovadas e Evidências Objetivas (Fase 1.4)
   const [respostasInstitucionais, setRespostasInstitucionais] = useState<RespostaInstitucionalAprovada[]>(INITIAL_INSTITUTIONAL_RESPONSES);
@@ -418,8 +419,23 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
         </div>
       </div>
 
-      {/* Sub-Navigation Tabs: Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles */}
+      {/* Sub-Navigation Tabs: Checklists de Auditoria, Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto text-xs font-semibold">
+        <button
+          onClick={() => setActiveLibraryTab('checklists')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'checklists'
+              ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <FileCheck2 className="w-4 h-4" />
+          <span>Checklists de Auditoria</span>
+          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-400/30 text-amber-950 dark:text-amber-100 border border-amber-500/40">
+            11 Modelos
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveLibraryTab('conformidade')}
           className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
@@ -516,6 +532,16 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           <span>Matriz Controle ↔ Requisitos</span>
         </button>
       </div>
+
+      {/* VIEW: Biblioteca Corporativa de Checklists de Auditoria */}
+      {activeLibraryTab === 'checklists' && (
+        <AuditChecklistsLibraryView
+          organizationId={orgId}
+          currentUser={userProfile}
+          evidenciasDisponiveis={evidencias}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
 
       {/* VIEW: Matriz Corporativa de Conformidade (Fase 1.4) */}
       {activeLibraryTab === 'conformidade' && (
