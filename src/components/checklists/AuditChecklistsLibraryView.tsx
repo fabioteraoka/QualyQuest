@@ -32,7 +32,14 @@ import {
   Trash2,
   SlidersHorizontal,
   FolderPlus,
-  ArrowRight
+  ArrowRight,
+  FileCheck,
+  HelpCircle,
+  CheckSquare,
+  ShieldAlert,
+  CalendarClock,
+  UserCheck,
+  Activity
 } from 'lucide-react';
 import {
   ChecklistAuditoriaMestre,
@@ -45,7 +52,12 @@ import {
   NCRecord,
   CriterioBibliotecaCorporativa,
   FonteVinculoCriterio,
-  CriterioAjusteAuditoria
+  CriterioAjusteAuditoria,
+  ControleCentralSGQ,
+  RequisitoClienteItem,
+  RespostaInstitucionalAprovada,
+  StatusConformidadeSGQ,
+  SituacaoAplicabilidadeImpacto
 } from '../../types';
 import {
   subscribeToCorporateLibraryCriteria,
@@ -59,18 +71,35 @@ import {
   gerarRNCFromCriterioNC
 } from '../../services/corporateChecklistsService';
 import { CANONICAL_CORPORATE_CRITERIA } from '../../data/corporateLibraryData';
-import { INITIAL_COMPLIANCE_EVIDENCES } from '../../services/corporateComplianceMatrixService';
+import {
+  AUDITORIA_CONSOLIDACAO_DATA,
+  ItemAuditoriaConsolidacao,
+  TipoRelacionamentoNormativo,
+  StatusValidacaoDocumental
+} from '../../data/canonicalCriteriaAuditData';
+import {
+  calcularIndicadoresPainelQualidade,
+  getResumoAuditoriaConsolidacao,
+  validarAplicabilidadeEvidencia
+} from '../../services/continuousComplianceService';
+import {
+  CONTROLES_CORPORATIVOS_EXPANDIDOS,
+  INITIAL_COMPLIANCE_EVIDENCES,
+  INITIAL_INSTITUTIONAL_RESPONSES
+} from '../../services/corporateComplianceMatrixService';
 
 interface AuditChecklistsLibraryViewProps {
   organizationId: string;
   currentUser?: UserProfile | null;
   evidenciasDisponiveis?: EvidenciaRequisitoItem[];
+  controlesCentrais?: ControleCentralSGQ[];
+  requisitosCadastrados?: RequisitoClienteItem[];
   onNavigateToRNC?: (rncId: string) => void;
   onNavigateToTab?: (tab: string) => void;
 }
 
 const AUTORIDADES_FILTRO = [
-  { id: 'TODAS', label: 'Todas as Fontes (36 Canônicos)', icon: '🌐' },
+  { id: 'TODAS', label: 'Todas as Fontes', icon: '🌐' },
   { id: 'ANAC', label: 'ANAC (RBAC 145 / 43 / IS)', icon: '🏛️' },
   { id: 'EASA', label: 'EASA (Part-145)', icon: '🇪🇺' },
   { id: 'FAA', label: 'FAA (14 CFR 145 / 43)', icon: '🇺🇸' },
@@ -85,6 +114,8 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
   organizationId,
   currentUser,
   evidenciasDisponiveis = INITIAL_COMPLIANCE_EVIDENCES,
+  controlesCentrais = CONTROLES_CORPORATIVOS_EXPANDIDOS,
+  requisitosCadastrados = [],
   onNavigateToRNC,
   onNavigateToTab
 }) => {
@@ -92,19 +123,28 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
   const isConsulta = currentUser?.role === 'CONSULTA' || currentUser?.role === 'VIEWER';
 
   // Sub-abas principais da visão
-  const [activeTab, setActiveTab] = useState<'biblioteca-central' | 'montar-auditoria' | 'historico-auditorias'>('biblioteca-central');
+  const [activeTab, setActiveTab] = useState<
+    'painel-qualidade' | 'auditoria-consolidacao' | 'matriz-controles-ssot' | 'montar-auditoria' | 'historico-auditorias'
+  >('painel-qualidade');
 
   // Estados da Biblioteca Canônica
   const [criteriosCanônicos, setCriteriosCanônicos] = useState<CriterioBibliotecaCorporativa[]>(CANONICAL_CORPORATE_CRITERIA);
   const [execucoes, setExecucoes] = useState<ExecucaoChecklistAuditoria[]>([]);
+  const [controlesState, setControlesState] = useState<ControleCentralSGQ[]>(controlesCentrais);
   const [loading, setLoading] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ tipo: 'sucesso' | 'erro' | 'info'; texto: string } | null>(null);
 
-  // Filtros da Biblioteca Central
-  const [filtroAutoridade, setFiltroAutoridade] = useState<string>('TODAS');
-  const [filtroCategoria, setFiltroCategoria] = useState<string>('TODAS');
-  const [termoBusca, setTermoBusca] = useState<string>('');
-  const [selectedCriterioModal, setSelectedCriterioModal] = useState<CriterioBibliotecaCorporativa | null>(null);
+  // Filtros da Auditoria da Consolidação (Fase 1.4.1)
+  const [filtroRelacionamento, setFiltroRelacionamento] = useState<string>('TODOS');
+  const [buscaConsolidacao, setBuscaConsolidacao] = useState<string>('');
+  const [filtroStatusDocumental, setFiltroStatusDocumental] = useState<string>('TODOS');
+  const [itemAuditoriaModal, setItemAuditoriaModal] = useState<ItemAuditoriaConsolidacao | null>(null);
+
+  // Filtros da Matriz de Controles SSoT
+  const [filtroControleStatusConf, setFiltroControleStatusConf] = useState<string>('TODOS');
+  const [filtroControleProcesso, setFiltroControleProcesso] = useState<string>('TODOS');
+  const [buscaControle, setBuscaControle] = useState<string>('');
+  const [controleSelecionadoModal, setControleSelecionadoModal] = useState<ControleCentralSGQ | null>(null);
 
   // Estados do Assistente de Montagem Dinâmica de Auditoria
   const [builderOrigem, setBuilderOrigem] = useState<string>('ANAC');
@@ -118,7 +158,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
   const [criteriosExcluidosBuilder, setCriteriosExcluidosBuilder] = useState<Record<string, string>>({}); // { critId: justificativa }
   const [criteriosExtrasBuilder, setCriteriosExtrasBuilder] = useState<Record<string, string>>({}); // { critId: justificativa }
 
-  // Modal de inclusão / exclusão com justificativa
+  // Modal de justificativa
   const [justificativaModal, setJustificativaModal] = useState<{
     aberto: boolean;
     tipo: 'EXCLUIR' | 'INCLUIR_EXTRA';
@@ -131,17 +171,17 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
     justificativa: ''
   });
 
-  // Modal de Adicionar Critério Extra da Biblioteca Central
+  // Modal Adicionar Extra
   const [modalAdicionarExtraAberto, setModalAdicionarExtraAberto] = useState(false);
   const [buscaExtra, setBuscaExtra] = useState('');
 
-  // Estado da Execução Ativa (Auditoria em andamento)
+  // Execução Ativa
   const [activeExecution, setActiveExecution] = useState<ExecucaoChecklistAuditoria | null>(null);
   const [filtroStatusItem, setFiltroStatusItem] = useState<'TODOS' | 'PENDENTE' | 'C' | 'NC' | 'NA'>('TODOS');
   const [salvandoExecucao, setSalvandoExecucao] = useState(false);
   const [itemParaEvidencias, setItemParaEvidencias] = useState<ItemAvaliadoExecucaoChecklist | null>(null);
 
-  // Escutar Biblioteca Canônica e Execuções no Firestore
+  // Escutar Biblioteca Canônica e Execuções
   useEffect(() => {
     const unsubCriteria = subscribeToCorporateLibraryCriteria(orgId, (criteria) => {
       if (criteria && criteria.length > 0) {
@@ -168,7 +208,6 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
     setCriteriosExcluidosBuilder({});
     setCriteriosExtrasBuilder({});
 
-    // Sugerir títulos e códigos
     if (builderOrigem === 'ANAC') {
       setBuilderNomeAuditoria('Auditoria de Vigilância Contínua — ANAC RBAC 145 / 43');
       setBuilderCodigoChecklist('CHK-DIN-ANAC-145');
@@ -199,7 +238,81 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
     }
   }, [builderOrigem, criteriosCanônicos]);
 
-  // Seeding inicial idempotente
+  // Cálculo dos Indicadores do Painel de Trabalho da Qualidade
+  const indicadoresQualidade = useMemo(() => {
+    return calcularIndicadoresPainelQualidade(
+      controlesState,
+      requisitosCadastrados,
+      evidenciasDisponiveis,
+      INITIAL_INSTITUTIONAL_RESPONSES
+    );
+  }, [controlesState, requisitosCadastrados, evidenciasDisponiveis]);
+
+  // Resumo da Auditoria de Consolidação (Fase 1.4.1)
+  const resumoConsolidacao = useMemo(() => {
+    return getResumoAuditoriaConsolidacao();
+  }, []);
+
+  // Itens filtrados da Auditoria de Consolidação
+  const itensConsolidacaoFiltrados = useMemo(() => {
+    return AUDITORIA_CONSOLIDACAO_DATA.filter((item) => {
+      const matchRel = filtroRelacionamento === 'TODOS' || item.tipoRelacionamento === filtroRelacionamento;
+      const matchDoc = filtroStatusDocumental === 'TODOS' || item.statusValidacaoDocumental === filtroStatusDocumental;
+      const matchBusca =
+        !buscaConsolidacao.trim() ||
+        item.idOriginal.toLowerCase().includes(buscaConsolidacao.toLowerCase()) ||
+        item.empresaOuAutoridade.toLowerCase().includes(buscaConsolidacao.toLowerCase()) ||
+        item.normaSecao.toLowerCase().includes(buscaConsolidacao.toLowerCase()) ||
+        item.textoOriginal.toLowerCase().includes(buscaConsolidacao.toLowerCase()) ||
+        item.criterioCanonicoAssociado.toLowerCase().includes(buscaConsolidacao.toLowerCase()) ||
+        item.controleCentralId.toLowerCase().includes(buscaConsolidacao.toLowerCase());
+      return matchRel && matchDoc && matchBusca;
+    });
+  }, [filtroRelacionamento, filtroStatusDocumental, buscaConsolidacao]);
+
+  // Controles filtrados na Matriz SSoT
+  const controlesFiltrados = useMemo(() => {
+    return controlesState.filter((ctrl) => {
+      const matchConf = filtroControleStatusConf === 'TODOS' || ctrl.statusConformidade === filtroControleStatusConf;
+      const matchProc = filtroControleProcesso === 'TODOS' || ctrl.processoRelacionado === filtroControleProcesso;
+      const matchBusca =
+        !buscaControle.trim() ||
+        ctrl.codigo.toLowerCase().includes(buscaControle.toLowerCase()) ||
+        ctrl.nome.toLowerCase().includes(buscaControle.toLowerCase()) ||
+        ctrl.responsavelPadrao.toLowerCase().includes(buscaControle.toLowerCase()) ||
+        (ctrl.documentosInternosRelacionados || []).some((d) => d.toLowerCase().includes(buscaControle.toLowerCase()));
+      return matchConf && matchProc && matchBusca;
+    });
+  }, [controlesState, filtroControleStatusConf, filtroControleProcesso, buscaControle]);
+
+  // Processos únicos de controles
+  const processosUnicosControles = useMemo(() => {
+    const set = new Set<string>();
+    controlesState.forEach((c) => {
+      if (c.processoRelacionado) set.add(c.processoRelacionado);
+    });
+    return Array.from(set).sort();
+  }, [controlesState]);
+
+  // Critérios ativos no builder dinâmico
+  const criteriosBuilderAtivos = useMemo(() => {
+    const list: CriterioBibliotecaCorporativa[] = [];
+    builderCriteriosIds.forEach((id) => {
+      if (!criteriosExcluidosBuilder[id]) {
+        const c = criteriosCanônicos.find((item) => item.id === id);
+        if (c) list.push(c);
+      }
+    });
+    Object.keys(criteriosExtrasBuilder).forEach((extraId) => {
+      if (!builderCriteriosIds.includes(extraId)) {
+        const c = criteriosCanônicos.find((item) => item.id === extraId);
+        if (c) list.push(c);
+      }
+    });
+    return list;
+  }, [criteriosCanônicos, builderCriteriosIds, criteriosExcluidosBuilder, criteriosExtrasBuilder]);
+
+  // Seeding do banco
   const handleSeedBanco = async () => {
     try {
       setLoading(true);
@@ -222,48 +335,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
     }
   };
 
-  // Critérios filtrados na Biblioteca Central
-  const criteriosFiltradosBiblioteca = useMemo(() => {
-    return montarChecklistDinamico(criteriosCanônicos, {
-      autoridadeOuCliente: filtroAutoridade,
-      categoria: filtroCategoria,
-      termoBusca
-    });
-  }, [criteriosCanônicos, filtroAutoridade, filtroCategoria, termoBusca]);
-
-  // Categorias únicas existentes
-  const categoriasUnicas = useMemo(() => {
-    const set = new Set<string>();
-    criteriosCanônicos.forEach((c) => set.add(c.categoria));
-    return Array.from(set).sort();
-  }, [criteriosCanônicos]);
-
-  // Total de vínculos somados
-  const totalVinculosNormativos = useMemo(() => {
-    return criteriosCanônicos.reduce((acc, c) => acc + (c.fontesVinculadas || []).length, 0);
-  }, [criteriosCanônicos]);
-
-  // Critérios ativos no builder dinâmico
-  const criteriosBuilderAtivos = useMemo(() => {
-    const list: CriterioBibliotecaCorporativa[] = [];
-    builderCriteriosIds.forEach((id) => {
-      // Se não foi excluído com justificativa
-      if (!criteriosExcluidosBuilder[id]) {
-        const c = criteriosCanônicos.find((item) => item.id === id);
-        if (c) list.push(c);
-      }
-    });
-    // Adicionar extras incluídos
-    Object.keys(criteriosExtrasBuilder).forEach((extraId) => {
-      if (!builderCriteriosIds.includes(extraId)) {
-        const c = criteriosCanônicos.find((item) => item.id === extraId);
-        if (c) list.push(c);
-      }
-    });
-    return list;
-  }, [criteriosCanônicos, builderCriteriosIds, criteriosExcluidosBuilder, criteriosExtrasBuilder]);
-
-  // Confirmar exclusão de critério com justificativa no Builder
+  // Confirmar inclusão/exclusão com justificativa
   const handleConfirmarJustificativa = () => {
     if (!justificativaModal.criterio || !justificativaModal.justificativa.trim()) {
       alert('Por favor, informe a justificativa técnica para o registro no histórico de auditoria.');
@@ -287,7 +359,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
     setJustificativaModal({ aberto: false, tipo: 'EXCLUIR', criterio: null, justificativa: '' });
   };
 
-  // Iniciar Auditoria a partir do Builder
+  // Iniciar Auditoria
   const handleIniciarAuditoriaDinamica = () => {
     if (criteriosBuilderAtivos.length === 0) {
       alert('Selecione ao menos um critério para compor o checklist de auditoria.');
@@ -317,7 +389,6 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
       criteriosSelecionados: criteriosBuilderAtivos
     });
 
-    // Registrar critérios excluídos no histórico congelado da execução
     const ajustes: CriterioAjusteAuditoria[] = [];
     Object.entries(criteriosExcluidosBuilder).forEach(([critId, just]: [string, string]) => {
       const crit = criteriosCanônicos.find((c) => c.id === critId);
@@ -439,7 +510,6 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
         currentUser
       );
 
-      // Atualizar localmente
       setActiveExecution({
         ...activeExecution,
         itensAvaliados: {
@@ -463,17 +533,28 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
     }
   };
 
-  // Toggle de vínculo de evidência corporativa
-  const handleToggleEvidenciaItem = (evidenciaId: string) => {
+  // Vincular evidência corporativa com verificação de aplicabilidade e validade
+  const handleToggleEvidenciaItem = (evidencia: EvidenciaRequisitoItem) => {
     if (!activeExecution || !itemParaEvidencias || isConsulta) return;
     const cid = itemParaEvidencias.criterioId;
     const itemAtual = activeExecution.itensAvaliados[cid];
     if (!itemAtual) return;
 
+    // Validação formal da evidência (Seção 6 e 8)
+    const validacao = validarAplicabilidadeEvidencia(evidencia, {
+      baseOperacional: activeExecution.baseOperacional,
+      clienteOuAutoridade: activeExecution.origemNome || 'GERAL'
+    });
+
+    if (!validacao.valida) {
+      alert(`Atenção: ${validacao.motivo}`);
+      return;
+    }
+
     const idsAtuais = itemAtual.evidenciasVinculadasIds || [];
-    const novosIds = idsAtuais.includes(evidenciaId)
-      ? idsAtuais.filter((id) => id !== evidenciaId)
-      : [...idsAtuais, evidenciaId];
+    const novosIds = idsAtuais.includes(evidencia.id)
+      ? idsAtuais.filter((id) => id !== evidencia.id)
+      : [...idsAtuais, evidencia.id];
 
     const itemAtualizado = {
       ...itemAtual,
@@ -494,27 +575,25 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
   return (
     <div className="space-y-6">
       {/* ==================================================================== */}
-      {/* CABEÇALHO PRINCIPAL DA BIBLIOTECA CORPORATIVA UNIFICADA              */}
+      {/* CABEÇALHO DA BIBLIOTECA CENTRAL E GESTÃO CONTÍNUA (FASE 1.4.1)       */}
       {/* ==================================================================== */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Base Canônica Unificada Multi-Fonte
+                <Sparkles className="w-3 h-3" /> Gestão Contínua da Conformidade & Auditoria SSoT
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
-                QualyQuest MRO SGQ • Sem Duplicações
+                Fase 1.4.1 • Rastreabilidade Ponta a Ponta
               </span>
             </div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <BookOpen className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
-              Biblioteca Corporativa Única de Requisitos e Critérios de Auditoria
+              Biblioteca Corporativa Central de Requisitos e Auditorias
             </h1>
             <p className="text-sm text-slate-600 dark:text-slate-400 mt-1 max-w-4xl">
-              Base canônica centralizada reunindo todos os requisitos e critérios técnicos aeronáuticos. As auditorias para{' '}
-              <strong className="text-slate-800 dark:text-slate-200">ANAC, EASA, FAA, IOSA, Kalitta, Atlas, TACV e Internas</strong>{' '}
-              são montadas dinamicamente a partir desta biblioteca central, preservando equivalências técnicas e referências originais.
+              Gestão contínua da conformidade da IMPACTO Aviation MRO. Mapeia controles permanentes (`CTRL-*`), respostas institucionais aprovadas e requisitos individuais rastreáveis da ANAC, EASA, FAA, IOSA, Kalitta, Atlas e TACV, com montagem dinâmica de checklists e snapshots históricos imutáveis.
             </p>
           </div>
 
@@ -530,7 +609,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
               onClick={handleSeedBanco}
               disabled={loading}
               className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors border border-slate-300 dark:border-slate-700"
-              title="Garante que todos os 36 critérios canônicos e 177 vínculos estejam gravados no Firestore"
+              title="Garante que todos os critérios canônicos e vínculos estejam persistidos no Firestore"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               Sincronizar Banco
@@ -556,59 +635,44 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
           </div>
         )}
 
-        {/* KPIs DA BIBLIOTECA ÚNICA */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-5 pt-5 border-t border-slate-200 dark:border-slate-800">
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span className="text-xs text-slate-500 dark:text-slate-400 block">Critérios Canônicos Únicos</span>
-            <span className="text-xl font-bold text-emerald-700 dark:text-emerald-400">
-              {criteriosCanônicos.length}
-            </span>
-            <span className="text-[11px] text-slate-500 block">Consolidados sem duplicação</span>
-          </div>
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span className="text-xs text-slate-500 dark:text-slate-400 block">Vínculos Normativos</span>
-            <span className="text-xl font-bold text-blue-700 dark:text-blue-400">
-              {totalVinculosNormativos}
-            </span>
-            <span className="text-[11px] text-slate-500 block">ANAC, EASA, FAA, Clientes</span>
-          </div>
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span className="text-xs text-slate-500 dark:text-slate-400 block">Fontes & Autoridades</span>
-            <span className="text-xl font-bold text-indigo-700 dark:text-indigo-400">8</span>
-            <span className="text-[11px] text-slate-500 block">Regulatórias & Operadores</span>
-          </div>
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span className="text-xs text-slate-500 dark:text-slate-400 block">Auditorias em Histórico</span>
-            <span className="text-xl font-bold text-amber-700 dark:text-amber-400">
-              {execucoes.length}
-            </span>
-            <span className="text-[11px] text-slate-500 block">Execuções registradas</span>
-          </div>
-          <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
-            <span className="text-xs text-slate-500 dark:text-slate-400 block">Auditorias Concluídas</span>
-            <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-              {execucoes.filter((e) => e.statusExecucao === 'CONCLUIDA').length}
-            </span>
-            <span className="text-[11px] text-slate-500 block">Com índice e RNCs</span>
-          </div>
-        </div>
-
-        {/* NAVEGAÇÃO DE SUB-ABAS */}
-        <div className="flex items-center gap-2 mt-6 border-b border-slate-200 dark:border-slate-800">
+        {/* NAVEGAÇÃO DE SUB-ABAS (5 ABAS PRINCIPAIS) */}
+        <div className="flex items-center gap-2 mt-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
           <button
-            onClick={() => setActiveTab('biblioteca-central')}
-            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
-              activeTab === 'biblioteca-central'
+            onClick={() => setActiveTab('painel-qualidade')}
+            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'painel-qualidade'
                 ? 'border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <BookOpen className="w-4 h-4" />
-            Biblioteca Central de Critérios ({criteriosCanônicos.length} Canônicos)
+            <Activity className="w-4 h-4" />
+            Painel Contínuo da Qualidade
+          </button>
+          <button
+            onClick={() => setActiveTab('auditoria-consolidacao')}
+            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'auditoria-consolidacao'
+                ? 'border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4" />
+            Auditoria da Consolidação & Rastreabilidade (177 Itens)
+          </button>
+          <button
+            onClick={() => setActiveTab('matriz-controles-ssot')}
+            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
+              activeTab === 'matriz-controles-ssot'
+                ? 'border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300'
+                : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            Matriz de Controles Corporativos (SSoT)
           </button>
           <button
             onClick={() => setActiveTab('montar-auditoria')}
-            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'montar-auditoria'
                 ? 'border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -619,179 +683,417 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
           </button>
           <button
             onClick={() => setActiveTab('historico-auditorias')}
-            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${
+            className={`pb-3 px-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap ${
               activeTab === 'historico-auditorias'
                 ? 'border-emerald-600 text-emerald-700 dark:border-emerald-400 dark:text-emerald-300'
                 : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            <Layers className="w-4 h-4" />
+            <FileSpreadsheet className="w-4 h-4" />
             Histórico de Execuções ({execucoes.length})
           </button>
         </div>
       </div>
 
       {/* ==================================================================== */}
-      {/* ABA 1: BIBLIOTECA CENTRAL DE CRITÉRIOS CANÔNICOS                     */}
+      {/* ABA 1: PAINEL CONTÍNUO DA QUALIDADE (QUALITY COMPLIANCE DASHBOARD)   */}
       {/* ==================================================================== */}
-      {activeTab === 'biblioteca-central' && (
-        <div className="space-y-4">
-          {/* BARRA DE FILTROS MULTI-FONTE */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
-            <div className="flex flex-col md:flex-row gap-3">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                <input
-                  type="text"
-                  placeholder="Pesquisar por código (CRIT-CORP-*), pergunta, controle SGQ, norma ou operador..."
-                  value={termoBusca}
-                  onChange={(e) => setTermoBusca(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <select
-                  value={filtroCategoria}
-                  onChange={(e) => setFiltroCategoria(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                >
-                  <option value="TODAS">Todas as Categorias de Processo</option>
-                  {categoriasUnicas.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
+      {activeTab === 'painel-qualidade' && (
+        <div className="space-y-6">
+          {/* CARDS DE INDICADORES EM TEMPO REAL */}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Sem Responsável</span>
+              <span className="text-xl font-bold text-amber-600">
+                {indicadoresQualidade.controlesSemResponsavel}
+              </span>
+              <span className="text-[10px] text-slate-400 block">Controles órfãos</span>
             </div>
 
-            {/* CHIPS DE AUTORIDADES E OPERADORES */}
-            <div>
-              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">
-                Filtrar por Vínculo de Origem (Apenas critérios aplicáveis à fonte):
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Sem Aplicabilidade</span>
+              <span className="text-xl font-bold text-indigo-600">
+                {indicadoresQualidade.requisitosSemAplicabilidade}
               </span>
-              <div className="flex flex-wrap gap-2">
-                {AUTORIDADES_FILTRO.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setFiltroAutoridade(item.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all border ${
-                      filtroAutoridade === item.id
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                        : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </button>
-                ))}
-              </div>
+              <span className="text-[10px] text-slate-400 block">Requisitos pendentes</span>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Não Avaliados</span>
+              <span className="text-xl font-bold text-slate-600 dark:text-slate-300">
+                {indicadoresQualidade.requisitosNaoAvaliadosConformidade}
+              </span>
+              <span className="text-[10px] text-slate-400 block">Conformidade pendente</span>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Controles NC</span>
+              <span className="text-xl font-bold text-rose-600">
+                {indicadoresQualidade.controlesNaoConformes}
+              </span>
+              <span className="text-[10px] text-slate-400 block">Requerem RNC</span>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Evidências Ausentes</span>
+              <span className="text-xl font-bold text-orange-600">
+                {indicadoresQualidade.evidenciasAusentes}
+              </span>
+              <span className="text-[10px] text-slate-400 block">Sem comprovação</span>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Evidências Vencidas</span>
+              <span className="text-xl font-bold text-rose-500">
+                {indicadoresQualidade.evidenciasVencidas}
+              </span>
+              <span className="text-[10px] text-slate-400 block">Data expirada</span>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Avaliações Vencidas</span>
+              <span className="text-xl font-bold text-red-600">
+                {indicadoresQualidade.avaliacoesPeriodicasVencidas}
+              </span>
+              <span className="text-[10px] text-slate-400 block">Prazo periódico</span>
+            </div>
+
+            <div className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm">
+              <span className="text-[11px] text-slate-500 block truncate">Pendente Doc.</span>
+              <span className="text-xl font-bold text-purple-600">
+                {indicadoresQualidade.registrosPendentesDocumentacao}
+              </span>
+              <span className="text-[10px] text-slate-400 block">Ex: TACV / IOSA</span>
             </div>
           </div>
 
-          {/* LISTA DE CRITÉRIOS CANÔNICOS */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                Exibindo <strong>{criteriosFiltradosBiblioteca.length}</strong> de{' '}
-                <strong>{criteriosCanônicos.length}</strong> critérios canônicos únicos
-              </span>
-              <span className="text-xs text-slate-500">
-                Cada critério central atende a múltiplas normas e clientes sem duplicação
-              </span>
-            </div>
-
-            {criteriosFiltradosBiblioteca.map((crit) => (
-              <div
-                key={crit.id}
-                onClick={() => setSelectedCriterioModal(crit)}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-400 dark:hover:border-emerald-600 rounded-2xl p-5 shadow-sm transition-all cursor-pointer group"
-              >
-                <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
-                  <div className="space-y-2 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 font-mono">
-                        {crit.codigoUnico}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                        {crit.categoria}
-                      </span>
-                      {crit.controleCentralId && (
-                        <span className="px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                          {crit.controleCentralId}
-                        </span>
-                      )}
-                      <span
-                        className={`px-2 py-0.5 rounded-md text-xs font-bold ${
-                          crit.criticidade === 'CRITICA'
-                            ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
-                            : crit.criticidade === 'ALTA'
-                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                            : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
-                        }`}
-                      >
-                        {crit.criticidade}
-                      </span>
-                    </div>
-
-                    <h3 className="text-base font-semibold text-slate-900 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                      {crit.titulo}
-                    </h3>
-
-                    <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                      {crit.perguntaOuCriterio}
+          {/* PAINEL DE AÇÃO IMEDIATA DA GERÊNCIA DA QUALIDADE */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                Alertas Críticos de Acompanhamento Contínuo
+              </h3>
+              <div className="space-y-2 text-xs">
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-2">
+                  <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-amber-900 dark:text-amber-200">Reavaliações Periódicas SGQ:</strong>
+                    <p className="text-amber-800 dark:text-amber-300 mt-0.5">
+                      Os controles corporativos possuem ciclo de verificação (mensal, trimestral ou semestral). Mantenha as datas atualizadas no Firestore antes das inspeções externas.
                     </p>
-
-                    <div className="pt-2 text-xs text-slate-500 dark:text-slate-400 flex items-start gap-1.5">
-                      <strong className="text-slate-700 dark:text-slate-300">Evidência Esperada:</strong>
-                      <span>{crit.orientacaoEvidencia}</span>
-                    </div>
                   </div>
+                </div>
 
-                  {/* VÍNCULOS COM AUTORIDADES / CLIENTES (MULTI-FONTE) */}
-                  <div className="lg:w-80 p-3 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700/80 space-y-2 shrink-0">
-                    <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                      <span className="flex items-center gap-1">
-                        <Link2 className="w-3.5 h-3.5 text-emerald-600" />
-                        Vínculos Normativos ({crit.fontesVinculadas.length})
-                      </span>
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400">Ver equivalências</span>
-                    </div>
-
-                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                      {crit.fontesVinculadas.map((fonte, idx) => (
-                        <div
-                          key={idx}
-                          className="p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs flex items-center justify-between"
-                        >
-                          <span className="font-medium text-slate-800 dark:text-slate-200 truncate pr-1">
-                            {fonte.autoridadeOuCliente}
-                          </span>
-                          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-[130px]" title={fonte.itemOuSecaoNorma}>
-                            {fonte.itemOuSecaoNorma}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
+                <div className="p-3 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 flex items-start gap-2">
+                  <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-blue-900 dark:text-blue-200">Separação Estrita de Status:</strong>
+                    <p className="text-blue-800 dark:text-blue-300 mt-0.5">
+                      No QualyQuest, <strong>Aplicabilidade</strong> e <strong>Conformidade</strong> são campos independentes. A ausência de evidência nunca é tratada como conformidade presumida.
+                    </p>
                   </div>
                 </div>
               </div>
-            ))}
+            </div>
 
-            {criteriosFiltradosBiblioteca.length === 0 && (
-              <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
-                <AlertCircle className="w-10 h-10 text-slate-400 mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-slate-900 dark:text-white">Nenhum critério encontrado</h3>
-                <p className="text-sm text-slate-500 mt-1">Ajuste os filtros de autoridade ou termo de busca.</p>
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <CheckSquare className="w-4 h-4 text-emerald-600" />
+                Diferenças Críticas Identificadas na Auditoria
+              </h3>
+              <div className="space-y-2 text-xs">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <strong className="text-slate-900 dark:text-white">CRIT-CORP-025 (Liberação CLA / EASA / FAA):</strong>
+                  <p className="text-slate-600 dark:text-slate-400 mt-0.5">
+                    CLA ANAC F 001-021, EASA Form 1 e FAA 8130-3 <strong>NÃO SÃO INTERCAMBIÁVEIS</strong>. Cada um é um ato legal de autoridade distinta sob acordos bilaterais específicos.
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700">
+                  <strong className="text-slate-900 dark:text-white">CRIT-CORP-011 (Calibração NIST vs RBC):</strong>
+                  <p className="text-slate-600 dark:text-slate-400 mt-0.5">
+                    Clientes FAR 121 (Kalitta/Atlas) e FAA exigem calibração NIST e etiquetas físicas em língua inglesa com datas legíveis.
+                  </p>
+                </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}
 
       {/* ==================================================================== */}
-      {/* ABA 2: MONTAGEM DINÂMICA DE AUDITORIAS                               */}
+      {/* ABA 2: AUDITORIA DA CONSOLIDAÇÃO & RASTREABILIDADE (177 REGISTROS)   */}
+      {/* ==================================================================== */}
+      {activeTab === 'auditoria-consolidacao' && (
+        <div className="space-y-4">
+          {/* RESUMO ESTATÍSTICO DA AUDITORIA */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+              <ShieldCheck className="w-5 h-5 text-emerald-600" />
+              Matriz de Auditoria da Consolidação Normativa (177 Registros Originais)
+            </h2>
+            <p className="text-xs text-slate-500">
+              Rastreabilidade individual de cada requisito dos 11 checklists originais. Demonstra o tipo de relacionamento técnico com os critérios canônicos e controles SGQ, sem presumir equivalência indevida.
+            </p>
+
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 text-xs">
+              <div className="p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+                <span className="text-slate-500 block">Equivalentes</span>
+                <span className="text-lg font-bold text-emerald-700 dark:text-emerald-400">
+                  {resumoConsolidacao.equivalentes}
+                </span>
+                <span className="text-[10px] text-slate-400 block">Mesmo teor técnico</span>
+              </div>
+
+              <div className="p-2.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl">
+                <span className="text-slate-500 block">Parcialmente Equivalentes</span>
+                <span className="text-lg font-bold text-blue-700 dark:text-blue-400">
+                  {resumoConsolidacao.parcialmenteEquivalentes}
+                </span>
+                <span className="text-[10px] text-slate-400 block">Nuances de escopo/prazo</span>
+              </div>
+
+              <div className="p-2.5 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-800 rounded-xl">
+                <span className="text-slate-500 block">Relacionados, Não Equivalentes</span>
+                <span className="text-lg font-bold text-purple-700 dark:text-purple-400">
+                  {resumoConsolidacao.relacionadosNaoEquivalentes}
+                </span>
+                <span className="text-[10px] text-slate-400 block">Mesmo tema, base distinta</span>
+              </div>
+
+              <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl">
+                <span className="text-slate-500 block">Específicos da Fonte</span>
+                <span className="text-lg font-bold text-amber-700 dark:text-amber-400">
+                  {resumoConsolidacao.especificosDaFonte}
+                </span>
+                <span className="text-[10px] text-slate-400 block">RII, NIST, GMM, CLA</span>
+              </div>
+
+              <div className="p-2.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl">
+                <span className="text-slate-500 block">Pendente de Validação</span>
+                <span className="text-lg font-bold text-rose-700 dark:text-rose-400">
+                  {resumoConsolidacao.naoDeterminadoOuPendente}
+                </span>
+                <span className="text-[10px] text-slate-400 block">Ex: TACV B737-MAX</span>
+              </div>
+            </div>
+          </div>
+
+          {/* FILTROS DA MATRIZ */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="Filtrar por código original (ex: QA14-01, CRIT-RBAC145-22), texto, norma ou controle..."
+                value={buscaConsolidacao}
+                onChange={(e) => setBuscaConsolidacao(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+              />
+            </div>
+
+            <select
+              value={filtroRelacionamento}
+              onChange={(e) => setFiltroRelacionamento(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+            >
+              <option value="TODOS">Todos os Relacionamentos</option>
+              <option value="Equivalente">Equivalente</option>
+              <option value="Parcialmente equivalente">Parcialmente equivalente</option>
+              <option value="Relacionado, mas não equivalente">Relacionado, mas não equivalente</option>
+              <option value="Específico da fonte">Específico da fonte</option>
+              <option value="Não foi possível determinar">Não foi possível determinar / Pendente</option>
+            </select>
+
+            <select
+              value={filtroStatusDocumental}
+              onChange={(e) => setFiltroStatusDocumental(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+            >
+              <option value="TODOS">Todas as Validações Documentais</option>
+              <option value="VALIDADO_OFICIAL">Validado Oficial</option>
+              <option value="PENDENTE_VALIDACAO_DOCUMENTAL">Pendente de Validação Documental</option>
+            </select>
+          </div>
+
+          {/* TABELA DE RASTREABILIDADE */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-semibold">
+                  <tr>
+                    <th className="p-3">Código Original</th>
+                    <th className="p-3">Fonte / Empresa</th>
+                    <th className="p-3">Norma & Seção</th>
+                    <th className="p-3">Texto Original Inalterado</th>
+                    <th className="p-3">Controle SGQ</th>
+                    <th className="p-3">Classificação</th>
+                    <th className="p-3">Justificativa Técnica</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {itensConsolidacaoFiltrados.map((item) => (
+                    <tr
+                      key={item.idOriginal}
+                      onClick={() => setItemAuditoriaModal(item)}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                    >
+                      <td className="p-3 font-mono font-bold text-slate-900 dark:text-white whitespace-nowrap">
+                        {item.idOriginal}
+                      </td>
+                      <td className="p-3 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200">
+                        {item.empresaOuAutoridade}
+                      </td>
+                      <td className="p-3 font-mono text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                        {item.normaSecao}
+                      </td>
+                      <td className="p-3 text-slate-700 dark:text-slate-300 max-w-xs truncate" title={item.textoOriginal}>
+                        {item.textoOriginal}
+                      </td>
+                      <td className="p-3 font-mono font-medium text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                        {item.controleCentralId}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            item.tipoRelacionamento === 'Equivalente'
+                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
+                              : item.tipoRelacionamento === 'Parcialmente equivalente'
+                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-300'
+                              : item.tipoRelacionamento === 'Específico da fonte'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
+                              : item.tipoRelacionamento === 'Não foi possível determinar'
+                              ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300'
+                              : 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
+                          }`}
+                        >
+                          {item.tipoRelacionamento}
+                        </span>
+                      </td>
+                      <td className="p-3 text-slate-600 dark:text-slate-400 max-w-xs truncate" title={item.justificativaTecnica}>
+                        {item.justificativaTecnica}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* ABA 3: MATRIZ DE CONTROLES CORPORATIVOS SSoT                         */}
+      {/* ==================================================================== */}
+      {activeTab === 'matriz-controles-ssot' && (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
+            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
+              <Layers className="w-5 h-5 text-emerald-600" />
+              Controles Corporativos Centrais do SGQ (Single Source of Truth)
+            </h2>
+            <p className="text-xs text-slate-500">
+              Cada controle central gerencia múltiplos requisitos individuais de diferentes autoridades e clientes. Mantém dois status independentes: <strong>Aplicabilidade</strong> e <strong>Conformidade</strong>.
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+              <input
+                type="text"
+                placeholder="Buscar controle por código (ex: CTRL-METROL-01, CTRL-CRS-01), nome ou responsável..."
+                value={buscaControle}
+                onChange={(e) => setBuscaControle(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+              />
+            </div>
+
+            <select
+              value={filtroControleStatusConf}
+              onChange={(e) => setFiltroControleStatusConf(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+            >
+              <option value="TODOS">Todos os Status de Conformidade</option>
+              <option value="CONFORME">Conforme</option>
+              <option value="PARCIALMENTE_CONFORME">Parcialmente Conforme</option>
+              <option value="NAO_CONFORME">Não Conforme</option>
+              <option value="AGUARDANDO_EVIDENCIA">Aguardando Evidência</option>
+            </select>
+
+            <select
+              value={filtroControleProcesso}
+              onChange={(e) => setFiltroControleProcesso(e.target.value)}
+              className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-none"
+            >
+              <option value="TODOS">Todos os Processos</option>
+              {processosUnicosControles.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* LISTA DE CONTROLES SSoT */}
+          <div className="space-y-3">
+            {controlesFiltrados.map((ctrl) => (
+              <div
+                key={ctrl.id}
+                onClick={() => setControleSelecionadoModal(ctrl)}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-emerald-500 rounded-2xl p-5 shadow-sm transition-all cursor-pointer"
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                        {ctrl.codigo}
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500">
+                        {ctrl.processoRelacionado || ctrl.moduloOrigem}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          ctrl.statusConformidade === 'CONFORME'
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300'
+                            : 'bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300'
+                        }`}
+                      >
+                        {ctrl.statusConformidade || 'CONFORME'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                        Avaliação: {ctrl.periodicidadeAcompanhamento || 'MENSAL'}
+                      </span>
+                    </div>
+
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                      {ctrl.nome}
+                    </h3>
+
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      {ctrl.descricao}
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-3 pt-2 text-[11px] text-slate-500">
+                      <span>Responsável: <strong>{ctrl.responsavelPadrao}</strong></span>
+                      <span>Próxima Avaliação: <strong>{ctrl.dataProximaAvaliacao || '2026-12-01'}</strong></span>
+                      <span>Doc. Interno: <strong>{ctrl.documentosInternosRelacionados?.[0] || 'MOMQ MNT-001'}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 text-right">
+                    <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 justify-end">
+                      Ver Requisitos & Evidências <ChevronRight className="w-4 h-4" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* ABA 4: MONTAGEM DINÂMICA DE AUDITORIAS                               */}
       {/* ==================================================================== */}
       {activeTab === 'montar-auditoria' && (
         <div className="space-y-6">
@@ -802,14 +1104,14 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                 Montagem Dinâmica de Checklist de Auditoria
               </h2>
               <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                Selecione a autoridade reguladora, operador cliente ou escopo. O sistema selecionará automaticamente os critérios canônicos pertinentes da Biblioteca Central Única, permitindo inclusões e exclusões com justificativa técnica rastreável.
+                Selecione a fonte ou cliente. O sistema selecionará automaticamente os critérios canônicos da base única, permitindo inclusões e exclusões de escopo com justificativa técnica rastreável.
               </p>
             </div>
 
-            {/* PASSO 1: SELEÇÃO DA ORIGEM / CLIENTE */}
+            {/* SELEÇÃO DA ORIGEM */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider block">
-                1. Autoridade, Cliente ou Tipo de Auditoria de Origem:
+                1. Autoridade ou Cliente para Auditoria:
               </label>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
                 {[
@@ -840,7 +1142,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
               </div>
             </div>
 
-            {/* PASSO 2: PARÂMETROS DA AUDITORIA */}
+            {/* DADOS DA AUDITORIA */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
               <div>
                 <label className="text-xs font-medium text-slate-600 dark:text-slate-300 block mb-1">
@@ -891,7 +1193,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
               </div>
             </div>
 
-            {/* PASSO 3: CRITÉRIOS MONTADOS AUTOMATICAMENTE E AJUSTES DE ESCOPO */}
+            {/* CRITÉRIOS MONTADOS AUTOMATICAMENTE */}
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
@@ -901,7 +1203,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                   </h3>
                   <span className="text-xs text-slate-500">
                     Critérios canônicos vinculados à fonte{' '}
-                    <strong className="text-slate-800 dark:text-slate-200">{builderOrigem}</strong>. Você pode excluir critérios do escopo ou adicionar itens extras da biblioteca.
+                    <strong className="text-slate-800 dark:text-slate-200">{builderOrigem}</strong>.
                   </span>
                 </div>
 
@@ -914,7 +1216,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                 </button>
               </div>
 
-              {/* LISTA DOS CRITÉRIOS ATIVOS NO CHECKLIST DINÂMICO */}
+              {/* LISTA DOS CRITÉRIOS ATIVOS */}
               <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-200 dark:divide-slate-800">
                 {criteriosBuilderAtivos.map((crit, idx) => {
                   const isExtra = !!criteriosExtrasBuilder[crit.id];
@@ -968,7 +1270,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                 })}
               </div>
 
-              {/* CRITÉRIOS EXCLUÍDOS COM JUSTIFICATIVA (LOG VISUAL) */}
+              {/* CRITÉRIOS EXCLUÍDOS COM JUSTIFICATIVA */}
               {Object.keys(criteriosExcluidosBuilder).length > 0 && (
                 <div className="p-3.5 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl space-y-2">
                   <span className="text-xs font-semibold text-amber-900 dark:text-amber-200 block">
@@ -1003,7 +1305,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
             {/* BOTÃO PARA INICIAR A AUDITORIA */}
             <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <span className="text-xs text-slate-500">
-                Ao iniciar, o QualyQuest criará uma execução com snapshot congelado dos critérios e histórico independente.
+                Ao iniciar, o QualyQuest gerará uma execução congelada imutável no Firestore.
               </span>
               <button
                 onClick={handleIniciarAuditoriaDinamica}
@@ -1018,14 +1320,14 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
       )}
 
       {/* ==================================================================== */}
-      {/* ABA 3: HISTÓRICO DE AUDITORIAS REALIZADAS                            */}
+      {/* ABA 5: HISTÓRICO DE AUDITORIAS CONCLUÍDAS E EM ANDAMENTO            */}
       {/* ==================================================================== */}
       {activeTab === 'historico-auditorias' && (
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2 mb-1">
-              <Layers className="w-5 h-5 text-emerald-600" />
-              Histórico de Execuções e Auditorias no Firestore
+              <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+              Histórico de Auditorias Congelado (Imutável)
             </h2>
             <p className="text-xs text-slate-500">
               Registros imutáveis de auditorias realizadas. Cada execução mantém o snapshot da versão dos critérios utilizada no momento da avaliação.
@@ -1068,13 +1370,13 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                     <span>Data: {exec.dataAuditoria}</span>
                     <span>Total de Itens: <strong>{exec.totalItens}</strong></span>
                     <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                      Conformes (C): {exec.totalConforme}
+                      C: {exec.totalConforme}
                     </span>
                     <span className="text-rose-600 dark:text-rose-400 font-semibold">
-                      Não Conformes (NC): {exec.totalNaoConforme}
+                      NC: {exec.totalNaoConforme}
                     </span>
                     <span className="text-slate-500">
-                      Não Aplicáveis (NA): {exec.totalNaoAplicavel}
+                      NA: {exec.totalNaoAplicavel}
                     </span>
                   </div>
                 </div>
@@ -1100,7 +1402,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
 
             {execucoes.length === 0 && (
               <div className="p-12 text-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl">
-                <Layers className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+                <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto mb-3" />
                 <h3 className="text-base font-semibold text-slate-900 dark:text-white">Nenhuma auditoria realizada ainda</h3>
                 <p className="text-sm text-slate-500 mt-1">
                   Vá até a aba &ldquo;Montagem Dinâmica de Auditorias&rdquo; para criar e executar sua primeira auditoria.
@@ -1227,150 +1529,342 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                       .map((item: ItemAvaliadoExecucaoChecklist) => {
                         const critCanônico = criteriosCanônicos.find((c) => c.id === item.criterioId);
 
-                  return (
-                    <div
-                      key={item.criterioId}
-                      className={`p-4 rounded-xl border transition-all ${
-                        item.status === 'C'
-                          ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
-                          : item.status === 'NC'
-                          ? 'bg-rose-50/50 dark:bg-rose-950/25 border-rose-300 dark:border-rose-800'
-                          : item.status === 'NA'
-                          ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 opacity-70'
-                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
-                      }`}
-                    >
-                      <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
-                        <div className="space-y-1.5 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-800 text-xs font-bold flex items-center justify-center">
-                              {item.numeroItem}
-                            </span>
-                            <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
-                              {item.codigoUnico || critCanônico?.codigoUnico || item.criterioId}
-                            </span>
-                            <span className="text-xs text-slate-500 font-semibold">
-                              {item.referenciaNormativa}
-                            </span>
-                            {critCanônico?.controleCentralId && (
-                              <span className="text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
-                                [{critCanônico.controleCentralId}]
-                              </span>
-                            )}
-                          </div>
-
-                          <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                            {item.perguntaOuCriterio}
-                          </p>
-
-                          {critCanônico && (
-                            <p className="text-xs text-slate-500 dark:text-slate-400">
-                              <strong>Evidência Esperada:</strong> {critCanônico.orientacaoEvidencia}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* BOTÕES C / NC / NA */}
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            onClick={() => handleSetItemStatus(item.criterioId, 'C')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                        return (
+                          <div
+                            key={item.criterioId}
+                            className={`p-4 rounded-xl border transition-all ${
                               item.status === 'C'
-                                ? 'bg-emerald-600 text-white shadow-sm'
-                                : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
+                                : item.status === 'NC'
+                                ? 'bg-rose-50/50 dark:bg-rose-950/25 border-rose-300 dark:border-rose-800'
+                                : item.status === 'NA'
+                                ? 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700 opacity-70'
+                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                             }`}
                           >
-                            <Check className="w-3.5 h-3.5" />
-                            C
-                          </button>
-                          <button
-                            onClick={() => handleSetItemStatus(item.criterioId, 'NC')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
-                              item.status === 'NC'
-                                ? 'bg-rose-600 text-white shadow-sm'
-                                : 'bg-slate-100 hover:bg-rose-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                            }`}
-                          >
-                            <X className="w-3.5 h-3.5" />
-                            NC
-                          </button>
-                          <button
-                            onClick={() => handleSetItemStatus(item.criterioId, 'NA')}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
-                              item.status === 'NA'
-                                ? 'bg-slate-700 text-white shadow-sm'
-                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                            }`}
-                          >
-                            NA
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* CONSTATAÇÃO E OBSERVAÇÕES DO AUDITOR */}
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-200/60 dark:border-slate-800/60">
-                        <div>
-                          <label className="text-[11px] font-semibold text-slate-500 block mb-1">
-                            Constatação / Observações do Auditor
-                          </label>
-                          <textarea
-                            value={item.observacoesAuditor || ''}
-                            onChange={(e) => handleUpdateItemObs(item.criterioId, e.target.value)}
-                            placeholder="Descreva a constatação objetiva, referências documentais inspecionadas..."
-                            rows={2}
-                            className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
-
-                        {/* EVIDÊNCIAS VINCULADAS E ABERTURA DE RNC */}
-                        <div className="flex flex-col justify-between space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-semibold text-slate-500">
-                              Evidências Corporativas Reutilizadas ({item.evidenciasVinculadasIds?.length || 0})
-                            </span>
-                            <button
-                              onClick={() => setItemParaEvidencias(item)}
-                              className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
-                            >
-                              <Link2 className="w-3.5 h-3.5" />
-                              Vincular Evidência
-                            </button>
-                          </div>
-
-                          {/* SE ITEM FOR NC: ABERTURA DE RNC OFICIAL */}
-                          {item.status === 'NC' && (
-                            <div className="p-2.5 bg-rose-100/70 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 rounded-lg flex items-center justify-between">
-                              <div className="text-xs text-rose-900 dark:text-rose-200">
-                                <strong>Constatação NC:</strong> Requer emissão de RNC oficial F 001-29.
-                                {item.rncNumero && (
-                                  <span className="block font-mono font-bold text-rose-700 dark:text-rose-300 mt-0.5">
-                                    Vinculada: {item.rncNumero}
+                            <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                              <div className="space-y-1.5 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-800 text-xs font-bold flex items-center justify-center">
+                                    {item.numeroItem}
                                   </span>
+                                  <span className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                                    {item.codigoUnico || critCanônico?.codigoUnico || item.criterioId}
+                                  </span>
+                                  <span className="text-xs text-slate-500 font-semibold">
+                                    {item.referenciaNormativa}
+                                  </span>
+                                  {critCanônico?.controleCentralId && (
+                                    <span className="text-xs font-mono font-medium text-indigo-600 dark:text-indigo-400">
+                                      [{critCanônico.controleCentralId}]
+                                    </span>
+                                  )}
+                                </div>
+
+                                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                                  {item.perguntaOuCriterio}
+                                </p>
+
+                                {critCanônico && (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    <strong>Evidência Esperada:</strong> {critCanônico.orientacaoEvidencia}
+                                  </p>
                                 )}
                               </div>
-                              {!item.rncNumero ? (
+
+                              {/* BOTÕES C / NC / NA */}
+                              <div className="flex items-center gap-1.5 shrink-0">
                                 <button
-                                  onClick={() => handleGerarRNC(item)}
-                                  className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm shrink-0 ml-2"
+                                  onClick={() => handleSetItemStatus(item.criterioId, 'C')}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                                    item.status === 'C'
+                                      ? 'bg-emerald-600 text-white shadow-sm'
+                                      : 'bg-slate-100 hover:bg-emerald-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}
                                 >
-                                  🚨 Abrir RNC Oficial (F 001-29)
+                                  <Check className="w-3.5 h-3.5" />
+                                  C
                                 </button>
-                              ) : (
-                                <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                                  <CheckCircle2 className="w-4 h-4" /> RNC Aberta
-                                </span>
-                              )}
+                                <button
+                                  onClick={() => handleSetItemStatus(item.criterioId, 'NC')}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                                    item.status === 'NC'
+                                      ? 'bg-rose-600 text-white shadow-sm'
+                                      : 'bg-slate-100 hover:bg-rose-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  NC
+                                </button>
+                                <button
+                                  onClick={() => handleSetItemStatus(item.criterioId, 'NA')}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 transition-all ${
+                                    item.status === 'NA'
+                                      ? 'bg-slate-700 text-white shadow-sm'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}
+                                >
+                                  NA
+                                </button>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+
+                            {/* CONSTATAÇÃO E OBSERVAÇÕES DO AUDITOR */}
+                            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-200/60 dark:border-slate-800/60">
+                              <div>
+                                <label className="text-[11px] font-semibold text-slate-500 block mb-1">
+                                  Constatação / Observações do Auditor
+                                </label>
+                                <textarea
+                                  value={item.observacoesAuditor || ''}
+                                  onChange={(e) => handleUpdateItemObs(item.criterioId, e.target.value)}
+                                  placeholder="Descreva a constatação objetiva, referências documentais inspecionadas..."
+                                  rows={2}
+                                  className="w-full p-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                                />
+                              </div>
+
+                              {/* EVIDÊNCIAS VINCULADAS E ABERTURA DE RNC */}
+                              <div className="flex flex-col justify-between space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-semibold text-slate-500">
+                                    Evidências Corporativas Reutilizadas ({item.evidenciasVinculadasIds?.length || 0})
+                                  </span>
+                                  <button
+                                    onClick={() => setItemParaEvidencias(item)}
+                                    className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 font-medium"
+                                  >
+                                    <Link2 className="w-3.5 h-3.5" />
+                                    Vincular Evidência
+                                  </button>
+                                </div>
+
+                                {/* SE ITEM FOR NC: ABERTURA DE RNC OFICIAL */}
+                                {item.status === 'NC' && (
+                                  <div className="p-2.5 bg-rose-100/70 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 rounded-lg flex items-center justify-between">
+                                    <div className="text-xs text-rose-900 dark:text-rose-200">
+                                      <strong>Constatação NC:</strong> Requer emissão de RNC oficial F 001-29.
+                                      {item.rncNumero && (
+                                        <span className="block font-mono font-bold text-rose-700 dark:text-rose-300 mt-0.5">
+                                          Vinculada: {item.rncNumero}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {!item.rncNumero ? (
+                                      <button
+                                        onClick={() => handleGerarRNC(item)}
+                                        className="px-3 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors shadow-sm shrink-0 ml-2"
+                                      >
+                                        🚨 Abrir RNC Oficial (F 001-29)
+                                      </button>
+                                    ) : (
+                                      <span className="text-xs text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                        <CheckCircle2 className="w-4 h-4" /> RNC Aberta
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL DETALHES DE ITEM DA AUDITORIA DA CONSOLIDAÇÃO                  */}
+      {/* ==================================================================== */}
+      {itemAuditoriaModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                  {itemAuditoriaModal.idOriginal} • {itemAuditoriaModal.empresaOuAutoridade}
+                </span>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {itemAuditoriaModal.normaSecao}
+                </h3>
               </div>
-            </>
-          );
-        })()}
+              <button onClick={() => setItemAuditoriaModal(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                  Texto Original Inalterado da Norma / Checklist:
+                </span>
+                <p className="text-sm text-slate-800 dark:text-slate-200 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl leading-relaxed font-mono">
+                  &ldquo;{itemAuditoriaModal.textoOriginal}&rdquo;
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                  <span className="text-slate-500 block">Classificação de Equivalência:</span>
+                  <span className="font-bold text-slate-900 dark:text-white text-sm">
+                    {itemAuditoriaModal.tipoRelacionamento}
+                  </span>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                  <span className="text-slate-500 block">Controle Corporativo SGQ:</span>
+                  <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm font-mono">
+                    {itemAuditoriaModal.controleCentralId}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                  Justificativa Técnica da Relação:
+                </span>
+                <p className="text-slate-700 dark:text-slate-300 leading-relaxed">
+                  {itemAuditoriaModal.justificativaTecnica}
+                </p>
+              </div>
+
+              {itemAuditoriaModal.diferencaCritica && (
+                <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/50">
+                  <strong className="text-amber-900 dark:text-amber-200 block mb-0.5">Diferença Crítica / Nuance Identificada:</strong>
+                  <p className="text-amber-800 dark:text-amber-300">
+                    {itemAuditoriaModal.diferencaCritica}
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                  Revisão Oficial da Fonte:
+                </span>
+                <p className="text-slate-700 dark:text-slate-300 font-mono">
+                  {itemAuditoriaModal.revisaoFonte}
+                </p>
+              </div>
+
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                  Documento Interno da IMPACTO:
+                </span>
+                <p className="text-slate-700 dark:text-slate-300">
+                  {itemAuditoriaModal.documentoInternoImpacto || 'MOMQ MNT-001 / PTM MNT-002'}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 text-right">
+              <button
+                onClick={() => setItemAuditoriaModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL DETALHES DE CONTROLE CORPORATIVO SSoT                          */}
+      {/* ==================================================================== */}
+      {controleSelecionadoModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <span className="font-mono text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                  {controleSelecionadoModal.codigo}
+                </span>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {controleSelecionadoModal.nome}
+                </h3>
+              </div>
+              <button onClick={() => setControleSelecionadoModal(null)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                  <span className="text-slate-500 block">Responsável:</span>
+                  <strong className="text-slate-900 dark:text-white">{controleSelecionadoModal.responsavelPadrao}</strong>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                  <span className="text-slate-500 block">Processo:</span>
+                  <strong className="text-slate-900 dark:text-white">{controleSelecionadoModal.processoRelacionado || 'SGQ'}</strong>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                  <span className="text-slate-500 block">Conformidade:</span>
+                  <strong className="text-emerald-600">{controleSelecionadoModal.statusConformidade || 'CONFORME'}</strong>
+                </div>
+                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
+                  <span className="text-slate-500 block">Próxima Avaliação:</span>
+                  <strong className="text-slate-900 dark:text-white">{controleSelecionadoModal.dataProximaAvaliacao || '2026-12-01'}</strong>
+                </div>
+              </div>
+
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                  Documentos Internos Controlados da IMPACTO:
+                </span>
+                <div className="space-y-1">
+                  {(controleSelecionadoModal.documentosInternosRelacionados || ['MOMQ MNT-001']).map((docNome, i) => (
+                    <div key={i} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 font-mono text-slate-700 dark:text-slate-300">
+                      📄 {docNome}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                  Evidências Típicas Esperadas:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {(controleSelecionadoModal.evidenciasTipicas || []).map((ev, i) => (
+                    <span key={i} className="px-2.5 py-1 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      ✓ {ev}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                  Requisitos de Fontes Relacionados a este Controle:
+                </span>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {AUDITORIA_CONSOLIDACAO_DATA.filter((i) => i.controleCentralId === controleSelecionadoModal.codigo).map((item) => (
+                    <div key={item.idOriginal} className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                      <div>
+                        <strong className="text-slate-900 dark:text-white">{item.empresaOuAutoridade}:</strong> {item.normaSecao}
+                        <span className="text-slate-500 block truncate max-w-md">{item.textoOriginal}</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 shrink-0">
+                        {item.tipoRelacionamento}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 text-right">
+              <button
+                onClick={() => setControleSelecionadoModal(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold"
+              >
+                Fechar Controle
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1430,7 +1924,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
       )}
 
       {/* ==================================================================== */}
-      {/* MODAL DE SELEÇÃO DE EVIDÊNCIAS CORPORATIVAS                          */}
+      {/* MODAL DE SELEÇÃO DE EVIDÊNCIAS COM VALIDAÇÃO DE APLICABILIDADE      */}
       {/* ==================================================================== */}
       {itemParaEvidencias && (
         <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1456,7 +1950,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                 return (
                   <div
                     key={ev.id}
-                    onClick={() => handleToggleEvidenciaItem(ev.id)}
+                    onClick={() => handleToggleEvidenciaItem(ev)}
                     className={`p-3.5 rounded-xl border text-xs cursor-pointer transition-all flex items-start justify-between gap-3 ${
                       isVinculado
                         ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 font-medium'
@@ -1468,7 +1962,7 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                         {ev.titulo}
                       </span>
                       <span className="text-slate-500 dark:text-slate-400">
-                        Ref: {ev.numeroReferencia || 'Arquivada'} • {ev.tipo}
+                        Ref: {ev.numeroReferencia || 'Arquivada'} • {ev.tipo} • Validade: {ev.dataValidade || 'Permanente'}
                       </span>
                     </div>
 
@@ -1492,98 +1986,6 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold"
               >
                 Concluir Seleção
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* MODAL DETALHES DO CRITÉRIO CANÔNICO DA BIBLIOTECA                    */}
-      {/* ==================================================================== */}
-      {selectedCriterioModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-              <div>
-                <span className="font-mono text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                  {selectedCriterioModal.codigoUnico}
-                </span>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {selectedCriterioModal.titulo}
-                </h3>
-              </div>
-              <button onClick={() => setSelectedCriterioModal(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="p-5 overflow-y-auto flex-1 space-y-4 text-xs">
-              <div>
-                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                  Pergunta Canônica de Auditoria:
-                </span>
-                <p className="text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-medium">
-                  {selectedCriterioModal.perguntaOuCriterio}
-                </p>
-              </div>
-
-              <div>
-                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                  Evidência Objetiva Esperada:
-                </span>
-                <p className="text-slate-700 dark:text-slate-300">
-                  {selectedCriterioModal.orientacaoEvidencia}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
-                  <span className="text-slate-500 block">Controle Corporativo SGQ:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {selectedCriterioModal.controleCentralId} — {selectedCriterioModal.controleCentralNome}
-                  </span>
-                </div>
-                <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl">
-                  <span className="text-slate-500 block">Criticidade e Processo:</span>
-                  <span className="font-bold text-slate-900 dark:text-white">
-                    {selectedCriterioModal.criticidade} • {selectedCriterioModal.processo}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <span className="font-semibold text-slate-500 uppercase tracking-wider block mb-2">
-                  Vínculos Formais com Normas e Clientes ({selectedCriterioModal.fontesVinculadas.length}):
-                </span>
-                <div className="space-y-2">
-                  {selectedCriterioModal.fontesVinculadas.map((fonte, i) => (
-                    <div
-                      key={i}
-                      className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex items-center justify-between"
-                    >
-                      <div>
-                        <strong className="text-slate-900 dark:text-white">{fonte.autoridadeOuCliente}</strong>
-                        <span className="text-slate-500 ml-1">({fonte.normaDocumento})</span>
-                        <div className="text-slate-600 dark:text-slate-400 font-mono mt-0.5">
-                          {fonte.itemOuSecaoNorma} • Rev: {fonte.revisaoVigente}
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
-                        {fonte.obrigatoriedade}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 text-right">
-              <button
-                onClick={() => setSelectedCriterioModal(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-semibold"
-              >
-                Fechar Detalhes
               </button>
             </div>
           </div>
