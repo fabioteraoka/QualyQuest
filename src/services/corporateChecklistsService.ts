@@ -26,12 +26,17 @@ import {
   ExecucaoChecklistAuditoria,
   ItemAvaliadoExecucaoChecklist,
   UserProfile,
-  NCRecord
+  NCRecord,
+  CriterioBibliotecaCorporativa,
+  CriterioAjusteAuditoria,
+  FonteVinculoCriterio,
+  TipoEntidadeChecklist
 } from '../types';
 import {
   MASTER_CHECKLISTS,
   MASTER_CHECKLIST_ITEMS
 } from '../data/corporateChecklistsData';
+import { CANONICAL_CORPORATE_CRITERIA } from '../data/corporateLibraryData';
 import {
   recordOrganizationAudit,
   sanitizeForFirestore,
@@ -487,3 +492,344 @@ export async function gerarRNCFromCriterioNC(
 
   return { rncId, numeroNC };
 }
+
+// ============================================================================
+// BIBLIOTECA CORPORATIVA ÚNICA DE CRITÉRIOS (ARQUITETURA UNIFICADA MULTI-FONTE)
+// ============================================================================
+
+/**
+ * Escuta em tempo real os critérios canônicos da Biblioteca Corporativa Única
+ * Coleção Firestore: organizations/{orgId}/corporate_library_criteria
+ */
+export function subscribeToCorporateLibraryCriteria(
+  organizationId: string,
+  callback: (criteria: CriterioBibliotecaCorporativa[]) => void
+): () => void {
+  if (!organizationId) {
+    callback(CANONICAL_CORPORATE_CRITERIA);
+    return () => {};
+  }
+
+  const colRef = collection(db, 'organizations', organizationId, 'corporate_library_criteria');
+
+  const unsubscribe = onSnapshot(
+    colRef,
+    (snapshot) => {
+      if (snapshot.empty) {
+        callback(CANONICAL_CORPORATE_CRITERIA);
+        return;
+      }
+
+      const list: CriterioBibliotecaCorporativa[] = [];
+      const seen = new Set<string>();
+      snapshot.forEach((snap) => {
+        const data = snap.data() as CriterioBibliotecaCorporativa;
+        const id = snap.id || data.id || data.codigoUnico;
+        if (!seen.has(id)) {
+          seen.add(id);
+          list.push({ ...data, id });
+        }
+      });
+
+      list.sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+      callback(list);
+    },
+    (err) => {
+      console.warn('Erro ao escutar corporate_library_criteria, usando base local:', err);
+      callback(CANONICAL_CORPORATE_CRITERIA);
+    }
+  );
+
+  return unsubscribe;
+}
+
+/**
+ * Realiza o seeding idempotente dos 36 critérios canônicos e seus 177 vínculos normativos no Firestore
+ */
+export async function seedCorporateLibraryIfEmpty(
+  organizationId: string,
+  currentUser?: UserProfile | null
+): Promise<{ criteriaSeeded: number; totalLinks: number }> {
+  if (!organizationId) return { criteriaSeeded: 0, totalLinks: 0 };
+
+  const colRef = collection(db, 'organizations', organizationId, 'corporate_library_criteria');
+  const snap = await getDocs(colRef);
+
+  if (!snap.empty && snap.size >= CANONICAL_CORPORATE_CRITERIA.length) {
+    return { criteriaSeeded: 0, totalLinks: 0 };
+  }
+
+  const now = new Date().toISOString();
+  const userUid = currentUser?.uid || auth.currentUser?.uid || 'system_seed';
+  const userName = currentUser?.displayName || currentUser?.email || 'Sistema SGQ';
+
+  const batch = writeBatch(db);
+  let totalLinks = 0;
+
+  CANONICAL_CORPORATE_CRITERIA.forEach((crit) => {
+    const docRef = doc(db, 'organizations', organizationId, 'corporate_library_criteria', crit.id);
+    totalLinks += (crit.fontesVinculadas || []).length;
+    batch.set(docRef, sanitizeForFirestore({
+      ...crit,
+      organizationId,
+      createdAt: crit.createdAt || now,
+      updatedAt: now
+    }), { merge: true });
+  });
+
+  await batch.commit();
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'SYSTEM',
+    entityId: 'corporate_library_criteria_seed',
+    action: 'CREATE',
+    summary: `Seeding de ${CANONICAL_CORPORATE_CRITERIA.length} Critérios Canônicos Únicos com ${totalLinks} vínculos normativos por ${userName}`,
+    changedByUid: userUid,
+    changedByEmail: currentUser?.email || 'admin@qualigest.aero',
+    details: JSON.stringify({
+      criteriaCount: CANONICAL_CORPORATE_CRITERIA.length,
+      totalLinks
+    })
+  });
+
+  return {
+    criteriaSeeded: CANONICAL_CORPORATE_CRITERIA.length,
+    totalLinks
+  };
+}
+
+/**
+ * Montagem Dinâmica de Checklists a partir da Biblioteca Central Única:
+ * Filtra e projeta os critérios canônicos conforme a Autoridade, Cliente ou Norma selecionada.
+ */
+export function montarChecklistDinamico(
+  criterios: CriterioBibliotecaCorporativa[],
+  filtros: {
+    autoridadeOuCliente?: string; // 'TODAS' | 'ANAC' | 'EASA' | 'FAA' | 'IOSA' | 'Kalitta Air' | 'Atlas Air' | 'TACV' | 'IMPACTO SGQ' | 'IMPACTO SGSO'
+    tipoEntidade?: TipoEntidadeChecklist | 'TODOS';
+    categoria?: string;
+    termoBusca?: string;
+  }
+): CriterioBibliotecaCorporativa[] {
+  let resultado = [...criterios];
+
+  // 1. Filtrar por Autoridade ou Cliente específico
+  if (filtros.autoridadeOuCliente && filtros.autoridadeOuCliente !== 'TODAS') {
+    const alvo = filtros.autoridadeOuCliente.toLowerCase();
+    resultado = resultado.filter((crit) =>
+      crit.fontesVinculadas.some((f) =>
+        f.autoridadeOuCliente.toLowerCase().includes(alvo) ||
+        f.normaDocumento.toLowerCase().includes(alvo)
+      )
+    );
+  }
+
+  // 2. Filtrar por Tipo de Entidade
+  if (filtros.tipoEntidade && filtros.tipoEntidade !== 'TODOS') {
+    resultado = resultado.filter((crit) =>
+      crit.fontesVinculadas.some((f) => f.tipoEntidade === filtros.tipoEntidade)
+    );
+  }
+
+  // 3. Filtrar por Categoria / Processo
+  if (filtros.categoria && filtros.categoria !== 'TODAS') {
+    resultado = resultado.filter((crit) => crit.categoria === filtros.categoria);
+  }
+
+  // 4. Filtrar por Termo de Busca
+  if (filtros.termoBusca && filtros.termoBusca.trim() !== '') {
+    const busca = filtros.termoBusca.toLowerCase().trim();
+    resultado = resultado.filter((crit) =>
+      crit.codigoUnico.toLowerCase().includes(busca) ||
+      crit.titulo.toLowerCase().includes(busca) ||
+      crit.perguntaOuCriterio.toLowerCase().includes(busca) ||
+      crit.orientacaoEvidencia.toLowerCase().includes(busca) ||
+      (crit.controleCentralId || '').toLowerCase().includes(busca) ||
+      (crit.tags || []).some((t) => t.toLowerCase().includes(busca)) ||
+      crit.fontesVinculadas.some(
+        (f) =>
+          f.autoridadeOuCliente.toLowerCase().includes(busca) ||
+          f.normaDocumento.toLowerCase().includes(busca) ||
+          f.itemOuSecaoNorma.toLowerCase().includes(busca)
+      )
+    );
+  }
+
+  return resultado;
+}
+
+/**
+ * Inicializa uma Auditoria Dinâmica a partir da seleção de critérios da Biblioteca Central Única
+ */
+export function inicializarExecucaoDinamica(params: {
+  organizationId: string;
+  numeroAuditoria: string;
+  checklistCodigo: string;
+  checklistNome: string;
+  auditorLider: string;
+  baseOperacional: string;
+  escopoAuditado: string;
+  origemTipo: TipoEntidadeChecklist | 'MULTI_ORIGEM';
+  origemNome: string;
+  normaReferencia: string;
+  criteriosSelecionados: CriterioBibliotecaCorporativa[];
+  dataAuditoria?: string;
+}): ExecucaoChecklistAuditoria {
+  const itensAvaliados: Record<string, ItemAvaliadoExecucaoChecklist> = {};
+
+  params.criteriosSelecionados.forEach((crit, index) => {
+    // Buscar a referência normativa pertinente à origem selecionada, ou a primeira da lista
+    const fontePertinente = crit.fontesVinculadas.find(
+      (f) =>
+        params.origemNome &&
+        (f.autoridadeOuCliente.toLowerCase().includes(params.origemNome.toLowerCase()) ||
+          f.normaDocumento.toLowerCase().includes(params.origemNome.toLowerCase()))
+    ) || crit.fontesVinculadas[0];
+
+    const refNormativa = fontePertinente
+      ? `${fontePertinente.normaDocumento} - ${fontePertinente.itemOuSecaoNorma}`
+      : 'Norma Aplicável SGQ';
+
+    itensAvaliados[crit.id] = {
+      criterioId: crit.id,
+      codigoUnico: crit.codigoUnico,
+      numeroItem: (index + 1).toString(),
+      moduloOuSecao: crit.categoria,
+      referenciaNormativa: refNormativa,
+      perguntaOuCriterio: crit.perguntaOuCriterio,
+      status: 'PENDENTE',
+      evidenciasVinculadasIds: [],
+      observacoesAuditor: '',
+      responsavelCorrecao: '',
+      prazoCorrecao: '',
+      fontesVinculadas: crit.fontesVinculadas
+    };
+  });
+
+  const now = new Date().toISOString();
+
+  return {
+    id: `EXEC-DIN-${Date.now()}-${params.checklistCodigo.replace(/[^a-zA-Z0-9]/g, '')}`,
+    organizationId: params.organizationId,
+    checklistId: `CHK-DIN-${params.origemNome.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()}`,
+    checklistCodigo: params.checklistCodigo,
+    checklistNome: params.checklistNome,
+    numeroAuditoria: params.numeroAuditoria,
+    dataAuditoria: params.dataAuditoria || now.split('T')[0],
+    auditorLider: params.auditorLider,
+    auditoresAcompanhantes: [],
+    baseOperacional: params.baseOperacional,
+    escopoAuditado: params.escopoAuditado,
+    origemTipo: params.origemTipo,
+    origemNome: params.origemNome,
+    normaReferencia: params.normaReferencia,
+    criteriosAjustados: [],
+    statusExecucao: 'EM_ANDAMENTO',
+    itensAvaliados,
+    totalItens: params.criteriosSelecionados.length,
+    totalConforme: 0,
+    totalNaoConforme: 0,
+    totalNaoAplicavel: 0,
+    totalPendente: params.criteriosSelecionados.length,
+    taxaConformidade: 0,
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+/**
+ * Adiciona um critério avulso da biblioteca à auditoria com registro de justificativa
+ */
+export function adicionarCriterioAuditoria(
+  execution: ExecucaoChecklistAuditoria,
+  criterio: CriterioBibliotecaCorporativa,
+  justificativa: string,
+  currentUser?: UserProfile | null
+): ExecucaoChecklistAuditoria {
+  const agora = new Date().toISOString();
+  const userName = currentUser?.displayName || currentUser?.email || 'Auditor';
+
+  const novoAjuste: CriterioAjusteAuditoria = {
+    criterioId: criterio.id,
+    codigoUnico: criterio.codigoUnico,
+    tipoAjuste: 'INCLUIDO_EXTRA',
+    justificativa,
+    dataAjuste: agora,
+    responsavelNome: userName
+  };
+
+  const fontePertinente = criterio.fontesVinculadas[0];
+  const refNormativa = fontePertinente
+    ? `${fontePertinente.normaDocumento} - ${fontePertinente.itemOuSecaoNorma}`
+    : 'Norma Aplicável SGQ';
+
+  const novoItem: ItemAvaliadoExecucaoChecklist = {
+    criterioId: criterio.id,
+    codigoUnico: criterio.codigoUnico,
+    numeroItem: (Object.keys(execution.itensAvaliados || {}).length + 1).toString(),
+    moduloOuSecao: criterio.categoria,
+    referenciaNormativa: refNormativa,
+    perguntaOuCriterio: criterio.perguntaOuCriterio,
+    status: 'PENDENTE',
+    evidenciasVinculadasIds: [],
+    observacoesAuditor: `[Critério Incluído Extraordinariamente]: ${justificativa}`,
+    fontesVinculadas: criterio.fontesVinculadas
+  };
+
+  const itensAtualizados = {
+    ...execution.itensAvaliados,
+    [criterio.id]: novoItem
+  };
+
+  return {
+    ...execution,
+    itensAvaliados: itensAtualizados,
+    totalItens: Object.keys(itensAtualizados).length,
+    totalPendente: execution.totalPendente + 1,
+    criteriosAjustados: [...(execution.criteriosAjustados || []), novoAjuste],
+    updatedAt: agora
+  };
+}
+
+/**
+ * Exclui um critério da auditoria respeitando o escopo e registrando a justificativa
+ */
+export function excluirCriterioAuditoria(
+  execution: ExecucaoChecklistAuditoria,
+  criterioId: string,
+  justificativa: string,
+  currentUser?: UserProfile | null
+): ExecucaoChecklistAuditoria {
+  const agora = new Date().toISOString();
+  const userName = currentUser?.displayName || currentUser?.email || 'Auditor';
+
+  const itemExistente = execution.itensAvaliados[criterioId];
+  if (!itemExistente) return execution;
+
+  const novoAjuste: CriterioAjusteAuditoria = {
+    criterioId,
+    codigoUnico: itemExistente.codigoUnico || criterioId,
+    tipoAjuste: 'EXCLUIDO_DO_ESCOPO',
+    justificativa,
+    dataAjuste: agora,
+    responsavelNome: userName
+  };
+
+  // Marcar como Não Aplicável com justificativa explícita registrada
+  const itensAtualizados = {
+    ...execution.itensAvaliados,
+    [criterioId]: {
+      ...itemExistente,
+      status: 'NA' as const,
+      observacoesAuditor: `[Critério Excluído do Escopo com Justificativa]: ${justificativa}`
+    }
+  };
+
+  return {
+    ...execution,
+    itensAvaliados: itensAtualizados,
+    criteriosAjustados: [...(execution.criteriosAjustados || []), novoAjuste],
+    updatedAt: agora
+  };
+}
+

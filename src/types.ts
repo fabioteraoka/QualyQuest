@@ -2634,6 +2634,48 @@ export type TipoEntidadeChecklist =
   | 'CLIENTE_OPERADOR'
   | 'INTERNO_SGQ';
 
+export interface FonteVinculoCriterio {
+  id?: string;
+  tipoEntidade: TipoEntidadeChecklist;
+  autoridadeOuCliente: string; // Ex: 'ANAC', 'EASA', 'FAA', 'IOSA / IATA', 'Kalitta Air', 'Atlas Air', 'TACV', 'IMPACTO SGQ', 'IMPACTO SGSO'
+  normaDocumento: string; // Ex: 'RBAC 145', 'RBAC 43', 'EASA Part-145', '14 CFR Part 145', 'IOSA ISM MNT', 'GMM Kalitta Air QA-14', 'Atlas Air Q2059', 'MQ-001 SGQ'
+  itemOuSecaoNorma: string; // Ex: 'RBAC 145.109(b)', '145.A.40(b)', 'Section 3 Item 22', 'MNT 2.5.2'
+  revisaoVigente: string; // Ex: 'Emenda 06', 'Rev. 2024', 'Rev. 4', etc.
+  obrigatoriedade: 'MANDATORIO' | 'CONTRATUAL' | 'RECOMENDADO';
+  especificidadeFonte?: string; // Exigências ou detalhes específicos do operador
+}
+
+export interface CriterioBibliotecaCorporativa {
+  id: string; // ex: 'CRIT-CORP-001', 'CRIT-CORP-011', etc.
+  organizationId: string;
+  codigoUnico: string; // ex: 'CRIT-CORP-011'
+  titulo: string; // ex: 'Programa de Calibração e Rastreabilidade Metrológica'
+  categoria: string; // ex: 'Equipamentos e Metrologia'
+  processo: string; // ex: 'Metrologia / Ferramentaria'
+  perguntaOuCriterio: string; // Descrição central do critério
+  textoDetalhado?: string; // Detalhamento técnico
+  orientacaoEvidencia: string; // Evidência objetiva esperada
+  controleCentralId?: string; // ex: 'CTRL-011' ou 'CTRL-METROL-01'
+  controleCentralNome?: string; // ex: 'Calibração e Rastreabilidade de Ferramentas'
+  criticidade: 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA';
+  situacaoAplicabilidade: 'APLICAVEL' | 'NAO_APLICAVEL' | 'EM_ANALISE';
+  situacaoConformidade: 'CONFORME' | 'PARCIALMENTE_CONFORME' | 'NAO_CONFORME' | 'EM_ANALISE' | 'PENDENTE';
+  fontesVinculadas: FonteVinculoCriterio[];
+  ordem?: number;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CriterioAjusteAuditoria {
+  criterioId: string;
+  codigoUnico: string;
+  tipoAjuste: 'INCLUIDO_EXTRA' | 'EXCLUIDO_DO_ESCOPO';
+  justificativa: string;
+  dataAjuste: string;
+  responsavelNome: string;
+}
+
 export interface ChecklistAuditoriaMestre {
   id: string;
   organizationId: string;
@@ -2667,10 +2709,12 @@ export interface CriterioChecklistMestre {
   controleCentralNome?: string;
   criticidade: 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA';
   ordem: number;
+  codigoUnicoCorporativo?: string;
 }
 
 export interface ItemAvaliadoExecucaoChecklist {
   criterioId: string;
+  codigoUnico?: string;
   numeroItem: string;
   moduloOuSecao: string;
   referenciaNormativa: string;
@@ -2682,6 +2726,7 @@ export interface ItemAvaliadoExecucaoChecklist {
   prazoCorrecao?: string;
   rncId?: string;
   rncNumero?: string;
+  fontesVinculadas?: FonteVinculoCriterio[];
 }
 
 export interface ExecucaoChecklistAuditoria {
@@ -2696,6 +2741,10 @@ export interface ExecucaoChecklistAuditoria {
   auditoresAcompanhantes?: string[];
   baseOperacional: string;
   escopoAuditado: string;
+  origemTipo?: TipoEntidadeChecklist | 'MULTI_ORIGEM';
+  origemNome?: string;
+  normaReferencia?: string;
+  criteriosAjustados?: CriterioAjusteAuditoria[];
   statusExecucao: 'EM_ANDAMENTO' | 'CONCLUIDA' | 'CANCELADA';
   itensAvaliados: Record<string, ItemAvaliadoExecucaoChecklist>;
   totalItens: number;
