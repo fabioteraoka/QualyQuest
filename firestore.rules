@@ -83,7 +83,7 @@ service cloud.firestore {
         isSuperPlatformAdmin() ||
         (hasValidProfile() &&
          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         ((!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
+         (!('status' in get(/databases/$(database)/documents/users/$(request.auth.uid)).data) || 
            (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INACTIVE' &&
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'INATIVO' &&
             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'BLOQUEADO')) &&
@@ -618,6 +618,83 @@ service cloud.firestore {
         allow get, list: if userBelongsToOrg(organizationId);
         allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(pendencyId);
         allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(pendencyId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.4: Checklists Corporativos Mestres (organizations/{orgId}/corporate_checklists/{checklistId})
+      // ----------------------------------------------------
+      match /corporate_checklists/{checklistId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(checklistId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(checklistId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.4: Critérios de Checklists Mestres (organizations/{orgId}/corporate_checklist_items/{itemId})
+      // ----------------------------------------------------
+      match /corporate_checklist_items/{itemId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(itemId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(itemId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.4: Critérios Canônicos da Biblioteca Corporativa (organizations/{orgId}/corporate_library_criteria/{criteriaId})
+      // ----------------------------------------------------
+      match /corporate_library_criteria/{criteriaId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(criteriaId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(criteriaId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.4: Execuções e Snapshots Históricos de Auditorias (organizations/{orgId}/checklist_executions/{executionId})
+      // ----------------------------------------------------
+      match /checklist_executions/{executionId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(executionId);
+        allow update: if userBelongsToOrg(organizationId) && (
+          (getUserRole() != 'CONSULTA' && (!('status' in resource.data) || resource.data.status != 'CONCLUIDA')) ||
+          isGestorSGQ() ||
+          isSystemAdmin()
+        ) && isValidId(organizationId) && isValidId(executionId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(executionId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.4: Respostas Institucionais Aprovadas (organizations/{orgId}/institutional_responses/{responseId})
+      // ----------------------------------------------------
+      match /institutional_responses/{responseId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(responseId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(responseId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.4: Evidências Objetivas de Conformidade (organizations/{orgId}/compliance_evidences/{evidenceId})
+      // ----------------------------------------------------
+      match /compliance_evidences/{evidenceId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(evidenceId);
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(evidenceId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.3: Fontes Normativas Monitoradas (organizations/{orgId}/monitored_sources/{sourceId})
+      // ----------------------------------------------------
+      match /monitored_sources/{sourceId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(sourceId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(sourceId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.3: Análises de Impacto SGQ (organizations/{orgId}/quality_impact_reviews/{reviewId})
+      // ----------------------------------------------------
+      match /quality_impact_reviews/{reviewId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(reviewId);
+        allow delete: if userBelongsToOrg(organizationId) && isSystemAdmin() && isValidId(organizationId) && isValidId(reviewId);
       }
     }
 

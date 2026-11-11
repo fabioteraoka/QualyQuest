@@ -872,6 +872,38 @@
       "schema": "Auditoria",
       "description": "Immutable operational audit trails for MRO modifications"
     },
+    "/organizations/{organizationId}/corporate_checklists/{checklistId}": {
+      "schema": "ClientProgram",
+      "description": "Master corporate audit checklists for authorities and airline clients"
+    },
+    "/organizations/{organizationId}/corporate_checklist_items/{itemId}": {
+      "schema": "ClientRequirement",
+      "description": "Individual items and criteria from master corporate checklists"
+    },
+    "/organizations/{organizationId}/corporate_library_criteria/{criteriaId}": {
+      "schema": "CentralControl",
+      "description": "Canonical corporate library criteria unifying regulatory requirements"
+    },
+    "/organizations/{organizationId}/checklist_executions/{executionId}": {
+      "schema": "ClientEvaluation",
+      "description": "Executed audit records with immutable snapshots and evaluations"
+    },
+    "/organizations/{organizationId}/institutional_responses/{responseId}": {
+      "schema": "CentralControl",
+      "description": "Approved institutional responses and MOMQ/PTM procedural references"
+    },
+    "/organizations/{organizationId}/compliance_evidences/{evidenceId}": {
+      "schema": "PersonDocument",
+      "description": "Objective compliance evidence records with validity and operational base scopes"
+    },
+    "/organizations/{organizationId}/monitored_sources/{sourceId}": {
+      "schema": "ExternalDocumentSource",
+      "description": "Regulatory and client sources monitored periodically for updates"
+    },
+    "/organizations/{organizationId}/quality_impact_reviews/{reviewId}": {
+      "schema": "RncComparison",
+      "description": "Quality impact reviews for changes in external regulatory publications"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile records indexed strictly by Firebase Auth UID"

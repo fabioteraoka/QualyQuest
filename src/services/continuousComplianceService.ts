@@ -169,42 +169,113 @@ export function getResumoAuditoriaConsolidacao(): ResumoAuditoriaConsolidacao {
 }
 
 /**
- * Validação de aplicabilidade de evidência reutilizada:
- * Verifica se a evidência é válida, se está no prazo e se cobre a base e o escopo da auditoria.
+ * Contexto de Auditoria e Requisito para validação rigorosa de evidências
+ */
+export interface ContextoValidacaoEvidencia {
+  baseOperacional: string;
+  clienteOuAutoridade: string;
+  requisitoId?: string;
+  requisitoNormaOuCodigo?: string;
+  exigeValidadeTemporal?: boolean;
+}
+
+/**
+ * Validação de aplicabilidade de evidência reutilizada (Fase 1.4.3):
+ * Executa as 7 validações reais e objetivas de compatibilidade técnica e legal.
  */
 export function validarAplicabilidadeEvidencia(
   evidencia: EvidenciaRequisitoItem,
-  contextoAuditoria: { baseOperacional: string; clienteOuAutoridade: string }
-): { valida: boolean; motivo?: string } {
+  contexto: ContextoValidacaoEvidencia
+): { valida: boolean; motivo?: string; codigoRegra?: string } {
   const hoje = new Date().toISOString().split('T')[0];
 
-  // 1. Verificar prazo de validade
+  // Regra 1: Documento sem data de validade quando o requisito exige vigência temporal
+  if (contexto.exigeValidadeTemporal && !evidencia.dataValidade) {
+    return {
+      valida: false,
+      motivo: 'Evidência sem data de validade cadastrada para requisito que exige controle periódico estrito.',
+      codigoRegra: 'SEM_DATA_VALIDADE'
+    };
+  }
+
+  // Regra 2: Certificado ou evidência vencida por data
   if (evidencia.dataValidade && evidencia.dataValidade < hoje) {
     return {
       valida: false,
-      motivo: `Evidência vencida em ${evidencia.dataValidade}. Requer renovação metrológica ou documental.`
+      motivo: `Evidência vencida em ${evidencia.dataValidade}. Requer calibração metrológica ou renovação de treinamento.`,
+      codigoRegra: 'EVIDENCIA_VENCIDA'
     };
   }
 
-  // 2. Verificar status de validade
+  // Regra 3: Status de validade vencido ou substituído por revisão recente
   if (evidencia.statusValidade === 'VENCIDO') {
     return {
       valida: false,
-      motivo: `Evidência com status VENCIDO. Requer aprovação da Engenharia da Qualidade ou renovação.`
+      motivo: 'Evidência com status VENCIDO no acervo SGQ. Requer aprovação da Engenharia da Qualidade ou renovação.',
+      codigoRegra: 'STATUS_VENCIDO'
     };
   }
 
-  // 3. Verificar aplicabilidade de base operacional (se especificada)
+  // Regra 4: Evidência restrita por Base Operacional (ex: ferramentaria ou instalação local)
   if (
     evidencia.baseOperacional &&
     evidencia.baseOperacional !== 'TODAS' &&
-    evidencia.baseOperacional !== contextoAuditoria.baseOperacional
+    contexto.baseOperacional &&
+    contexto.baseOperacional !== 'TODAS' &&
+    evidencia.baseOperacional !== contexto.baseOperacional
   ) {
     return {
       valida: false,
-      motivo: `Evidência restrita à base [${evidencia.baseOperacional}]. Não aplicável à base ${contextoAuditoria.baseOperacional}.`
+      motivo: `Evidência restrita à base [${evidencia.baseOperacional}]. Não comprova conformidade na base [${contexto.baseOperacional}].`,
+      codigoRegra: 'BASE_INCOMPATIVEL'
     };
   }
 
+  // Regra 5: Evidência específica de cliente não aplicável a outro (ex: autorização RII Kalitta vs Atlas Air)
+  if (
+    evidencia.clienteNome &&
+    evidencia.clienteNome !== 'TODOS' &&
+    contexto.clienteOuAutoridade &&
+    !contexto.clienteOuAutoridade.includes('ANAC') &&
+    !contexto.clienteOuAutoridade.includes('INTERNO') &&
+    evidencia.clienteNome.toLowerCase() !== contexto.clienteOuAutoridade.toLowerCase() &&
+    !contexto.clienteOuAutoridade.toLowerCase().includes(evidencia.clienteNome.toLowerCase())
+  ) {
+    return {
+      valida: false,
+      motivo: `Evidência emitida com escopo restrito para o cliente [${evidencia.clienteNome}]. Não pode ser aproveitada para [${contexto.clienteOuAutoridade}] sem autorização bilateral.`,
+      codigoRegra: 'CLIENTE_INCOMPATIVEL'
+    };
+  }
+
+  // Regra 6: Treinamento insuficiente para escopo técnico (ex: Fatores Humanos ANAC não atende EWIS EASA ou GMM Kalitta)
+  if (contexto.requisitoNormaOuCodigo) {
+    const reqRef = contexto.requisitoNormaOuCodigo.toLowerCase();
+    const tituloEv = (evidencia.titulo || '').toLowerCase();
+    const descEv = (evidencia.descricao || '').toLowerCase();
+
+    // Se o requisito exige EWIS / CDCCL da EASA
+    if ((reqRef.includes('ewis') || reqRef.includes('cdccl') || reqRef.includes('145.a.30(e)')) &&
+        !tituloEv.includes('ewis') && !tituloEv.includes('cdccl') && !descEv.includes('ewis')) {
+      return {
+        valida: false,
+        motivo: 'Certificado de treinamento genérico (Fatores Humanos / SGSO) não comprova cumprimento do módulo mandatório EWIS / CDCCL (EASA).',
+        codigoRegra: 'EMENTA_TREINAMENTO_INSUFICIENTE'
+      };
+    }
+
+    // Se o requisito exige GMM específico da Kalitta Air
+    if ((reqRef.includes('kalitta') || reqRef.includes('qa-14')) &&
+        reqRef.includes('gmm') &&
+        !tituloEv.includes('kalitta') && !descEv.includes('kalitta')) {
+      return {
+        valida: false,
+        motivo: 'Treinamento de procedimentos internos da OM não atende ao requisito mandatório de familiarização no GMM da Kalitta Air.',
+        codigoRegra: 'GMM_CLIENTE_AUSENTE'
+      };
+    }
+  }
+
+  // Regra 7: Evidência aceita
   return { valida: true };
 }

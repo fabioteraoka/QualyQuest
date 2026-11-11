@@ -7,6 +7,8 @@
  * e critérios canônicos, preservando a identidade, revisão e particularidades de cada fonte.
  */
 
+import { MASTER_CHECKLIST_ITEMS, MASTER_CHECKLISTS } from './corporateChecklistsData';
+
 export type TipoRelacionamentoNormativo =
   | 'Equivalente'
   | 'Parcialmente equivalente'
@@ -37,7 +39,7 @@ export interface ItemAuditoriaConsolidacao {
   documentoInternoImpacto?: string;
 }
 
-export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
+const EXPLICIT_AUDIT_DATA: ItemAuditoriaConsolidacao[] = [
   // ==========================================================================
   // 1. ANAC RBAC 145 (22 CRITÉRIOS DA PLANILHA OFICIAL)
   // ==========================================================================
@@ -230,8 +232,8 @@ export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
     revisaoFonte: 'RBAC 145 Emenda 09 / IS 145.109-001C',
     statusValidacaoDocumental: 'VALIDADO_OFICIAL',
     criterioCanonicoAssociado: 'CRIT-CORP-011',
-    controleCentralId: 'CTRL-METROL-01',
-    controleCentralNome: 'Calibração, Incerteza e Rastreabilidade Metrológica',
+    controleCentralId: 'CTRL-FERRAM-01',
+    controleCentralNome: 'Calibração e Controle de Ferramentas de Precisão',
     tipoRelacionamento: 'Parcialmente equivalente',
     justificativaTecnica: 'A ANAC exige rastreabilidade à Rede Brasileira de Calibração (RBC/Inmetro) ou laboratório nacional do país de origem.',
     diferencaCritica: 'Diferença de acreditação: ANAC foca em RBC/Inmetro; clientes americanos (Kalitta/Atlas) e FAA exigem NIST; calibrações de exportação exigem selo de mútua aceitação ILAC.',
@@ -632,8 +634,8 @@ export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
     revisaoFonte: '14 CFR Part 145 Rev. Vigente',
     statusValidacaoDocumental: 'VALIDADO_OFICIAL',
     criterioCanonicoAssociado: 'CRIT-CORP-011',
-    controleCentralId: 'CTRL-METROL-01',
-    controleCentralNome: 'Calibração, Incerteza e Rastreabilidade Metrológica',
+    controleCentralId: 'CTRL-FERRAM-01',
+    controleCentralNome: 'Calibração e Controle de Ferramentas de Precisão',
     tipoRelacionamento: 'Específico da fonte',
     justificativaTecnica: 'Rastreabilidade compulsória ao NIST para serviços em matrículas americanas.',
     diferencaCritica: 'Especificidade metrológica: Laboratórios de calibração devem ter certificado com cadeia de rastreabilidade ao NIST ou acordo MRA formal.',
@@ -795,7 +797,7 @@ export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
     documentoInternoImpacto: 'Pasta Operacional Kalitta Air / GMM Kalitta'
   },
   {
-    idOriginal: 'QA14-02',
+    idOriginal: 'CRIT-KALITTA-02',
     checklistOrigem: 'CHK-KALITTA-QA14',
     checklistNome: 'Kalitta Air Line Maintenance Station Audit Checklist (FORM QA-14)',
     empresaOuAutoridade: 'Kalitta Air',
@@ -812,7 +814,7 @@ export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
     documentoInternoImpacto: 'Escala de Trabalho Linha Kalitta / Espelho de Ponto'
   },
   {
-    idOriginal: 'QA14-21',
+    idOriginal: 'CRIT-KALITTA-21',
     checklistOrigem: 'CHK-KALITTA-QA14',
     checklistNome: 'Kalitta Air Line Maintenance Station Audit Checklist (FORM QA-14)',
     empresaOuAutoridade: 'Kalitta Air',
@@ -821,15 +823,15 @@ export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
     revisaoFonte: 'FORM QA-14 Rev. 4 (01/09/2026)',
     statusValidacaoDocumental: 'VALIDADO_OFICIAL',
     criterioCanonicoAssociado: 'CRIT-CORP-011',
-    controleCentralId: 'CTRL-METROL-01',
-    controleCentralNome: 'Calibração, Incerteza e Rastreabilidade Metrológica',
+    controleCentralId: 'CTRL-FERRAM-01',
+    controleCentralNome: 'Calibração e Controle de Ferramentas de Precisão',
     tipoRelacionamento: 'Específico da fonte',
     justificativaTecnica: 'A Kalitta Air exige expressamente etiquetas de calibração em inglês e comprovação de cadeia metrológica com o NIST.',
     diferencaCritica: 'Especificidade de rótulo e rastreabilidade: Não basta certificado RBC em português; a etiqueta física deve estar em inglês para auditoria de pilotos e inspetores FAA.',
     documentoInternoImpacto: 'F 001-06 (Etiquetas Bilingues) / Certificados NIST'
   },
   {
-    idOriginal: 'QA14-50',
+    idOriginal: 'CRIT-KALITTA-50',
     checklistOrigem: 'CHK-KALITTA-QA14',
     checklistNome: 'Kalitta Air Line Maintenance Station Audit Checklist (FORM QA-14)',
     empresaOuAutoridade: 'Kalitta Air',
@@ -846,7 +848,7 @@ export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
     documentoInternoImpacto: 'Roster RII Kalitta / Cartas de Autorização RII'
   },
   {
-    idOriginal: 'QA14-56',
+    idOriginal: 'CRIT-KALITTA-56',
     checklistOrigem: 'CHK-KALITTA-QA14',
     checklistNome: 'Kalitta Air Line Maintenance Station Audit Checklist (FORM QA-14)',
     empresaOuAutoridade: 'Kalitta Air',
@@ -973,3 +975,82 @@ export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = [
     documentoInternoImpacto: 'MGSO Seção 2'
   }
 ];
+
+const explicitMap = new Map<string, ItemAuditoriaConsolidacao>();
+for (const item of EXPLICIT_AUDIT_DATA) {
+  explicitMap.set(item.idOriginal, item);
+  if (item.idOriginal.startsWith('QA14-')) {
+    const num = item.idOriginal.replace('QA14-', '');
+    explicitMap.set(`CRIT-KALITTA-${num}`, item);
+  }
+}
+
+const chkMeta: Record<string, { nome: string; autoridade: string; revisao: string }> = {};
+for (const chk of MASTER_CHECKLISTS) {
+  chkMeta[chk.id] = {
+    nome: chk.nome,
+    autoridade: chk.autoridadeOuCliente,
+    revisao: chk.revisao
+  };
+}
+
+/**
+ * Matriz Completa Oficial com todos os 177 Registros Originais
+ * Rastreabilidade bidirecional estrita com Critérios Canônicos e Controles Centrais
+ */
+export const AUDITORIA_CONSOLIDACAO_DATA: ItemAuditoriaConsolidacao[] = MASTER_CHECKLIST_ITEMS.map((item) => {
+  const existing = explicitMap.get(item.id);
+  if (existing) {
+    return {
+      ...existing,
+      idOriginal: item.id,
+      checklistOrigem: item.checklistId
+    };
+  }
+
+  const meta = chkMeta[item.checklistId] || { nome: item.checklistCodigo, autoridade: 'IMPACTO', revisao: 'Vigente' };
+  const isTacv = item.checklistId === 'CHK-TACV-LINE';
+  
+  let tipoRel: TipoRelacionamentoNormativo = 'Equivalente';
+  let statusDoc: StatusValidacaoDocumental = isTacv ? 'PENDENTE_VALIDACAO_DOCUMENTAL' : 'VALIDADO_OFICIAL';
+  
+  if (isTacv) {
+    tipoRel = 'Não foi possível determinar';
+  } else if (item.referenciaNormativa.includes('121.371') || item.perguntaOuCriterio.toLowerCase().includes('rii')) {
+    tipoRel = 'Específico da fonte';
+  } else if (item.referenciaNormativa.includes('65.89') || item.perguntaOuCriterio.toLowerCase().includes('duty limitation')) {
+    tipoRel = 'Relacionado, mas não equivalente';
+  } else if (item.perguntaOuCriterio.toLowerCase().includes('english') || item.perguntaOuCriterio.toLowerCase().includes('gmm')) {
+    tipoRel = 'Específico da fonte';
+  } else if (item.referenciaNormativa.includes('145.A.30(e)') || item.perguntaOuCriterio.toLowerCase().includes('ewis')) {
+    tipoRel = 'Específico da fonte';
+  } else if (item.referenciaNormativa.includes('8130-3') || item.referenciaNormativa.includes('Form 1') || item.referenciaNormativa.includes('F 001-021')) {
+    tipoRel = 'Específico da fonte';
+  } else if (item.referenciaNormativa.includes('145.219') || item.referenciaNormativa.includes('145.151')) {
+    tipoRel = 'Parcialmente equivalente';
+  } else if (item.checklistId === 'CHK-KALITTA-QA14' || item.checklistId === 'CHK-ATLAS-Q2059') {
+    tipoRel = 'Específico da fonte';
+  } else if (item.checklistId === 'CHK-EASA-PART145' || item.checklistId === 'CHK-FAA-PART145') {
+    tipoRel = 'Parcialmente equivalente';
+  }
+
+  return {
+    idOriginal: item.id,
+    checklistOrigem: item.checklistId,
+    checklistNome: meta.nome,
+    empresaOuAutoridade: meta.autoridade,
+    normaSecao: item.referenciaNormativa,
+    textoOriginal: item.textoOriginal || item.perguntaOuCriterio,
+    revisaoFonte: meta.revisao,
+    statusValidacaoDocumental: statusDoc,
+    criterioCanonicoAssociado: item.codigoUnicoCorporativo || 'CRIT-CORP-001',
+    controleCentralId: item.controleCentralId || 'CTRL-DOCS-01',
+    controleCentralNome: item.controleCentralNome || 'Controle SGQ',
+    tipoRelacionamento: tipoRel,
+    justificativaTecnica: isTacv 
+      ? 'Pendente de validação documental formal pela Garantia da Qualidade. Não homologado nas Especificações Operativas da IMPACTO.' 
+      : `Rastreabilidade técnica com base na norma ${item.referenciaNormativa}.`,
+    documentoInternoImpacto: 'MOMQ MNT-001 / PTM MNT-002'
+  };
+});
+

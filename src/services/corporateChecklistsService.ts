@@ -210,14 +210,11 @@ export async function seedCorporateChecklistsIfEmpty(
   const checkCol = collection(db, 'organizations', organizationId, 'corporate_checklists');
   const snap = await getDocs(checkCol);
 
-  // Se já houver checklists salvos, verificar se os 22 itens do RBAC 145 estão presentes
-  if (!snap.empty) {
-    const itemCol = collection(db, 'organizations', organizationId, 'corporate_checklist_items');
-    const qRbac145 = query(itemCol, where('checklistCodigo', '==', 'CHK-ANAC-RBAC145'));
-    const rbacSnap = await getDocs(qRbac145);
-    if (rbacSnap.size >= 22) {
-      return { checklistsSeeded: 0, itemsSeeded: 0 };
-    }
+  // Se já houver checklists e todos os 177 itens salvos, não repetir seeding
+  const itemCol = collection(db, 'organizations', organizationId, 'corporate_checklist_items');
+  const itemsSnap = await getDocs(itemCol);
+  if (!snap.empty && itemsSnap.size >= MASTER_CHECKLIST_ITEMS.length) {
+    return { checklistsSeeded: 0, itemsSeeded: 0 };
   }
 
   const userUid = currentUser?.uid || auth.currentUser?.uid || 'system_seed';

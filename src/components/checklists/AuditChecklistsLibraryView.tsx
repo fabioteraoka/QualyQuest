@@ -540,10 +540,11 @@ export const AuditChecklistsLibraryView: React.FC<AuditChecklistsLibraryViewProp
     const itemAtual = activeExecution.itensAvaliados[cid];
     if (!itemAtual) return;
 
-    // Validação formal da evidência (Seção 6 e 8)
+    // Validação formal da evidência (Seção 6, 7 e 8)
     const validacao = validarAplicabilidadeEvidencia(evidencia, {
       baseOperacional: activeExecution.baseOperacional,
-      clienteOuAutoridade: activeExecution.origemNome || 'GERAL'
+      clienteOuAutoridade: activeExecution.origemNome || 'GERAL',
+      requisitoNormaOuCodigo: itemAtual.referenciaNormativa || itemAtual.perguntaOuCriterio
     });
 
     if (!validacao.valida) {

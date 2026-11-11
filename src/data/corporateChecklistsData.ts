@@ -17,6 +17,7 @@ import {
   CriterioChecklistMestre,
   TipoEntidadeChecklist
 } from '../types';
+import { KALITTA_QA14_ITEMS } from './sampleKalittaQA14Checklist';
 
 export const MASTER_CHECKLISTS: ChecklistAuditoriaMestre[] = [
   // 1. ANAC RBAC 145 (22 Critérios da planilha checklist_auditoria_completo_rbac145.xlsx)
@@ -1895,5 +1896,78 @@ export const MASTER_CHECKLIST_ITEMS: CriterioChecklistMestre[] = [
     controleCentralNome: 'Controle de Publicações Técnicas, AMM e Manuais do Cliente',
     criticidade: 'MEDIA',
     ordem: 10
-  }
+  },
+
+  // --------------------------------------------------------------------------
+  // CHK-KALITTA-QA14: OS 69 CRITÉRIOS AUTÊNTICOS DO FORM QA-14 DA KALITTA AIR
+  // --------------------------------------------------------------------------
+  ...KALITTA_QA14_ITEMS.map((item) => {
+    const numPad = item.numeroItem.padStart(2, '0');
+    let ctrlId = 'CTRL-DOCS-01';
+    let ctrlNome = 'Controle de Publicações Técnicas, AMM e Manuais do Cliente';
+    let critCanonico = 'CRIT-CORP-035';
+
+    const sec = item.capituloOuSecao.toLowerCase();
+    const perg = item.perguntaOuCriterio.toLowerCase();
+    const txt = item.textoOriginal.toLowerCase();
+
+    if (sec.includes('training') || perg.includes('treinamento') || txt.includes('training') || perg.includes('fatores humanos') || txt.includes('human factors')) {
+      ctrlId = 'CTRL-TREIN-01';
+      ctrlNome = 'Capacitação Técnica, Fatores Humanos e SGSO';
+      critCanonico = 'CRIT-CORP-005';
+    } else if (sec.includes('tool') || sec.includes('equipment') || perg.includes('calibra') || txt.includes('calibrat') || perg.includes('ferramenta') || txt.includes('tooling')) {
+      ctrlId = 'CTRL-FERRAM-01';
+      ctrlNome = 'Calibração e Controle de Ferramentas de Precisão';
+      critCanonico = 'CRIT-CORP-011';
+    } else if (sec.includes('material') || sec.includes('receiving') || perg.includes('peça') || txt.includes('parts') || perg.includes('material') || txt.includes('shelf-life') || perg.includes('rastreabilidade')) {
+      ctrlId = 'CTRL-MAT-01';
+      ctrlNome = 'Rastreabilidade de Peças, Certificação 8130-3 e Shelf-Life';
+      critCanonico = 'CRIT-CORP-013';
+    } else if (sec.includes('quarantine') || perg.includes('quarentena') || txt.includes('quarantine') || txt.includes('scrap') || perg.includes('sucata')) {
+      ctrlId = 'CTRL-QUARENT-01';
+      ctrlNome = 'Segregação e Disposição de Peças Suspeitas/Inservíveis';
+      critCanonico = 'CRIT-CORP-015';
+    } else if (sec.includes('housing') || sec.includes('facility') || perg.includes('instalaç') || txt.includes('facilities') || txt.includes('lighting')) {
+      ctrlId = 'CTRL-INFRA-01';
+      ctrlNome = 'Instalações, Condições Ambientais e Hangaragem';
+      critCanonico = 'CRIT-CORP-001';
+    } else if (perg.includes('rii') || txt.includes('rii') || txt.includes('required inspection item')) {
+      ctrlId = 'CTRL-CRS-01';
+      ctrlNome = 'Certificação de Retorno ao Serviço (CRS) e Liberação Técnica de Manutenção';
+      critCanonico = 'CRIT-CORP-031';
+    } else if (perg.includes('duty limitation') || txt.includes('duty limitation') || txt.includes('65.89') || txt.includes('rest')) {
+      ctrlId = 'CTRL-TREIN-01';
+      ctrlNome = 'Capacitação Técnica, Fatores Humanos e SGSO';
+      critCanonico = 'CRIT-CORP-027';
+    } else if (perg.includes('esd') || txt.includes('esd') || txt.includes('electrostatic')) {
+      ctrlId = 'CTRL-MAT-01';
+      ctrlNome = 'Rastreabilidade de Peças, Certificação 8130-3 e Shelf-Life';
+      critCanonico = 'CRIT-CORP-014';
+    } else if (perg.includes('fod') || txt.includes('fod') || sec.includes('housekeeping')) {
+      ctrlId = 'CTRL-HOUSEKEEP-01';
+      ctrlNome = '5S, Prevenção de FOD e Organização de Hangares';
+      critCanonico = 'CRIT-CORP-002';
+    } else if (perg.includes('scaffolding') || perg.includes('escada') || txt.includes('ladder') || txt.includes('stand')) {
+      ctrlId = 'CTRL-SST-01';
+      ctrlNome = 'Segurança Ocupacional (NRs), LOTO e Gestão Ambiental';
+      critCanonico = 'CRIT-CORP-036';
+    }
+
+    return {
+      id: `CRIT-KALITTA-${numPad}`,
+      checklistId: 'CHK-KALITTA-QA14',
+      checklistCodigo: 'CHK-KALITTA-QA14',
+      numeroItem: item.numeroItem,
+      moduloOuSecao: `Pág. ${item.paginaOrigem}: ${item.capituloOuSecao}`,
+      referenciaNormativa: item.referenciaNormativa,
+      perguntaOuCriterio: item.perguntaOuCriterio,
+      textoOriginal: item.textoOriginal,
+      orientacaoEvidencia: `Evidência objetiva exigida pelo FORM QA-14 da Kalitta Air (${item.capituloOuSecao} - Ref. ${item.referenciaNormativa}).`,
+      controleCentralId: ctrlId,
+      controleCentralNome: ctrlNome,
+      criticidade: item.criticidadeSugerida,
+      ordem: parseInt(item.numeroItem, 10) || 1,
+      codigoUnicoCorporativo: critCanonico
+    };
+  })
 ];
