@@ -3797,6 +3797,187 @@ export interface ResultadoReconstrucaoIndices {
   mensagem: string;
 }
 
+// ============================================================================
+// FASE 1.4.4: MÓDULO DE PREPARAÇÃO DE RESPOSTAS E EVIDÊNCIAS PARA AUDITORIAS
+// ============================================================================
+
+export type OrigemRespostaAuditoria =
+  | 'AUTOMATICA'                 // Informações suficientes encontradas nas fontes disponíveis
+  | 'AUTOMATICA_COM_VALIDACAO'   // Resposta sugerida a partir de fontes, aguardando revisão humana
+  | 'COMPLEMENTACAO_NECESSARIA'  // Resposta parcial, com documentos ou evidências pendentes
+  | 'TRATAMENTO_MANUAL';         // Depende de atividade ou informação que ainda precisa ser obtida
+
+export type StatusRespostaAuditoria =
+  | 'NAO_INICIADA'
+  | 'RASCUNHO'
+  | 'EM_ELABORACAO'
+  | 'AGUARDANDO_VALIDACAO'
+  | 'APROVADA'
+  | 'REJEITADA';
+
+export type SituacaoProntidaoAuditoria =
+  | 'NAO_INICIADA'
+  | 'EM_PREPARACAO'
+  | 'AGUARDANDO_VALIDACAO'
+  | 'PRONTO_PARA_AUDITORIA'
+  | 'COM_PENDENCIAS_IMPEDITIVAS'
+  | 'EXCECAO_JUSTIFICADA';
+
+export type TipoPendenciaPreparacao =
+  | 'ATUALIZAR_PROCEDIMENTO'
+  | 'DISPONIBILIZAR_REGISTRO'
+  | 'SOLICITAR_CERTIFICADO'
+  | 'FOTOGRAFAR_EQUIPAMENTO'
+  | 'VERIFICACAO_OPERACIONAL'
+  | 'COLETAR_EVIDENCIA_BASE'
+  | 'CONFIRMAR_REQUISITO_CONTRATUAL'
+  | 'OUTRA';
+
+export type StatusPendenciaPreparacao =
+  | 'PENDENTE'
+  | 'EM_ANDAMENTO'
+  | 'CONCLUIDA'
+  | 'CANCELADA';
+
+export interface FonteUtilizadaResposta {
+  tipo: 'PROCEDIMENTO' | 'MANUAL' | 'REGISTRO' | 'CONTROLE' | 'TREINAMENTO' | 'FERRAMENTA' | 'NORMA';
+  nome: string;
+  referencia: string;
+  revisao?: string;
+  identificador?: string;
+}
+
+export interface HistoricoAlteracaoResposta {
+  versao: string;
+  dataHora: string;
+  usuarioNome: string;
+  usuarioUid?: string;
+  acao: string; // 'CRIACAO' | 'EDICAO_RASCUNHO' | 'SUBMISSAO_VALIDACAO' | 'APROVACAO' | 'REJEICAO'
+  textoAnterior?: string;
+  textoNovo?: string;
+  motivo?: string;
+}
+
+export interface DocumentoRelacionadoRequisito {
+  documentoId: string;
+  codigo: string;
+  titulo: string;
+  revisao?: string;
+  situacao: string; // 'ATIVO' | 'EM_REVISAO' | 'OBSOLETO'
+  tipo: string; // 'MOMQ' | 'PTM' | 'POP' | 'IT' | 'FORM' | 'EXTERNO'
+  secaoAplicavel?: string;
+  adicionadoEm: string;
+  adicionadoPorNome: string;
+}
+
+export interface AvaliacaoQualidadeEvidencia {
+  status: 'SUFICIENTE' | 'PARCIAL' | 'INSUFICIENTE' | 'REJEITADA';
+  pertinencia: boolean;
+  autenticidade: boolean;
+  abrangencia: boolean;
+  validadeConferida: boolean;
+  parecer: string;
+  avaliadoPorNome?: string;
+  avaliadoEm?: string;
+}
+
+export interface EvidenciaObjetivaVinculada {
+  evidenciaId: string;
+  tipo: string; // 'CERTIFICADO_CALIBRACAO' | 'REGISTRO_TREINAMENTO' | 'DOCUMENTO' | 'FOTO' | 'RNC' | 'AUDITORIA' | 'PLANILHA'
+  titulo: string;
+  descricao?: string;
+  arquivoNome?: string;
+  arquivoUrlOuBase64?: string;
+  numeroReferencia?: string;
+  dataEnvio: string;
+  enviadoPorNome: string;
+  dataValidade?: string;
+  baseOperacional?: string;
+  statusValidade?: 'VALIDO' | 'PROXIMO_VENCIMENTO' | 'VENCIDO' | 'NAO_APLICAVEL';
+  avaliacaoQualidade?: AvaliacaoQualidadeEvidencia;
+  observacoes?: string;
+}
+
+export interface PendenciaAcaoRequisito {
+  id: string;
+  descricao: string;
+  tipo: TipoPendenciaPreparacao;
+  responsavelNome: string;
+  prazo: string;
+  situacao: StatusPendenciaPreparacao;
+  impeditivaAuditoria: boolean;
+  observacoes?: string;
+  criadoEm: string;
+  concluidoEm?: string;
+  concluidoPorNome?: string;
+}
+
+export interface PreparacaoRequisitoAuditoria {
+  id: string; // requisitoId (e.g., 'CRIT-RBAC145-12')
+  organizationId: string;
+  requisitoId: string;
+  numeroItem: string;
+  tituloRequisito: string;
+  autoridadeOuCliente: string;
+  normaDocumento: string;
+  secaoReferencia: string;
+  revisaoFonte: string;
+  textoOriginal: string;
+  criterioCanonicoId?: string;
+  criterioCanonicoCodigo?: string;
+  criterioCanonicoTitulo?: string;
+  controleCentralId?: string;
+  controleCentralCodigo?: string;
+  controleCentralNome?: string;
+  aplicabilidade: SituacaoAplicabilidadeImpacto;
+  justificativaAplicabilidade?: string;
+  conformidadeSGQ: StatusConformidadeSGQ;
+
+  // Resposta Institucional
+  respostaTexto: string;
+  respostaSugeridaOriginal?: string;
+  origemResposta: OrigemRespostaAuditoria;
+  statusResposta: StatusRespostaAuditoria;
+  fontesUtilizadas: FonteUtilizadaResposta[];
+  historicoRespostas: HistoricoAlteracaoResposta[];
+  versaoResposta: string;
+
+  // Documentos Relacionados
+  documentosRelacionados: DocumentoRelacionadoRequisito[];
+
+  // Evidências Objetivas Vinculadas
+  evidenciasVinculadas: EvidenciaObjetivaVinculada[];
+
+  // Pendências e Ações
+  pendencias: PendenciaAcaoRequisito[];
+
+  // Validação da Qualidade
+  respostaRevisada: boolean;
+  evidenciasSuficientes: boolean;
+  parecerQualidade?: string;
+  validadoPorNome?: string;
+  validadoPorUid?: string;
+  validadoEm?: string;
+  situacaoProntidao: SituacaoProntidaoAuditoria;
+  justificativaExcecao?: string;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IndicadoresPainelProntidao {
+  totalRequisitos: number;
+  respostasNaoIniciadas: number;
+  respostasEmElaboracao: number;
+  respostasAguardandoValidacao: number;
+  respostasAprovadas: number;
+  requisitosComDocumentosVinculados: number;
+  requisitosComEvidenciasSuficientes: number;
+  requisitosComPendencias: number;
+  requisitosProntosParaAuditoria: number;
+  taxaProntidaoGeral: number;
+}
+
 export * from './types/roster.ts';
 
 

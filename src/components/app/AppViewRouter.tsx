@@ -970,6 +970,24 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
+    case 'preparacao-auditorias':
+    case 'preparacao-requisitos':
+      return (
+        <RequirementsLibraryView
+          requisitos={props.requisitosClientes}
+          setRequisitos={props.setRequisitosClientes}
+          clientes={props.clientesExternos}
+          bases={props.basesOperacionais}
+          controles={props.controlesCentrais}
+          programas={props.programasClientes}
+          activeOrganization={props.activeOrganization}
+          userProfile={props.userProfile}
+          documentosControlados={props.documentosControlados}
+          initialSubTab="preparacao_auditoria"
+          onNavigateToTab={(tab) => setActiveTab(tab as any)}
+        />
+      );
+
     case 'biblioteca-requisitos':
     case 'requisitos-mestre':
     case 'requisitos-normativos':
@@ -983,6 +1001,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           programas={props.programasClientes}
           activeOrganization={props.activeOrganization}
           userProfile={props.userProfile}
+          documentosControlados={props.documentosControlados}
           onNavigateToTab={(tab) => setActiveTab(tab as any)}
         />
       );

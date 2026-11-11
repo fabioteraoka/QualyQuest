@@ -320,6 +320,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
           icon: <Sparkles className="w-4 h-4 text-purple-400" />,
         },
         {
+          id: 'preparacao-auditorias',
+          label: 'Preparação p/ Auditorias',
+          aliases: ['preparacao-requisitos', 'prontidao-auditorias'],
+          icon: <ShieldCheck className="w-4 h-4 text-emerald-400" />,
+          badge: 'Fase 1.4.4',
+          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
+        },
+        {
           id: 'biblioteca-checklists',
           label: 'Checklists de Auditoria',
           aliases: ['checklists-auditoria', 'checklists-corporativos'],

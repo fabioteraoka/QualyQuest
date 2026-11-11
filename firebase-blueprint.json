@@ -904,6 +904,10 @@
       "schema": "RncComparison",
       "description": "Quality impact reviews for changes in external regulatory publications"
     },
+    "/organizations/{organizationId}/audit_readiness_preparations/{requisitoId}": {
+      "schema": "ClientRequirement",
+      "description": "Individual audit readiness preparation records with institutional responses, documents, evidence evaluations, action items and readiness status"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile records indexed strictly by Firebase Auth UID"

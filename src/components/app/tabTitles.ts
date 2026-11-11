@@ -38,6 +38,7 @@ export function getTitleForTab(tab: string, selectedNCNumber?: string): string {
     case 'clientes-cockpit': return 'Cockpit & Estações de Clientes';
     case 'smart-audit': return 'Auditoria Inteligente por Requisitos & Resolução por Exceção (FASE 15)';
     case 'biblioteca-requisitos': return 'Biblioteca Central de Requisitos Multi-Fontes (FASE 1)';
+    case 'preparacao-auditorias': return 'Preparação Contínua para Auditorias (FASE 1.4.4)';
     case 'system-designer': return 'System Designer Oficial do QualiGest (Arquitetura, Coleções & ADRs)';
     default: return 'Sistema de Qualidade';
   }

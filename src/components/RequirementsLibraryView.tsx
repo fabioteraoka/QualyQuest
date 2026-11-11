@@ -58,6 +58,7 @@ import { RequirementsExternalSourcesMatrixTab } from './requirements/Requirement
 import { RequirementsOrganizationsTab } from './requirements/RequirementsOrganizationsTab';
 import { RequirementsCorporateComplianceMatrixTab } from './requirements/RequirementsCorporateComplianceMatrixTab';
 import { AuditChecklistsLibraryView } from './checklists/AuditChecklistsLibraryView';
+import { AuditReadinessDashboardView } from './requirements/AuditReadinessDashboardView';
 import {
   subscribeToInstitutionalResponses,
   subscribeToComplianceEvidences,
@@ -67,6 +68,7 @@ import {
 import {
   executarDiagnosticoRequisitos
 } from '../services/requirementsDataLoadService';
+import { DocumentoControlado } from '../types';
 
 export interface RequirementsLibraryViewProps {
   requisitos: RequisitoClienteItem[];
@@ -78,6 +80,8 @@ export interface RequirementsLibraryViewProps {
   activeOrganization: OrganizationRecord | null;
   userProfile?: UserProfile | null;
   onNavigateToTab?: (tab: string) => void;
+  documentosControlados?: DocumentoControlado[];
+  initialSubTab?: string;
 }
 
 const ORIGEM_CONFIG: Record<
@@ -167,13 +171,17 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   programas,
   activeOrganization,
   userProfile,
-  onNavigateToTab
+  onNavigateToTab,
+  documentosControlados = [],
+  initialSubTab
 }) => {
   const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
   const isConsulta = userProfile?.role === 'CONSULTA' || userProfile?.role === 'VIEWER';
 
-  // Sub-Navigation Tabs state (Checklists de Auditoria, Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles)
-  const [activeLibraryTab, setActiveLibraryTab] = useState<'checklists' | 'conformidade' | 'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'>('checklists');
+  // Sub-Navigation Tabs state (Preparação p/ Auditorias, Checklists, Conformidade SGQ, Acervo, etc.)
+  const [activeLibraryTab, setActiveLibraryTab] = useState<
+    'preparacao_auditoria' | 'checklists' | 'conformidade' | 'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'
+  >((initialSubTab as any) || 'preparacao_auditoria');
 
   // Respostas Institucionais Aprovadas e Evidências Objetivas (Fase 1.4)
   const [respostasInstitucionais, setRespostasInstitucionais] = useState<RespostaInstitucionalAprovada[]>(INITIAL_INSTITUTIONAL_RESPONSES);
@@ -419,8 +427,23 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
         </div>
       </div>
 
-      {/* Sub-Navigation Tabs: Checklists de Auditoria, Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles */}
+      {/* Sub-Navigation Tabs: Preparação p/ Auditorias, Checklists de Auditoria, Conformidade SGQ, Acervo, Matriz Fontes, Organizações, Diagnóstico, Carga Segura, Matriz Controles */}
       <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2 overflow-x-auto text-xs font-semibold">
+        <button
+          onClick={() => setActiveLibraryTab('preparacao_auditoria')}
+          className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
+            activeLibraryTab === 'preparacao_auditoria'
+              ? 'bg-blue-600 text-white font-bold shadow-xs'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          <span>Preparação p/ Auditorias</span>
+          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
+            Fase 1.4.4
+          </span>
+        </button>
+
         <button
           onClick={() => setActiveLibraryTab('checklists')}
           className={`px-3.5 py-2 rounded-lg transition-colors flex items-center gap-2 cursor-pointer ${
@@ -532,6 +555,19 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           <span>Matriz Controle ↔ Requisitos</span>
         </button>
       </div>
+
+      {/* VIEW: Preparação para Auditorias (Fase 1.4.4) */}
+      {activeLibraryTab === 'preparacao_auditoria' && (
+        <AuditReadinessDashboardView
+          organizationId={orgId}
+          currentUser={userProfile}
+          documentosControlados={documentosControlados}
+          evidenciasDisponiveis={evidencias}
+          controlesCentrais={controles}
+          clientes={clientes}
+          onNavigateToTab={onNavigateToTab}
+        />
+      )}
 
       {/* VIEW: Biblioteca Corporativa de Checklists de Auditoria */}
       {activeLibraryTab === 'checklists' && (
