@@ -183,6 +183,12 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
     'preparacao_auditoria' | 'checklists' | 'conformidade' | 'acervo' | 'fontes_externas' | 'organizacoes' | 'diagnostico' | 'carga' | 'matriz'
   >((initialSubTab as any) || 'preparacao_auditoria');
 
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveLibraryTab(initialSubTab as any);
+    }
+  }, [initialSubTab]);
+
   // Respostas Institucionais Aprovadas e Evidências Objetivas (Fase 1.4)
   const [respostasInstitucionais, setRespostasInstitucionais] = useState<RespostaInstitucionalAprovada[]>(INITIAL_INSTITUTIONAL_RESPONSES);
   const [evidencias, setEvidencias] = useState<EvidenciaRequisitoItem[]>(INITIAL_COMPLIANCE_EVIDENCES);
@@ -438,7 +444,7 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           }`}
         >
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Preparação p/ Auditorias</span>
+          <span>Preparação para Auditorias</span>
           <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30">
             Fase 1.4.4
           </span>

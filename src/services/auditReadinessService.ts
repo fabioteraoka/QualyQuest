@@ -740,7 +740,8 @@ export function vincularEvidenciaAoRequisito(
     tipo: evidencia.tipo,
     titulo: evidencia.titulo,
     descricao: evidencia.descricao,
-    arquivoNome: evidencia.numeroReferencia || evidencia.titulo,
+    arquivoNome: (evidencia as any).arquivoNome || evidencia.numeroReferencia || evidencia.titulo,
+    arquivoUrlOuBase64: (evidencia as any).arquivoUrlOuBase64 || (evidencia as any).arquivoUrl,
     numeroReferencia: evidencia.numeroReferencia,
     dataEnvio: evidencia.dataEvidencia || hoje,
     enviadoPorNome: currentUser?.displayName || evidencia.responsavel || 'Qualidade',
@@ -760,6 +761,53 @@ export function vincularEvidenciaAoRequisito(
   };
 
   const evidsAtualizadas = [...outros, novaEvid];
+  const todasSuficientes = evidsAtualizadas.length > 0 && evidsAtualizadas.every(
+    (e) => e.avaliacaoQualidade?.status === 'SUFICIENTE' && e.statusValidade !== 'VENCIDO'
+  );
+
+  const atualizado: PreparacaoRequisitoAuditoria = {
+    ...preparacao,
+    evidenciasVinculadas: evidsAtualizadas,
+    evidenciasSuficientes: todasSuficientes,
+    updatedAt: agora
+  };
+
+  const reavaliacao = avaliarProntidaoRequisito(atualizado);
+  atualizado.situacaoProntidao = reavaliacao.situacaoCalculada;
+
+  return atualizado;
+}
+
+export function reavaliarEvidenciaVinculada(
+  preparacao: PreparacaoRequisitoAuditoria,
+  evidenciaId: string,
+  novoStatus: 'SUFICIENTE' | 'PARCIAL' | 'INSUFICIENTE',
+  parecer: string,
+  currentUser?: UserProfile | null
+): PreparacaoRequisitoAuditoria {
+  const agora = new Date().toISOString();
+  const hoje = agora.split('T')[0];
+
+  const evidsAtualizadas = (preparacao.evidenciasVinculadas || []).map((ev) => {
+    if (ev.evidenciaId === evidenciaId) {
+      return {
+        ...ev,
+        avaliacaoQualidade: {
+          ...(ev.avaliacaoQualidade || {}),
+          status: novoStatus,
+          pertinencia: novoStatus !== 'INSUFICIENTE',
+          autenticidade: true,
+          abrangencia: novoStatus === 'SUFICIENTE',
+          validadeConferida: ev.statusValidade === 'VALIDO',
+          parecer: parecer || `Evidência reavaliada como ${novoStatus} pela Qualidade.`,
+          avaliadoPorNome: currentUser?.displayName || 'Paulo Okubo',
+          avaliadoEm: hoje
+        }
+      };
+    }
+    return ev;
+  });
+
   const todasSuficientes = evidsAtualizadas.length > 0 && evidsAtualizadas.every(
     (e) => e.avaliacaoQualidade?.status === 'SUFICIENTE' && e.statusValidade !== 'VENCIDO'
   );
@@ -827,6 +875,15 @@ export function aprovarValidacaoQualidade(
   const agora = new Date().toISOString();
   const hoje = agora.split('T')[0];
 
+  const historico: HistoricoAlteracaoResposta = {
+    versao: preparacao.versaoResposta || '1.0',
+    dataHora: agora,
+    usuarioNome: currentUser?.displayName || 'Paulo Okubo (Gerente da Qualidade)',
+    usuarioUid: auth.currentUser?.uid || currentUser?.uid,
+    acao: 'APROVACAO',
+    motivo: parecerQualidade
+  };
+
   const atualizado: PreparacaoRequisitoAuditoria = {
     ...preparacao,
     statusResposta: 'APROVADA',
@@ -838,6 +895,7 @@ export function aprovarValidacaoQualidade(
     validadoEm: hoje,
     justificativaExcecao: isExcecao ? justificativaExcecao : undefined,
     situacaoProntidao: isExcecao ? 'EXCECAO_JUSTIFICADA' : 'PRONTO_PARA_AUDITORIA',
+    historicoRespostas: [historico, ...(preparacao.historicoRespostas || [])],
     updatedAt: agora
   };
 

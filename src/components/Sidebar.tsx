@@ -321,7 +321,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         {
           id: 'preparacao-auditorias',
-          label: 'Preparação p/ Auditorias',
+          label: 'Preparação para Auditorias',
           aliases: ['preparacao-requisitos', 'prontidao-auditorias'],
           icon: <ShieldCheck className="w-4 h-4 text-emerald-400" />,
           badge: 'Fase 1.4.4',

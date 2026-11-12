@@ -29,7 +29,10 @@ import {
   HelpCircle,
   Flag,
   FileCheck2,
-  FolderOpen
+  FolderOpen,
+  Eye,
+  Download,
+  SlidersHorizontal
 } from 'lucide-react';
 import {
   PreparacaoRequisitoAuditoria,
@@ -42,7 +45,8 @@ import {
   EvidenciaRequisitoItem,
   ControleCentralSGQ,
   UserProfile,
-  AvaliacaoQualidadeEvidencia
+  AvaliacaoQualidadeEvidencia,
+  EvidenciaObjetivaVinculada
 } from '../../types';
 import {
   sugerirRespostaBaseadaEmFontes,
@@ -51,6 +55,7 @@ import {
   atualizarStatusPendencia,
   vincularDocumentoAoRequisito,
   vincularEvidenciaAoRequisito,
+  reavaliarEvidenciaVinculada,
   salvarEdicaoResposta,
   aprovarValidacaoQualidade
 } from '../../services/auditReadinessService';
@@ -172,6 +177,15 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   const [novaEvidRef, setNovaEvidRef] = useState('');
   const [novaEvidValidade, setNovaEvidValidade] = useState('');
   const [novaEvidBase, setNovaEvidBase] = useState('GRU');
+  const [novaEvidDescricao, setNovaEvidDescricao] = useState('');
+  const [novaEvidArquivoNome, setNovaEvidArquivoNome] = useState('');
+  const [novaEvidArquivoBase64, setNovaEvidArquivoBase64] = useState('');
+  const [novaEvidArquivoTamanho, setNovaEvidArquivoTamanho] = useState('');
+
+  // Estado para reavaliação pontual de evidência existente
+  const [editingEvidId, setEditingEvidId] = useState<string | null>(null);
+  const [editingEvidStatus, setEditingEvidStatus] = useState<'SUFICIENTE' | 'PARCIAL' | 'INSUFICIENTE'>('SUFICIENTE');
+  const [editingEvidParecer, setEditingEvidParecer] = useState('');
 
   // Estado local para nova pendência
   const [showNovaPendencia, setShowNovaPendencia] = useState(false);
@@ -311,6 +325,88 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
     }
   };
 
+  // Manipulador de upload de arquivo (PDF, imagem, etc.)
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setNovaEvidArquivoNome(file.name);
+    setNovaEvidArquivoTamanho(`${(file.size / 1024).toFixed(1)} KB`);
+    if (!novaEvidTitulo) {
+      setNovaEvidTitulo(file.name.replace(/\.[^/.]+$/, ''));
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setNovaEvidArquivoBase64(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Abrir ou visualizar arquivo da evidência
+  const handleAbrirArquivo = (ev: EvidenciaObjetivaVinculada) => {
+    if (ev.arquivoUrlOuBase64) {
+      if (ev.arquivoUrlOuBase64.startsWith('data:image/')) {
+        const win = window.open();
+        if (win) {
+          win.document.write(`
+            <html>
+              <head><title>${ev.arquivoNome || ev.titulo}</title></head>
+              <body style="margin:0; background:#0f172a; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; font-family:sans-serif; color:white; padding:20px;">
+                <h3 style="margin-bottom:10px;">${ev.titulo}</h3>
+                <p style="color:#94a3b8; margin-top:0;">${ev.arquivoNome || 'Arquivo de Imagem'}</p>
+                <img src="${ev.arquivoUrlOuBase64}" style="max-width:90%; max-height:80vh; object-fit:contain; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.5);" alt="${ev.titulo}" />
+              </body>
+            </html>
+          `);
+        }
+      } else if (ev.arquivoUrlOuBase64.startsWith('data:application/pdf')) {
+        const win = window.open();
+        if (win) {
+          win.document.write(`
+            <html>
+              <head><title>${ev.arquivoNome || ev.titulo}</title></head>
+              <body style="margin:0; background:#1e293b; display:flex; flex-direction:column; align-items:center; height:100vh; font-family:sans-serif; color:white;">
+                <div style="padding:10px; width:100%; box-sizing:border-box; background:#0f172a; display:flex; justify-content:space-between; align-items:center;">
+                  <span><strong>${ev.titulo}</strong> (${ev.arquivoNome || 'Documento PDF'})</span>
+                </div>
+                <iframe src="${ev.arquivoUrlOuBase64}" style="width:100%; height:calc(100vh - 45px); border:none; background:white;"></iframe>
+              </body>
+            </html>
+          `);
+        }
+      } else if (ev.arquivoUrlOuBase64.startsWith('data:')) {
+        const a = document.createElement('a');
+        a.href = ev.arquivoUrlOuBase64;
+        a.download = ev.arquivoNome || `${ev.titulo}.pdf`;
+        a.click();
+      } else {
+        window.open(ev.arquivoUrlOuBase64, '_blank');
+      }
+    } else {
+      alert(`Evidência [${ev.titulo}] registrada por referência (${ev.numeroReferencia || 'Física/Sistema'}). Arquivo digital não anexado diretamente.`);
+    }
+  };
+
+  // Reavaliar suficiência da evidência pontualmente
+  const handleSalvarReavaliacaoEvidencia = async (evidenciaId: string) => {
+    setSaving(true);
+    try {
+      const atualizado = reavaliarEvidenciaVinculada(
+        preparacao,
+        evidenciaId,
+        editingEvidStatus,
+        editingEvidParecer,
+        currentUser
+      );
+      await onSave(atualizado);
+      setEditingEvidId(null);
+      setFeedback({ tipo: 'sucesso', msg: 'Reavaliação da evidência salva com sucesso!' });
+    } catch (e: any) {
+      setFeedback({ tipo: 'erro', msg: e.message || 'Erro ao reavaliar evidência.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Ação 5: Cadastrar Nova Evidência
   const handleCriarNovaEvidencia = async () => {
     if (!novaEvidTitulo.trim()) {
@@ -321,11 +417,14 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
     setSaving(true);
     try {
       const novaEvidId = `EVID-CUSTOM-${Date.now().toString(36)}`;
-      const novaEvid: EvidenciaRequisitoItem = {
+      const novaEvid: any = {
         id: novaEvidId,
         organizationId: preparacao.organizationId,
         tipo: novaEvidTipo as any,
         titulo: novaEvidTitulo,
+        descricao: novaEvidDescricao || undefined,
+        arquivoNome: novaEvidArquivoNome || novaEvidRef || novaEvidTitulo,
+        arquivoUrlOuBase64: novaEvidArquivoBase64 || undefined,
         numeroReferencia: novaEvidRef,
         dataEvidencia: new Date().toISOString().split('T')[0],
         dataEmissao: new Date().toISOString().split('T')[0],
@@ -353,6 +452,10 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
 
       setShowUploadEvidencia(false);
       setNovaEvidTitulo('');
+      setNovaEvidDescricao('');
+      setNovaEvidArquivoNome('');
+      setNovaEvidArquivoBase64('');
+      setNovaEvidArquivoTamanho('');
       setNovaEvidRef('');
       setNovaEvidValidade('');
       setFeedback({ tipo: 'sucesso', msg: 'Nova evidência anexada e vinculada!' });
@@ -987,6 +1090,32 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                       </select>
                     </div>
 
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">Descrição / Finalidade:</label>
+                      <input
+                        type="text"
+                        value={novaEvidDescricao}
+                        onChange={(e) => setNovaEvidDescricao(e.target.value)}
+                        placeholder="Ex: Foto da placa do equipamento e certificado de aferição periódica"
+                        className="w-full px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-600 mb-1">Anexo Digital (PDF, Imagem, Planilha):</label>
+                      <input
+                        type="file"
+                        accept=".pdf,image/*,.doc,.docx,.xls,.xlsx"
+                        onChange={handleFileChange}
+                        className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-emerald-100 file:text-emerald-800 hover:file:bg-emerald-200 cursor-pointer"
+                      />
+                      {novaEvidArquivoNome && (
+                        <span className="text-[10px] text-emerald-600 font-mono mt-0.5 block truncate">
+                          ✓ {novaEvidArquivoNome} ({novaEvidArquivoTamanho})
+                        </span>
+                      )}
+                    </div>
+
                     <div className="flex items-end">
                       <button
                         onClick={handleCriarNovaEvidencia}
@@ -1003,62 +1132,146 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
               {/* Lista de Evidências com Avaliação da Qualidade */}
               <div className="space-y-2">
                 {preparacao.evidenciasVinculadas && preparacao.evidenciasVinculadas.length > 0 ? (
-                  preparacao.evidenciasVinculadas.map((evItem, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-2.5">
-                          <Paperclip className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900 dark:text-slate-100">{evItem.titulo}</span>
-                              <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600">
-                                {evItem.tipo}
-                              </span>
-                              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
-                                evItem.statusValidade === 'VALIDO' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                              }`}>
-                                {evItem.statusValidade || 'VALIDO'}
-                              </span>
+                  preparacao.evidenciasVinculadas.map((evItem, idx) => {
+                    const isEditing = editingEvidId === evItem.evidenciaId;
+                    return (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-2.5">
+                            <Paperclip className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                            <div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-bold text-slate-900 dark:text-slate-100">{evItem.titulo}</span>
+                                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-600">
+                                  {evItem.tipo}
+                                </span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                  evItem.statusValidade === 'VALIDO' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                                }`}>
+                                  {evItem.statusValidade || 'VALIDO'}
+                                </span>
+                                {evItem.arquivoNome && (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+                                    📎 {evItem.arquivoNome}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                Ref: <strong>{evItem.numeroReferencia || 'N/A'}</strong> | Base: <strong>{evItem.baseOperacional || 'Geral'}</strong>
+                                {evItem.dataValidade && <span> | Validade: <strong>{evItem.dataValidade}</strong></span>}
+                                {evItem.descricao && <span className="block mt-0.5 text-slate-600 dark:text-slate-400">{evItem.descricao}</span>}
+                              </div>
                             </div>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              Ref: <strong>{evItem.numeroReferencia || 'N/A'}</strong> | Base: <strong>{evItem.baseOperacional || 'Geral'}</strong>
-                              {evItem.dataValidade && <span> | Validade: <strong>{evItem.dataValidade}</strong></span>}
-                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {evItem.arquivoUrlOuBase64 && (
+                              <button
+                                onClick={() => handleAbrirArquivo(evItem)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 cursor-pointer"
+                                title="Visualizar ou baixar arquivo anexo"
+                              >
+                                <Eye className="w-3 h-3" />
+                                <span>Abrir Arquivo</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => {
+                                if (isEditing) {
+                                  setEditingEvidId(null);
+                                } else {
+                                  setEditingEvidId(evItem.evidenciaId);
+                                  setEditingEvidStatus(evItem.avaliacaoQualidade?.status || 'SUFICIENTE');
+                                  setEditingEvidParecer(evItem.avaliacaoQualidade?.parecer || '');
+                                }
+                              }}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded border border-slate-300 dark:border-slate-700 cursor-pointer"
+                            >
+                              <SlidersHorizontal className="w-3 h-3" />
+                              <span>{isEditing ? 'Fechar' : 'Reavaliar'}</span>
+                            </button>
+
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                              evItem.avaliacaoQualidade?.status === 'SUFICIENTE'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : evItem.avaliacaoQualidade?.status === 'PARCIAL'
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              Qualidade: {evItem.avaliacaoQualidade?.status || 'AVALIADA'}
+                            </span>
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                            evItem.avaliacaoQualidade?.status === 'SUFICIENTE'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : evItem.avaliacaoQualidade?.status === 'PARCIAL'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}>
-                            Qualidade: {evItem.avaliacaoQualidade?.status || 'AVALIADA'}
-                          </span>
-                        </div>
+                        {/* Painel de Reavaliação Inline da Qualidade */}
+                        {isEditing && (
+                          <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800/60 space-y-2 mt-2">
+                            <span className="text-xs font-bold text-amber-900 dark:text-amber-300 block">
+                              Reavaliação de Suficiência da Evidência:
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                              <div>
+                                <label className="block text-[11px] font-medium text-slate-600 mb-1">Status da Avaliação:</label>
+                                <select
+                                  value={editingEvidStatus}
+                                  onChange={(e) => setEditingEvidStatus(e.target.value as any)}
+                                  className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                >
+                                  <option value="SUFICIENTE">Suficiente (Atende Plenamente)</option>
+                                  <option value="PARCIAL">Parcial (Comprovação Incompleta)</option>
+                                  <option value="INSUFICIENTE">Insuficiente (Não Atende / Rejeitada)</option>
+                                </select>
+                              </div>
+                              <div className="sm:col-span-2">
+                                <label className="block text-[11px] font-medium text-slate-600 mb-1">Parecer / Observação da Qualidade:</label>
+                                <input
+                                  type="text"
+                                  value={editingEvidParecer}
+                                  onChange={(e) => setEditingEvidParecer(e.target.value)}
+                                  placeholder="Justificativa da suficiência ou insuficiência técnica..."
+                                  className="w-full text-xs px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-1">
+                              <button
+                                onClick={() => setEditingEvidId(null)}
+                                className="px-2.5 py-1 rounded text-xs text-slate-500 hover:text-slate-700 cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => handleSalvarReavaliacaoEvidencia(evItem.evidenciaId)}
+                                disabled={saving}
+                                className="px-3 py-1 rounded text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 cursor-pointer"
+                              >
+                                Salvar Parecer da Qualidade
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Parecer da Qualidade Existente */}
+                        {evItem.avaliacaoQualidade && !isEditing && (
+                          <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 text-xs">
+                            <div className="flex items-center gap-4 text-[11px] text-slate-500 mb-1">
+                              <span>Pertinência: <strong>{evItem.avaliacaoQualidade.pertinencia ? 'SIM' : 'NÃO'}</strong></span>
+                              <span>Autenticidade: <strong>{evItem.avaliacaoQualidade.autenticidade ? 'SIM' : 'NÃO'}</strong></span>
+                              <span>Abrangência: <strong>{evItem.avaliacaoQualidade.abrangencia ? 'SIM' : 'NÃO'}</strong></span>
+                              <span>Validade Conferida: <strong>{evItem.avaliacaoQualidade.validadeConferida ? 'SIM' : 'NÃO'}</strong></span>
+                            </div>
+                            <p className="text-slate-700 dark:text-slate-300 italic">
+                              "{evItem.avaliacaoQualidade.parecer}" — {evItem.avaliacaoQualidade.avaliadoPorNome} ({evItem.avaliacaoQualidade.avaliadoEm})
+                            </p>
+                          </div>
+                        )}
                       </div>
-
-                      {/* Parecer da Qualidade */}
-                      {evItem.avaliacaoQualidade && (
-                        <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-slate-800 text-xs">
-                          <div className="flex items-center gap-4 text-[11px] text-slate-500 mb-1">
-                            <span>Pertinência: <strong>{evItem.avaliacaoQualidade.pertinencia ? 'SIM' : 'NÃO'}</strong></span>
-                            <span>Autenticidade: <strong>{evItem.avaliacaoQualidade.autenticidade ? 'SIM' : 'NÃO'}</strong></span>
-                            <span>Abrangência: <strong>{evItem.avaliacaoQualidade.abrangencia ? 'SIM' : 'NÃO'}</strong></span>
-                            <span>Validade Conferida: <strong>{evItem.avaliacaoQualidade.validadeConferida ? 'SIM' : 'NÃO'}</strong></span>
-                          </div>
-                          <p className="text-slate-700 dark:text-slate-300 italic">
-                            "{evItem.avaliacaoQualidade.parecer}" — {evItem.avaliacaoQualidade.avaliadoPorNome} ({evItem.avaliacaoQualidade.avaliadoEm})
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="p-6 text-center text-slate-400 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-dashed border-slate-300 dark:border-slate-800 text-xs">
                     Nenhuma evidência vinculada. A Qualidade deve vincular ou anexar certificados, fotos ou registros válidos para comprovar conformidade.
