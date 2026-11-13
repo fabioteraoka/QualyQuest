@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// QUALYQUEST SGQ — FASE 1.4.7
+// Regras de Segurança do Firebase Storage (Bucket: ai-studio-applet-webapp-bdbf6.firebasestorage.app)
+//
+// MODELO ZERO-TRUST / BACKEND BROKER OBRIGATÓRIO:
+// 1. O banco Firestore deste projeto utiliza database nomeado
+//    ('ai-studio-qualigestgestode-97a188de-6117-44a7-be8d-44d92563ba38'), que NÃO é
+//    consultável nativamente via `firestore.get()` nas Firebase Storage Security Rules
+//    (as quais consultam exclusivamente `(default)`).
+// 2. Além disso, os Firebase Auth ID Tokens do aplicativo não transportam custom claims
+//    de perfil (`role`) ou tenant (`organizationId`).
+// 3. Portanto, todo acesso direto de cliente (SDK Web `firebase/storage` ou URLs públicas)
+//    é ESTRITAMENTE NEGADO abaixo (`allow read, write: if false`).
+// 4. Toda leitura, upload, validação de magic bytes, deduplicação SHA-256 e bloqueio
+//    RBAC/multi-tenant ocorre exclusivamente pelo backend autenticado (`/api/evidence-storage/*`),
+//    que valida a assinatura RS256 do ID Token e consulta o perfil autoritativo no
+//    Firestore nomeado antes de operar sobre `organizations/{organizationId}/evidences/{hashSha256}`.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /organizations/{organizationId}/evidences/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

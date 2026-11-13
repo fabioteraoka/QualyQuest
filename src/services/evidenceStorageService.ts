@@ -251,18 +251,30 @@ export async function getEvidenceFileUrl(
   // 1. Tenta baixar autenticado do servidor de objetos quando houver sessão ativa
   if (auth.currentUser && targetPath.startsWith('/api/evidence-storage/files/')) {
     const headers = await getFirebaseAuthHeaders();
-    const resp = await fetch(targetPath, { headers });
-    if (resp.ok) {
-      const blob = await resp.blob();
-      return URL.createObjectURL(blob);
-    }
-    if (resp.status === 401 || resp.status === 403 || resp.status === 409) {
-      let errMsg = `Acesso ao arquivo negado (HTTP ${resp.status}).`;
+    try {
+      const resp = await fetch(targetPath, { headers });
+      if (resp.ok) {
+        const blob = await resp.blob();
+        return URL.createObjectURL(blob);
+      }
+      let errJson: any = null;
       try {
-        const errJson = await resp.json();
-        if (errJson?.error) errMsg = errJson.error;
+        errJson = await resp.json();
       } catch {}
-      throw new Error(errMsg);
+      if (
+        resp.status === 401 ||
+        resp.status === 403 ||
+        resp.status === 409 ||
+        resp.status === 503 ||
+        (resp.status === 404 && errJson?.code === 'BINARY_MISSING')
+      ) {
+        throw new Error(errJson?.error || `Falha ao recuperar arquivo no servidor (HTTP ${resp.status}).`);
+      }
+    } catch (err: any) {
+      if (err instanceof Error && !err.message.includes('Failed to fetch') && !err.message.includes('NetworkError')) {
+        throw err;
+      }
+      // Apenas falha de rede real recorre ao cache offline IndexedDB
     }
   }
 

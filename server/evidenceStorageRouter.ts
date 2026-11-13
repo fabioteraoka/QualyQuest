@@ -1,7 +1,12 @@
 import express from "express";
-import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import {
+  EvidenceStorageBackend,
+  LocalEphemeralStorageBackend,
+  assertSafeOrgIdForStorage,
+  assertSafeSha256ForStorage
+} from "./evidenceStorageBackend.ts";
 
 export interface VerifiedEvidenceUser {
   uid: string;
@@ -13,12 +18,10 @@ export interface VerifiedEvidenceUser {
 }
 
 export interface EvidenceStorageRouterDeps {
-  baseDir: string;
+  baseDir?: string;
+  backend?: EvidenceStorageBackend;
   verifyUser: (authHeader?: string) => Promise<VerifiedEvidenceUser>;
 }
-
-const ORG_ID_SAFE_REGEX = /^[a-zA-Z0-9_-]{3,64}$/;
-const SHA256_SAFE_REGEX = /^[a-f0-9]{64}$/i;
 
 export const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
   "application/pdf",
@@ -45,17 +48,11 @@ export function isSameOrganization(userOrgId: string, requestedOrgId: string): b
 }
 
 export function assertSafeOrgId(rawOrgId: unknown): string {
-  if (typeof rawOrgId !== "string" || !ORG_ID_SAFE_REGEX.test(rawOrgId.trim())) {
-    throw Object.assign(new Error("Identificador de organização inválido ou inseguro."), { status: 400, code: "INVALID_ORGANIZATION_ID" });
-  }
-  return rawOrgId.trim();
+  return assertSafeOrgIdForStorage(rawOrgId);
 }
 
 export function assertSafeSha256(rawHash: unknown): string {
-  if (typeof rawHash !== "string" || !SHA256_SAFE_REGEX.test(rawHash.trim())) {
-    throw Object.assign(new Error("Hash SHA-256 inválido ou malformado."), { status: 400, code: "INVALID_HASH_FORMAT" });
-  }
-  return rawHash.trim().toLowerCase();
+  return assertSafeSha256ForStorage(rawHash);
 }
 
 export function resolveSafeEvidencePaths(baseDir: string, orgId: string, hashSha256: string) {
@@ -192,39 +189,36 @@ export function canModifyEvidenceStorage(role: string): boolean {
 
 export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): express.Router {
   const router = express.Router();
-  const baseDir = path.resolve(deps.baseDir);
-  const auditDir = path.join(baseDir, "_audit");
+  const backend: EvidenceStorageBackend =
+    deps.backend || new LocalEphemeralStorageBackend(deps.baseDir || path.resolve(process.cwd(), "data", "evidence_storage"));
 
-  if (!fs.existsSync(baseDir)) {
-    fs.mkdirSync(baseDir, { recursive: true });
-  }
-  if (!fs.existsSync(auditDir)) {
-    fs.mkdirSync(auditDir, { recursive: true });
-  }
-
-  const recordAudit = (entry: {
-    action: string;
-    outcome: "ALLOW" | "DENY" | "ERROR";
-    uid?: string;
-    email?: string;
-    role?: string;
-    userOrganizationId?: string;
-    requestedOrganizationId?: string;
-    hashSha256?: string;
-    fileName?: string;
-    detail?: string;
-    ip?: string;
-  }) => {
-    try {
-      const logLine = JSON.stringify({
-        timestamp: new Date().toISOString(),
-        ...entry
-      });
-      fs.appendFileSync(path.join(auditDir, "evidence_storage_audit.jsonl"), logLine + "\n", "utf8");
-    } catch (err) {
-      console.warn("Aviso ao gravar audit log de evidências:", err);
-    }
+  const recordAudit = (entry: Parameters<EvidenceStorageBackend["appendAuditEvent"]>[0]) => {
+    void backend.appendAuditEvent(entry);
   };
+
+  // Diagnóstico autenticado de saúde e persistência do storage
+  router.get("/storage-status", async (req, res) => {
+    try {
+      const verifiedUser = await deps.verifyUser(req.headers.authorization);
+      const health = await backend.probeHealth();
+      recordAudit({
+        action: "STORAGE_STATUS",
+        outcome: "ALLOW",
+        uid: verifiedUser.uid,
+        email: verifiedUser.email,
+        role: verifiedUser.role,
+        userOrganizationId: verifiedUser.organizationId,
+        detail: `${health.driverName}:${health.diagnosticCode}`,
+        ip: req.ip
+      });
+      return res.json(health);
+    } catch (err: any) {
+      return res.status(err?.status || 500).json({
+        error: err?.message || "Falha ao consultar status do storage.",
+        code: err?.code || "STORAGE_STATUS_ERROR"
+      });
+    }
+  });
 
   router.post("/upload", async (req, res) => {
     let verifiedUser: VerifiedEvidenceUser | null = null;
@@ -233,6 +227,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
       verifiedUser = await deps.verifyUser(req.headers.authorization);
       const { fileName, mimeType, base64Data, requisitoId } = req.body || {};
 
+      // A organização autorizada deriva sempre do perfil verificado no Firestore (nunca aceita troca arbitrária sem ser superAdmin)
       const orgId = requestedOrgRaw ? assertSafeOrgId(requestedOrgRaw) : assertSafeOrgId(verifiedUser.organizationId);
       if (!verifiedUser.isSuperAdmin && !isSameOrganization(verifiedUser.organizationId, orgId)) {
         recordAudit({
@@ -247,7 +242,10 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           detail: "Cross-organization upload blocked",
           ip: req.ip
         });
-        return res.status(403).json({ error: "Acesso negado: tentativa de envio de evidência para outra organização.", code: "CROSS_ORGANIZATION_ACCESS_DENIED" });
+        return res.status(403).json({
+          error: "Acesso negado: tentativa de envio de evidência para outra organização.",
+          code: "CROSS_ORGANIZATION_ACCESS_DENIED"
+        });
       }
 
       if (!canModifyEvidenceStorage(verifiedUser.role)) {
@@ -263,7 +261,10 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           detail: "Read-only role attempted upload",
           ip: req.ip
         });
-        return res.status(403).json({ error: `Perfil [${verifiedUser.role}] não possui permissão para enviar arquivos de evidência.`, code: "ROLE_READONLY_DENIED" });
+        return res.status(403).json({
+          error: `Perfil [${verifiedUser.role}] não possui permissão para enviar arquivos de evidência.`,
+          code: "ROLE_READONLY_DENIED"
+        });
       }
 
       if (!fileName || !base64Data) {
@@ -276,27 +277,27 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
 
       const MAX_SIZE = 25 * 1024 * 1024;
       if (buffer.length > MAX_SIZE) {
-        return res.status(400).json({ error: `Arquivo excede o limite máximo permitido de 25 MB (Tamanho: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB).`, code: "FILE_TOO_LARGE" });
+        return res.status(400).json({
+          error: `Arquivo excede o limite máximo permitido de 25 MB (Tamanho: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB).`,
+          code: "FILE_TOO_LARGE"
+        });
       }
 
       const validatedMime = validateMagicBytesAndResolveMime(buffer, safeFileName, mimeType);
       const hashSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
       const fileId = `FILE-${hashSha256.substring(0, 16).toUpperCase()}`;
 
-      const { orgDir, binaryPath, metaPath } = resolveSafeEvidencePaths(baseDir, orgId, hashSha256);
-      if (!fs.existsSync(orgDir)) {
-        fs.mkdirSync(orgDir, { recursive: true });
-      }
-
-      if (!fs.existsSync(binaryPath)) {
-        fs.writeFileSync(binaryPath, buffer);
-      }
+      const putResult = await backend.putBinaryIfAbsent(orgId, hashSha256, buffer, validatedMime);
 
       const metaData = {
         fileId,
         organizationId: orgId,
         requisitoId: typeof requisitoId === "string" ? requisitoId.slice(0, 128) : undefined,
         storagePath: `/api/evidence-storage/files/${orgId}/${hashSha256}`,
+        objectPath: putResult.objectPath,
+        storageBucket: backend.bucketName,
+        storageBackend: backend.driverName,
+        objectGeneration: putResult.objectGeneration,
         arquivoNome: safeFileName,
         mimeType: validatedMime,
         tamanhoBytes: buffer.length,
@@ -307,7 +308,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
         versao: 1
       };
 
-      fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2), "utf8");
+      await backend.putMetadata(orgId, hashSha256, metaData);
 
       recordAudit({
         action: "UPLOAD",
@@ -319,7 +320,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
         requestedOrganizationId: orgId,
         hashSha256,
         fileName: safeFileName,
-        detail: `Stored ${buffer.length} bytes (${validatedMime})`,
+        detail: `Stored ${buffer.length} bytes (${validatedMime}) via ${backend.driverName} (${putResult.objectPath})`,
         ip: req.ip
       });
 
@@ -346,7 +347,8 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
     const { organizationId, hashSha256 } = req.params;
     try {
       verifiedUser = await deps.verifyUser(req.headers.authorization);
-      const { safeOrg, safeHash, binaryPath, metaPath } = resolveSafeEvidencePaths(baseDir, organizationId, hashSha256);
+      const safeOrg = assertSafeOrgId(organizationId);
+      const safeHash = assertSafeSha256(hashSha256);
 
       if (!verifiedUser.isSuperAdmin && !isSameOrganization(verifiedUser.organizationId, safeOrg)) {
         recordAudit({
@@ -361,13 +363,14 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           detail: "Cross-organization file access blocked",
           ip: req.ip
         });
-        return res.status(403).json({ error: "Acesso negado: arquivo pertence a outra organização.", code: "CROSS_ORGANIZATION_ACCESS_DENIED" });
+        return res.status(403).json({
+          error: "Acesso negado: arquivo pertence a outra organização.",
+          code: "CROSS_ORGANIZATION_ACCESS_DENIED"
+        });
       }
 
-      const binaryExists = fs.existsSync(binaryPath);
-      const metadataExists = fs.existsSync(metaPath);
-
-      if (!binaryExists && metadataExists) {
+      const state = await backend.checkObjectState(safeOrg, safeHash);
+      if (!state.binaryExists && state.metadataExists) {
         recordAudit({
           action: "DOWNLOAD",
           outcome: "ERROR",
@@ -377,7 +380,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           userOrganizationId: verifiedUser.organizationId,
           requestedOrganizationId: safeOrg,
           hashSha256: safeHash,
-          detail: "Metadata exists but binary file is missing",
+          detail: "Metadata exists but binary object is missing",
           ip: req.ip
         });
         return res.status(404).json({
@@ -385,11 +388,11 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           metadataExists: true,
           integro: false,
           code: "BINARY_MISSING",
-          error: "Metadados existem, porém o arquivo binário está ausente no armazenamento local."
+          error: "Metadados existem, porém o arquivo binário está ausente no armazenamento."
         });
       }
 
-      if (!binaryExists) {
+      if (!state.binaryExists) {
         return res.status(404).json({
           exists: false,
           metadataExists: false,
@@ -399,7 +402,18 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
         });
       }
 
-      const buffer = fs.readFileSync(binaryPath);
+      const downloaded = await backend.getBinary(safeOrg, safeHash);
+      if (!downloaded) {
+        return res.status(404).json({
+          exists: false,
+          metadataExists: state.metadataExists,
+          integro: false,
+          code: state.metadataExists ? "BINARY_MISSING" : "FILE_NOT_FOUND",
+          error: "Arquivo binário não encontrado no armazenamento."
+        });
+      }
+
+      const { buffer } = downloaded;
       const calculatedHash = crypto.createHash("sha256").update(buffer).digest("hex");
       if (calculatedHash !== safeHash) {
         recordAudit({
@@ -425,17 +439,13 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
       let mimeType = sniffSafeMimeFromBinary(buffer);
       let fileName = `${safeHash}.bin`;
 
-      if (metadataExists) {
-        try {
-          const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-          if (meta.mimeType && ALLOWED_EVIDENCE_MIME_TYPES.has(meta.mimeType)) {
-            mimeType = meta.mimeType;
-          }
-          if (meta.arquivoNome) {
-            fileName = sanitizeEvidenceFileName(meta.arquivoNome);
-          }
-        } catch {
-          // fallback para sniffing seguro
+      if (state.metadataExists) {
+        const meta = await backend.getMetadata(safeOrg, safeHash);
+        if (meta?.mimeType && ALLOWED_EVIDENCE_MIME_TYPES.has(meta.mimeType)) {
+          mimeType = meta.mimeType;
+        }
+        if (meta?.arquivoNome) {
+          fileName = sanitizeEvidenceFileName(meta.arquivoNome);
         }
       } else {
         res.setHeader("X-Evidence-Metadata-Missing", "true");
@@ -451,7 +461,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
         requestedOrganizationId: safeOrg,
         hashSha256: safeHash,
         fileName,
-        detail: metadataExists ? "Served verified binary" : "Served orphan binary without metadata",
+        detail: `${state.metadataExists ? "Served verified binary" : "Served orphan binary"} via ${backend.driverName}`,
         ip: req.ip
       });
 
@@ -459,6 +469,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
       res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Cache-Control", "private, no-store");
+      res.setHeader("X-Evidence-Storage-Backend", backend.driverName);
       return res.send(buffer);
     } catch (err: any) {
       const status = err?.status || 500;
@@ -498,7 +509,10 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           detail: "Cross-organization migration blocked",
           ip: req.ip
         });
-        return res.status(403).json({ error: "Acesso negado: migração bloqueada para outra organização.", code: "CROSS_ORGANIZATION_ACCESS_DENIED" });
+        return res.status(403).json({
+          error: "Acesso negado: migração bloqueada para outra organização.",
+          code: "CROSS_ORGANIZATION_ACCESS_DENIED"
+        });
       }
 
       if (!canModifyEvidenceStorage(verifiedUser.role)) {
@@ -513,7 +527,10 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           detail: "Read-only role attempted base64 migration",
           ip: req.ip
         });
-        return res.status(403).json({ error: `Perfil [${verifiedUser.role}] não possui permissão para migrar evidências.`, code: "ROLE_READONLY_DENIED" });
+        return res.status(403).json({
+          error: `Perfil [${verifiedUser.role}] não possui permissão para migrar evidências.`,
+          code: "ROLE_READONLY_DENIED"
+        });
       }
 
       if (!base64Data) {
@@ -532,19 +549,16 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
       const hashSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
       const fileId = `FILE-MIG-${hashSha256.substring(0, 14).toUpperCase()}`;
 
-      const { orgDir, binaryPath, metaPath } = resolveSafeEvidencePaths(baseDir, orgId, hashSha256);
-      if (!fs.existsSync(orgDir)) {
-        fs.mkdirSync(orgDir, { recursive: true });
-      }
-
-      if (!fs.existsSync(binaryPath)) {
-        fs.writeFileSync(binaryPath, buffer);
-      }
+      const putResult = await backend.putBinaryIfAbsent(orgId, hashSha256, buffer, resolvedMime);
 
       const metaData = {
         fileId,
         organizationId: orgId,
         storagePath: `/api/evidence-storage/files/${orgId}/${hashSha256}`,
+        objectPath: putResult.objectPath,
+        storageBucket: backend.bucketName,
+        storageBackend: backend.driverName,
+        objectGeneration: putResult.objectGeneration,
         arquivoNome: safeFileName,
         mimeType: resolvedMime,
         tamanhoBytes: buffer.length,
@@ -556,7 +570,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
         migradoDeBase64: true
       };
 
-      fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2), "utf8");
+      await backend.putMetadata(orgId, hashSha256, metaData);
 
       recordAudit({
         action: "MIGRATE_BASE64",
@@ -568,7 +582,7 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
         requestedOrganizationId: orgId,
         hashSha256,
         fileName: safeFileName,
-        detail: `Migrated ${buffer.length} bytes (${resolvedMime})`,
+        detail: `Migrated ${buffer.length} bytes (${resolvedMime}) via ${backend.driverName}`,
         ip: req.ip
       });
 
@@ -595,7 +609,8 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
     const { organizationId, hashSha256 } = req.params;
     try {
       verifiedUser = await deps.verifyUser(req.headers.authorization);
-      const { safeOrg, safeHash, binaryPath, metaPath } = resolveSafeEvidencePaths(baseDir, organizationId, hashSha256);
+      const safeOrg = assertSafeOrgId(organizationId);
+      const safeHash = assertSafeSha256(hashSha256);
 
       if (!verifiedUser.isSuperAdmin && !isSameOrganization(verifiedUser.organizationId, safeOrg)) {
         recordAudit({
@@ -610,34 +625,49 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
           detail: "Cross-organization integrity verify blocked",
           ip: req.ip
         });
-        return res.status(403).json({ error: "Acesso negado: verificação bloqueada para outra organização.", code: "CROSS_ORGANIZATION_ACCESS_DENIED" });
+        return res.status(403).json({
+          error: "Acesso negado: verificação bloqueada para outra organização.",
+          code: "CROSS_ORGANIZATION_ACCESS_DENIED"
+        });
       }
 
-      const binaryExists = fs.existsSync(binaryPath);
-      const metadataExists = fs.existsSync(metaPath);
-
-      if (!binaryExists && metadataExists) {
+      const state = await backend.checkObjectState(safeOrg, safeHash);
+      if (!state.binaryExists && state.metadataExists) {
         return res.status(404).json({
           exists: false,
           metadataExists: true,
           integro: false,
           code: "BINARY_MISSING",
+          storageBackend: backend.driverName,
+          objectPath: state.objectPath,
           error: "Metadados existem, porém o binário está ausente no storage."
         });
       }
 
-      if (!binaryExists) {
+      if (!state.binaryExists) {
         return res.status(404).json({
           exists: false,
           metadataExists: false,
           integro: false,
           code: "FILE_NOT_FOUND",
+          storageBackend: backend.driverName,
+          objectPath: state.objectPath,
           error: "Arquivo inexistente no storage."
         });
       }
 
-      const buffer = fs.readFileSync(binaryPath);
-      const calculatedHash = crypto.createHash("sha256").update(buffer).digest("hex");
+      const downloaded = await backend.getBinary(safeOrg, safeHash);
+      if (!downloaded) {
+        return res.status(404).json({
+          exists: false,
+          metadataExists: state.metadataExists,
+          integro: false,
+          code: state.metadataExists ? "BINARY_MISSING" : "FILE_NOT_FOUND",
+          error: "Arquivo inexistente no storage."
+        });
+      }
+
+      const calculatedHash = crypto.createHash("sha256").update(downloaded.buffer).digest("hex");
       const integro = calculatedHash.toLowerCase() === safeHash.toLowerCase();
 
       recordAudit({
@@ -649,16 +679,20 @@ export function createEvidenceStorageRouter(deps: EvidenceStorageRouterDeps): ex
         userOrganizationId: verifiedUser.organizationId,
         requestedOrganizationId: safeOrg,
         hashSha256: safeHash,
-        detail: `integro=${integro}, metadataExists=${metadataExists}`,
+        detail: `integro=${integro}, metadataExists=${state.metadataExists}, backend=${backend.driverName}`,
         ip: req.ip
       });
 
       return res.json({
         exists: true,
-        metadataExists,
+        metadataExists: state.metadataExists,
         integro,
-        code: !metadataExists ? "ORPHAN_BINARY" : integro ? "OK" : "INTEGRITY_MISMATCH",
-        tamanhoBytes: buffer.length,
+        code: !state.metadataExists ? "ORPHAN_BINARY" : integro ? "OK" : "INTEGRITY_MISMATCH",
+        storageBackend: backend.driverName,
+        isPersistent: backend.isPersistent,
+        objectPath: state.objectPath,
+        objectGeneration: downloaded.objectGeneration || state.objectGeneration,
+        tamanhoBytes: downloaded.buffer.length,
         hashOriginal: safeHash,
         hashCalculado: calculatedHash
       });

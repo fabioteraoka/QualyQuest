@@ -3918,6 +3918,10 @@ export interface HistoricoSubstituicaoArquivo {
 export interface ArquivoEvidenciaRef {
   fileId: string;
   storagePath: string; // Ex: '/api/evidence-storage/files/org_impacto_aviation/8f3a...'
+  objectPath?: string; // Caminho canônico no bucket: 'organizations/{orgId}/evidences/{hashSha256}'
+  storageBucket?: string; // Bucket alvo (ex: 'ai-studio-applet-webapp-bdbf6.firebasestorage.app')
+  storageBackend?: 'gcs' | 'local_ephemeral';
+  objectGeneration?: string; // ID de geração do objeto no GCS/Firebase Storage (versionamento)
   arquivoNome: string;
   mimeType: string;
   tamanhoBytes: number;

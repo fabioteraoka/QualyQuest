@@ -52,6 +52,11 @@ import {
   createEvidenceStorageRouter,
   type VerifiedEvidenceUser,
 } from "./server/evidenceStorageRouter.ts";
+import {
+  GcsStorageBackend,
+  LocalEphemeralStorageBackend,
+  type EvidenceStorageBackend,
+} from "./server/evidenceStorageBackend.ts";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -2055,10 +2060,33 @@ async function verifyFirebaseIdTokenAndUser(authHeader?: string): Promise<Verifi
   throw Object.assign(new Error("Perfil de usuário não encontrado ou não autorizado no Firestore."), { status: 403, code: "USER_PROFILE_NOT_FOUND" });
 }
 
+function createConfiguredEvidenceBackend(): EvidenceStorageBackend {
+  const mode = (process.env.EVIDENCE_STORAGE_BACKEND || "local").trim().toLowerCase();
+  const cfg = getFirebaseAppletConfig();
+  const bucketName = (process.env.EVIDENCE_STORAGE_BUCKET || cfg.storageBucket || "").trim();
+
+  if (mode === "gcs") {
+    if (!bucketName) {
+      throw new Error("EVIDENCE_STORAGE_BACKEND=gcs exige EVIDENCE_STORAGE_BUCKET ou storageBucket configurado.");
+    }
+    console.info(`[EvidenceStorage] Backend persistente GCS/Firebase Storage ativo (bucket=${bucketName}).`);
+    return new GcsStorageBackend({
+      bucketName,
+      localAuditFallbackDir: path.join(EVIDENCE_STORAGE_BASE_DIR, "_audit"),
+    });
+  }
+
+  console.warn(
+    `[EvidenceStorage] ATENÇÃO: Executando em modo local efêmero (${EVIDENCE_STORAGE_BASE_DIR}). ` +
+      `Defina EVIDENCE_STORAGE_BACKEND=gcs com bucket provisionado (${bucketName || "N/A"}) antes de produção.`
+  );
+  return new LocalEphemeralStorageBackend(EVIDENCE_STORAGE_BASE_DIR);
+}
+
 app.use(
   "/api/evidence-storage",
   createEvidenceStorageRouter({
-    baseDir: EVIDENCE_STORAGE_BASE_DIR,
+    backend: createConfiguredEvidenceBackend(),
     verifyUser: verifyFirebaseIdTokenAndUser,
   })
 );
