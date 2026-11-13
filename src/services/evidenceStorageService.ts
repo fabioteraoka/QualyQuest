@@ -7,7 +7,7 @@
  */
 
 import { doc, setDoc } from 'firebase/firestore';
-import { db } from './firebase/config';
+import { db, auth } from './firebase/config';
 import { sanitizeForFirestore } from './firebase/firestore';
 import {
   ArquivoEvidenciaRef,
@@ -18,6 +18,22 @@ import {
 const DB_NAME = 'QualiGest_Evidence_Files_DB';
 const DB_VERSION = 1;
 const STORE_NAME = 'evidence_binary_cache';
+
+async function getFirebaseAuthHeaders(extraHeaders: Record<string, string> = {}): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  const currentUser = auth.currentUser;
+  if (currentUser) {
+    try {
+      const token = await currentUser.getIdToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+    } catch (err) {
+      console.warn('Não foi possível obter ID Token Firebase:', err);
+    }
+  }
+  return headers;
+}
 
 function openEvidenceDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -151,7 +167,7 @@ export async function uploadEvidenceFile(
   // Validação de Extensão
   const dotIdx = file.name.lastIndexOf('.');
   const extensao = dotIdx >= 0 ? file.name.substring(dotIdx).toLowerCase() : '';
-  const EXTENSOES_PERMITIDAS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.xlsx', '.xls', '.docx', '.doc', '.txt'];
+  const EXTENSOES_PERMITIDAS = ['.pdf', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.xlsx', '.xls', '.docx', '.doc', '.txt'];
   if (!EXTENSOES_PERMITIDAS.includes(extensao)) {
     throw new Error(`Extensão "${extensao || 'sem extensão'}" não permitida para evidências de auditoria. Formatos aceitos: ${EXTENSOES_PERMITIDAS.join(', ')}.`);
   }
@@ -160,33 +176,49 @@ export async function uploadEvidenceFile(
   const arrayBuffer = await file.arrayBuffer();
   const hashLocal = await calculateClientSHA256(arrayBuffer);
 
-  // Tenta enviar para a API de Object Storage do backend
+  // Envia autenticado para a API de Object Storage do backend
+  const headers = await getFirebaseAuthHeaders({ 'Content-Type': 'application/json' });
+  let resp: Response | null = null;
   try {
-    const resp = await fetch('/api/evidence-storage/upload', {
+    resp = await fetch('/api/evidence-storage/upload', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         organizationId: orgId,
         fileName: file.name,
         mimeType: file.type || 'application/octet-stream',
         base64Data,
-        enviadoPorNome: currentUser?.displayName || 'Qualidade IMPACTO',
-        enviadoPorUid: currentUser?.uid,
         requisitoId
       })
     });
+  } catch (err) {
+    console.warn('Backend object storage inacessível por falha de rede. Armazenando no cache IndexedDB...', err);
+  }
 
+  if (resp) {
     if (resp.ok) {
       const data = await resp.json();
-      await saveToIndexedDBCache(data.arquivoRef.hashSha256, base64Data, file.type, file.name);
+      await saveToIndexedDBCache(data.arquivoRef.hashSha256, base64Data, data.arquivoRef.mimeType || file.type, file.name);
       await persistEvidenceFileMetadata(orgId, data.arquivoRef, requisitoId);
       return data.arquivoRef;
     }
-  } catch (err) {
-    console.warn('Backend object storage offline ou indisponível. Armazenando no IndexedDB corporativo...', err);
+
+    // Erros de segurança, autorização ou validação de conteúdo NUNCA devem cair silenciosamente no IndexedDB
+    let errMsg = `Falha no envio de evidência (HTTP ${resp.status}).`;
+    try {
+      const errJson = await resp.json();
+      if (errJson?.error) errMsg = errJson.error;
+    } catch {
+      // ignora parse
+    }
+
+    if (resp.status >= 400 && resp.status < 500) {
+      throw new Error(errMsg);
+    }
+    throw new Error(errMsg);
   }
 
-  // Fallback: Armazenamento local de objetos no IndexedDB com hash SHA-256 e referência compatível
+  // Fallback estritamente para indisponibilidade offline de rede (sem mascarar rejeições HTTP)
   await saveToIndexedDBCache(hashLocal, base64Data, file.type, file.name);
 
   const fallbackRef: ArquivoEvidenciaRef = {
@@ -207,15 +239,34 @@ export async function uploadEvidenceFile(
 }
 
 /**
- * 2. Obter URL segura para visualização/download do arquivo
+ * 2. Obter URL segura para visualização/download do arquivo (via Bearer Token -> Blob URL)
  */
 export async function getEvidenceFileUrl(
   arquivoRef: ArquivoEvidenciaRef,
   organizationId: string
 ): Promise<string> {
   const orgId = organizationId || 'org_impacto_aviation';
+  const targetPath = arquivoRef.storagePath || `/api/evidence-storage/files/${orgId}/${arquivoRef.hashSha256}`;
 
-  // 1. Tenta recuperar do cache local IndexedDB primeiro (mais rápido)
+  // 1. Tenta baixar autenticado do servidor de objetos quando houver sessão ativa
+  if (auth.currentUser && targetPath.startsWith('/api/evidence-storage/files/')) {
+    const headers = await getFirebaseAuthHeaders();
+    const resp = await fetch(targetPath, { headers });
+    if (resp.ok) {
+      const blob = await resp.blob();
+      return URL.createObjectURL(blob);
+    }
+    if (resp.status === 401 || resp.status === 403 || resp.status === 409) {
+      let errMsg = `Acesso ao arquivo negado (HTTP ${resp.status}).`;
+      try {
+        const errJson = await resp.json();
+        if (errJson?.error) errMsg = errJson.error;
+      } catch {}
+      throw new Error(errMsg);
+    }
+  }
+
+  // 2. Fallback para cache local IndexedDB apenas quando offline ou sem sessão HTTP
   if (arquivoRef.hashSha256) {
     const cached = await getFromIndexedDBCache(arquivoRef.hashSha256);
     if (cached?.dataBase64) {
@@ -223,8 +274,7 @@ export async function getEvidenceFileUrl(
     }
   }
 
-  // 2. Retorna a rota segura do servidor de objetos
-  return arquivoRef.storagePath || `/api/evidence-storage/files/${orgId}/${arquivoRef.hashSha256}`;
+  throw new Error('Arquivo binário não encontrado ou sessão não autenticada para download seguro.');
 }
 
 /**
@@ -233,15 +283,27 @@ export async function getEvidenceFileUrl(
 export async function verifyEvidenceFileIntegrity(
   organizationId: string,
   hashSha256: string
-): Promise<{ exists: boolean; integro: boolean; tamanhoBytes?: number }> {
+): Promise<{ exists: boolean; metadataExists?: boolean; integro: boolean; code?: string; tamanhoBytes?: number }> {
   const orgId = organizationId || 'org_impacto_aviation';
   try {
-    const resp = await fetch(`/api/evidence-storage/verify-integrity/${encodeURIComponent(orgId)}/${encodeURIComponent(hashSha256)}`);
-    if (resp.ok) {
-      return await resp.json();
+    const headers = await getFirebaseAuthHeaders();
+    const resp = await fetch(`/api/evidence-storage/verify-integrity/${encodeURIComponent(orgId)}/${encodeURIComponent(hashSha256)}`, {
+      headers
+    });
+    const payload = await resp.json().catch(() => null);
+    if (resp.ok && payload) {
+      return payload;
     }
-  } catch {
-    // Fallback offline
+    if (resp.status === 404 && payload) {
+      return payload;
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error(payload?.error || `Acesso negado ao verificar integridade (HTTP ${resp.status}).`);
+    }
+  } catch (err: any) {
+    if (err?.message && (err.message.includes('Acesso negado') || err.message.includes('HTTP 40'))) {
+      throw err;
+    }
   }
   const cached = await getFromIndexedDBCache(hashSha256);
   return { exists: Boolean(cached), integro: Boolean(cached) };
@@ -296,27 +358,32 @@ export async function migrarArquivoBase64ParaStorage(
   currentUser?: UserProfile | null
 ): Promise<ArquivoEvidenciaRef> {
   const orgId = organizationId || 'org_impacto_aviation';
+  const headers = await getFirebaseAuthHeaders({ 'Content-Type': 'application/json' });
 
+  let resp: Response | null = null;
   try {
-    const resp = await fetch('/api/evidence-storage/migrate-base64', {
+    resp = await fetch('/api/evidence-storage/migrate-base64', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         organizationId: orgId,
         base64Data,
         fileName,
-        tipo,
-        enviadoPorNome: currentUser?.displayName || 'Migração SGQ Fase 1.4.5'
+        tipo
       })
     });
+  } catch (e) {
+    console.warn('Erro de rede ao migrar base64 no servidor:', e);
+  }
 
+  if (resp) {
     if (resp.ok) {
       const data = await resp.json();
       await persistEvidenceFileMetadata(orgId, data.arquivoRef);
       return data.arquivoRef;
     }
-  } catch (e) {
-    console.warn('Erro ao migrar base64 no servidor:', e);
+    const errJson = await resp.json().catch(() => null);
+    throw new Error(errJson?.error || `Erro ao migrar arquivo legado (HTTP ${resp.status}).`);
   }
 
   const clean = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;

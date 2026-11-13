@@ -678,46 +678,137 @@ export function avaliarProntidaoRequisito(
         motivosBloqueio.push('Existem evidências operacionais com status VENCIDO ou REJEITADAS na avaliação da Qualidade.');
       }
 
-      // Verificação específica de consistência por modalidade
+      // Verificação específica de consistência por modalidade (Regra interna de controle SGQ — sem equivalência artificial)
+      const reqTextoNorma = `${preparacao.tituloRequisito || ''} ${preparacao.textoOriginal || ''} ${preparacao.normaDocumento || ''}`.toLowerCase();
+
       if (modalidade === 'CERTIFICADO_CALIBRACAO') {
-        const temCertificado = preparacao.evidenciasVinculadas.some(
-          (e) =>
-            (e.tipo === 'CERTIFICADO_CALIBRACAO' ||
-              e.titulo.toLowerCase().includes('calibra') ||
-              e.numeroReferencia?.toLowerCase().includes('cal') ||
-              (e.arquivoReferencia && e.arquivoReferencia.arquivoNome.toLowerCase().includes('calibra'))) &&
-            e.statusValidade !== 'VENCIDO' &&
-            e.avaliacaoQualidade?.status === 'SUFICIENTE'
-        );
+        const temCertificado = preparacao.evidenciasVinculadas.some((e) => {
+          const evTxt = `${e.titulo || ''} ${e.descricao || ''} ${e.numeroReferencia || ''} ${e.arquivoReferencia?.arquivoNome || ''} ${e.avaliacaoQualidade?.parecer || ''}`.toLowerCase();
+          const ehCertificado =
+            e.tipo === 'CERTIFICADO_CALIBRACAO' ||
+            evTxt.includes('calibra') ||
+            e.numeroReferencia?.toLowerCase().includes('cal') ||
+            e.numeroReferencia?.toLowerCase().includes('rbc');
+          const temValidadeInformada = Boolean(e.dataValidade) && e.statusValidade !== 'VENCIDO';
+          const temRastreabilidade =
+            evTxt.includes('rbc') ||
+            evTxt.includes('inmetro') ||
+            evTxt.includes('cgcre') ||
+            evTxt.includes('nist') ||
+            evTxt.includes('17025') ||
+            evTxt.includes('rastrea') ||
+            Boolean(e.avaliacaoQualidade?.autenticidade && e.numeroReferencia);
+          const temInstrumentoId =
+            Boolean(e.numeroReferencia) ||
+            evTxt.includes('pat-') ||
+            evTxt.includes('sn') ||
+            evTxt.includes('s/n') ||
+            evTxt.includes('torqu') ||
+            evTxt.includes('manom') ||
+            evTxt.includes('instrumento') ||
+            evTxt.includes('multim');
+          const avaliacaoCompleta =
+            e.avaliacaoQualidade?.status === 'SUFICIENTE' &&
+            Boolean(e.avaliacaoQualidade?.abrangencia) &&
+            Boolean(e.avaliacaoQualidade?.validadeConferida);
+
+          return ehCertificado && temValidadeInformada && temRastreabilidade && temInstrumentoId && avaliacaoCompleta;
+        });
         if (!temCertificado) {
-          motivosBloqueio.push('A modalidade CERTIFICADO_CALIBRACAO exige obrigatoriamente certificado de calibração válido avaliado como suficiente pela Qualidade.');
+          motivosBloqueio.push(
+            'A modalidade CERTIFICADO_CALIBRACAO exige certificado válido com data de validade, identificação do instrumento, rastreabilidade metrológica (RBC/Inmetro/NIST) e conferência formal de abrangência/validade.'
+          );
         }
       } else if (modalidade === 'REGISTRO_TREINAMENTO_CHT') {
-        const temTreinamento = preparacao.evidenciasVinculadas.some(
-          (e) =>
-            (e.tipo === 'REGISTRO_TREINAMENTO' ||
-              e.titulo.toLowerCase().includes('treina') ||
-              e.titulo.toLowerCase().includes('cht') ||
-              e.titulo.toLowerCase().includes('f-001-29')) &&
+        const exigeHabilitacaoCht =
+          reqTextoNorma.includes('cht') ||
+          reqTextoNorma.includes('licen') ||
+          reqTextoNorma.includes('habilita') ||
+          reqTextoNorma.includes('canac');
+
+        const temTreinamentoOuCht = preparacao.evidenciasVinculadas.some((e) => {
+          const evTxt = `${e.titulo || ''} ${e.descricao || ''} ${e.numeroReferencia || ''} ${e.arquivoReferencia?.arquivoNome || ''}`.toLowerCase();
+          const ehRegistroTreinamento =
+            e.tipo === 'REGISTRO_TREINAMENTO' ||
+            evTxt.includes('treina') ||
+            evTxt.includes('f-001-29') ||
+            evTxt.includes('capacita') ||
+            evTxt.includes('reciclag');
+          const ehChtOuLicenca =
+            evTxt.includes('cht') ||
+            evTxt.includes('licen') ||
+            evTxt.includes('habilita') ||
+            evTxt.includes('canac');
+
+          const tipoCompat = exigeHabilitacaoCht ? ehChtOuLicenca : ehRegistroTreinamento || ehChtOuLicenca;
+          return (
+            tipoCompat &&
             e.statusValidade !== 'VENCIDO' &&
-            e.avaliacaoQualidade?.status === 'SUFICIENTE'
-        );
-        if (!temTreinamento) {
-          motivosBloqueio.push('A modalidade REGISTRO_TREINAMENTO_CHT exige ficha de treinamento ou certificado de qualificação técnica válido avaliado como suficiente.');
+            e.avaliacaoQualidade?.status === 'SUFICIENTE' &&
+            Boolean(e.avaliacaoQualidade?.validadeConferida)
+          );
+        });
+        if (!temTreinamentoOuCht) {
+          motivosBloqueio.push(
+            exigeHabilitacaoCht
+              ? 'Este requisito exige comprovação específica de habilitação/licença CHT ativa (não substituível apenas por lista de presença de treinamento genérico).'
+              : 'A modalidade REGISTRO_TREINAMENTO_CHT exige registro formal de treinamento/capacitação ou CHT válido com validade conferida pela Qualidade.'
+          );
         }
       } else if (modalidade === 'ORDEM_SERVICO_OU_CRS') {
-        const temOSouCRS = preparacao.evidenciasVinculadas.some(
+        const exigeCrsEspecifico =
+          reqTextoNorma.includes('crs') ||
+          reqTextoNorma.includes('certificado de libera') ||
+          reqTextoNorma.includes('release to service') ||
+          reqTextoNorma.includes('return to service');
+
+        const temOSouCRS = preparacao.evidenciasVinculadas.some((e) => {
+          const evTxt = `${e.titulo || ''} ${e.descricao || ''} ${e.numeroReferencia || ''} ${e.arquivoReferencia?.arquivoNome || ''}`.toLowerCase();
+          const ehCrs = e.tipo === 'CRS' || evTxt.includes('crs') || evTxt.includes('libera') || evTxt.includes('release');
+          const ehOs = e.tipo === 'ORDEM_SERVICO' || evTxt.includes('os ') || evTxt.includes('o.s.') || evTxt.includes('ordem de serv') || evTxt.includes('work order');
+          const tipoCompat = exigeCrsEspecifico ? ehCrs : ehCrs || ehOs;
+          const temRef = Boolean(e.numeroReferencia || e.arquivoReferencia || e.arquivoNome);
+          return (
+            tipoCompat &&
+            temRef &&
+            e.avaliacaoQualidade?.status === 'SUFICIENTE' &&
+            Boolean(e.avaliacaoQualidade?.abrangencia)
+          );
+        });
+        if (!temOSouCRS) {
+          motivosBloqueio.push(
+            exigeCrsEspecifico
+              ? 'Este requisito exige especificamente Certificado de Liberação de Serviço (CRS) formalmente referenciado e validado (não confundir com Ordem de Serviço sem liberação).'
+              : 'A modalidade ORDEM_SERVICO_OU_CRS exige Ordem de Serviço executada ou Certificado de Liberação de Serviço (CRS) referenciado e aprovado.'
+          );
+        }
+      } else if (modalidade === 'VERIFICACAO_IN_LOCO') {
+        const temVerificacao = preparacao.evidenciasVinculadas.some(
           (e) =>
-            (e.tipo === 'ORDEM_SERVICO' ||
-              e.tipo === 'CRS' ||
-              e.titulo.toLowerCase().includes('os ') ||
-              e.titulo.toLowerCase().includes('crs') ||
-              e.titulo.toLowerCase().includes('ordem') ||
-              e.titulo.toLowerCase().includes('liberação')) &&
+            Boolean(e.enviadoPorNome || e.avaliacaoQualidade?.avaliadoPorNome) &&
+            Boolean(e.dataEnvio || e.avaliacaoQualidade?.avaliadoEm) &&
+            Boolean(e.baseOperacional || e.avaliacaoQualidade?.abrangencia) &&
+            Boolean(e.avaliacaoQualidade?.parecer) &&
             e.avaliacaoQualidade?.status === 'SUFICIENTE'
         );
-        if (!temOSouCRS) {
-          motivosBloqueio.push('A modalidade ORDEM_SERVICO_OU_CRS exige cópia de ordem de serviço executada ou Certificado de Liberação de Serviço (CRS) aprovado.');
+        if (!temVerificacao) {
+          motivosBloqueio.push(
+            'A modalidade VERIFICACAO_IN_LOCO exige registro presencial com identificação do responsável, data, escopo/base e parecer conclusivo SUFICIENTE.'
+          );
+        }
+      } else if (modalidade === 'EVIDENCIA_SISTEMA_LOG') {
+        const temLogSistema = preparacao.evidenciasVinculadas.some(
+          (e) =>
+            Boolean(e.numeroReferencia || e.arquivoReferencia || e.titulo) &&
+            Boolean(e.dataEnvio) &&
+            Boolean(e.avaliacaoQualidade?.autenticidade) &&
+            Boolean(e.avaliacaoQualidade?.pertinencia) &&
+            e.avaliacaoQualidade?.status === 'SUFICIENTE'
+        );
+        if (!temLogSistema) {
+          motivosBloqueio.push(
+            'A modalidade EVIDENCIA_SISTEMA_LOG exige evidência de log/relatório eletrônico com identificação da fonte, data e rastreabilidade autenticada.'
+          );
         }
       } else if (modalidade === 'REGISTRO_FOTOGRAFICO_OU_LAUDO') {
         const temFotoOuLaudo = preparacao.evidenciasVinculadas.some(
@@ -728,10 +819,27 @@ export function avaliarProntidaoRequisito(
               e.titulo.toLowerCase().includes('foto') ||
               e.titulo.toLowerCase().includes('laudo') ||
               e.titulo.toLowerCase().includes('vistoria')) &&
-            e.avaliacaoQualidade?.status === 'SUFICIENTE'
+            Boolean(e.dataEnvio) &&
+            Boolean(e.baseOperacional || e.descricao) &&
+            e.avaliacaoQualidade?.status === 'SUFICIENTE' &&
+            Boolean(e.avaliacaoQualidade?.pertinencia)
         );
         if (!temFotoOuLaudo) {
-          motivosBloqueio.push('A modalidade REGISTRO_FOTOGRAFICO_OU_LAUDO exige registro fotográfico circunstanciado ou laudo técnico de vistoria aprovado.');
+          motivosBloqueio.push(
+            'A modalidade REGISTRO_FOTOGRAFICO_OU_LAUDO exige registro fotográfico datado ou laudo técnico de vistoria com escopo/base identificado e aprovado.'
+          );
+        }
+      } else if (modalidade === 'COMBINACAO_DE_EVIDENCIAS') {
+        const temDocAtivo = preparacao.documentosRelacionados.some(
+          (d) => d.situacao === 'ATIVO' || d.situacao === 'VIGENTE' || !d.situacao
+        );
+        const temEvidenciaSuficiente = preparacao.evidenciasVinculadas.some(
+          (e) => e.statusValidade !== 'VENCIDO' && e.avaliacaoQualidade?.status === 'SUFICIENTE'
+        );
+        if (!temDocAtivo || !temEvidenciaSuficiente) {
+          motivosBloqueio.push(
+            'A modalidade COMBINACAO_DE_EVIDENCIAS exige documentos controlados ativos combinados com pelo menos uma evidência operacional válida avaliada como SUFICIENTE.'
+          );
         }
       }
     }
@@ -783,6 +891,9 @@ export function atualizarModalidadeComprovacao(
   justificativa: string,
   currentUser?: UserProfile | null
 ): PreparacaoRequisitoAuditoria {
+  if (!justificativa || justificativa.trim().length < 10) {
+    throw new Error('Justificativa técnica obrigatória (mínimo 10 caracteres) para alterar a regra interna de comprovação SGQ.');
+  }
   const agora = new Date().toISOString();
   const historico: HistoricoModalidadeComprovacao = {
     modalidadeAnterior: preparacao.modalidadeComprovacao,
@@ -790,13 +901,13 @@ export function atualizarModalidadeComprovacao(
     dataHora: agora,
     usuarioNome: currentUser?.displayName || 'Garantia da Qualidade',
     usuarioUid: auth.currentUser?.uid || currentUser?.uid,
-    justificativa: justificativa || 'Alteração técnica de modalidade de comprovação para auditoria.'
+    justificativa: justificativa.trim()
   };
 
   const atualizado: PreparacaoRequisitoAuditoria = {
     ...preparacao,
     modalidadeComprovacao: novaModalidade,
-    justificativaModalidade: justificativa,
+    justificativaModalidade: justificativa.trim(),
     historicoModalidade: [historico, ...(preparacao.historicoModalidade || [])],
     updatedAt: agora
   };

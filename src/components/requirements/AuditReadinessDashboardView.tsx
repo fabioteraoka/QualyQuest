@@ -263,9 +263,9 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/30 text-blue-300 border border-blue-400/40 uppercase tracking-wider">
-              QualyQuest SGQ — Fase 1.4.5
+              QualyQuest SGQ — Preparação Contínua
             </span>
-            <span className="text-xs text-slate-400">Preparação Contínua & Object Storage de Evidências</span>
+            <span className="text-xs text-slate-400">Modalidades = Regras Internas SGQ (Sem Alteração Normativa)</span>
           </div>
 
           <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
@@ -274,7 +274,7 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
           </h1>
 
           <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-3xl leading-relaxed">
-            Tratamento preventivo e individualizado dos 177 requisitos regulatórios e contratuais. Elaboração de respostas institucionais ancoradas em procedimentos do MOMQ/PTM, vinculação de evidências objetivas válidas e controle rigoroso de pendências impeditivas.
+            Tratamento preventivo e individualizado dos 177 requisitos regulatórios e contratuais. As modalidades de comprovação atuam exclusivamente como regras internas de controle do SGQ, preservando integralmente os textos originais das normas.
           </p>
         </div>
 

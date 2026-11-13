@@ -420,34 +420,54 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
 
   // Abrir ou visualizar arquivo da evidência de forma segura (Object Storage / IndexedDB)
   const handleAbrirArquivo = async (ev: EvidenciaObjetivaVinculada) => {
-    if (ev.arquivoReferencia) {
-      const url = await getEvidenceFileUrl(ev.arquivoReferencia, preparacao.organizationId);
-      setPreviewArquivo({
-        titulo: ev.titulo,
-        nome: ev.arquivoReferencia.arquivoNome,
-        url,
-        mimeType: ev.arquivoReferencia.mimeType
+    try {
+      if (ev.arquivoReferencia) {
+        const url = await getEvidenceFileUrl(ev.arquivoReferencia, preparacao.organizationId);
+        if (previewArquivo?.url?.startsWith('blob:')) {
+          URL.revokeObjectURL(previewArquivo.url);
+        }
+        setPreviewArquivo({
+          titulo: ev.titulo,
+          nome: ev.arquivoReferencia.arquivoNome,
+          url,
+          mimeType: ev.arquivoReferencia.mimeType
+        });
+        return;
+      }
+      if (ev.arquivoUrlOuBase64) {
+        const mime = ev.arquivoUrlOuBase64.startsWith('data:image/')
+          ? 'image/png'
+          : ev.arquivoUrlOuBase64.startsWith('data:application/pdf')
+          ? 'application/pdf'
+          : 'application/octet-stream';
+        if (previewArquivo?.url?.startsWith('blob:')) {
+          URL.revokeObjectURL(previewArquivo.url);
+        }
+        setPreviewArquivo({
+          titulo: ev.titulo,
+          nome: ev.arquivoNome || ev.titulo,
+          url: ev.arquivoUrlOuBase64,
+          mimeType: mime
+        });
+        return;
+      }
+      setFeedback({
+        tipo: 'erro',
+        msg: `Evidência [${ev.titulo}] registrada apenas por referência (${ev.numeroReferencia || 'Física/Sistema'}).`
       });
-      return;
-    }
-    if (ev.arquivoUrlOuBase64) {
-      const mime = ev.arquivoUrlOuBase64.startsWith('data:image/')
-        ? 'image/png'
-        : ev.arquivoUrlOuBase64.startsWith('data:application/pdf')
-        ? 'application/pdf'
-        : 'application/octet-stream';
-      setPreviewArquivo({
-        titulo: ev.titulo,
-        nome: ev.arquivoNome || ev.titulo,
-        url: ev.arquivoUrlOuBase64,
-        mimeType: mime
+    } catch (e: any) {
+      setFeedback({
+        tipo: 'erro',
+        msg: e?.message || `Falha ao carregar arquivo da evidência [${ev.titulo}].`
       });
-      return;
     }
-    setFeedback({
-      tipo: 'erro',
-      msg: `Evidência [${ev.titulo}] registrada apenas por referência (${ev.numeroReferencia || 'Física/Sistema'}).`
-    });
+  };
+
+  const handleFecharPreview = () => {
+    if (previewArquivo?.url?.startsWith('blob:')) {
+      URL.revokeObjectURL(previewArquivo.url);
+    }
+    setPreviewArquivo(null);
   };
 
   // Reavaliar suficiência da evidência pontualmente
@@ -793,14 +813,17 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
             {/* Painel Inline para Alterar Modalidade de Comprovação */}
             {showModalidadeEdit && (
               <div className="mt-3 p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 space-y-2 text-xs">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="font-bold text-slate-800 dark:text-slate-200">
-                    Critério de Comprovação por Natureza do Requisito
+                    Regra Interna de Controle SGQ — Modalidade de Comprovação
                   </span>
-                  <span className="text-[11px] text-slate-500">
-                    {MODALIDADE_CONFIG[novaModalidade]?.desc}
+                  <span className="text-[11px] text-amber-700 dark:text-amber-300 font-medium">
+                    Diretriz interna SGQ: não substitui nem reinterpreta o texto normativo oficial.
                   </span>
                 </div>
+                <p className="text-[11px] text-slate-500">
+                  {MODALIDADE_CONFIG[novaModalidade]?.desc}
+                </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <select
                     value={novaModalidade}
@@ -819,6 +842,16 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                     className="sm:col-span-2 px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
                   />
                 </div>
+                {preparacao.historicoModalidade && preparacao.historicoModalidade.length > 0 && (
+                  <div className="p-2 rounded bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1 max-h-24 overflow-y-auto text-[11px]">
+                    <span className="font-bold text-slate-700 dark:text-slate-300 block">Histórico de Alterações de Modalidade:</span>
+                    {preparacao.historicoModalidade.map((hm, hIdx) => (
+                      <div key={hIdx} className="text-slate-500">
+                        • {new Date(hm.dataHora).toLocaleString('pt-BR')} — {hm.modalidadeAnterior ? `${hm.modalidadeAnterior} → ` : ''}{hm.modalidadeNova} ({hm.justificativa}) por <strong>{hm.usuarioNome}</strong>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex justify-end gap-2">
                   <button
                     onClick={() => setShowModalidadeEdit(false)}
@@ -2100,7 +2133,7 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                     <span>Baixar Arquivo</span>
                   </a>
                   <button
-                    onClick={() => setPreviewArquivo(null)}
+                    onClick={handleFecharPreview}
                     className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
                   >
                     <X className="w-4 h-4" />

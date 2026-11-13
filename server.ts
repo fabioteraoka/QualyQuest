@@ -48,6 +48,10 @@ import {
   compararRevisoesDocumentaisAcervo,
   aplicarControleVersaoManual,
 } from "./src/services/aiKnowledge/versionControlEngine.ts";
+import {
+  createEvidenceStorageRouter,
+  type VerifiedEvidenceUser,
+} from "./server/evidenceStorageRouter.ts";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -1875,210 +1879,189 @@ app.get("/api/manual-files/:manualId", (req, res) => {
 });
 
 // ============================================================================
-// FASE 1.4.5: SERVIÇO CORPORATIVO DE ARMAZENAMENTO DE ARQUIVOS DE EVIDÊNCIAS
-// Armazenamento binário de objetos com integridade SHA-256 e deduplicação
+// FASE 1.4.5 & 1.4.6: SERVIÇO CORPORATIVO DE ARMAZENAMENTO DE ARQUIVOS DE EVIDÊNCIAS
+// Hardening: Autenticação Firebase ID Token, Autorização Real no Firestore,
+// Bloqueio Cross-Org, RBAC, Path Traversal Guard, Magic Bytes e Audit Log.
 // ============================================================================
-const EVIDENCE_STORAGE_BASE_DIR = path.join(process.cwd(), "data", "evidence_storage");
-if (!fs.existsSync(EVIDENCE_STORAGE_BASE_DIR)) {
-  fs.mkdirSync(EVIDENCE_STORAGE_BASE_DIR, { recursive: true });
+const EVIDENCE_STORAGE_BASE_DIR = path.resolve(process.cwd(), "data", "evidence_storage");
+
+interface FirebaseAppletConfigFile {
+  projectId: string;
+  firestoreDatabaseId: string;
+  storageBucket?: string;
 }
 
-const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-  "text/plain"
-]);
+let cachedFirebaseAppletConfig: FirebaseAppletConfigFile | null = null;
+function getFirebaseAppletConfig(): FirebaseAppletConfigFile {
+  if (cachedFirebaseAppletConfig) return cachedFirebaseAppletConfig;
+  const cfgPath = path.resolve(process.cwd(), "firebase-applet-config.json");
+  const raw = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+  cachedFirebaseAppletConfig = {
+    projectId: raw.projectId,
+    firestoreDatabaseId: raw.firestoreDatabaseId || "(default)",
+    storageBucket: raw.storageBucket,
+  };
+  return cachedFirebaseAppletConfig;
+}
 
-app.post("/api/evidence-storage/upload", (req, res) => {
+const FIREBASE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
+let cachedGoogleCerts: { certs: Record<string, string>; expiresAt: number } | null = null;
+
+async function getGoogleSecureTokenCerts(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (cachedGoogleCerts && now < cachedGoogleCerts.expiresAt) {
+    return cachedGoogleCerts.certs;
+  }
+  const resp = await fetch(FIREBASE_CERTS_URL);
+  if (!resp.ok) {
+    throw new Error(`Falha ao obter chaves públicas do Firebase Auth (${resp.status}).`);
+  }
+  const cacheControl = resp.headers.get("cache-control") || "";
+  const maxAgeMatch = cacheControl.match(/max-age=(\d+)/i);
+  const ttlMs = maxAgeMatch ? parseInt(maxAgeMatch[1], 10) * 1000 : 300_000;
+  const certs = (await resp.json()) as Record<string, string>;
+  cachedGoogleCerts = { certs, expiresAt: now + Math.max(ttlMs, 60_000) };
+  return certs;
+}
+
+function decodeBase64Url(input: string): Buffer {
+  const pad = input.length % 4 === 0 ? "" : "=".repeat(4 - (input.length % 4));
+  const base64 = input.replace(/-/g, "+").replace(/_/g, "/") + pad;
+  return Buffer.from(base64, "base64");
+}
+
+const SUPER_ADMIN_EMAIL = "fteraoka@gmail.com";
+
+function extractFirestoreStringField(fields: any, key: string): string {
+  const v = fields?.[key];
+  if (!v) return "";
+  return typeof v.stringValue === "string" ? v.stringValue : "";
+}
+
+function extractFirestoreBoolField(fields: any, key: string): boolean | undefined {
+  const v = fields?.[key];
+  if (!v || typeof v.booleanValue !== "boolean") return undefined;
+  return v.booleanValue;
+}
+
+async function verifyFirebaseIdTokenAndUser(authHeader?: string): Promise<VerifiedEvidenceUser> {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw Object.assign(new Error("Token de autenticação ausente (Bearer obrigatório)."), { status: 401, code: "AUTH_MISSING_TOKEN" });
+  }
+  const idToken = authHeader.slice(7).trim();
+  const parts = idToken.split(".");
+  if (parts.length !== 3) {
+    throw Object.assign(new Error("Formato de JWT inválido."), { status: 401, code: "AUTH_MALFORMED_JWT" });
+  }
+
+  const [headerB64, payloadB64, sigB64] = parts;
+  let header: any;
+  let payload: any;
   try {
-    const { organizationId, fileName, mimeType, base64Data, enviadoPorNome, enviadoPorUid, requisitoId } = req.body;
-    const orgId = organizationId || "org_impacto_aviation";
-
-    if (!fileName || !base64Data) {
-      return res.status(400).json({ error: "fileName e base64Data são obrigatórios." });
-    }
-
-    // Normaliza Base64
-    const cleanBase64 = base64Data.includes("base64,") ? base64Data.split("base64,")[1] : base64Data;
-    const buffer = Buffer.from(cleanBase64, "base64");
-
-    // Validação de Tamanho (Max 25 MB)
-    const MAX_SIZE = 25 * 1024 * 1024;
-    if (buffer.length > MAX_SIZE) {
-      return res.status(400).json({ error: `Arquivo excede o limite máximo permitido de 25 MB (Tamanho: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB).` });
-    }
-
-    // Validação de MIME Type
-    const effectiveMime = mimeType || (
-      fileName.endsWith(".pdf") ? "application/pdf" :
-      fileName.endsWith(".png") ? "image/png" :
-      fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") ? "image/jpeg" :
-      fileName.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" :
-      fileName.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" :
-      "application/octet-stream"
-    );
-
-    if (!ALLOWED_EVIDENCE_MIME_TYPES.has(effectiveMime) && effectiveMime !== "application/octet-stream") {
-      return res.status(400).json({ error: `Tipo de arquivo não permitido: ${effectiveMime}` });
-    }
-
-    // Cálculo de Integridade SHA-256
-    const hashSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
-    const fileId = `FILE-${hashSha256.substring(0, 16).toUpperCase()}`;
-
-    // Diretório isolado por organização
-    const orgDir = path.join(EVIDENCE_STORAGE_BASE_DIR, orgId);
-    if (!fs.existsSync(orgDir)) {
-      fs.mkdirSync(orgDir, { recursive: true });
-    }
-
-    const binaryPath = path.join(orgDir, `${hashSha256}.bin`);
-    const metaPath = path.join(orgDir, `${hashSha256}.meta.json`);
-
-    // Deduplicação: se o binário já existe, reaproveita sem duplicar bytes
-    if (!fs.existsSync(binaryPath)) {
-      fs.writeFileSync(binaryPath, buffer);
-    }
-
-    const metaData = {
-      fileId,
-      organizationId: orgId,
-      requisitoId,
-      storagePath: `/api/evidence-storage/files/${orgId}/${hashSha256}`,
-      arquivoNome: fileName,
-      mimeType: effectiveMime,
-      tamanhoBytes: buffer.length,
-      hashSha256,
-      dataUpload: new Date().toISOString(),
-      enviadoPorNome: enviadoPorNome || "Qualidade",
-      enviadoPorUid: enviadoPorUid || undefined,
-      versao: 1
-    };
-
-    fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2), "utf8");
-
-    return res.json({
-      success: true,
-      arquivoRef: metaData
-    });
-  } catch (err: any) {
-    console.error("Erro no upload de evidência:", err);
-    return res.status(500).json({ error: err.message || "Erro interno no upload de evidência." });
-  }
-});
-
-app.get("/api/evidence-storage/files/:organizationId/:hashSha256", (req, res) => {
-  const { organizationId, hashSha256 } = req.params;
-  const binaryPath = path.join(EVIDENCE_STORAGE_BASE_DIR, organizationId, `${hashSha256}.bin`);
-  const metaPath = path.join(EVIDENCE_STORAGE_BASE_DIR, organizationId, `${hashSha256}.meta.json`);
-
-  if (!fs.existsSync(binaryPath)) {
-    return res.status(404).send("Arquivo não encontrado no armazenamento de objetos.");
+    header = JSON.parse(decodeBase64Url(headerB64).toString("utf8"));
+    payload = JSON.parse(decodeBase64Url(payloadB64).toString("utf8"));
+  } catch {
+    throw Object.assign(new Error("Cabeçalho ou payload JWT ilegível."), { status: 401, code: "AUTH_INVALID_JWT_JSON" });
   }
 
-  let mimeType = "application/octet-stream";
-  let fileName = `${hashSha256}.bin`;
+  const cfg = getFirebaseAppletConfig();
+  const nowSec = Math.floor(Date.now() / 1000);
 
-  if (fs.existsSync(metaPath)) {
-    try {
-      const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
-      mimeType = meta.mimeType || mimeType;
-      fileName = meta.arquivoNome || fileName;
-    } catch (e) {
-      // Ignora erro de leitura do meta
-    }
+  if (header?.alg !== "RS256" || typeof header?.kid !== "string") {
+    throw Object.assign(new Error("Algoritmo ou Key ID JWT não suportado."), { status: 401, code: "AUTH_UNSUPPORTED_ALG" });
   }
 
-  res.setHeader("Content-Type", mimeType);
-  res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
-  const fileStream = fs.createReadStream(binaryPath);
-  fileStream.pipe(res);
-});
-
-app.post("/api/evidence-storage/migrate-base64", (req, res) => {
-  try {
-    const { organizationId, base64Data, fileName, tipo, enviadoPorNome } = req.body;
-    const orgId = organizationId || "org_impacto_aviation";
-
-    if (!base64Data) {
-      return res.status(400).json({ error: "base64Data é obrigatório para migração." });
-    }
-
-    const cleanBase64 = base64Data.includes("base64,") ? base64Data.split("base64,")[1] : base64Data;
-    const buffer = Buffer.from(cleanBase64, "base64");
-    const hashSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
-    const fileId = `FILE-MIG-${hashSha256.substring(0, 14).toUpperCase()}`;
-
-    const orgDir = path.join(EVIDENCE_STORAGE_BASE_DIR, orgId);
-    if (!fs.existsSync(orgDir)) {
-      fs.mkdirSync(orgDir, { recursive: true });
-    }
-
-    const binaryPath = path.join(orgDir, `${hashSha256}.bin`);
-    const metaPath = path.join(orgDir, `${hashSha256}.meta.json`);
-
-    if (!fs.existsSync(binaryPath)) {
-      fs.writeFileSync(binaryPath, buffer);
-    }
-
-    const resolvedMime = base64Data.startsWith("data:application/pdf") ? "application/pdf" :
-                         base64Data.startsWith("data:image/png") ? "image/png" :
-                         base64Data.startsWith("data:image/jpeg") ? "image/jpeg" :
-                         fileName?.endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
-
-    const metaData = {
-      fileId,
-      organizationId: orgId,
-      storagePath: `/api/evidence-storage/files/${orgId}/${hashSha256}`,
-      arquivoNome: fileName || `Evidencia_${tipo || "Anexo"}.pdf`,
-      mimeType: resolvedMime,
-      tamanhoBytes: buffer.length,
-      hashSha256,
-      dataUpload: new Date().toISOString(),
-      enviadoPorNome: enviadoPorNome || "Migração Automática SGQ",
-      versao: 1,
-      migradoDeBase64: true
-    };
-
-    fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2), "utf8");
-
-    return res.json({
-      success: true,
-      arquivoRef: metaData
-    });
-  } catch (err: any) {
-    console.error("Erro na migração de base64:", err);
-    return res.status(500).json({ error: err.message });
+  let certs = await getGoogleSecureTokenCerts();
+  let certPem = certs[header.kid];
+  if (!certPem) {
+    cachedGoogleCerts = null;
+    certs = await getGoogleSecureTokenCerts();
+    certPem = certs[header.kid];
   }
-});
-
-app.get("/api/evidence-storage/verify-integrity/:organizationId/:hashSha256", (req, res) => {
-  const { organizationId, hashSha256 } = req.params;
-  const binaryPath = path.join(EVIDENCE_STORAGE_BASE_DIR, organizationId, `${hashSha256}.bin`);
-
-  if (!fs.existsSync(binaryPath)) {
-    return res.status(404).json({ exists: false, error: "Arquivo inexistente no storage." });
+  if (!certPem) {
+    throw Object.assign(new Error("Chave pública do token Firebase não reconhecida."), { status: 401, code: "AUTH_UNKNOWN_KID" });
   }
 
-  const buffer = fs.readFileSync(binaryPath);
-  const calculatedHash = crypto.createHash("sha256").update(buffer).digest("hex");
-  const integro = calculatedHash.toLowerCase() === hashSha256.toLowerCase();
+  const verifier = crypto.createVerify("RSA-SHA256");
+  verifier.update(`${headerB64}.${payloadB64}`);
+  verifier.end();
+  const sigValid = verifier.verify(certPem, decodeBase64Url(sigB64));
+  if (!sigValid) {
+    throw Object.assign(new Error("Assinatura criptográfica do token inválida."), { status: 401, code: "AUTH_INVALID_SIGNATURE" });
+  }
 
-  return res.json({
-    exists: true,
-    integro,
-    tamanhoBytes: buffer.length,
-    hashOriginal: hashSha256,
-    hashCalculado: calculatedHash
+  const expectedIss = `https://securetoken.google.com/${cfg.projectId}`;
+  if (payload?.aud !== cfg.projectId || payload?.iss !== expectedIss) {
+    throw Object.assign(new Error("Emissor ou audiência do token incompatível com o projeto."), { status: 401, code: "AUTH_INVALID_CLAIMS" });
+  }
+  if (typeof payload?.sub !== "string" || !payload.sub.trim()) {
+    throw Object.assign(new Error("Token sem identificador de usuário (sub)."), { status: 401, code: "AUTH_MISSING_SUB" });
+  }
+  if (typeof payload?.exp !== "number" || payload.exp <= nowSec) {
+    throw Object.assign(new Error("Sessão expirada. Reautentique-se para continuar."), { status: 401, code: "AUTH_TOKEN_EXPIRED" });
+  }
+  if (typeof payload?.iat !== "number" || payload.iat > nowSec + 300) {
+    throw Object.assign(new Error("Data de emissão do token inválida."), { status: 401, code: "AUTH_INVALID_IAT" });
+  }
+
+  const uid = payload.sub;
+  const tokenEmail = typeof payload.email === "string" ? payload.email : "";
+  const isSuperAdmin = Boolean(payload.email_verified && tokenEmail.toLowerCase() === SUPER_ADMIN_EMAIL);
+
+  const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(cfg.projectId)}/databases/${encodeURIComponent(cfg.firestoreDatabaseId)}/documents/users/${encodeURIComponent(uid)}`;
+  const profileResp = await fetch(firestoreUrl, {
+    headers: { Authorization: `Bearer ${idToken}` }
   });
-});
+
+  if (profileResp.ok) {
+    const docJson = (await profileResp.json()) as any;
+    const fields = docJson?.fields || {};
+    const orgId = extractFirestoreStringField(fields, "organizationId") || (isSuperAdmin ? DEFAULT_ORGANIZATION_ID : "");
+    const role = (extractFirestoreStringField(fields, "role") || (isSuperAdmin ? "ADMIN" : "CONSULTA")).toUpperCase();
+    const status = (extractFirestoreStringField(fields, "status") || "ATIVO").toUpperCase();
+    const ativo = extractFirestoreBoolField(fields, "ativo");
+    const displayName = extractFirestoreStringField(fields, "displayName") || tokenEmail || "Usuário SGQ";
+
+    if (!isSuperAdmin) {
+      if (!orgId) {
+        throw Object.assign(new Error("Usuário sem organização vinculada no Firestore."), { status: 403, code: "USER_NO_ORGANIZATION" });
+      }
+      if (ativo === false || status === "INACTIVE" || status === "INATIVO" || status === "BLOQUEADO" || status === "PENDENTE") {
+        throw Object.assign(new Error(`Conta com status [${status}] não autorizada para acessar evidências.`), { status: 403, code: "USER_INACTIVE_OR_BLOCKED" });
+      }
+    }
+
+    return {
+      uid,
+      email: tokenEmail || extractFirestoreStringField(fields, "email"),
+      role,
+      organizationId: orgId,
+      displayName,
+      isSuperAdmin
+    };
+  }
+
+  if (isSuperAdmin) {
+    return {
+      uid,
+      email: tokenEmail,
+      role: "ADMIN",
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      displayName: tokenEmail,
+      isSuperAdmin: true
+    };
+  }
+
+  throw Object.assign(new Error("Perfil de usuário não encontrado ou não autorizado no Firestore."), { status: 403, code: "USER_PROFILE_NOT_FOUND" });
+}
+
+app.use(
+  "/api/evidence-storage",
+  createEvidenceStorageRouter({
+    baseDir: EVIDENCE_STORAGE_BASE_DIR,
+    verifyUser: verifyFirebaseIdTokenAndUser,
+  })
+);
 
 // Endpoint to parse uploaded manual (Word .docx/.doc, PDF, TXT) with AI and robust fallback
 app.post("/api/parse-manual", async (req, res) => {
