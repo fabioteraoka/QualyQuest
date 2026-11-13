@@ -721,6 +721,26 @@
         "atualizadoEm": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "organizationId", "codigoPatrimonio", "modelo", "criadoEm", "atualizadoEm"]
+    },
+    "EvidenceFileMetadata": {
+      "title": "Evidence File Object Storage Metadata",
+      "description": "Object storage metadata reference for objective audit evidence files (binaries stored outside Firestore)",
+      "type": "object",
+      "properties": {
+        "fileId": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "requisitoId": { "type": "string" },
+        "storagePath": { "type": "string" },
+        "arquivoNome": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "tamanhoBytes": { "type": "number" },
+        "hashSha256": { "type": "string" },
+        "dataUpload": { "type": "string", "format": "date-time" },
+        "enviadoPorNome": { "type": "string" },
+        "versao": { "type": "number" },
+        "migradoDeBase64": { "type": "boolean" }
+      },
+      "required": ["fileId", "organizationId", "storagePath", "arquivoNome", "mimeType", "tamanhoBytes", "hashSha256", "dataUpload", "versao"]
     }
   },
   "firestore": {
@@ -906,7 +926,11 @@
     },
     "/organizations/{organizationId}/audit_readiness_preparations/{requisitoId}": {
       "schema": "ClientRequirement",
-      "description": "Individual audit readiness preparation records with institutional responses, documents, evidence evaluations, action items and readiness status"
+      "description": "Individual audit readiness preparation records with institutional responses, proof modality, documents, evidence evaluations, action items and readiness status"
+    },
+    "/organizations/{organizationId}/evidence_files/{fileId}": {
+      "schema": "EvidenceFileMetadata",
+      "description": "Object storage metadata and SHA-256 integrity references for objective audit evidence files (zero binary payload)"
     },
     "/users/{userId}": {
       "schema": "UserProfile",

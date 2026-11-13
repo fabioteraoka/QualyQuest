@@ -32,7 +32,10 @@ import {
   FolderOpen,
   Eye,
   Download,
-  SlidersHorizontal
+  SlidersHorizontal,
+  RefreshCw,
+  Lock,
+  ShieldAlert
 } from 'lucide-react';
 import {
   PreparacaoRequisitoAuditoria,
@@ -46,7 +49,9 @@ import {
   ControleCentralSGQ,
   UserProfile,
   AvaliacaoQualidadeEvidencia,
-  EvidenciaObjetivaVinculada
+  EvidenciaObjetivaVinculada,
+  ModalidadeComprovacaoEsperada,
+  ArquivoEvidenciaRef
 } from '../../types';
 import {
   sugerirRespostaBaseadaEmFontes,
@@ -57,8 +62,62 @@ import {
   vincularEvidenciaAoRequisito,
   reavaliarEvidenciaVinculada,
   salvarEdicaoResposta,
-  aprovarValidacaoQualidade
+  aprovarValidacaoQualidade,
+  atualizarModalidadeComprovacao,
+  registrarSubstituicaoArquivoEvidencia,
+  migrarEvidenciasLegadasBase64
 } from '../../services/auditReadinessService';
+import {
+  uploadEvidenceFile,
+  substituirArquivoEvidencia,
+  getEvidenceFileUrl
+} from '../../services/evidenceStorageService';
+
+export const MODALIDADE_CONFIG: Record<
+  ModalidadeComprovacaoEsperada,
+  { label: string; badge: string; desc: string }
+> = {
+  DOCUMENTAL_PURO: {
+    label: 'Documental Puro',
+    badge: 'bg-sky-100 text-sky-800 dark:bg-sky-950/70 dark:text-sky-300 border-sky-300 dark:border-sky-800',
+    desc: 'Comprovável por documentos controlados vigentes (MOMQ/PTM/Política) e resposta aprovada, sem exigência artificial de artefato operacional.'
+  },
+  CERTIFICADO_CALIBRACAO: {
+    label: 'Certificado de Calibração',
+    badge: 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border-amber-300 dark:border-amber-800',
+    desc: 'Exige estritamente certificado de calibração válido RBC/Inmetro/NIST.'
+  },
+  REGISTRO_FOTOGRAFICO_OU_LAUDO: {
+    label: 'Foto ou Laudo Técnico',
+    badge: 'bg-orange-100 text-orange-800 dark:bg-orange-950/70 dark:text-orange-300 border-orange-300 dark:border-orange-800',
+    desc: 'Exige registro fotográfico de campo/instalação ou laudo técnico de inspeção.'
+  },
+  REGISTRO_TREINAMENTO_CHT: {
+    label: 'Treinamento / CHT',
+    badge: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/70 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800',
+    desc: 'Exige comprovação de qualificação técnica, licença CHT ou registro de treinamento.'
+  },
+  ORDEM_SERVICO_OU_CRS: {
+    label: 'Ordem de Serviço / CRS',
+    badge: 'bg-violet-100 text-violet-800 dark:bg-violet-950/70 dark:text-violet-300 border-violet-300 dark:border-violet-800',
+    desc: 'Exige ordem de serviço executada ou Certificado de Liberação de Serviço (CRS).'
+  },
+  EVIDENCIA_SISTEMA_LOG: {
+    label: 'Log / Evidência de Sistema',
+    badge: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/70 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800',
+    desc: 'Exige log eletrônico de auditoria de sistema, tela de controle ou relatório de backup.'
+  },
+  VERIFICACAO_IN_LOCO: {
+    label: 'Verificação In Loco / Ata',
+    badge: 'bg-teal-100 text-teal-800 dark:bg-teal-950/70 dark:text-teal-300 border-teal-300 dark:border-teal-800',
+    desc: 'Exige relatório de verificação presencial, auditoria interna ou ata formal.'
+  },
+  COMBINACAO_DE_EVIDENCIAS: {
+    label: 'Combinação de Evidências',
+    badge: 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border-slate-300 dark:border-slate-700',
+    desc: 'Exige procedimento formal aprovado combinado com registros operacionais válidos.'
+  }
+};
 
 interface AuditReadinessDetailModalProps {
   isOpen: boolean;
@@ -179,13 +238,35 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   const [novaEvidBase, setNovaEvidBase] = useState('GRU');
   const [novaEvidDescricao, setNovaEvidDescricao] = useState('');
   const [novaEvidArquivoNome, setNovaEvidArquivoNome] = useState('');
-  const [novaEvidArquivoBase64, setNovaEvidArquivoBase64] = useState('');
+  const [novaEvidFile, setNovaEvidFile] = useState<File | null>(null);
   const [novaEvidArquivoTamanho, setNovaEvidArquivoTamanho] = useState('');
 
   // Estado para reavaliação pontual de evidência existente
   const [editingEvidId, setEditingEvidId] = useState<string | null>(null);
   const [editingEvidStatus, setEditingEvidStatus] = useState<'SUFICIENTE' | 'PARCIAL' | 'INSUFICIENTE'>('SUFICIENTE');
   const [editingEvidParecer, setEditingEvidParecer] = useState('');
+
+  // Fase 1.4.5: Substituição controlada de arquivo
+  const [substituindoEvidId, setSubstituindoEvidId] = useState<string | null>(null);
+  const [substituicaoFile, setSubstituicaoFile] = useState<File | null>(null);
+  const [substituicaoMotivo, setSubstituicaoMotivo] = useState('');
+
+  // Fase 1.4.5: Edição de modalidade de comprovação
+  const [showModalidadeEdit, setShowModalidadeEdit] = useState(false);
+  const [novaModalidade, setNovaModalidade] = useState<ModalidadeComprovacaoEsperada>(
+    preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS'
+  );
+  const [justificativaModalidade, setJustificativaModalidade] = useState(
+    preparacao.justificativaModalidade || ''
+  );
+
+  // Fase 1.4.5: Preview inline seguro (sem window.open/alert)
+  const [previewArquivo, setPreviewArquivo] = useState<{
+    titulo: string;
+    nome: string;
+    url: string;
+    mimeType: string;
+  } | null>(null);
 
   // Estado local para nova pendência
   const [showNovaPendencia, setShowNovaPendencia] = useState(false);
@@ -247,11 +328,11 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   // Ação 2: Salvar Resposta (Rascunho, Validação ou Aprovação)
   const handleSalvarResposta = async (statusDestino: StatusRespostaAuditoria) => {
     if (isConsulta) {
-      alert('Perfil de CONSULTA não possui permissão para editar respostas.');
+      setFeedback({ tipo: 'erro', msg: 'Perfil de CONSULTA não possui permissão para editar ou aprovar respostas.' });
       return;
     }
     if (!textoRespostaEdit.trim()) {
-      alert('O texto da resposta não pode ficar em branco.');
+      setFeedback({ tipo: 'erro', msg: 'O texto da resposta institucional não pode ficar em branco.' });
       return;
     }
 
@@ -325,69 +406,56 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
     }
   };
 
-  // Manipulador de upload de arquivo (PDF, imagem, etc.)
+  // Manipulador de seleção de arquivo (enviado ao Object Storage no save, nunca Base64 no Firestore)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setNovaEvidFile(file);
     setNovaEvidArquivoNome(file.name);
     setNovaEvidArquivoTamanho(`${(file.size / 1024).toFixed(1)} KB`);
     if (!novaEvidTitulo) {
       setNovaEvidTitulo(file.name.replace(/\.[^/.]+$/, ''));
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setNovaEvidArquivoBase64(reader.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
-  // Abrir ou visualizar arquivo da evidência
-  const handleAbrirArquivo = (ev: EvidenciaObjetivaVinculada) => {
-    if (ev.arquivoUrlOuBase64) {
-      if (ev.arquivoUrlOuBase64.startsWith('data:image/')) {
-        const win = window.open();
-        if (win) {
-          win.document.write(`
-            <html>
-              <head><title>${ev.arquivoNome || ev.titulo}</title></head>
-              <body style="margin:0; background:#0f172a; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; font-family:sans-serif; color:white; padding:20px;">
-                <h3 style="margin-bottom:10px;">${ev.titulo}</h3>
-                <p style="color:#94a3b8; margin-top:0;">${ev.arquivoNome || 'Arquivo de Imagem'}</p>
-                <img src="${ev.arquivoUrlOuBase64}" style="max-width:90%; max-height:80vh; object-fit:contain; border-radius:8px; box-shadow:0 10px 25px rgba(0,0,0,0.5);" alt="${ev.titulo}" />
-              </body>
-            </html>
-          `);
-        }
-      } else if (ev.arquivoUrlOuBase64.startsWith('data:application/pdf')) {
-        const win = window.open();
-        if (win) {
-          win.document.write(`
-            <html>
-              <head><title>${ev.arquivoNome || ev.titulo}</title></head>
-              <body style="margin:0; background:#1e293b; display:flex; flex-direction:column; align-items:center; height:100vh; font-family:sans-serif; color:white;">
-                <div style="padding:10px; width:100%; box-sizing:border-box; background:#0f172a; display:flex; justify-content:space-between; align-items:center;">
-                  <span><strong>${ev.titulo}</strong> (${ev.arquivoNome || 'Documento PDF'})</span>
-                </div>
-                <iframe src="${ev.arquivoUrlOuBase64}" style="width:100%; height:calc(100vh - 45px); border:none; background:white;"></iframe>
-              </body>
-            </html>
-          `);
-        }
-      } else if (ev.arquivoUrlOuBase64.startsWith('data:')) {
-        const a = document.createElement('a');
-        a.href = ev.arquivoUrlOuBase64;
-        a.download = ev.arquivoNome || `${ev.titulo}.pdf`;
-        a.click();
-      } else {
-        window.open(ev.arquivoUrlOuBase64, '_blank');
-      }
-    } else {
-      alert(`Evidência [${ev.titulo}] registrada por referência (${ev.numeroReferencia || 'Física/Sistema'}). Arquivo digital não anexado diretamente.`);
+  // Abrir ou visualizar arquivo da evidência de forma segura (Object Storage / IndexedDB)
+  const handleAbrirArquivo = async (ev: EvidenciaObjetivaVinculada) => {
+    if (ev.arquivoReferencia) {
+      const url = await getEvidenceFileUrl(ev.arquivoReferencia, preparacao.organizationId);
+      setPreviewArquivo({
+        titulo: ev.titulo,
+        nome: ev.arquivoReferencia.arquivoNome,
+        url,
+        mimeType: ev.arquivoReferencia.mimeType
+      });
+      return;
     }
+    if (ev.arquivoUrlOuBase64) {
+      const mime = ev.arquivoUrlOuBase64.startsWith('data:image/')
+        ? 'image/png'
+        : ev.arquivoUrlOuBase64.startsWith('data:application/pdf')
+        ? 'application/pdf'
+        : 'application/octet-stream';
+      setPreviewArquivo({
+        titulo: ev.titulo,
+        nome: ev.arquivoNome || ev.titulo,
+        url: ev.arquivoUrlOuBase64,
+        mimeType: mime
+      });
+      return;
+    }
+    setFeedback({
+      tipo: 'erro',
+      msg: `Evidência [${ev.titulo}] registrada apenas por referência (${ev.numeroReferencia || 'Física/Sistema'}).`
+    });
   };
 
   // Reavaliar suficiência da evidência pontualmente
   const handleSalvarReavaliacaoEvidencia = async (evidenciaId: string) => {
+    if (isConsulta) {
+      setFeedback({ tipo: 'erro', msg: 'Perfil de CONSULTA não pode reavaliar evidências.' });
+      return;
+    }
     setSaving(true);
     try {
       const atualizado = reavaliarEvidenciaVinculada(
@@ -407,15 +475,131 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
     }
   };
 
-  // Ação 5: Cadastrar Nova Evidência
-  const handleCriarNovaEvidencia = async () => {
-    if (!novaEvidTitulo.trim()) {
-      alert('Informe o título da evidência.');
+  // Substituição controlada de arquivo de evidência com histórico e hash SHA-256
+  const handleSubstituirArquivo = async (evItem: EvidenciaObjetivaVinculada) => {
+    if (isConsulta) {
+      setFeedback({ tipo: 'erro', msg: 'Perfil de CONSULTA não possui permissão para substituir arquivos.' });
+      return;
+    }
+    if (!substituicaoFile) {
+      setFeedback({ tipo: 'erro', msg: 'Selecione o novo arquivo para substituição.' });
+      return;
+    }
+    if (!substituicaoMotivo.trim()) {
+      setFeedback({ tipo: 'erro', msg: 'Informe o motivo técnico da substituição para rastreabilidade.' });
       return;
     }
 
     setSaving(true);
     try {
+      let novaRef: ArquivoEvidenciaRef;
+      if (evItem.arquivoReferencia) {
+        novaRef = await substituirArquivoEvidencia(
+          substituicaoFile,
+          evItem.arquivoReferencia,
+          substituicaoMotivo,
+          preparacao.organizationId,
+          currentUser,
+          preparacao.requisitoId
+        );
+      } else {
+        novaRef = await uploadEvidenceFile(
+          substituicaoFile,
+          preparacao.organizationId,
+          currentUser,
+          preparacao.requisitoId
+        );
+      }
+
+      const atualizado = registrarSubstituicaoArquivoEvidencia(preparacao, evItem.evidenciaId, novaRef);
+      await onSave(atualizado);
+      setSubstituindoEvidId(null);
+      setSubstituicaoFile(null);
+      setSubstituicaoMotivo('');
+      setFeedback({
+        tipo: 'sucesso',
+        msg: `Arquivo substituído com sucesso (Versão ${novaRef.versao} | SHA-256: ${novaRef.hashSha256.substring(0, 12)}...).`
+      });
+    } catch (e: any) {
+      setFeedback({ tipo: 'erro', msg: e.message || 'Erro ao substituir arquivo da evidência.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Migrar anexos legados Base64 deste requisito para Object Storage
+  const handleMigrarBase64Legado = async () => {
+    if (isConsulta) return;
+    setSaving(true);
+    try {
+      const res = await migrarEvidenciasLegadasBase64(preparacao, preparacao.organizationId, currentUser);
+      if (res.migradosCount > 0) {
+        await onSave(res.preparacao);
+        setFeedback({ tipo: 'sucesso', msg: `${res.migradosCount} anexo(s) legado(s) migrado(s) para armazenamento de objetos!` });
+      } else {
+        setFeedback({ tipo: 'sucesso', msg: 'Nenhum anexo Base64 legado pendente de migração neste requisito.' });
+      }
+    } catch (e: any) {
+      setFeedback({ tipo: 'erro', msg: e.message || 'Erro ao migrar anexos legados.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Atualizar Modalidade de Comprovação Esperada com Justificativa
+  const handleAtualizarModalidade = async () => {
+    if (isConsulta) {
+      setFeedback({ tipo: 'erro', msg: 'Perfil de CONSULTA não pode alterar modalidade de comprovação.' });
+      return;
+    }
+    if (!justificativaModalidade.trim() || justificativaModalidade.trim().length < 10) {
+      setFeedback({ tipo: 'erro', msg: 'Informe uma justificativa técnica detalhada (mínimo 10 caracteres).' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const atualizado = atualizarModalidadeComprovacao(
+        preparacao,
+        novaModalidade,
+        justificativaModalidade,
+        currentUser
+      );
+      await onSave(atualizado);
+      setShowModalidadeEdit(false);
+      setFeedback({
+        tipo: 'sucesso',
+        msg: `Modalidade atualizada para ${MODALIDADE_CONFIG[novaModalidade].label} e prontidão recalculada!`
+      });
+    } catch (e: any) {
+      setFeedback({ tipo: 'erro', msg: e.message || 'Erro ao atualizar modalidade.' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Ação 5: Cadastrar Nova Evidência (Upload direto para Object Storage, sem Base64 no Firestore)
+  const handleCriarNovaEvidencia = async () => {
+    if (isConsulta) {
+      setFeedback({ tipo: 'erro', msg: 'Perfil de CONSULTA não possui permissão para cadastrar evidências.' });
+      return;
+    }
+    if (!novaEvidTitulo.trim()) {
+      setFeedback({ tipo: 'erro', msg: 'Informe o título da evidência.' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      let arquivoReferencia: ArquivoEvidenciaRef | undefined;
+      if (novaEvidFile) {
+        arquivoReferencia = await uploadEvidenceFile(
+          novaEvidFile,
+          preparacao.organizationId,
+          currentUser,
+          preparacao.requisitoId
+        );
+      }
+
       const novaEvidId = `EVID-CUSTOM-${Date.now().toString(36)}`;
       const novaEvid: any = {
         id: novaEvidId,
@@ -423,8 +607,9 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
         tipo: novaEvidTipo as any,
         titulo: novaEvidTitulo,
         descricao: novaEvidDescricao || undefined,
-        arquivoNome: novaEvidArquivoNome || novaEvidRef || novaEvidTitulo,
-        arquivoUrlOuBase64: novaEvidArquivoBase64 || undefined,
+        arquivoReferencia,
+        arquivoNome: arquivoReferencia?.arquivoNome || novaEvidArquivoNome || novaEvidRef || novaEvidTitulo,
+        arquivoUrlOuBase64: arquivoReferencia?.storagePath,
         numeroReferencia: novaEvidRef,
         dataEvidencia: new Date().toISOString().split('T')[0],
         dataEmissao: new Date().toISOString().split('T')[0],
@@ -454,11 +639,16 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
       setNovaEvidTitulo('');
       setNovaEvidDescricao('');
       setNovaEvidArquivoNome('');
-      setNovaEvidArquivoBase64('');
+      setNovaEvidFile(null);
       setNovaEvidArquivoTamanho('');
       setNovaEvidRef('');
       setNovaEvidValidade('');
-      setFeedback({ tipo: 'sucesso', msg: 'Nova evidência anexada e vinculada!' });
+      setFeedback({
+        tipo: 'sucesso',
+        msg: arquivoReferencia
+          ? `Nova evidência anexada no Object Storage (SHA-256: ${arquivoReferencia.hashSha256.substring(0, 12)}...)!`
+          : 'Nova evidência vinculada com sucesso!'
+      });
     } catch (e: any) {
       setFeedback({ tipo: 'erro', msg: e.message || 'Erro ao anexar evidência.' });
     } finally {
@@ -468,8 +658,12 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
 
   // Ação 6: Adicionar Pendência
   const handleAdicionarPendencia = async () => {
+    if (isConsulta) {
+      setFeedback({ tipo: 'erro', msg: 'Perfil de CONSULTA não pode registrar pendências.' });
+      return;
+    }
     if (!pendenciaDesc.trim()) {
-      alert('Informe a descrição da pendência.');
+      setFeedback({ tipo: 'erro', msg: 'Informe a descrição da pendência.' });
       return;
     }
 
@@ -518,11 +712,11 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   // Ação 8: Aprovar Validação da Qualidade
   const handleAprovarQualidade = async () => {
     if (isConsulta) {
-      alert('Apenas Gestores da Qualidade podem aprovar a preparação.');
+      setFeedback({ tipo: 'erro', msg: 'Apenas Gestores da Qualidade podem aprovar a preparação.' });
       return;
     }
     if (isExcecao && !justificativaExcecao.trim()) {
-      alert('Para aprovar como Exceção Justificada, é obrigatório registrar a justificativa técnica.');
+      setFeedback({ tipo: 'erro', msg: 'Para aprovar como Exceção Justificada, é obrigatório registrar a justificativa técnica.' });
       return;
     }
 
@@ -568,6 +762,9 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                 <ProntidaoIcon className="w-3 h-3" />
                 <span>{PRONTIDAO_CONFIG[preparacao.situacaoProntidao]?.label}</span>
               </span>
+              <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded border ${MODALIDADE_CONFIG[preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS']?.badge}`}>
+                <span>Modalidade: {MODALIDADE_CONFIG[preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS']?.label}</span>
+              </span>
             </div>
 
             <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 truncate">
@@ -580,7 +777,65 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
               <span>Controle SGQ: <strong className="text-slate-700 dark:text-slate-300">{preparacao.controleCentralCodigo || preparacao.controleCentralId}</strong></span>
               <span>•</span>
               <span>Origem da Resposta: <strong className="text-blue-600 dark:text-blue-400">{ORIGEM_CONFIG[preparacao.origemResposta]?.label}</strong></span>
+              {!isConsulta && (
+                <>
+                  <span>•</span>
+                  <button
+                    onClick={() => setShowModalidadeEdit(!showModalidadeEdit)}
+                    className="text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    {showModalidadeEdit ? 'Fechar Ajuste de Modalidade' : 'Alterar Modalidade de Comprovação'}
+                  </button>
+                </>
+              )}
             </div>
+
+            {/* Painel Inline para Alterar Modalidade de Comprovação */}
+            {showModalidadeEdit && (
+              <div className="mt-3 p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    Critério de Comprovação por Natureza do Requisito
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {MODALIDADE_CONFIG[novaModalidade]?.desc}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <select
+                    value={novaModalidade}
+                    onChange={(e) => setNovaModalidade(e.target.value as ModalidadeComprovacaoEsperada)}
+                    className="px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 font-semibold"
+                  >
+                    {Object.entries(MODALIDADE_CONFIG).map(([key, cfg]) => (
+                      <option key={key} value={key}>{cfg.label}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={justificativaModalidade}
+                    onChange={(e) => setJustificativaModalidade(e.target.value)}
+                    placeholder="Justificativa técnica obrigatória para a modalidade escolhida..."
+                    className="sm:col-span-2 px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setShowModalidadeEdit(false)}
+                    className="px-2.5 py-1 rounded text-slate-500 hover:text-slate-700 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleAtualizarModalidade}
+                    disabled={saving}
+                    className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold cursor-pointer"
+                  >
+                    Salvar Modalidade e Recalcular Prontidão
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <button
@@ -960,23 +1215,44 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wide">
-                    Evidências Objetivas e Registros de Campo
+                    Evidências Objetivas e Registros de Campo (Object Storage)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Certificados RBC/NIST, fichas de treinamento, fotos de ferramentas e registros operacionais.
+                    Modalidade atual: <strong>{MODALIDADE_CONFIG[preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS']?.label}</strong> — {MODALIDADE_CONFIG[preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS']?.desc}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowUploadEvidencia(!showUploadEvidencia)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Nova Evidência</span>
-                  </button>
+                  {preparacao.evidenciasVinculadas?.some((e) => e.arquivoUrlOuBase64?.startsWith('data:') && !e.arquivoReferencia) && !isConsulta && (
+                    <button
+                      onClick={handleMigrarBase64Legado}
+                      disabled={saving}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Migrar Base64 Legado</span>
+                    </button>
+                  )}
+                  {!isConsulta && (
+                    <button
+                      onClick={() => setShowUploadEvidencia(!showUploadEvidencia)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Nova Evidência</span>
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {preparacao.modalidadeComprovacao === 'DOCUMENTAL_PURO' && (
+                <div className="p-3 rounded-xl bg-sky-50 dark:bg-sky-950/30 border border-sky-200 dark:border-sky-800 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong>Requisito Documental Puro:</strong> A comprovação plena ocorre por meio dos documentos controlados ativos vinculados na aba anterior (MOMQ/PTM/Políticas) + aprovação da resposta institucional, sem exigir artificialmente evidências operacionais de campo. Anexos adicionais abaixo são opcionais.
+                  </div>
+                </div>
+              )}
 
               {/* Seletor para Reutilizar Evidência Existente no Sistema */}
               <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
@@ -1153,9 +1429,18 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                                 }`}>
                                   {evItem.statusValidade || 'VALIDO'}
                                 </span>
-                                {evItem.arquivoNome && (
+                                {evItem.arquivoReferencia ? (
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
+                                    🗄️ {evItem.arquivoReferencia.arquivoNome} (v{evItem.arquivoReferencia.versao} | SHA-256: {evItem.arquivoReferencia.hashSha256.substring(0, 8)}... | {(evItem.arquivoReferencia.tamanhoBytes / 1024).toFixed(1)} KB)
+                                  </span>
+                                ) : evItem.arquivoNome ? (
                                   <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
                                     📎 {evItem.arquivoNome}
+                                  </span>
+                                ) : null}
+                                {evItem.arquivoReferencia?.migradoDeBase64 && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800">
+                                    Migrado para Storage
                                   </span>
                                 )}
                               </div>
@@ -1167,8 +1452,8 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
-                            {evItem.arquivoUrlOuBase64 && (
+                          <div className="flex flex-wrap items-center gap-2">
+                            {(evItem.arquivoReferencia || evItem.arquivoUrlOuBase64) && (
                               <button
                                 onClick={() => handleAbrirArquivo(evItem)}
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 hover:text-blue-800 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-1 rounded border border-blue-200 dark:border-blue-800 cursor-pointer"
@@ -1176,6 +1461,24 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                               >
                                 <Eye className="w-3 h-3" />
                                 <span>Abrir Arquivo</span>
+                              </button>
+                            )}
+
+                            {!isConsulta && (
+                              <button
+                                onClick={() => {
+                                  if (substituindoEvidId === evItem.evidenciaId) {
+                                    setSubstituindoEvidId(null);
+                                  } else {
+                                    setSubstituindoEvidId(evItem.evidenciaId);
+                                    setSubstituicaoFile(null);
+                                    setSubstituicaoMotivo('');
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/60 px-2 py-1 rounded border border-indigo-200 dark:border-indigo-800 cursor-pointer"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                <span>Substituir</span>
                               </button>
                             )}
 
@@ -1206,6 +1509,57 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                             </span>
                           </div>
                         </div>
+
+                        {/* Painel de Substituição Controlada de Arquivo */}
+                        {substituindoEvidId === evItem.evidenciaId && (
+                          <div className="p-3 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-800 space-y-2 mt-2">
+                            <span className="text-xs font-bold text-indigo-900 dark:text-indigo-300 block">
+                              Substituição Controlada de Arquivo (Preserva Histórico e Hash SHA-256):
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <input
+                                type="file"
+                                accept=".pdf,image/*,.doc,.docx,.xls,.xlsx,.txt"
+                                onChange={(e) => setSubstituicaoFile(e.target.files?.[0] || null)}
+                                className="text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-indigo-100 file:text-indigo-800 cursor-pointer"
+                              />
+                              <input
+                                type="text"
+                                value={substituicaoMotivo}
+                                onChange={(e) => setSubstituicaoMotivo(e.target.value)}
+                                placeholder="Motivo técnico obrigatório (ex: Renovação de certificado RBC 2027)..."
+                                className="px-2.5 py-1.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900"
+                              />
+                            </div>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => setSubstituindoEvidId(null)}
+                                className="px-2.5 py-1 rounded text-xs text-slate-500 cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                onClick={() => handleSubstituirArquivo(evItem)}
+                                disabled={saving}
+                                className="px-3 py-1 rounded text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 cursor-pointer"
+                              >
+                                Confirmar Substituição Versionada
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Histórico de Substituições do Arquivo */}
+                        {evItem.arquivoReferencia?.historicoSubstituicoes && evItem.arquivoReferencia.historicoSubstituicoes.length > 0 && (
+                          <div className="p-2 rounded-lg bg-indigo-50/40 dark:bg-indigo-950/20 border border-indigo-200/70 dark:border-indigo-900/50 text-[11px] text-slate-600 dark:text-slate-400">
+                            <strong className="text-indigo-800 dark:text-indigo-300">Histórico de Versões do Arquivo:</strong>
+                            {evItem.arquivoReferencia.historicoSubstituicoes.map((hist, hIdx) => (
+                              <div key={hIdx} className="mt-0.5">
+                                • {new Date(hist.substituidoEm).toLocaleDateString('pt-BR')} — Substituído "{hist.arquivoAnteriorNome}" por "{hist.arquivoNovoNome}" ({hist.motivoSubstituicao}) por {hist.substituidoPorNome}
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Painel de Reavaliação Inline da Qualidade */}
                         {isEditing && (
@@ -1529,19 +1883,29 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
 
                 {/* Regra 4 */}
                 <div className={`p-3 rounded-xl border flex items-start gap-2.5 ${
-                  preparacao.evidenciasSuficientes && preparacao.evidenciasVinculadas?.length > 0
-                    ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
-                    : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800'
+                  preparacao.modalidadeComprovacao === 'DOCUMENTAL_PURO'
+                    ? (preparacao.documentosRelacionados?.some((d) => d.situacao === 'ATIVO' || d.situacao === 'VIGENTE' || !d.situacao)
+                        ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
+                        : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800')
+                    : (preparacao.evidenciasSuficientes && preparacao.evidenciasVinculadas?.length > 0
+                        ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
+                        : 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-300 dark:border-rose-800')
                 }`}>
-                  {preparacao.evidenciasSuficientes && preparacao.evidenciasVinculadas?.length > 0 ? (
+                  {(preparacao.modalidadeComprovacao === 'DOCUMENTAL_PURO'
+                    ? preparacao.documentosRelacionados?.some((d) => d.situacao === 'ATIVO' || d.situacao === 'VIGENTE' || !d.situacao)
+                    : preparacao.evidenciasSuficientes && preparacao.evidenciasVinculadas?.length > 0) ? (
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                   ) : (
                     <XCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   )}
                   <div>
-                    <strong className="block text-slate-900 dark:text-slate-100">4. Evidências Avaliadas como Suficientes</strong>
+                    <strong className="block text-slate-900 dark:text-slate-100">
+                      4. Comprovação por Modalidade ({MODALIDADE_CONFIG[preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS']?.label})
+                    </strong>
                     <span className="text-slate-500">
-                      Suficiência: <strong>{preparacao.evidenciasSuficientes ? 'SIM' : 'NÃO'}</strong> ({preparacao.evidenciasVinculadas?.length || 0} vinculadas)
+                      {preparacao.modalidadeComprovacao === 'DOCUMENTAL_PURO'
+                        ? 'Atendida por documentos controlados ativos (sem exigência operacional artificial).'
+                        : `Suficiência: ${preparacao.evidenciasSuficientes ? 'SIM' : 'NÃO'} (${preparacao.evidenciasVinculadas?.length || 0} vinculadas)`}
                     </span>
                   </div>
                 </div>
@@ -1716,6 +2080,66 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
           )}
 
         </div>
+
+        {/* Modal Inline de Visualização Segura de Arquivo (Object Storage / Cache) */}
+        {previewArquivo && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs">
+            <div className="w-full max-w-4xl bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden flex flex-col max-h-[88vh]">
+              <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100">{previewArquivo.titulo}</h4>
+                  <p className="text-xs text-slate-500 font-mono">{previewArquivo.nome}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={previewArquivo.url}
+                    download={previewArquivo.nome}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Baixar Arquivo</span>
+                  </a>
+                  <button
+                    onClick={() => setPreviewArquivo(null)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto bg-slate-100 dark:bg-slate-950 p-4 flex items-center justify-center">
+                {previewArquivo.mimeType.startsWith('image/') ? (
+                  <img
+                    src={previewArquivo.url}
+                    alt={previewArquivo.titulo}
+                    className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-md"
+                  />
+                ) : previewArquivo.mimeType === 'application/pdf' || previewArquivo.nome.toLowerCase().endsWith('.pdf') ? (
+                  <iframe
+                    src={previewArquivo.url}
+                    title={previewArquivo.nome}
+                    className="w-full h-[68vh] rounded-lg border border-slate-300 dark:border-slate-700 bg-white"
+                  />
+                ) : (
+                  <div className="text-center space-y-3 p-6">
+                    <FileText className="w-12 h-12 text-blue-600 mx-auto" />
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      Arquivo pronto para download seguro: {previewArquivo.nome}
+                    </p>
+                    <a
+                      href={previewArquivo.url}
+                      download={previewArquivo.nome}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-500"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Download ({previewArquivo.mimeType})</span>
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Footer do Modal */}
         <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex items-center justify-between shrink-0 text-xs">

@@ -42,7 +42,8 @@ import {
   OrganizationRecord,
   ClienteExterno,
   SituacaoAplicabilidadeImpacto,
-  StatusConformidadeSGQ
+  StatusConformidadeSGQ,
+  ModalidadeComprovacaoEsperada
 } from '../../types';
 import {
   subscribeToAuditPreparations,
@@ -50,7 +51,7 @@ import {
   calcularIndicadoresPainel,
   getPreparacoesIniciaisMemoria
 } from '../../services/auditReadinessService';
-import { AuditReadinessDetailModal } from './AuditReadinessDetailModal';
+import { AuditReadinessDetailModal, MODALIDADE_CONFIG } from './AuditReadinessDetailModal';
 import { MASTER_CHECKLIST_ITEMS } from '../../data/corporateChecklistsData';
 import { AUDITORIA_CONSOLIDACAO_DATA } from '../../data/canonicalCriteriaAuditData';
 
@@ -156,6 +157,7 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
   const [filtroOrigemResposta, setFiltroOrigemResposta] = useState<string>('TODAS');
   const [filtroStatusResposta, setFiltroStatusResposta] = useState<string>('TODAS');
   const [filtroAplicabilidade, setFiltroAplicabilidade] = useState<string>('TODAS');
+  const [filtroModalidade, setFiltroModalidade] = useState<string>('TODAS');
   const [filtroApenasPendencias, setFiltroApenasPendencias] = useState(false);
 
   // Indicadores do Painel Consolidados
@@ -208,6 +210,11 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
         if (p.aplicabilidade !== filtroAplicabilidade) return false;
       }
 
+      // 6b. Filtro de Modalidade de Comprovação
+      if (filtroModalidade !== 'TODAS') {
+        if ((p.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS') !== filtroModalidade) return false;
+      }
+
       // 7. Filtro rápido de pendências
       if (filtroApenasPendencias) {
         const temPend = p.pendencias && p.pendencias.some((pend) => pend.situacao !== 'CONCLUIDA' && pend.situacao !== 'CANCELADA');
@@ -224,6 +231,7 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
     filtroOrigemResposta,
     filtroStatusResposta,
     filtroAplicabilidade,
+    filtroModalidade,
     filtroApenasPendencias
   ]);
 
@@ -255,9 +263,9 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
         <div>
           <div className="flex items-center gap-2 mb-1">
             <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/30 text-blue-300 border border-blue-400/40 uppercase tracking-wider">
-              QualyQuest SGQ — Fase 1.4.4
+              QualyQuest SGQ — Fase 1.4.5
             </span>
-            <span className="text-xs text-slate-400">Preparação Contínua para Auditorias</span>
+            <span className="text-xs text-slate-400">Preparação Contínua & Object Storage de Evidências</span>
           </div>
 
           <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white flex items-center gap-2.5">
@@ -403,6 +411,18 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
             <option value="TRATAMENTO_MANUAL">Tratamento Manual</option>
           </select>
 
+          {/* Filtro de Modalidade de Comprovação */}
+          <select
+            value={filtroModalidade}
+            onChange={(e) => setFiltroModalidade(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-semibold"
+          >
+            <option value="TODAS">Todas as Modalidades de Comprovação</option>
+            {Object.entries(MODALIDADE_CONFIG).map(([key, cfg]) => (
+              <option key={key} value={key}>{cfg.label}</option>
+            ))}
+          </select>
+
           {/* Toggle Apenas com Pendências */}
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
             <input
@@ -417,7 +437,7 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
 
         <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
           <span>Exibindo <strong>{filteredPreparacoes.length}</strong> de <strong>{preparacoes.length}</strong> requisitos catalogados</span>
-          {(searchTerm || filtroAutoridade !== 'TODAS' || filtroProntidao !== 'TODAS' || filtroOrigemResposta !== 'TODAS' || filtroApenasPendencias) && (
+          {(searchTerm || filtroAutoridade !== 'TODAS' || filtroProntidao !== 'TODAS' || filtroOrigemResposta !== 'TODAS' || filtroModalidade !== 'TODAS' || filtroApenasPendencias) && (
             <button
               onClick={() => {
                 setSearchTerm('');
@@ -426,6 +446,7 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
                 setFiltroOrigemResposta('TODAS');
                 setFiltroStatusResposta('TODAS');
                 setFiltroAplicabilidade('TODAS');
+                setFiltroModalidade('TODAS');
                 setFiltroApenasPendencias(false);
               }}
               className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
@@ -475,8 +496,11 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
                       <div className="font-semibold text-slate-900 dark:text-slate-100 line-clamp-2">
                         {p.tituloRequisito}
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        <strong className="text-slate-700 dark:text-slate-300">{p.normaDocumento}</strong> ({p.secaoReferencia})
+                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500 mt-1">
+                        <span><strong className="text-slate-700 dark:text-slate-300">{p.normaDocumento}</strong> ({p.secaoReferencia})</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${MODALIDADE_CONFIG[p.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS']?.badge}`}>
+                          {MODALIDADE_CONFIG[p.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS']?.label}
+                        </span>
                       </div>
                     </td>
 

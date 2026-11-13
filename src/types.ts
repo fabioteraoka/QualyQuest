@@ -3881,13 +3881,63 @@ export interface AvaliacaoQualidadeEvidencia {
   avaliadoEm?: string;
 }
 
+// ============================================================================
+// FASE 1.4.5: CRITÉRIOS DE COMPROVAÇÃO POR NATUREZA DO REQUISITO & ARQUIVOS
+// ============================================================================
+
+export type ModalidadeComprovacaoEsperada =
+  | 'DOCUMENTAL_PURO'
+  | 'CERTIFICADO_CALIBRACAO'
+  | 'REGISTRO_FOTOGRAFICO_OU_LAUDO'
+  | 'REGISTRO_TREINAMENTO_CHT'
+  | 'ORDEM_SERVICO_OU_CRS'
+  | 'EVIDENCIA_SISTEMA_LOG'
+  | 'VERIFICACAO_IN_LOCO'
+  | 'COMBINACAO_DE_EVIDENCIAS';
+
+export interface HistoricoModalidadeComprovacao {
+  modalidadeAnterior?: ModalidadeComprovacaoEsperada;
+  modalidadeNova: ModalidadeComprovacaoEsperada;
+  dataHora: string;
+  usuarioNome: string;
+  usuarioUid?: string;
+  justificativa: string;
+}
+
+export interface HistoricoSubstituicaoArquivo {
+  arquivoAnteriorNome: string;
+  arquivoAnteriorHash: string;
+  arquivoNovoNome: string;
+  arquivoNovoHash: string;
+  substituidoEm: string;
+  substituidoPorNome: string;
+  substituidoPorUid?: string;
+  motivoSubstituicao: string;
+}
+
+export interface ArquivoEvidenciaRef {
+  fileId: string;
+  storagePath: string; // Ex: '/api/evidence-storage/files/org_impacto_aviation/8f3a...'
+  arquivoNome: string;
+  mimeType: string;
+  tamanhoBytes: number;
+  hashSha256: string;
+  dataUpload: string;
+  enviadoPorNome: string;
+  enviadoPorUid?: string;
+  versao: number;
+  migradoDeBase64?: boolean;
+  historicoSubstituicoes?: HistoricoSubstituicaoArquivo[];
+}
+
 export interface EvidenciaObjetivaVinculada {
   evidenciaId: string;
   tipo: string; // 'CERTIFICADO_CALIBRACAO' | 'REGISTRO_TREINAMENTO' | 'DOCUMENTO' | 'FOTO' | 'RNC' | 'AUDITORIA' | 'PLANILHA'
   titulo: string;
   descricao?: string;
+  arquivoReferencia?: ArquivoEvidenciaRef; // Novo armazenamento de objetos (Fase 1.4.5)
   arquivoNome?: string;
-  arquivoUrlOuBase64?: string;
+  arquivoUrlOuBase64?: string; // Mantido para retrocompatibilidade e migração
   numeroReferencia?: string;
   dataEnvio: string;
   enviadoPorNome: string;
@@ -3895,6 +3945,7 @@ export interface EvidenciaObjetivaVinculada {
   baseOperacional?: string;
   statusValidade?: 'VALIDO' | 'PROXIMO_VENCIMENTO' | 'VENCIDO' | 'NAO_APLICAVEL';
   avaliacaoQualidade?: AvaliacaoQualidadeEvidencia;
+  historicoAvaliacoes?: AvaliacaoQualidadeEvidencia[];
   observacoes?: string;
 }
 
@@ -3932,6 +3983,11 @@ export interface PreparacaoRequisitoAuditoria {
   aplicabilidade: SituacaoAplicabilidadeImpacto;
   justificativaAplicabilidade?: string;
   conformidadeSGQ: StatusConformidadeSGQ;
+
+  // Fase 1.4.5: Critério de Comprovação por Natureza do Requisito
+  modalidadeComprovacao: ModalidadeComprovacaoEsperada;
+  justificativaModalidade?: string;
+  historicoModalidade?: HistoricoModalidadeComprovacao[];
 
   // Resposta Institucional
   respostaTexto: string;

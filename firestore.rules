@@ -698,12 +698,39 @@ service cloud.firestore {
       }
 
       // ----------------------------------------------------
-      // FASE 1.4.4: Preparação de Requisitos para Auditorias (organizations/{orgId}/audit_readiness_preparations/{requisitoId})
+      // FASE 1.4.4 & 1.4.5: Preparação de Requisitos para Auditorias (organizations/{orgId}/audit_readiness_preparations/{requisitoId})
       // ----------------------------------------------------
       match /audit_readiness_preparations/{requisitoId} {
         allow get, list: if userBelongsToOrg(organizationId);
-        allow create, update: if userBelongsToOrg(organizationId) && getUserRole() != 'CONSULTA' && isValidId(organizationId) && isValidId(requisitoId);
+        allow create, update: if userBelongsToOrg(organizationId)
+          && getUserRole() != 'CONSULTA'
+          && getUserRole() != 'VIEWER'
+          && isValidId(organizationId)
+          && isValidId(requisitoId)
+          && incoming().organizationId == organizationId
+          && (
+            (!('statusResposta' in incoming()) || incoming().statusResposta != 'APROVADA' || isGestorSGQ() || isSystemAdmin()) &&
+            (!('situacaoProntidao' in incoming()) || (incoming().situacaoProntidao != 'PRONTO_PARA_AUDITORIA' && incoming().situacaoProntidao != 'EXCECAO_JUSTIFICADA') || isGestorSGQ() || isSystemAdmin())
+          );
         allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(requisitoId);
+      }
+
+      // ----------------------------------------------------
+      // FASE 1.4.5: Metadados de Arquivos de Evidências (organizations/{orgId}/evidence_files/{fileId})
+      // ----------------------------------------------------
+      match /evidence_files/{fileId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId)
+          && getUserRole() != 'CONSULTA'
+          && getUserRole() != 'VIEWER'
+          && isValidId(organizationId)
+          && isValidId(fileId)
+          && incoming().organizationId == organizationId
+          && incoming().fileId is string && incoming().fileId.size() > 0 && incoming().fileId.size() <= 128
+          && incoming().hashSha256 is string && incoming().hashSha256.size() >= 32 && incoming().hashSha256.size() <= 128
+          && incoming().storagePath is string && incoming().storagePath.size() > 0 && incoming().storagePath.size() <= 512
+          && !('base64Data' in incoming());
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(fileId);
       }
     }
 

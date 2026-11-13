@@ -1874,6 +1874,212 @@ app.get("/api/manual-files/:manualId", (req, res) => {
   }
 });
 
+// ============================================================================
+// FASE 1.4.5: SERVIÇO CORPORATIVO DE ARMAZENAMENTO DE ARQUIVOS DE EVIDÊNCIAS
+// Armazenamento binário de objetos com integridade SHA-256 e deduplicação
+// ============================================================================
+const EVIDENCE_STORAGE_BASE_DIR = path.join(process.cwd(), "data", "evidence_storage");
+if (!fs.existsSync(EVIDENCE_STORAGE_BASE_DIR)) {
+  fs.mkdirSync(EVIDENCE_STORAGE_BASE_DIR, { recursive: true });
+}
+
+const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/msword",
+  "text/plain"
+]);
+
+app.post("/api/evidence-storage/upload", (req, res) => {
+  try {
+    const { organizationId, fileName, mimeType, base64Data, enviadoPorNome, enviadoPorUid, requisitoId } = req.body;
+    const orgId = organizationId || "org_impacto_aviation";
+
+    if (!fileName || !base64Data) {
+      return res.status(400).json({ error: "fileName e base64Data são obrigatórios." });
+    }
+
+    // Normaliza Base64
+    const cleanBase64 = base64Data.includes("base64,") ? base64Data.split("base64,")[1] : base64Data;
+    const buffer = Buffer.from(cleanBase64, "base64");
+
+    // Validação de Tamanho (Max 25 MB)
+    const MAX_SIZE = 25 * 1024 * 1024;
+    if (buffer.length > MAX_SIZE) {
+      return res.status(400).json({ error: `Arquivo excede o limite máximo permitido de 25 MB (Tamanho: ${(buffer.length / (1024 * 1024)).toFixed(1)} MB).` });
+    }
+
+    // Validação de MIME Type
+    const effectiveMime = mimeType || (
+      fileName.endsWith(".pdf") ? "application/pdf" :
+      fileName.endsWith(".png") ? "image/png" :
+      fileName.endsWith(".jpg") || fileName.endsWith(".jpeg") ? "image/jpeg" :
+      fileName.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" :
+      fileName.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" :
+      "application/octet-stream"
+    );
+
+    if (!ALLOWED_EVIDENCE_MIME_TYPES.has(effectiveMime) && effectiveMime !== "application/octet-stream") {
+      return res.status(400).json({ error: `Tipo de arquivo não permitido: ${effectiveMime}` });
+    }
+
+    // Cálculo de Integridade SHA-256
+    const hashSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+    const fileId = `FILE-${hashSha256.substring(0, 16).toUpperCase()}`;
+
+    // Diretório isolado por organização
+    const orgDir = path.join(EVIDENCE_STORAGE_BASE_DIR, orgId);
+    if (!fs.existsSync(orgDir)) {
+      fs.mkdirSync(orgDir, { recursive: true });
+    }
+
+    const binaryPath = path.join(orgDir, `${hashSha256}.bin`);
+    const metaPath = path.join(orgDir, `${hashSha256}.meta.json`);
+
+    // Deduplicação: se o binário já existe, reaproveita sem duplicar bytes
+    if (!fs.existsSync(binaryPath)) {
+      fs.writeFileSync(binaryPath, buffer);
+    }
+
+    const metaData = {
+      fileId,
+      organizationId: orgId,
+      requisitoId,
+      storagePath: `/api/evidence-storage/files/${orgId}/${hashSha256}`,
+      arquivoNome: fileName,
+      mimeType: effectiveMime,
+      tamanhoBytes: buffer.length,
+      hashSha256,
+      dataUpload: new Date().toISOString(),
+      enviadoPorNome: enviadoPorNome || "Qualidade",
+      enviadoPorUid: enviadoPorUid || undefined,
+      versao: 1
+    };
+
+    fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2), "utf8");
+
+    return res.json({
+      success: true,
+      arquivoRef: metaData
+    });
+  } catch (err: any) {
+    console.error("Erro no upload de evidência:", err);
+    return res.status(500).json({ error: err.message || "Erro interno no upload de evidência." });
+  }
+});
+
+app.get("/api/evidence-storage/files/:organizationId/:hashSha256", (req, res) => {
+  const { organizationId, hashSha256 } = req.params;
+  const binaryPath = path.join(EVIDENCE_STORAGE_BASE_DIR, organizationId, `${hashSha256}.bin`);
+  const metaPath = path.join(EVIDENCE_STORAGE_BASE_DIR, organizationId, `${hashSha256}.meta.json`);
+
+  if (!fs.existsSync(binaryPath)) {
+    return res.status(404).send("Arquivo não encontrado no armazenamento de objetos.");
+  }
+
+  let mimeType = "application/octet-stream";
+  let fileName = `${hashSha256}.bin`;
+
+  if (fs.existsSync(metaPath)) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(metaPath, "utf8"));
+      mimeType = meta.mimeType || mimeType;
+      fileName = meta.arquivoNome || fileName;
+    } catch (e) {
+      // Ignora erro de leitura do meta
+    }
+  }
+
+  res.setHeader("Content-Type", mimeType);
+  res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
+  const fileStream = fs.createReadStream(binaryPath);
+  fileStream.pipe(res);
+});
+
+app.post("/api/evidence-storage/migrate-base64", (req, res) => {
+  try {
+    const { organizationId, base64Data, fileName, tipo, enviadoPorNome } = req.body;
+    const orgId = organizationId || "org_impacto_aviation";
+
+    if (!base64Data) {
+      return res.status(400).json({ error: "base64Data é obrigatório para migração." });
+    }
+
+    const cleanBase64 = base64Data.includes("base64,") ? base64Data.split("base64,")[1] : base64Data;
+    const buffer = Buffer.from(cleanBase64, "base64");
+    const hashSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+    const fileId = `FILE-MIG-${hashSha256.substring(0, 14).toUpperCase()}`;
+
+    const orgDir = path.join(EVIDENCE_STORAGE_BASE_DIR, orgId);
+    if (!fs.existsSync(orgDir)) {
+      fs.mkdirSync(orgDir, { recursive: true });
+    }
+
+    const binaryPath = path.join(orgDir, `${hashSha256}.bin`);
+    const metaPath = path.join(orgDir, `${hashSha256}.meta.json`);
+
+    if (!fs.existsSync(binaryPath)) {
+      fs.writeFileSync(binaryPath, buffer);
+    }
+
+    const resolvedMime = base64Data.startsWith("data:application/pdf") ? "application/pdf" :
+                         base64Data.startsWith("data:image/png") ? "image/png" :
+                         base64Data.startsWith("data:image/jpeg") ? "image/jpeg" :
+                         fileName?.endsWith(".pdf") ? "application/pdf" : "application/octet-stream";
+
+    const metaData = {
+      fileId,
+      organizationId: orgId,
+      storagePath: `/api/evidence-storage/files/${orgId}/${hashSha256}`,
+      arquivoNome: fileName || `Evidencia_${tipo || "Anexo"}.pdf`,
+      mimeType: resolvedMime,
+      tamanhoBytes: buffer.length,
+      hashSha256,
+      dataUpload: new Date().toISOString(),
+      enviadoPorNome: enviadoPorNome || "Migração Automática SGQ",
+      versao: 1,
+      migradoDeBase64: true
+    };
+
+    fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2), "utf8");
+
+    return res.json({
+      success: true,
+      arquivoRef: metaData
+    });
+  } catch (err: any) {
+    console.error("Erro na migração de base64:", err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/evidence-storage/verify-integrity/:organizationId/:hashSha256", (req, res) => {
+  const { organizationId, hashSha256 } = req.params;
+  const binaryPath = path.join(EVIDENCE_STORAGE_BASE_DIR, organizationId, `${hashSha256}.bin`);
+
+  if (!fs.existsSync(binaryPath)) {
+    return res.status(404).json({ exists: false, error: "Arquivo inexistente no storage." });
+  }
+
+  const buffer = fs.readFileSync(binaryPath);
+  const calculatedHash = crypto.createHash("sha256").update(buffer).digest("hex");
+  const integro = calculatedHash.toLowerCase() === hashSha256.toLowerCase();
+
+  return res.json({
+    exists: true,
+    integro,
+    tamanhoBytes: buffer.length,
+    hashOriginal: hashSha256,
+    hashCalculado: calculatedHash
+  });
+});
+
 // Endpoint to parse uploaded manual (Word .docx/.doc, PDF, TXT) with AI and robust fallback
 app.post("/api/parse-manual", async (req, res) => {
   const { fileBase64, mimeType, fileName } = req.body;

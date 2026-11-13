@@ -41,7 +41,9 @@ import {
   EvidenciaRequisitoItem,
   UserProfile,
   SituacaoAplicabilidadeImpacto,
-  StatusConformidadeSGQ
+  StatusConformidadeSGQ,
+  ModalidadeComprovacaoEsperada,
+  HistoricoModalidadeComprovacao
 } from '../types';
 import {
   sanitizeForFirestore,
@@ -55,6 +57,82 @@ import { CONTROLES_CORPORATIVOS_EXPANDIDOS, INITIAL_COMPLIANCE_EVIDENCES, INITIA
 // 1. CARGA INICIAL DE PREPARAÇÕES (SEEDING) BASEADA NOS 177 REQUISITOS REAIS
 // ============================================================================
 
+export function determinarModalidadeComprovacaoPadrao(
+  item: typeof MASTER_CHECKLIST_ITEMS[0] | RequisitoClienteItem | any,
+  ctrl?: ControleCentralSGQ | null
+): { modalidade: ModalidadeComprovacaoEsperada; justificativa: string } {
+  const texto = ((item.perguntaOuCriterio || item.textoOriginal || item.tituloRequisito || '') + ' ' + (item.referenciaNormativa || item.moduloOuSecao || '')).toLowerCase();
+  const ctrlCod = ctrl?.codigo || item.controleCentralId || item.controleCentralCodigo || '';
+
+  if (texto.includes('calibra') || texto.includes('metrol') || ctrlCod === 'CTRL-FERRAM-01') {
+    return {
+      modalidade: 'CERTIFICADO_CALIBRACAO',
+      justificativa: 'Exige comprovação metrológica por certificado de calibração emitido por laboratório acreditado (RBC/Inmetro ou equivalente internacional) e rastreabilidade metrológica.'
+    };
+  }
+
+  if (texto.includes('treina') || texto.includes('cht') || texto.includes('qualifica') || texto.includes('f-001-29') || ctrlCod === 'CTRL-TREIN-01' || texto.includes('habilita')) {
+    return {
+      modalidade: 'REGISTRO_TREINAMENTO_CHT',
+      justificativa: 'Exige comprovação de competência técnica mediante ficha de treinamento, registro F-001-29, certificado e/ou licença CHT ativa.'
+    };
+  }
+
+  if (texto.includes('ordem de serviço') || texto.includes('os ') || texto.includes('crs') || texto.includes('liberação de aeronave') || texto.includes('diário de bordo') || texto.includes('logbook') || ctrlCod === 'CTRL-EXEC-01') {
+    return {
+      modalidade: 'ORDEM_SERVICO_OU_CRS',
+      justificativa: 'Exige ordem de serviço executada, fichas de inspeção e/ou Certificado de Liberação de Serviço (CRS) formalmente assinado.'
+    };
+  }
+
+  if (texto.includes('foto') || texto.includes('segregação') || texto.includes('quarentena') || texto.includes('esd') || texto.includes('fod') || texto.includes('etiqueta') || texto.includes('arrecadação') || texto.includes('instalações') || texto.includes('iluminação') || texto.includes('limpeza')) {
+    return {
+      modalidade: 'REGISTRO_FOTOGRAFICO_OU_LAUDO',
+      justificativa: 'Exige registro fotográfico circunstanciado com identificação de data/local ou laudo técnico de vistoria das instalações físicas.'
+    };
+  }
+
+  if (texto.includes('sistema eletrônico') || texto.includes('software') || texto.includes('backup') || texto.includes('log de auditoria') || texto.includes('acesso ao sistema') || ctrlCod === 'CTRL-TI-01') {
+    return {
+      modalidade: 'EVIDENCIA_SISTEMA_LOG',
+      justificativa: 'Exige registro eletrônico de auditoria de sistema (logs de acesso/modificação), tela de configuração ou relatório de integridade de backup.'
+    };
+  }
+
+  if (texto.includes('reunião') || texto.includes('comitê') || texto.includes('ata') || texto.includes('auditoria interna') || texto.includes('in loco') || texto.includes('inspeção no pátio')) {
+    return {
+      modalidade: 'VERIFICACAO_IN_LOCO',
+      justificativa: 'Exige comprovação por relatório de auditoria interna, ata de reunião gerencial SGQ ou registro formal de vistoria presencial.'
+    };
+  }
+
+  // Puramente procedimental / organizacional / manuais
+  if (
+    texto.includes('política da qualidade') ||
+    texto.includes('organograma') ||
+    texto.includes('manual de procedimentos') ||
+    texto.includes('momq') ||
+    texto.includes('ptm') ||
+    texto.includes('responsabilidades do') ||
+    texto.includes('descrição de cargo') ||
+    texto.includes('estrutura organizacional') ||
+    texto.includes('controle de documentos') ||
+    texto.includes('sistema de gestão da qualidade') ||
+    ctrlCod === 'CTRL-DOCS-01' ||
+    ctrlCod === 'CTRL-POLIT-01'
+  ) {
+    return {
+      modalidade: 'DOCUMENTAL_PURO',
+      justificativa: 'Requisito estritamente procedimental e organizacional comprovável pela vigência, revisão e aprovação formal dos manuais do SGQ (MOMQ/PTM), sem exigência de artefato operacional físico.'
+    };
+  }
+
+  return {
+    modalidade: 'COMBINACAO_DE_EVIDENCIAS',
+    justificativa: 'Exige combinação de procedimento formal aprovado e amostragens de registros operacionais para sustentação completa perante a auditoria.'
+  };
+}
+
 export function gerarPreparacaoInicialRequisito(
   item: typeof MASTER_CHECKLIST_ITEMS[0],
   organizationId: string
@@ -62,6 +140,11 @@ export function gerarPreparacaoInicialRequisito(
   const auditMeta = AUDITORIA_CONSOLIDACAO_DATA.find((a) => a.idOriginal === item.id);
   const ctrlId = auditMeta?.controleCentralId || item.controleCentralId || 'CTRL-DOCS-01';
   const ctrl = CONTROLES_CORPORATIVOS_EXPANDIDOS.find((c) => c.codigo === ctrlId || c.id === ctrlId);
+
+  // Determina a modalidade técnica padrão
+  const padraoMod = determinarModalidadeComprovacaoPadrao(item, ctrl);
+  const modalidadeComprovacao = padraoMod.modalidade;
+  const justificativaModalidade = padraoMod.justificativa;
 
   // Busca se existe resposta institucional modelo para o controle
   const respModelo = INITIAL_INSTITUTIONAL_RESPONSES.find(
@@ -221,6 +304,17 @@ export function gerarPreparacaoInicialRequisito(
     aplicabilidade: (auditMeta?.statusValidacaoDocumental === 'PENDENTE_VALIDACAO_DOCUMENTAL' ? 'AGUARDANDO_AVALIACAO' : 'APLICAVEL') as SituacaoAplicabilidadeImpacto,
     justificativaAplicabilidade: auditMeta?.statusValidacaoDocumental === 'PENDENTE_VALIDACAO_DOCUMENTAL' ? 'Pendente de validação de homologação formal do operador.' : 'Aplicável às operações de manutenção da IMPACTO.',
     conformidadeSGQ: (item.id === 'CRIT-RBAC145-12' ? 'CONFORME' : item.checklistId === 'CHK-TACV-LINE' ? 'NAO_AVALIADO' : 'PARCIALMENTE_CONFORME') as StatusConformidadeSGQ,
+
+    modalidadeComprovacao,
+    justificativaModalidade,
+    historicoModalidade: [
+      {
+        modalidadeNova: modalidadeComprovacao,
+        dataHora: agora,
+        usuarioNome: 'Sistema SGQ (Análise Determinística)',
+        justificativa: justificativaModalidade
+      }
+    ],
 
     respostaTexto,
     respostaSugeridaOriginal,
@@ -555,19 +649,91 @@ export function avaliarProntidaoRequisito(
     motivosBloqueio.push('Nenhum documento técnico ou procedimento interno foi vinculado para sustentar a resposta.');
   }
 
-  // Regra 4: Evidências necessárias avaliadas como suficientes
-  if (!preparacao.evidenciasSuficientes) {
-    motivosBloqueio.push('As evidências anexadas não foram avaliadas como suficientes pela Qualidade.');
-  }
+  // Regra 4: Evidências necessárias avaliadas conforme a modalidade de comprovação
+  const modalidade = preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS';
 
-  if (preparacao.evidenciasVinculadas.length === 0) {
-    motivosBloqueio.push('Não há evidências objetivas vinculadas ao requisito.');
-  } else {
-    const temEvidenciaRejeitada = preparacao.evidenciasVinculadas.some(
-      (e) => e.avaliacaoQualidade?.status === 'REJEITADA' || e.statusValidade === 'VENCIDO'
+  if (modalidade === 'DOCUMENTAL_PURO') {
+    // Requisitos estritamente documentais/procedimentais (MOMQ, Políticas, Organogramas, PTM):
+    // Quando comprovado por documentos controlados ativos e aprovados, NÃO exigir evidência operacional de forma artificial.
+    const temDocAtivo = preparacao.documentosRelacionados.some(
+      (d) => d.situacao === 'ATIVO' || d.situacao === 'VIGENTE' || !d.situacao
     );
-    if (temEvidenciaRejeitada) {
-      motivosBloqueio.push('Existem evidências com status VENCIDO ou REJEITADAS na avaliação da Qualidade.');
+    if (!temDocAtivo) {
+      motivosBloqueio.push('O requisito de modalidade Documental Puro requer pelo menos um documento controlado com situação ATIVO/VIGENTE vinculado.');
+    }
+    // Não exige artificialmente evidências operacionais de campo
+  } else {
+    // Requisitos operacionais: procedimentos isolados NÃO concedem prontidão para auditoria!
+    if (!preparacao.evidenciasVinculadas || preparacao.evidenciasVinculadas.length === 0) {
+      motivosBloqueio.push(`Requisitos de modalidade [${modalidade}] exigem artefatos operacionais comprobatórios; procedimentos isolados não sustentam prontidão.`);
+    } else {
+      if (!preparacao.evidenciasSuficientes) {
+        motivosBloqueio.push('As evidências operacionais vinculadas não foram avaliadas como suficientes pela Garantia da Qualidade.');
+      }
+
+      const temEvidenciaRejeitadaOuVencida = preparacao.evidenciasVinculadas.some(
+        (e) => e.avaliacaoQualidade?.status === 'REJEITADA' || e.statusValidade === 'VENCIDO'
+      );
+      if (temEvidenciaRejeitadaOuVencida) {
+        motivosBloqueio.push('Existem evidências operacionais com status VENCIDO ou REJEITADAS na avaliação da Qualidade.');
+      }
+
+      // Verificação específica de consistência por modalidade
+      if (modalidade === 'CERTIFICADO_CALIBRACAO') {
+        const temCertificado = preparacao.evidenciasVinculadas.some(
+          (e) =>
+            (e.tipo === 'CERTIFICADO_CALIBRACAO' ||
+              e.titulo.toLowerCase().includes('calibra') ||
+              e.numeroReferencia?.toLowerCase().includes('cal') ||
+              (e.arquivoReferencia && e.arquivoReferencia.arquivoNome.toLowerCase().includes('calibra'))) &&
+            e.statusValidade !== 'VENCIDO' &&
+            e.avaliacaoQualidade?.status === 'SUFICIENTE'
+        );
+        if (!temCertificado) {
+          motivosBloqueio.push('A modalidade CERTIFICADO_CALIBRACAO exige obrigatoriamente certificado de calibração válido avaliado como suficiente pela Qualidade.');
+        }
+      } else if (modalidade === 'REGISTRO_TREINAMENTO_CHT') {
+        const temTreinamento = preparacao.evidenciasVinculadas.some(
+          (e) =>
+            (e.tipo === 'REGISTRO_TREINAMENTO' ||
+              e.titulo.toLowerCase().includes('treina') ||
+              e.titulo.toLowerCase().includes('cht') ||
+              e.titulo.toLowerCase().includes('f-001-29')) &&
+            e.statusValidade !== 'VENCIDO' &&
+            e.avaliacaoQualidade?.status === 'SUFICIENTE'
+        );
+        if (!temTreinamento) {
+          motivosBloqueio.push('A modalidade REGISTRO_TREINAMENTO_CHT exige ficha de treinamento ou certificado de qualificação técnica válido avaliado como suficiente.');
+        }
+      } else if (modalidade === 'ORDEM_SERVICO_OU_CRS') {
+        const temOSouCRS = preparacao.evidenciasVinculadas.some(
+          (e) =>
+            (e.tipo === 'ORDEM_SERVICO' ||
+              e.tipo === 'CRS' ||
+              e.titulo.toLowerCase().includes('os ') ||
+              e.titulo.toLowerCase().includes('crs') ||
+              e.titulo.toLowerCase().includes('ordem') ||
+              e.titulo.toLowerCase().includes('liberação')) &&
+            e.avaliacaoQualidade?.status === 'SUFICIENTE'
+        );
+        if (!temOSouCRS) {
+          motivosBloqueio.push('A modalidade ORDEM_SERVICO_OU_CRS exige cópia de ordem de serviço executada ou Certificado de Liberação de Serviço (CRS) aprovado.');
+        }
+      } else if (modalidade === 'REGISTRO_FOTOGRAFICO_OU_LAUDO') {
+        const temFotoOuLaudo = preparacao.evidenciasVinculadas.some(
+          (e) =>
+            (e.tipo === 'FOTOGRAFIA' ||
+              e.tipo === 'FOTO' ||
+              e.tipo === 'LAUDO' ||
+              e.titulo.toLowerCase().includes('foto') ||
+              e.titulo.toLowerCase().includes('laudo') ||
+              e.titulo.toLowerCase().includes('vistoria')) &&
+            e.avaliacaoQualidade?.status === 'SUFICIENTE'
+        );
+        if (!temFotoOuLaudo) {
+          motivosBloqueio.push('A modalidade REGISTRO_FOTOGRAFICO_OU_LAUDO exige registro fotográfico circunstanciado ou laudo técnico de vistoria aprovado.');
+        }
+      }
     }
   }
 
@@ -609,6 +775,81 @@ export function avaliarProntidaoRequisito(
     situacaoCalculada,
     motivosBloqueio
   };
+}
+
+export function atualizarModalidadeComprovacao(
+  preparacao: PreparacaoRequisitoAuditoria,
+  novaModalidade: ModalidadeComprovacaoEsperada,
+  justificativa: string,
+  currentUser?: UserProfile | null
+): PreparacaoRequisitoAuditoria {
+  const agora = new Date().toISOString();
+  const historico: HistoricoModalidadeComprovacao = {
+    modalidadeAnterior: preparacao.modalidadeComprovacao,
+    modalidadeNova: novaModalidade,
+    dataHora: agora,
+    usuarioNome: currentUser?.displayName || 'Garantia da Qualidade',
+    usuarioUid: auth.currentUser?.uid || currentUser?.uid,
+    justificativa: justificativa || 'Alteração técnica de modalidade de comprovação para auditoria.'
+  };
+
+  const atualizado: PreparacaoRequisitoAuditoria = {
+    ...preparacao,
+    modalidadeComprovacao: novaModalidade,
+    justificativaModalidade: justificativa,
+    historicoModalidade: [historico, ...(preparacao.historicoModalidade || [])],
+    updatedAt: agora
+  };
+
+  const reavaliacao = avaliarProntidaoRequisito(atualizado);
+  atualizado.situacaoProntidao = reavaliacao.situacaoCalculada;
+
+  return atualizado;
+}
+
+export async function migrarEvidenciasLegadasBase64(
+  preparacao: PreparacaoRequisitoAuditoria,
+  organizationId: string,
+  currentUser?: UserProfile | null
+): Promise<{ preparacao: PreparacaoRequisitoAuditoria; migradosCount: number }> {
+  let migradosCount = 0;
+  const evidsAtualizadas = [...(preparacao.evidenciasVinculadas || [])];
+
+  for (let i = 0; i < evidsAtualizadas.length; i++) {
+    const ev = evidsAtualizadas[i];
+    if (ev.arquivoUrlOuBase64 && ev.arquivoUrlOuBase64.startsWith('data:') && !ev.arquivoReferencia) {
+      try {
+        const { migrarArquivoBase64ParaStorage } = await import('./evidenceStorageService');
+        const ref = await migrarArquivoBase64ParaStorage(
+          ev.arquivoUrlOuBase64,
+          ev.arquivoNome || `evidencia-${ev.evidenciaId}.bin`,
+          ev.tipo || 'DOCUMENTO',
+          organizationId,
+          currentUser
+        );
+        evidsAtualizadas[i] = {
+          ...ev,
+          arquivoReferencia: ref,
+          arquivoUrlOuBase64: undefined
+        };
+        migradosCount++;
+      } catch (err: any) {
+        console.warn(`Falha na migração de base64 da evidência ${ev.evidenciaId}:`, err.message);
+      }
+    }
+  }
+
+  if (migradosCount > 0) {
+    const atualizado: PreparacaoRequisitoAuditoria = {
+      ...preparacao,
+      evidenciasVinculadas: evidsAtualizadas,
+      updatedAt: new Date().toISOString()
+    };
+    await saveAuditPreparation(organizationId, atualizado, currentUser);
+    return { preparacao: atualizado, migradosCount };
+  }
+
+  return { preparacao, migradosCount: 0 };
 }
 
 // ============================================================================
@@ -735,13 +976,19 @@ export function vincularEvidenciaAoRequisito(
   // Remove se já existia para atualizar dados
   const outros = preparacao.evidenciasVinculadas.filter((e) => e.evidenciaId !== evidencia.id);
 
+  const anyEvid = evidencia as any;
+  const arquivoReferencia = anyEvid.arquivoReferencia;
+  const rawUrl = anyEvid.arquivoUrlOuBase64 || anyEvid.arquivoUrl;
+
   const novaEvid: EvidenciaObjetivaVinculada = {
     evidenciaId: evidencia.id,
     tipo: evidencia.tipo,
     titulo: evidencia.titulo,
     descricao: evidencia.descricao,
-    arquivoNome: (evidencia as any).arquivoNome || evidencia.numeroReferencia || evidencia.titulo,
-    arquivoUrlOuBase64: (evidencia as any).arquivoUrlOuBase64 || (evidencia as any).arquivoUrl,
+    arquivoReferencia,
+    arquivoNome: arquivoReferencia?.arquivoNome || anyEvid.arquivoNome || evidencia.numeroReferencia || evidencia.titulo,
+    // Armazenar apenas referência/storagePath quando arquivoReferencia existir (zero Base64 no Firestore)
+    arquivoUrlOuBase64: arquivoReferencia ? arquivoReferencia.storagePath : rawUrl,
     numeroReferencia: evidencia.numeroReferencia,
     dataEnvio: evidencia.dataEvidencia || hoje,
     enviadoPorNome: currentUser?.displayName || evidencia.responsavel || 'Qualidade',
@@ -776,6 +1023,31 @@ export function vincularEvidenciaAoRequisito(
   atualizado.situacaoProntidao = reavaliacao.situacaoCalculada;
 
   return atualizado;
+}
+
+export function registrarSubstituicaoArquivoEvidencia(
+  preparacao: PreparacaoRequisitoAuditoria,
+  evidenciaId: string,
+  novaRef: import('../types').ArquivoEvidenciaRef
+): PreparacaoRequisitoAuditoria {
+  const agora = new Date().toISOString();
+  const evidsAtualizadas = (preparacao.evidenciasVinculadas || []).map((ev) => {
+    if (ev.evidenciaId === evidenciaId) {
+      return {
+        ...ev,
+        arquivoReferencia: novaRef,
+        arquivoNome: novaRef.arquivoNome,
+        arquivoUrlOuBase64: novaRef.storagePath
+      };
+    }
+    return ev;
+  });
+
+  return {
+    ...preparacao,
+    evidenciasVinculadas: evidsAtualizadas,
+    updatedAt: agora
+  };
 }
 
 export function reavaliarEvidenciaVinculada(

@@ -1,0 +1,13 @@
+{
+  "fileId": "FILE-MIG-BDF84A9C78F77D",
+  "organizationId": "org_impacto_aviation",
+  "storagePath": "/api/evidence-storage/files/org_impacto_aviation/bdf84a9c78f77decf6bfa9b1b3436f4ab3111d57686a3b4a693576c7e3c07770",
+  "arquivoNome": "Anexo_Legado_Fase144.pdf",
+  "mimeType": "application/pdf",
+  "tamanhoBytes": 50,
+  "hashSha256": "bdf84a9c78f77decf6bfa9b1b3436f4ab3111d57686a3b4a693576c7e3c07770",
+  "dataUpload": "2026-11-13T08:55:20.443Z",
+  "enviadoPorNome": "Migração Automatizada",
+  "versao": 1,
+  "migradoDeBase64": true
+}
