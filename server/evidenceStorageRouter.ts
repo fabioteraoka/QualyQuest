@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import crypto from "crypto";
 import {
-  EvidenceStorageBackend,
+  type EvidenceStorageBackend,
   LocalEphemeralStorageBackend,
   assertSafeOrgIdForStorage,
   assertSafeSha256ForStorage
