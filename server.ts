@@ -59,7 +59,25 @@ import {
 } from "./server/evidenceStorageBackend.ts";
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+// Parse command line arguments for port and host if provided
+const args = process.argv.slice(2);
+let portArg = 3000;
+for (let i = 0; i < args.length; i++) {
+  if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) {
+    portArg = parseInt(args[i + 1], 10);
+  }
+}
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : portArg;
+
+// Global process error handlers to prevent silent crashes
+process.on('uncaughtException', (err) => {
+  console.error('[SERVER] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[SERVER] Unhandled Rejection:', reason);
+});
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -5942,17 +5960,28 @@ async function startServer() {
   const httpServer = http.createServer(app);
 
   if (process.env.NODE_ENV !== "production") {
-    const isHmrDisabled = process.env.DISABLE_HMR === "true";
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        // Disable standalone WebSocket on port 24678 by attaching to httpServer or disabling when DISABLE_HMR is true
-        hmr: isHmrDisabled ? false : { server: httpServer },
-        watch: isHmrDisabled ? null : {},
-      },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const isHmrDisabled = process.env.DISABLE_HMR === "true";
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          // Disable standalone WebSocket on port 24678 by attaching to httpServer or disabling when DISABLE_HMR is true
+          hmr: isHmrDisabled ? false : { server: httpServer },
+          watch: isHmrDisabled ? null : {},
+        },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (viteErr) {
+      console.warn("[SERVER] Warning: Vite middleware server failed to start, falling back to static/express mode:", viteErr);
+      const distPath = path.join(process.cwd(), "dist");
+      if (fs.existsSync(distPath)) {
+        app.use(express.static(distPath));
+        app.get("*", (req, res) => {
+          res.sendFile(path.join(distPath, "index.html"));
+        });
+      }
+    }
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
