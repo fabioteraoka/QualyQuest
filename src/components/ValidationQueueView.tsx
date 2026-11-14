@@ -29,11 +29,13 @@ import {
   saveRNCComparison,
   saveNCRecord,
 } from '../services/firebase/firestore';
+import { useAuth } from '../hooks/useAuth';
 
 interface ValidationQueueViewProps {
   organizationId: string;
   userProfile?: UserProfile | null;
   records: NCRecord[];
+  initialComparisons?: ComparacaoRNCRecord[];
   onNavigateToComparison?: () => void;
   onNavigateToRecord?: (record: NCRecord) => void;
 }
@@ -42,18 +44,27 @@ export const ValidationQueueView: React.FC<ValidationQueueViewProps> = ({
   organizationId,
   userProfile,
   records,
+  initialComparisons,
   onNavigateToComparison,
   onNavigateToRecord,
 }) => {
-  const [comparisons, setComparisons] = useState<ComparacaoRNCRecord[]>([]);
+  const { user, loading: authLoading } = useAuth();
+  const [comparisons, setComparisons] = useState<ComparacaoRNCRecord[]>(initialComparisons || []);
   const [loading, setLoading] = useState<boolean>(true);
   const [filterStatus, setFilterStatus] = useState<string>('TODAS');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedComp, setSelectedComp] = useState<ComparacaoRNCRecord | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  // Escuta em tempo real no Firestore
+  // Escuta em tempo real no Firestore (somente com usuário autenticado)
   useEffect(() => {
+    if (authLoading) return;
+    if (!user || !organizationId) {
+      setComparisons(initialComparisons || []);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const unsubscribe = subscribeToRNCComparisons(
       organizationId,
@@ -62,13 +73,14 @@ export const ValidationQueueView: React.FC<ValidationQueueViewProps> = ({
         setLoading(false);
       },
       (err) => {
-        console.error('Erro ao buscar comparações:', err);
+        console.warn('Comparações indisponíveis para este perfil/sessão:', err?.message || err);
+        setComparisons(initialComparisons || []);
         setLoading(false);
       }
     );
 
     return () => unsubscribe();
-  }, [organizationId]);
+  }, [organizationId, user?.uid, authLoading, initialComparisons]);
 
   // Filtragem dos registros
   const filteredList = comparisons.filter((item) => {

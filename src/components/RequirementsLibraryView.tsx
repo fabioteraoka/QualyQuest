@@ -68,7 +68,16 @@ import {
 import {
   executarDiagnosticoRequisitos
 } from '../services/requirementsDataLoadService';
-import { DocumentoControlado } from '../types';
+import {
+  DocumentoControlado,
+  ManualRecord,
+  RegistroTreinamentoColaborador,
+  QualificacaoColaborador,
+  FerramentaCalibracao,
+  NCRecord,
+  AuditoriaExternaRecord,
+  ConstatacaoExternaRecord
+} from '../types';
 
 export interface RequirementsLibraryViewProps {
   requisitos: RequisitoClienteItem[];
@@ -81,6 +90,13 @@ export interface RequirementsLibraryViewProps {
   userProfile?: UserProfile | null;
   onNavigateToTab?: (tab: string) => void;
   documentosControlados?: DocumentoControlado[];
+  manuals?: ManualRecord[];
+  trainingRecords?: RegistroTreinamentoColaborador[];
+  qualifications?: QualificacaoColaborador[];
+  ferramentasCalibradas?: FerramentaCalibracao[];
+  recordsNC?: NCRecord[];
+  externalAudits?: AuditoriaExternaRecord[];
+  auditFindings?: ConstatacaoExternaRecord[];
   initialSubTab?: string;
 }
 
@@ -173,6 +189,13 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   userProfile,
   onNavigateToTab,
   documentosControlados = [],
+  manuals = [],
+  trainingRecords = [],
+  qualifications = [],
+  ferramentasCalibradas = [],
+  recordsNC = [],
+  externalAudits = [],
+  auditFindings = [],
   initialSubTab
 }) => {
   const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
@@ -571,6 +594,13 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           evidenciasDisponiveis={evidencias}
           controlesCentrais={controles}
           clientes={clientes}
+          manuals={manuals}
+          trainingRecords={trainingRecords}
+          qualifications={qualifications}
+          ferramentasCalibradas={ferramentasCalibradas}
+          recordsNC={recordsNC}
+          externalAudits={externalAudits}
+          auditFindings={auditFindings}
           onNavigateToTab={onNavigateToTab}
         />
       )}

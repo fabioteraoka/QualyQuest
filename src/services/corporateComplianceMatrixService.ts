@@ -554,7 +554,7 @@ export function subscribeToInstitutionalResponses(
   organizationId: string,
   callback: (responses: RespostaInstitucionalAprovada[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }
@@ -680,7 +680,7 @@ export function subscribeToComplianceEvidences(
   organizationId: string,
   callback: (evidences: EvidenciaRequisitoItem[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }

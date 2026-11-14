@@ -4021,6 +4021,31 @@ export interface PreparacaoRequisitoAuditoria {
   situacaoProntidao: SituacaoProntidaoAuditoria;
   justificativaExcecao?: string;
 
+  // Fase 2 / Etapa 5: Base Institucional Permanente, Escopo e Detecção Contínua de Impacto
+  origemBase?: 'BASE_INICIAL_177' | 'INCORPORADO_POS_AUDITORIA';
+  auditoriaIncorporacaoId?: string;
+  auditoriaIncorporacaoNumero?: string;
+  clienteIncorporacao?: string;
+  incorporadoEm?: string;
+  incorporadoPorNome?: string;
+  escopoAplicavel?: {
+    clientes?: string[];
+    aeronaves?: string[];
+    bases?: string[];
+    atividades?: string[];
+    notasEscopo?: string;
+  };
+  reavaliacaoNecessaria?: boolean;
+  motivosReavaliacao?: string[];
+  impactoDetectadoEm?: string;
+  ultimaRespostaAprovadaSnapshot?: {
+    texto: string;
+    versao: string;
+    validadoEm?: string;
+    validadoPorNome?: string;
+  };
+  lacunasDocumentacaoOuComprovacao?: string[];
+
   createdAt: string;
   updatedAt: string;
 }
@@ -4036,6 +4061,8 @@ export interface IndicadoresPainelProntidao {
   requisitosComPendencias: number;
   requisitosProntosParaAuditoria: number;
   taxaProntidaoGeral: number;
+  requisitosComAlertaReavaliacao?: number;
+  requisitosIncorporadosPosAuditoria?: number;
 }
 
 export * from './types/roster.ts';

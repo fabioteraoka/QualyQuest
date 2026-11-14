@@ -167,7 +167,7 @@ export function subscribeToMonitoredSources(
   organizationId: string,
   callback: (sources: FonteNormativaPersistente[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }
@@ -315,7 +315,7 @@ export function subscribeToQualityImpactReviews(
   organizationId: string,
   callback: (reviews: AnaliseImpactoQualidadeRecord[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }

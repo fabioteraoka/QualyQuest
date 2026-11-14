@@ -284,6 +284,9 @@ export function subscribeToOrganization(
   callback: (org: OrganizationRecord | null) => void,
   onError?: (err: any) => void
 ): () => void {
+  if (!orgId || !auth.currentUser) {
+    return () => {};
+  }
   const docRef = doc(db, 'organizations', orgId);
   return onSnapshot(
     docRef,
@@ -779,7 +782,7 @@ export function subscribeToOrganizationUsers(
   onUpdate: (users: UserProfile[]) => void,
   onError?: (err: Error) => void
 ): () => void {
-  if (!orgId) {
+  if (!orgId || !auth.currentUser) {
     onUpdate([]);
     return () => {};
   }
@@ -1065,7 +1068,7 @@ export function subscribeToOrganizationInvitations(
   onUpdate: (invitations: UserInvitation[]) => void,
   onError?: (err: any) => void
 ): () => void {
-  if (!orgId) {
+  if (!orgId || !auth.currentUser) {
     onUpdate([]);
     return () => {};
   }
@@ -1524,6 +1527,9 @@ export function subscribeToNonConformities(
   onUpdate: (ncs: NCRecord[]) => void,
   onError?: (error: Error) => void
 ): () => void {
+  if (!orgId || !auth.currentUser) {
+    return () => {};
+  }
   const path = `organizations/${orgId}/nonConformities`;
   try {
     const colRef = collection(db, 'organizations', orgId, 'nonConformities');
@@ -1681,6 +1687,9 @@ export function subscribeToManuals(
   onUpdate: (manuals: ManualRecord[]) => void,
   onError?: (error: Error) => void
 ): () => void {
+  if (!orgId || !auth.currentUser) {
+    return () => {};
+  }
   const path = `organizations/${orgId}/manuals`;
   try {
     const colRef = collection(db, 'organizations', orgId, 'manuals');
@@ -2014,6 +2023,10 @@ export function subscribeToRNCComparisons(
   onUpdate: (comparisons: ComparacaoRNCRecord[]) => void,
   onError?: (error: any) => void
 ): () => void {
+  if (!organizationId || !auth.currentUser) {
+    onUpdate([]);
+    return () => {};
+  }
   const path = `organizations/${organizationId}/rncComparisons`;
   try {
     const comparisonsRef = collection(db, 'organizations', organizationId, 'rncComparisons');
@@ -2029,14 +2042,33 @@ export function subscribeToRNCComparisons(
         onUpdate(list);
       },
       (error) => {
-        console.error('onSnapshot error in rncComparisons:', error);
+        const currentUser = auth.currentUser;
+        const errInfo: FirestoreErrorInfo = {
+          error: error instanceof Error ? error.message : String(error),
+          authInfo: {
+            userId: currentUser?.uid,
+            email: currentUser?.email,
+            emailVerified: currentUser?.emailVerified,
+            isAnonymous: currentUser?.isAnonymous,
+            tenantId: currentUser?.tenantId,
+            providerInfo: currentUser?.providerData?.map((p) => ({
+              providerId: p.providerId,
+              email: p.email,
+            })) || [],
+          },
+          operationType: OperationType.LIST,
+          path,
+        };
+        console.warn('Firestore Error (rncComparisons):', JSON.stringify(errInfo));
+        onUpdate([]);
         if (onError) onError(error);
       }
     );
 
     return unsubscribe;
   } catch (error: any) {
-    console.error('Error attaching rncComparisons onSnapshot listener:', error);
+    console.warn('Error attaching rncComparisons onSnapshot listener:', error);
+    onUpdate([]);
     if (onError) onError(error);
     return () => {};
   }
@@ -2125,6 +2157,10 @@ export function subscribeToValidatedKnowledge(
   onUpdate: (knowledgeList: ValidatedKnowledgeRecord[]) => void,
   onError?: (error: any) => void
 ): () => void {
+  if (!organizationId || !auth.currentUser) {
+    onUpdate([]);
+    return () => {};
+  }
   const path = `organizations/${organizationId}/validatedKnowledge`;
   try {
     const knowledgeRef = collection(db, 'organizations', organizationId, 'validatedKnowledge');
@@ -2140,14 +2176,33 @@ export function subscribeToValidatedKnowledge(
         onUpdate(list);
       },
       (error) => {
-        console.error('onSnapshot error in validatedKnowledge:', error);
+        const currentUser = auth.currentUser;
+        const errInfo: FirestoreErrorInfo = {
+          error: error instanceof Error ? error.message : String(error),
+          authInfo: {
+            userId: currentUser?.uid,
+            email: currentUser?.email,
+            emailVerified: currentUser?.emailVerified,
+            isAnonymous: currentUser?.isAnonymous,
+            tenantId: currentUser?.tenantId,
+            providerInfo: currentUser?.providerData?.map((p) => ({
+              providerId: p.providerId,
+              email: p.email,
+            })) || [],
+          },
+          operationType: OperationType.LIST,
+          path,
+        };
+        console.warn('Firestore Error (validatedKnowledge):', JSON.stringify(errInfo));
+        onUpdate([]);
         if (onError) onError(error);
       }
     );
 
     return unsubscribe;
   } catch (error: any) {
-    console.error('Error attaching validatedKnowledge onSnapshot listener:', error);
+    console.warn('Error attaching validatedKnowledge onSnapshot listener:', error);
+    onUpdate([]);
     if (onError) onError(error);
     return () => {};
   }
@@ -2246,7 +2301,7 @@ export function subscribeToExternalAudits(
   organizationId: string,
   callback: (audits: AuditoriaExternaRecord[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }
@@ -2372,7 +2427,7 @@ export function subscribeToAuditFindings(
   organizationId: string,
   callback: (findings: ConstatacaoExternaRecord[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }
@@ -2609,7 +2664,7 @@ export function subscribeToAuditLessons(
   organizationId: string,
   callback: (lessons: LicaoAprendidaAuditoria[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }

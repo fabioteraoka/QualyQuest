@@ -80,6 +80,10 @@ export default function App() {
     smartImports,
     templatesAprovados,
     setTemplatesAprovados,
+    preparacoesInstitucionais,
+    setPreparacoesInstitucionais,
+    preAudits,
+    setPreAudits,
   } = useAppSubscriptions({ user, userProfile, authLoading, activeOrgId });
 
   // Active Tab navigation
@@ -169,6 +173,7 @@ export default function App() {
     handleSaveLesson,
     handleCriarRNCFromFinding,
     handleCandidatarKnowledge,
+    handleSavePreAudit,
   } = useAuditActions({
     activeOrgId,
     user,
@@ -177,6 +182,7 @@ export default function App() {
     setAuditRequirements,
     setAuditFindings,
     setAuditLessons,
+    setPreAudits,
   });
 
   // Scan local material to assist data recovery
@@ -441,6 +447,10 @@ export default function App() {
                 smartImports={smartImports}
                 templatesAprovados={templatesAprovados}
                 setTemplatesAprovados={setTemplatesAprovados}
+                preparacoesInstitucionais={preparacoesInstitucionais}
+                setPreparacoesInstitucionais={setPreparacoesInstitucionais}
+                preAudits={preAudits}
+                handleSavePreAudit={handleSavePreAudit}
               />
             )}
           </main>
@@ -479,6 +489,7 @@ export default function App() {
             setActiveTab={setActiveTab}
             recordsCount={records.length}
             alertas={alertas}
+            userProfile={userProfile}
             onNewNC={handleNewNC}
             onClearReportFilter={() => setReportFilterStatus(undefined)}
             onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}

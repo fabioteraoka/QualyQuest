@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ShieldCheck,
   Building2,
@@ -50,7 +50,10 @@ import {
   EvidenciaRequisitoItem,
   AuditoriaExternaRecord,
   ConstatacaoExternaRecord,
-  LicaoAprendidaAuditoria
+  LicaoAprendidaAuditoria,
+  QualificacaoColaborador,
+  ManualRecord,
+  PreparacaoRequisitoAuditoria
 } from '../types';
 import {
   executarAuditoriaInteligenteRequisito,
@@ -62,7 +65,13 @@ import { SmartAuditHistoryView } from './smart-audit/SmartAuditHistoryView';
 import { SmartAuditInternalLessonsView } from './smart-audit/SmartAuditInternalLessonsView';
 import { SmartAuditImportView } from './smart-audit/SmartAuditImportView';
 import { AuditRequirementsListView } from './smart-audit/AuditRequirementsListView';
-import { RequisitoAuditoriaExterna } from '../types/auditRequirements';
+import { PreAuditWorkspaceView } from './smart-audit/PreAuditWorkspaceView';
+import {
+  RequisitoAuditoriaExterna,
+  PreAuditoriaConsolidada
+} from '../types/auditRequirements';
+import { getPreparacoesIniciaisMemoria, ContextoCruzadoSGQ } from '../services/auditReadinessService';
+import { savePreAudit } from '../services/firebase/preAuditsFirestore';
 
 interface SmartAuditViewProps {
   clientes: ClienteExterno[];
@@ -73,7 +82,9 @@ interface SmartAuditViewProps {
   avaliacoes: AvaliacaoRequisitoCliente[];
   ferramentas: FerramentaCalibracao[];
   treinamentos: RegistroTreinamentoColaborador[];
+  qualificacoes?: QualificacaoColaborador[];
   documentos: DocumentoControlado[];
+  manuals?: ManualRecord[];
   pessoas: Person[];
   activeOrganization?: OrganizationRecord | null;
   userProfile?: UserProfile | null;
@@ -94,6 +105,11 @@ interface SmartAuditViewProps {
   auditRequirements?: RequisitoAuditoriaExterna[];
   onSaveAuditRequirement?: (req: RequisitoAuditoriaExterna) => Promise<void>;
   onSaveAuditRequirementsBatch?: (reqs: RequisitoAuditoriaExterna[]) => Promise<void>;
+  preparacoesInstitucionais?: PreparacaoRequisitoAuditoria[];
+  setPreparacoesInstitucionais?: React.Dispatch<React.SetStateAction<PreparacaoRequisitoAuditoria[]>>;
+  preAudits?: PreAuditoriaConsolidada[];
+  onSavePreAudit?: (preAudit: PreAuditoriaConsolidada) => Promise<void>;
+  initialMode?: 'EXCECOES' | 'PRE_AUDITORIA' | 'PREPARACAO' | 'HISTORICO' | 'APRENDIZADO' | 'TODOS' | 'MATURIDADE' | 'IMPORTAR' | 'REQUISITOS_AUDITORIA';
 }
 
 export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
@@ -105,7 +121,9 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
   avaliacoes = [],
   ferramentas = [],
   treinamentos = [],
+  qualificacoes = [],
   documentos = [],
+  manuals = [],
   pessoas = [],
   activeOrganization,
   userProfile,
@@ -124,11 +142,53 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
   auditRequirements = [],
   onSaveAuditRequirement,
   onSaveAuditRequirementsBatch,
+  preparacoesInstitucionais,
+  setPreparacoesInstitucionais,
+  preAudits = [],
+  onSavePreAudit,
+  initialMode,
 }) => {
   // Navigation & Filtering State
   const [activeMode, setActiveMode] = useState<
-    'EXCECOES' | 'PREPARACAO' | 'HISTORICO' | 'APRENDIZADO' | 'TODOS' | 'MATURIDADE' | 'IMPORTAR' | 'REQUISITOS_AUDITORIA'
-  >('EXCECOES');
+    'EXCECOES' | 'PRE_AUDITORIA' | 'PREPARACAO' | 'HISTORICO' | 'APRENDIZADO' | 'TODOS' | 'MATURIDADE' | 'IMPORTAR' | 'REQUISITOS_AUDITORIA'
+  >(initialMode || 'EXCECOES');
+  const [selectedPreAuditAuditId, setSelectedPreAuditAuditId] = useState<string | undefined>(undefined);
+  const [localPreAudits, setLocalPreAudits] = useState<PreAuditoriaConsolidada[]>([]);
+
+  useEffect(() => {
+    if (initialMode) {
+      setActiveMode(initialMode);
+    }
+  }, [initialMode]);
+
+  const orgId = activeOrganization?.id || userProfile?.organizationId || 'org_impacto_aviation';
+  const baseInstitucional = useMemo(
+    () => (preparacoesInstitucionais && preparacoesInstitucionais.length > 0 ? preparacoesInstitucionais : getPreparacoesIniciaisMemoria(orgId)),
+    [preparacoesInstitucionais, orgId]
+  );
+  const effectivePreAudits = preAudits.length > 0 ? preAudits : localPreAudits;
+  const contextoSGQ: ContextoCruzadoSGQ = useMemo(
+    () => ({
+      documentosControlados: documentos,
+      manuals,
+      trainingRecords: treinamentos,
+      qualifications: qualificacoes,
+      ferramentasCalibradas: ferramentas,
+      recordsNC: rncs,
+      externalAudits: audits,
+      auditFindings: findings
+    }),
+    [documentos, manuals, treinamentos, qualificacoes, ferramentas, rncs, audits, findings]
+  );
+
+  const handlePersistPreAudit = async (pa: PreAuditoriaConsolidada) => {
+    if (onSavePreAudit) {
+      await onSavePreAudit(pa);
+    } else {
+      await savePreAudit(orgId, pa, userProfile);
+    }
+    setLocalPreAudits((prev) => [pa, ...prev.filter((x) => x.id !== pa.id)]);
+  };
   const [selectedCliente, setSelectedCliente] = useState<string>('TODOS');
   const [selectedBase, setSelectedBase] = useState<string>('BASE-SOD');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -622,6 +682,17 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
               Maturidade
+            </button>
+            <button
+              onClick={() => setActiveMode('PRE_AUDITORIA')}
+              className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                activeMode === 'PRE_AUDITORIA'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              Pré-Auditoria (Base 177+) ({effectivePreAudits.length})
             </button>
             <button
               onClick={() => setActiveMode('REQUISITOS_AUDITORIA')}
@@ -1214,6 +1285,28 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
         />
       )}
 
+      {/* VISÃO: PRÉ-AUDITORIA CONSOLIDADA CONTRA BASE INSTITUCIONAL (ETAPAS 6 & 7) */}
+      {activeMode === 'PRE_AUDITORIA' && (
+        <PreAuditWorkspaceView
+          organizationId={orgId}
+          userProfile={userProfile}
+          audits={audits}
+          auditRequirements={auditRequirements}
+          preparacoesBase={baseInstitucional}
+          preAudits={effectivePreAudits}
+          contextoSGQ={contextoSGQ}
+          selectedAuditIdInicial={selectedPreAuditAuditId}
+          onSavePreAudit={handlePersistPreAudit}
+          onUpdateBasePreparacao={(novaPrep) => {
+            if (setPreparacoesInstitucionais) {
+              setPreparacoesInstitucionais((prev) => [novaPrep, ...prev.filter((p) => p.id !== novaPrep.id)]);
+            }
+          }}
+          onNavigateToTab={onNavigateToTab}
+          onOpenImportMode={() => setActiveMode('IMPORTAR')}
+        />
+      )}
+
       {/* VISÃO: SMART IMPORT REAL DE ARQUIVOS E AUDITORIAS */}
       {activeMode === 'IMPORTAR' && (
         <SmartAuditImportView
@@ -1221,6 +1314,13 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
           existingRequirements={requisitos}
           userProfile={userProfile}
           activeOrganization={activeOrganization}
+          preparacoesBase={baseInstitucional}
+          contextoSGQ={contextoSGQ}
+          onSavePreAudit={handlePersistPreAudit}
+          onPreAuditGenerated={(preAudit) => {
+            setSelectedPreAuditAuditId(preAudit.auditId);
+            setActiveMode('PRE_AUDITORIA');
+          }}
           onSaveAudit={onSaveAudit}
           onSaveFinding={onSaveFinding}
           onSaveRequirement={onSaveRequirement}
@@ -1228,7 +1328,7 @@ export const SmartAuditView: React.FC<SmartAuditViewProps> = ({
           onSaveLesson={onSaveLesson}
           onSaveAuditRequirementsBatch={onSaveAuditRequirementsBatch}
           onImportComplete={() => {
-            setActiveMode('REQUISITOS_AUDITORIA');
+            setActiveMode('PRE_AUDITORIA');
           }}
         />
       )}

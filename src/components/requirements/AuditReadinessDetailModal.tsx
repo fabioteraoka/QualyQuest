@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   ShieldCheck,
@@ -65,7 +65,9 @@ import {
   aprovarValidacaoQualidade,
   atualizarModalidadeComprovacao,
   registrarSubstituicaoArquivoEvidencia,
-  migrarEvidenciasLegadasBase64
+  migrarEvidenciasLegadasBase64,
+  consultarRegistrosRelacionadosSGQ,
+  ContextoCruzadoSGQ
 } from '../../services/auditReadinessService';
 import {
   uploadEvidenceFile,
@@ -127,6 +129,7 @@ interface AuditReadinessDetailModalProps {
   documentosDisponiveis: DocumentoControlado[];
   evidenciasDisponiveis: EvidenciaRequisitoItem[];
   controlesCentrais: ControleCentralSGQ[];
+  contextoSGQ?: ContextoCruzadoSGQ;
   currentUser?: UserProfile | null;
 }
 
@@ -204,10 +207,9 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   documentosDisponiveis,
   evidenciasDisponiveis,
   controlesCentrais,
+  contextoSGQ,
   currentUser
 }) => {
-  if (!isOpen || !preparacao) return null;
-
   const isConsulta = currentUser?.role === 'CONSULTA' || currentUser?.role === 'VIEWER';
 
   // Sub-abas do formulário individual
@@ -216,9 +218,9 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   >('resposta');
 
   // Estado local para edição da resposta institucional
-  const [textoRespostaEdit, setTextoRespostaEdit] = useState<string>(preparacao.respostaTexto || '');
-  const [statusRespostaEdit, setStatusRespostaEdit] = useState<StatusRespostaAuditoria>(preparacao.statusResposta || 'RASCUNHO');
-  const [origemRespostaEdit, setOrigemRespostaEdit] = useState<OrigemRespostaAuditoria>(preparacao.origemResposta || 'TRATAMENTO_MANUAL');
+  const [textoRespostaEdit, setTextoRespostaEdit] = useState<string>(preparacao?.respostaTexto || '');
+  const [statusRespostaEdit, setStatusRespostaEdit] = useState<StatusRespostaAuditoria>(preparacao?.statusResposta || 'RASCUNHO');
+  const [origemRespostaEdit, setOrigemRespostaEdit] = useState<OrigemRespostaAuditoria>(preparacao?.origemResposta || 'TRATAMENTO_MANUAL');
   const [motivoEdicao, setMotivoEdicao] = useState<string>('');
 
   // Estado local para adicionar documento existente
@@ -254,10 +256,10 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   // Fase 1.4.5: Edição de modalidade de comprovação
   const [showModalidadeEdit, setShowModalidadeEdit] = useState(false);
   const [novaModalidade, setNovaModalidade] = useState<ModalidadeComprovacaoEsperada>(
-    preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS'
+    preparacao?.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS'
   );
   const [justificativaModalidade, setJustificativaModalidade] = useState(
-    preparacao.justificativaModalidade || ''
+    preparacao?.justificativaModalidade || ''
   );
 
   // Fase 1.4.5: Preview inline seguro (sem window.open/alert)
@@ -277,26 +279,59 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
   const [pendenciaImpeditiva, setPendenciaImpeditiva] = useState(true);
 
   // Estado para validação final da Qualidade
-  const [parecerFinal, setParecerFinal] = useState<string>(preparacao.parecerQualidade || '');
-  const [evidenciasAprovadasSuficientes, setEvidenciasAprovadasSuficientes] = useState<boolean>(preparacao.evidenciasSuficientes);
-  const [isExcecao, setIsExcecao] = useState<boolean>(preparacao.situacaoProntidao === 'EXCECAO_JUSTIFICADA');
-  const [justificativaExcecao, setJustificativaExcecao] = useState<string>(preparacao.justificativaExcecao || '');
+  const [parecerFinal, setParecerFinal] = useState<string>(preparacao?.parecerQualidade || '');
+  const [evidenciasAprovadasSuficientes, setEvidenciasAprovadasSuficientes] = useState<boolean>(Boolean(preparacao?.evidenciasSuficientes));
+  const [isExcecao, setIsExcecao] = useState<boolean>(preparacao?.situacaoProntidao === 'EXCECAO_JUSTIFICADA');
+  const [justificativaExcecao, setJustificativaExcecao] = useState<string>(preparacao?.justificativaExcecao || '');
 
   // Feedback e loading
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ tipo: 'sucesso' | 'erro'; msg: string } | null>(null);
+  const [lacunasSugestao, setLacunasSugestao] = useState<string[]>([]);
+
+  // Sincronizar estado interno quando outro requisito for aberto no modal
+  useEffect(() => {
+    if (!preparacao) return;
+    setTextoRespostaEdit(preparacao.respostaTexto || '');
+    setStatusRespostaEdit(preparacao.statusResposta || 'RASCUNHO');
+    setOrigemRespostaEdit(preparacao.origemResposta || 'TRATAMENTO_MANUAL');
+    setMotivoEdicao('');
+    setNovaModalidade(preparacao.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS');
+    setJustificativaModalidade(preparacao.justificativaModalidade || '');
+    setParecerFinal(preparacao.parecerQualidade || '');
+    setEvidenciasAprovadasSuficientes(Boolean(preparacao.evidenciasSuficientes));
+    setIsExcecao(preparacao.situacaoProntidao === 'EXCECAO_JUSTIFICADA');
+    setJustificativaExcecao(preparacao.justificativaExcecao || '');
+    setLacunasSugestao([]);
+    setFeedback(null);
+  }, [preparacao?.id]);
 
   // Controle central associado
   const controleAssociado = useMemo(() => {
+    if (!preparacao) return undefined;
     return controlesCentrais.find(
       (c) => c.codigo === preparacao.controleCentralId || c.id === preparacao.controleCentralId
     );
-  }, [preparacao.controleCentralId, controlesCentrais]);
+  }, [preparacao?.controleCentralId, controlesCentrais]);
+
+  // Consulta cruzada aos módulos reais do SGQ
+  const consultaCruzadaSGQ = useMemo(() => {
+    return consultarRegistrosRelacionadosSGQ(preparacao || {}, {
+      ...contextoSGQ,
+      documentosControlados: contextoSGQ?.documentosControlados?.length ? contextoSGQ.documentosControlados : documentosDisponiveis,
+      evidenciasDisponiveis: contextoSGQ?.evidenciasDisponiveis?.length ? contextoSGQ.evidenciasDisponiveis : evidenciasDisponiveis
+    });
+  }, [preparacao, contextoSGQ, documentosDisponiveis, evidenciasDisponiveis]);
 
   // Avaliação de prontidão em tempo real das 5 regras
   const avaliacaoProntidao = useMemo(() => {
+    if (!preparacao) {
+      return { pronto: false, situacaoCalculada: 'NAO_INICIADA' as SituacaoProntidaoAuditoria, motivosBloqueio: [] };
+    }
     return avaliarProntidaoRequisito(preparacao);
   }, [preparacao]);
+
+  if (!isOpen || !preparacao) return null;
 
   // Ação 1: Gerar Sugestão Baseada em Fontes Reais
   const handleGerarSugestao = () => {
@@ -307,21 +342,24 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
         perguntaOuCriterio: preparacao.tituloRequisito,
         referenciaNormativa: preparacao.normaDocumento,
         moduloOuSecao: preparacao.secaoReferencia,
-        controleCentralId: preparacao.controleCentralId
+        controleCentralId: preparacao.controleCentralId,
+        modalidadeComprovacao: preparacao.modalidadeComprovacao
       } as any,
       controleAssociado,
       documentosDisponiveis,
-      evidenciasDisponiveis
+      evidenciasDisponiveis,
+      contextoSGQ
     );
 
     setTextoRespostaEdit(res.respostaSugerida);
     setOrigemRespostaEdit(res.origemClassificada);
     setStatusRespostaEdit('EM_ELABORACAO');
+    setLacunasSugestao(res.lacunasIdentificadas || []);
     setMotivoEdicao(`Sugestão automática gerada a partir de ${res.fontesIdentificadas.length} fontes e registros do SGQ.`);
 
     setFeedback({
       tipo: 'sucesso',
-      msg: `Sugestão gerada com sucesso! Fontes identificadas: ${res.fontesIdentificadas.length}. Classificação: ${ORIGEM_CONFIG[res.origemClassificada].label}.`
+      msg: `Sugestão gerada! Fontes: ${res.fontesIdentificadas.length}. Classificação: ${ORIGEM_CONFIG[res.origemClassificada].label}. Lacunas apontadas: ${res.lacunasIdentificadas.length}.`
     });
   };
 
@@ -879,6 +917,21 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
           </button>
         </div>
 
+        {/* Banner de Alerta de Reavaliação Contínua (sem sobrescrever aprovação) */}
+        {preparacao.reavaliacaoNecessaria && preparacao.motivosReavaliacao && preparacao.motivosReavaliacao.length > 0 && (
+          <div className="px-5 py-2.5 bg-amber-50 dark:bg-amber-950/50 border-b border-amber-200 dark:border-amber-800 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+            <div className="font-bold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Alerta de Impacto no SGQ — Reavaliação Pela Qualidade Recomendada (Resposta aprovada preservada sem sobrescrita)</span>
+            </div>
+            <ul className="list-disc list-inside text-[11px] space-y-0.5 pl-1">
+              {preparacao.motivosReavaliacao.map((m, i) => (
+                <li key={i}>{m}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Feedback Banner */}
         {feedback && (
           <div className={`px-5 py-2 text-xs flex items-center justify-between ${
@@ -948,7 +1001,7 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
             <AlertCircle className="w-4 h-4" />
             <span>Pendências & Ações ({preparacao.pendencias?.length || 0})</span>
             {preparacao.pendencias?.some((p) => p.impeditivaAuditoria && p.situacao !== 'CONCLUIDA') && (
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-rose-500" />
             )}
           </button>
 
@@ -1041,6 +1094,31 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                       </span>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Snapshot da Última Resposta Aprovada (Somente Leitura) */}
+              {preparacao.ultimaRespostaAprovadaSnapshot && (
+                <div className="p-3 rounded-lg bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 text-xs space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                    <span>Última Resposta Institucional Aprovada (Versão {preparacao.ultimaRespostaAprovadaSnapshot.versao})</span>
+                    <span>Validada em {preparacao.ultimaRespostaAprovadaSnapshot.validadoEm || '—'} por {preparacao.ultimaRespostaAprovadaSnapshot.validadoPorNome || 'Qualidade'}</span>
+                  </div>
+                  <p className="text-slate-700 dark:text-slate-300 text-[11px] leading-relaxed">{preparacao.ultimaRespostaAprovadaSnapshot.texto}</p>
+                </div>
+              )}
+
+              {/* Lacunas Identificadas pela Consulta Cruzada */}
+              {(lacunasSugestao.length > 0 || consultaCruzadaSGQ.lacunasIdentificadas.length > 0) && (
+                <div className="p-3 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-xs space-y-1">
+                  <span className="font-bold text-amber-900 dark:text-amber-300 block">
+                    Lacunas de Documentação / Comprovação Identificadas (Sem Inferência Artificial):
+                  </span>
+                  <ul className="list-disc list-inside text-[11px] text-amber-800 dark:text-amber-200 space-y-0.5">
+                    {(lacunasSugestao.length > 0 ? lacunasSugestao : consultaCruzadaSGQ.lacunasIdentificadas).map((lac, idx) => (
+                      <li key={idx}>{lac}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
@@ -2093,6 +2171,46 @@ export const AuditReadinessDetailModal: React.FC<AuditReadinessDetailModalProps>
                 </span>
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs font-sans text-slate-800 dark:text-slate-200 leading-relaxed italic">
                   "{preparacao.textoOriginal}"
+                </div>
+              </div>
+
+              {/* Origem na Base Institucional & Consulta Cruzada aos Módulos SGQ */}
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                    Origem na Base Institucional & Rastreabilidade Cruzada SGQ
+                  </span>
+                  <span className="px-2 py-0.5 rounded font-bold text-[10px] bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300">
+                    {preparacao.origemBase === 'INCORPORADO_POS_AUDITORIA'
+                      ? `Incorporado Pós-Auditoria (${preparacao.auditoriaIncorporacaoNumero || 'Auditoria'} — ${preparacao.clienteIncorporacao || preparacao.autoridadeOuCliente})`
+                      : 'Base Inicial Consolidada (177 Requisitos)'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-[11px]">
+                  <div className="p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-slate-400 block">Docs Controlados</span>
+                    <strong className="text-slate-800 dark:text-slate-100">{consultaCruzadaSGQ.documentosControlados.length}</strong>
+                  </div>
+                  <div className="p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-slate-400 block">Manuais (MOMQ/PTM)</span>
+                    <strong className="text-slate-800 dark:text-slate-100">{consultaCruzadaSGQ.manuaisNormativos.length}</strong>
+                  </div>
+                  <div className="p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-slate-400 block">Treinamentos / CHT</span>
+                    <strong className="text-slate-800 dark:text-slate-100">{consultaCruzadaSGQ.treinamentosRelacionados.length + consultaCruzadaSGQ.qualificacoesRelacionadas.length}</strong>
+                  </div>
+                  <div className="p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-slate-400 block">Metrologia / Ferram.</span>
+                    <strong className="text-slate-800 dark:text-slate-100">{consultaCruzadaSGQ.ferramentasRelacionadas.length}</strong>
+                  </div>
+                  <div className="p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-slate-400 block">RNCs Correlatas</span>
+                    <strong className="text-slate-800 dark:text-slate-100">{consultaCruzadaSGQ.rncsRelacionadas.length}</strong>
+                  </div>
+                  <div className="p-2 rounded bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-slate-400 block">Findings Anteriores</span>
+                    <strong className="text-slate-800 dark:text-slate-100">{consultaCruzadaSGQ.findingsRelacionados.length}</strong>
+                  </div>
                 </div>
               </div>
 

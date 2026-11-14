@@ -66,7 +66,7 @@ export const OrganizationSettingsView: React.FC<OrganizationSettingsViewProps> =
   const [loadingUsers, setLoadingUsers] = useState<boolean>(true);
 
   useEffect(() => {
-    if (!organization?.id) {
+    if (!organization?.id || !user) {
       setTenantUsers([]);
       setLoadingUsers(false);
       return;
@@ -81,7 +81,7 @@ export const OrganizationSettingsView: React.FC<OrganizationSettingsViewProps> =
       () => setLoadingUsers(false)
     );
     return () => unsub();
-  }, [organization?.id]);
+  }, [organization?.id, user?.uid]);
 
   const handleToggleUserStatus = async (targetUser: UserProfile) => {
     if (!isAdmin) {

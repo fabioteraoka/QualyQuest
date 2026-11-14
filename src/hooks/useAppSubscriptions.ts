@@ -32,8 +32,17 @@ import {
   FerramentaCalibracao,
   RegistroImportacaoCompleto,
   TemplateMapeamentoAprovado,
+  PreparacaoRequisitoAuditoria,
 } from '../types';
-import { RequisitoAuditoriaExterna } from '../types/auditRequirements';
+import {
+  RequisitoAuditoriaExterna,
+  PreAuditoriaConsolidada,
+} from '../types/auditRequirements';
+import { subscribeToPreAudits } from '../services/firebase/preAuditsFirestore';
+import {
+  subscribeToAuditPreparations,
+  getPreparacoesIniciaisMemoria,
+} from '../services/auditReadinessService';
 import {
   subscribeToNonConformities,
   subscribeToManuals,
@@ -169,6 +178,10 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
   const [smartImports, setSmartImports] = useState<RegistroImportacaoCompleto[]>([]);
   const [templatesAprovados, setTemplatesAprovados] = useState<TemplateMapeamentoAprovado[]>([]);
 
+  // Base Institucional (177+ Requisitos) & Pré-Auditorias Consolidadas
+  const [preparacoesInstitucionais, setPreparacoesInstitucionais] = useState<PreparacaoRequisitoAuditoria[]>([]);
+  const [preAudits, setPreAudits] = useState<PreAuditoriaConsolidada[]>([]);
+
   useEffect(() => {
     // Aguarda finalização da verificação de autenticação
     if (authLoading) return;
@@ -206,6 +219,8 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
       setAvaliacoesRequisitos(INITIAL_CLIENT_EVALUATIONS);
       setFerramentasCalibradas(INITIAL_CALIBRATED_TOOLS);
       setSmartImports([]);
+      setPreparacoesInstitucionais(getPreparacoesIniciaisMemoria(activeOrgId || 'org_impacto_aviation'));
+      setPreAudits([]);
       setLoadingRecords(false);
       setLoadingManuals(false);
       setFirestoreError(null);
@@ -222,9 +237,21 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
     setAuditLessons([]);
     setSelectedAuditForFindings(null);
     setActiveOrganization(null);
+    setPreAudits([]);
+    setPreparacoesInstitucionais(getPreparacoesIniciaisMemoria(activeOrgId || 'org_impacto_aviation'));
 
-    // Se o usuário autenticado não possui tenant vinculado, suspende sincronização
-    if (!activeOrgId) {
+    const isSuperOwner = user?.email?.toLowerCase() === 'fteraoka@gmail.com';
+    const hasResolvedProfileOrg = Boolean(
+      userProfile &&
+      userProfile.organizationId &&
+      userProfile.status !== 'PENDENTE' &&
+      userProfile.status !== 'INATIVO' &&
+      userProfile.status !== 'INACTIVE' &&
+      userProfile.status !== 'BLOQUEADO'
+    );
+
+    // Se o usuário autenticado não possui tenant vinculado/ativo, suspende sincronização
+    if (!activeOrgId || (!isSuperOwner && !hasResolvedProfileOrg)) {
       setLoadingRecords(false);
       setLoadingManuals(false);
       return;
@@ -419,6 +446,16 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
     const unsubscribeImports = subscribeToSmartImportRecords(activeOrgId, (list) => setSmartImports(list));
     const unsubscribeTemplates = subscribeToImportTemplates(activeOrgId, (list) => setTemplatesAprovados(list));
 
+    // 13. Subscribe to Base Institucional (177+ Requisitos) & Pré-Auditorias Consolidadas
+    const unsubscribePreps = subscribeToAuditPreparations(activeOrgId, (list) => {
+      if (list && list.length > 0) {
+        setPreparacoesInstitucionais(list);
+      }
+    });
+    const unsubscribePreAudits = subscribeToPreAudits(activeOrgId, (list) => {
+      setPreAudits(list);
+    });
+
     return () => {
       unsubscribeNCs();
       unsubscribeManuals();
@@ -453,8 +490,10 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
       unsubscribeTools();
       unsubscribeImports();
       unsubscribeTemplates();
+      unsubscribePreps();
+      unsubscribePreAudits();
     };
-  }, [activeOrgId, user?.uid, authLoading]);
+  }, [activeOrgId, user?.uid, user?.email, userProfile?.organizationId, userProfile?.status, authLoading]);
 
   return {
     records,
@@ -529,5 +568,9 @@ export function useAppSubscriptions({ user, userProfile, authLoading, activeOrgI
     setSmartImports,
     templatesAprovados,
     setTemplatesAprovados,
+    preparacoesInstitucionais,
+    setPreparacoesInstitucionais,
+    preAudits,
+    setPreAudits,
   };
 }

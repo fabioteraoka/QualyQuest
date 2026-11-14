@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  LayoutDashboard, 
-  FileText, 
-  BarChart3, 
-  Bell, 
-  BookOpen, 
-  Sparkles, 
-  Plus, 
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  LayoutDashboard,
+  FileText,
+  BarChart3,
+  Bell,
+  BookOpen,
+  Sparkles,
+  Plus,
   ShieldCheck,
   BookMarked,
   Activity,
@@ -23,7 +23,6 @@ import {
   GraduationCap,
   Clock,
   History,
-  Layers,
   UploadCloud,
   ChevronDown,
   ChevronRight,
@@ -38,41 +37,22 @@ import {
   Shield,
   PanelLeftClose,
   PanelLeftOpen,
-  UserCheck,
   UserPlus,
   Briefcase,
 } from 'lucide-react';
 import { AlertaItem, OrganizationRecord } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { ThemeToggle } from './common/ThemeToggle';
+import {
+  NAV_GROUPS,
+  NavIconKey,
+  NavItemDef,
+  checkAccessPolicy,
+  isNavItemActive,
+  resolveCanonicalTabId,
+} from '../config/navigationRegistry';
 
-export interface NavSubItem {
-  id: string;
-  label: string;
-  aliases?: string[];
-  badge?: string | number;
-  badgeColor?: string;
-  adminOnly?: boolean;
-}
-
-export interface NavItemDef {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  aliases?: string[];
-  badge?: string | number;
-  badgeColor?: string;
-  adminOnly?: boolean;
-  subItems?: NavSubItem[];
-}
-
-export interface NavGroupDef {
-  id: string;
-  label: string;
-  icon?: React.ReactNode;
-  items: NavItemDef[];
-  adminOnly?: boolean;
-}
+export type { NavGroupDef, NavItemDef } from '../config/navigationRegistry';
 
 interface SidebarProps {
   activeTab: string;
@@ -90,20 +70,55 @@ interface SidebarProps {
   onOpenOnboarding?: () => void;
 }
 
+function renderNavIcon(iconKey: NavIconKey): React.ReactNode {
+  const cls = 'w-4 h-4';
+  switch (iconKey) {
+    case 'dashboard': return <LayoutDashboard className={`${cls} text-blue-400`} />;
+    case 'activity': return <Activity className={`${cls} text-emerald-400`} />;
+    case 'bell': return <Bell className={`${cls} text-rose-400`} />;
+    case 'presentation': return <Presentation className={`${cls} text-sky-400`} />;
+    case 'users': return <Users className={`${cls} text-emerald-400`} />;
+    case 'userPlus': return <UserPlus className={`${cls} text-sky-400`} />;
+    case 'award': return <Award className={`${cls} text-amber-400`} />;
+    case 'fileCheck': return <FileCheck2 className={`${cls} text-emerald-400`} />;
+    case 'plane': return <Plane className={`${cls} text-sky-400`} />;
+    case 'bookOpen': return <BookOpen className={`${cls} text-sky-400`} />;
+    case 'grid': return <Grid className={`${cls} text-purple-400`} />;
+    case 'graduationCap': return <GraduationCap className={`${cls} text-emerald-400`} />;
+    case 'uploadCloud': return <UploadCloud className={`${cls} text-teal-400`} />;
+    case 'checkSquare': return <CheckSquare className={`${cls} text-amber-400`} />;
+    case 'clock': return <Clock className={`${cls} text-rose-400`} />;
+    case 'barChart': return <BarChart3 className={`${cls} text-sky-400`} />;
+    case 'mapPin': return <MapPin className={`${cls} text-rose-400`} />;
+    case 'briefcase': return <Briefcase className={`${cls} text-amber-400`} />;
+    case 'wrench': return <Wrench className={`${cls} text-sky-400`} />;
+    case 'fileText': return <FileText className={`${cls} text-blue-400`} />;
+    case 'shieldCheck': return <ShieldCheck className={`${cls} text-emerald-400`} />;
+    case 'sparkles': return <Sparkles className={`${cls} text-purple-400`} />;
+    case 'bookMarked': return <BookMarked className={`${cls} text-emerald-400`} />;
+    case 'folderTree': return <FolderTree className={`${cls} text-sky-400`} />;
+    case 'sliders': return <Sliders className={`${cls} text-amber-400`} />;
+    case 'fileSpreadsheet': return <FileSpreadsheet className={`${cls} text-emerald-400`} />;
+    case 'alertCircle': return <AlertCircle className={`${cls} text-rose-400`} />;
+    case 'alertTriangle': return <AlertTriangle className={`${cls} text-amber-400`} />;
+    case 'shield': return <Shield className={`${cls} text-indigo-400`} />;
+    case 'building': return <Building2 className={`${cls} text-blue-400`} />;
+    case 'cpu': return <Cpu className={`${cls} text-slate-400`} />;
+    case 'history': return <History className={`${cls} text-amber-400`} />;
+    default: return <LayoutDashboard className={`${cls} text-slate-400`} />;
+  }
+}
+
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab,
   setActiveTab,
   alertas = [],
   onNewNC,
-  onOpenExtractor,
   onOpenDiagnostics,
-  onOpenTechnicalAudit,
   onOpenAuth,
   isOpenMobile = false,
   onCloseMobile,
   activeOrganization,
-  onOpenChecklist,
-  onOpenOnboarding,
 }) => {
   const { user, userProfile } = useAuth();
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -113,379 +128,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
     (a) => a.tipoAlerta === 'VENCIDA' || a.tipoAlerta === 'VENCE_HOJE' || a.tipoAlerta === 'VENCE_7_DIAS'
   );
 
-  // Perfil administrativo / permissão de sistema
-  const isAdminOrGestor = !userProfile || 
-                          userProfile.role === 'ADMIN' || 
-                          userProfile.role === 'ADMINISTRADOR' || 
-                          userProfile.role === 'GESTOR_SGQ';
+  const canCreateNC = checkAccessPolicy('WRITE_ALLOWED', userProfile);
 
-  const orgSigla = activeOrganization?.configuration?.identidadeVisual?.siglaAeronautica || 
-                   (activeOrganization?.name ? activeOrganization.name.substring(0, 3).toUpperCase() : 'SGQ');
+  const orgSigla =
+    activeOrganization?.configuration?.identidadeVisual?.siglaAeronautica ||
+    (activeOrganization?.name ? activeOrganization.name.substring(0, 3).toUpperCase() : 'SGQ');
   const orgName = activeOrganization?.name || 'QualiGest SGQ';
 
-  /**
-   * ESTRUTURA GLOBAL PADRONIZADA DE NAVEGAÇÃO LATERAL (QUALYQUEST / ROOSTER)
-   * Domínios canônicos mandatados:
-   * 1. Painel
-   * 2. Pessoas e Colaboradores
-   * 3. Treinamentos
-   * 4. Cadastros Mestres (Bases & Locais Operacionais, Motores & Frota, Controles)
-   * 5. Qualidade e Controles
-   * 6. Relatórios
-   * 7. Administração e Segurança
-   * 8. Auditoria e Histórico
-   * 9. Configurações e Ferramentas
-   */
-  const navGroups: NavGroupDef[] = [
-    {
-      id: 'painel',
-      label: 'Painel',
-      items: [
-        {
-          id: 'dashboard',
-          label: 'Dashboard Executivo',
-          icon: <LayoutDashboard className="w-4 h-4 text-blue-400" />,
-        },
-        {
-          id: 'saudeSGQ',
-          label: 'Saúde do SGQ',
-          aliases: ['visao-evolucao'],
-          icon: <Activity className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'alertas',
-          label: 'Pendências & Alertas',
-          icon: <Bell className="w-4 h-4 text-rose-400" />,
-          badge: alertasCriticos.length > 0 ? alertasCriticos.length : undefined,
-          badgeColor: 'bg-rose-600 text-white animate-pulse',
-        },
-        {
-          id: 'apresentacao',
-          label: 'Apresentação Gerencial',
-          icon: <Presentation className="w-4 h-4 text-sky-400" />,
-        },
-      ],
-    },
-    {
-      id: 'pessoas-colaboradores',
-      label: 'Pessoas e Colaboradores',
-      items: [
-        {
-          id: 'pessoas-competencias',
-          label: 'Lista de colaboradores',
-          aliases: ['colaboradores-lista', 'rooster-pessoas', 'pessoas'],
-          icon: <Users className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'colaborador-novo',
-          label: 'Novo colaborador',
-          icon: <UserPlus className="w-4 h-4 text-sky-400" />,
-        },
-        {
-          id: 'rooster-ficha',
-          label: 'Perfil do colaborador',
-          aliases: ['colaborador-perfil', 'ficha'],
-          icon: <UserCheck className="w-4 h-4 text-indigo-400" />,
-        },
-        {
-          id: 'cht-qualificacoes',
-          label: 'Habilitações e licenças',
-          aliases: ['rooster-licencas', 'licencas'],
-          icon: <Award className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'rooster-designacao',
-          label: 'Lista de Designação Técnica',
-          aliases: ['designacao', 'lista-designacao'],
-          icon: <FileCheck2 className="w-4 h-4 text-emerald-400" />,
-          badge: 'F 001-29',
-          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
-        },
-        {
-          id: 'rooster-designacoes-crud',
-          label: 'Designações & Frotas (APRS)',
-          aliases: ['designacoes_crud', 'designacoes', 'autorizacoes-frotas'],
-          icon: <Plane className="w-4 h-4 text-sky-400" />,
-        },
-      ],
-    },
-    {
-      id: 'treinamentos',
-      label: 'Treinamentos',
-      items: [
-        {
-          id: 'rooster-catalogo',
-          label: 'Catálogo de treinamentos',
-          aliases: ['catalogo', 'treinamentos-catalogo'],
-          icon: <BookOpen className="w-4 h-4 text-sky-400" />,
-        },
-        {
-          id: 'modelos-capacitacao',
-          label: 'Modelos de capacitação',
-          icon: <Layers className="w-4 h-4 text-indigo-400" />,
-        },
-        {
-          id: 'rooster-matrizes',
-          label: 'Matriz de treinamento',
-          aliases: ['matriz-competencias', 'matrizes', 'aptidao-operacional'],
-          icon: <Grid className="w-4 h-4 text-purple-400" />,
-        },
-        {
-          id: 'treinamentos-qualificacoes',
-          label: 'Registros de treinamento',
-          aliases: ['rooster-treinamentos'],
-          icon: <GraduationCap className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'importacao-certificados',
-          label: 'Importação de certificados',
-          aliases: ['importacao-inteligente'],
-          icon: <UploadCloud className="w-4 h-4 text-teal-400" />,
-        },
-        {
-          id: 'validacao-treinamentos',
-          label: 'Fila de validação',
-          aliases: ['validacaoQueue-treinamentos', 'fila-certificados'],
-          icon: <CheckSquare className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'central-vencimentos-gaps',
-          label: 'Vencimentos',
-          aliases: ['rooster-vencimentos', 'vencimentos'],
-          icon: <Clock className="w-4 h-4 text-rose-400" />,
-        },
-        {
-          id: 'competencias-dashboard',
-          label: 'Dashboard de treinamentos',
-          icon: <BarChart3 className="w-4 h-4 text-sky-400" />,
-        },
-      ],
-    },
-    {
-      id: 'cadastros-mestres',
-      label: 'Cadastros Mestres',
-      items: [
-        {
-          id: 'cadastros-bases',
-          label: 'Bases e locais operacionais',
-          aliases: ['rooster-bases', 'bases'],
-          icon: <MapPin className="w-4 h-4 text-rose-400" />,
-          badge: 'Mestre',
-          badgeColor: 'bg-rose-900/60 text-rose-300 border border-rose-700/50',
-        },
-        {
-          id: 'cadastros-funcoes-cargos',
-          label: 'Funções e cargos',
-          icon: <Briefcase className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'parametros-fluxo',
-          label: 'Parâmetros necessários ao fluxo',
-          aliases: ['outros-controles', 'configuracoes-org'],
-          icon: <Sliders className="w-4 h-4 text-sky-400" />,
-        },
-      ],
-    },
-    {
-      id: 'qualidade-controles',
-      label: 'Qualidade e Controles',
-      items: [
-        {
-          id: 'relatorio',
-          label: 'Não Conformidades (RNC)',
-          aliases: ['formulario'],
-          icon: <FileText className="w-4 h-4 text-blue-400" />,
-        },
-        {
-          id: 'incidencias',
-          label: 'Análise & Indicadores',
-          icon: <BarChart3 className="w-4 h-4 text-indigo-400" />,
-        },
-        {
-          id: 'validacao-qualidade',
-          label: 'Validação & Aprovação',
-          aliases: ['validacaoQueue', 'aprovacao-qualidade'],
-          icon: <CheckSquare className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'auditorias-gestao',
-          label: 'Auditorias Internas & Externas',
-          aliases: ['auditorias-dashboard', 'clientes-cronograma'],
-          icon: <ShieldCheck className="w-4 h-4 text-amber-400" />,
-        },
-        {
-          id: 'smart-audit',
-          label: 'Auditoria Inteligente & Clientes',
-          aliases: ['clientes-requisitos'],
-          icon: <Sparkles className="w-4 h-4 text-purple-400" />,
-        },
-        {
-          id: 'preparacao-auditorias',
-          label: 'Preparação para Auditorias',
-          aliases: ['preparacao-requisitos', 'prontidao-auditorias'],
-          icon: <ShieldCheck className="w-4 h-4 text-emerald-400" />,
-          badge: 'Fase 1.4.4',
-          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
-        },
-        {
-          id: 'biblioteca-checklists',
-          label: 'Checklists de Auditoria',
-          aliases: ['checklists-auditoria', 'checklists-corporativos'],
-          icon: <FileCheck2 className="w-4 h-4 text-amber-400" />,
-          badge: '11 Modelos',
-          badgeColor: 'bg-amber-900/60 text-amber-300 border border-amber-700/50',
-        },
-        {
-          id: 'biblioteca-requisitos',
-          label: 'Biblioteca de Requisitos',
-          aliases: ['requisitos-mestre', 'requisitos-normativos'],
-          icon: <BookMarked className="w-4 h-4 text-emerald-400" />,
-          badge: 'Multi-Fontes',
-          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
-        },
-        {
-          id: 'manuais',
-          label: 'Banco de Manuais (IA)',
-          icon: <BookOpen className="w-4 h-4 text-indigo-400" />,
-        },
-        {
-          id: 'controle-documental',
-          label: 'Acervo & Revisões (SGQ)',
-          aliases: ['verificacao-controle', 'documentos-inativos'],
-          icon: <FolderTree className="w-4 h-4 text-sky-400" />,
-        },
-        {
-          id: 'ferramentas-metrologia',
-          label: 'Ferramentas & Metrologia',
-          icon: <Sliders className="w-4 h-4 text-amber-400" />,
-        },
-      ],
-    },
-    {
-      id: 'relatorios',
-      label: 'Relatórios',
-      items: [
-        {
-          id: 'rooster-relatorio',
-          label: 'Relatório do Roster',
-          aliases: ['rooster-roster', 'rooster'],
-          icon: <FileSpreadsheet className="w-4 h-4 text-emerald-400" />,
-          badge: 'A4 / Excel',
-          badgeColor: 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50',
-        },
-        {
-          id: 'oficial',
-          label: 'Dossiê Oficial F 001-29',
-          icon: <FileCheck2 className="w-4 h-4 text-blue-400" />,
-        },
-        {
-          id: 'historico-relatorios',
-          label: 'Histórico & Documentos',
-          icon: <History className="w-4 h-4 text-purple-400" />,
-        },
-        {
-          id: 'auditorias-constatacoes',
-          label: 'Constatações de Auditoria',
-          icon: <AlertCircle className="w-4 h-4 text-rose-400" />,
-        },
-        {
-          id: 'rooster-conferencia',
-          label: 'Conferência de Frota & Turno',
-          aliases: ['conferencia'],
-          icon: <AlertTriangle className="w-4 h-4 text-amber-400" />,
-        },
-      ],
-    },
-    {
-      id: 'administracao-seguranca',
-      label: 'Administração e Segurança',
-      adminOnly: true,
-      items: [
-        {
-          id: 'admin-central',
-          label: 'Usuários & Permissões (RBAC)',
-          icon: <Shield className="w-4 h-4 text-indigo-400" />,
-          adminOnly: true,
-        },
-        {
-          id: 'configuracoes-org',
-          label: 'Configurações Organizacionais',
-          icon: <Building2 className="w-4 h-4 text-blue-400" />,
-          adminOnly: true,
-        },
-        {
-          id: 'system-designer',
-          label: 'System Designer (ADRs)',
-          icon: <Cpu className="w-4 h-4 text-slate-400" />,
-          adminOnly: true,
-        },
-        {
-          id: 'diagnosticos-tecnicos',
-          label: 'Diagnósticos Técnicos',
-          icon: <Activity className="w-4 h-4 text-teal-400" />,
-          adminOnly: true,
-        },
-        {
-          id: 'onboarding-novo-cliente',
-          label: 'Implantação & Onboarding',
-          icon: <CheckSquare className="w-4 h-4 text-emerald-400" />,
-          adminOnly: true,
-        },
-      ],
-    },
-    {
-      id: 'auditoria-historico',
-      label: 'Auditoria e Histórico',
-      items: [
-        {
-          id: 'admin-audit-trail',
-          label: 'Audit Trail do Sistema',
-          icon: <History className="w-4 h-4 text-amber-400" />,
-          badge: 'Auditável',
-          badgeColor: 'bg-amber-900/60 text-amber-300 border border-amber-700/50',
-        },
-      ],
-    },
-    {
-      id: 'configuracoes-ferramentas',
-      label: 'Configurações e Ferramentas',
-      items: [
-        {
-          id: 'importacao-inteligente',
-          label: 'Importação Inteligente',
-          icon: <UploadCloud className="w-4 h-4 text-sky-400" />,
-        },
-        {
-          id: 'extrator',
-          label: 'Extrator de NCs com IA',
-          icon: <Sparkles className="w-4 h-4 text-purple-400" />,
-        },
-        {
-          id: 'knowledgeBase',
-          label: 'Base de Conhecimento SGQ',
-          aliases: ['comparacaoRNC', 'knowledgeBase-melhoria'],
-          icon: <Award className="w-4 h-4 text-emerald-400" />,
-        },
-        {
-          id: 'manual-utilizacao',
-          label: 'Manual de Utilização',
-          icon: <BookOpen className="w-4 h-4 text-blue-400" />,
-        },
-      ],
-    },
-  ];
+  const visibleGroups = useMemo(() => {
+    return NAV_GROUPS.filter((g) => checkAccessPolicy(g.access, userProfile))
+      .map((g) => ({
+        ...g,
+        items: g.items
+          .filter((item) => item.showInMenu !== false && checkAccessPolicy(item.access, userProfile))
+          .map((item) => {
+            if (item.id === 'alertas' && alertasCriticos.length > 0) {
+              return {
+                ...item,
+                badge: alertasCriticos.length,
+                badgeColor: 'bg-rose-600 text-white',
+              };
+            }
+            return item;
+          }),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [userProfile, alertasCriticos.length]);
 
-  // Regra fundamental: A categoria que contém a página atual deverá permanecer expandida
   useEffect(() => {
-    const activeGroup = navGroups.find((g) =>
-      g.items.some(
-        (item) =>
-          item.id === activeTab ||
-          item.aliases?.includes(activeTab) ||
-          (item.id === 'relatorio' && (activeTab === 'formulario' || activeTab === 'oficial')) ||
-          (item.id === 'knowledgeBase' && activeTab === 'knowledgeBase-melhoria')
-      )
-    );
+    const activeGroup = visibleGroups.find((g) => g.items.some((item) => isNavItemActive(item, activeTab)));
     if (activeGroup) {
       setCollapsedGroups((prev) => {
         if (prev[activeGroup.id]) {
@@ -494,7 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         return prev;
       });
     }
-  }, [activeTab]);
+  }, [activeTab, visibleGroups]);
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups((prev) => ({
@@ -504,9 +175,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleItemClick = (tabId: string) => {
-    // Normalização canônica de atalhos e aliases
-    const targetTab = tabId === 'knowledgeBase-melhoria' ? 'knowledgeBase' : tabId;
-    setActiveTab(targetTab);
+    setActiveTab(resolveCanonicalTabId(tabId));
     if (onCloseMobile) onCloseMobile();
   };
 
@@ -515,18 +184,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (onCloseMobile) onCloseMobile();
   };
 
-  // Verifica se um item é ativo com base no activeTab ou seus aliases
-  const isItemActive = (item: NavItemDef) => {
-    if (activeTab === item.id) return true;
-    if (item.aliases?.includes(activeTab)) return true;
-    if (item.id === 'relatorio' && (activeTab === 'formulario' || activeTab === 'oficial')) return true;
-    if (item.id === 'knowledgeBase' && activeTab === 'knowledgeBase-melhoria') return true;
-    return false;
-  };
-
   const sidebarContent = (
     <div className="flex flex-col h-full bg-slate-900 text-slate-300">
-      {/* Brand & Desktop Compact Toggle & Close Button for Mobile */}
+      {/* Brand & Compact Toggle */}
       <div className="h-16 px-4 flex items-center justify-between border-b border-slate-800/80 bg-slate-950/40 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-[8px] bg-slate-800 border border-slate-700/80 flex items-center justify-center text-white shadow-xs shrink-0">
@@ -535,7 +195,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!isCompact && (
             <div className="min-w-0 transition-opacity duration-200">
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-sm tracking-tight text-white">QUALIGEST</span>
+                <span className="font-bold text-sm tracking-tight text-white whitespace-nowrap">QUALIGEST</span>
                 <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-bold bg-blue-900/60 text-blue-300 border border-blue-700/50 uppercase">
                   {orgSigla}
                 </span>
@@ -545,8 +205,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* Compact Mode Toggle (Desktop only) */}
         <button
+          type="button"
           onClick={() => setIsCompact(!isCompact)}
           className="hidden lg:flex p-1.5 rounded-[6px] hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
           title={isCompact ? 'Expandir Menu Lateral' : 'Recolher Menu Lateral'}
@@ -555,9 +215,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isCompact ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
         </button>
 
-        {/* Mobile Close Button */}
         {onCloseMobile && (
           <button
+            type="button"
             onClick={onCloseMobile}
             className="lg:hidden p-2 rounded-[8px] hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
             aria-label="Fechar Menu"
@@ -567,38 +227,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
       </div>
 
-      {/* Prominent Action Button: + Nova NC */}
-      <div className="p-3 border-b border-slate-800/60 shrink-0">
-        <button
-          onClick={handleNewNCClick}
-          title="+ Nova Não Conformidade"
-          className={`w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold rounded-[8px] transition-all shadow-xs cursor-pointer ${
-            isCompact ? 'px-2' : 'px-4'
-          }`}
-        >
-          <Plus className="w-4 h-4 shrink-0" />
-          {!isCompact && <span>+ Nova Não Conformidade</span>}
-        </button>
-      </div>
+      {/* Prominent Action Button: + Nova NC (apenas perfis com escrita) */}
+      {canCreateNC && (
+        <div className="p-3 border-b border-slate-800/60 shrink-0">
+          <button
+            type="button"
+            onClick={handleNewNCClick}
+            title="Nova Não Conformidade"
+            className={`w-full flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white text-xs font-semibold rounded-[8px] transition-all shadow-xs cursor-pointer ${
+              isCompact ? 'px-2' : 'px-4'
+            }`}
+          >
+            <Plus className="w-4 h-4 shrink-0" />
+            {!isCompact && <span className="whitespace-nowrap">Nova Não Conformidade</span>}
+          </button>
+        </div>
+      )}
 
-      {/* Unified Navigation Categories and Submenus */}
+      {/* Navigation Categories and Items (from NavigationRegistry SSoT) */}
       <nav
         aria-label="Navegação Principal do Sistema"
         className="flex-1 px-2.5 py-3 space-y-3.5 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-slate-900"
       >
-        {navGroups.map((group) => {
-          // RBAC: Se o grupo inteiro for restrito a admin e o usuário for apenas consulta/colaborador, ocultar
-          if (group.adminOnly && !isAdminOrGestor) {
-            return null;
-          }
-
+        {visibleGroups.map((group) => {
           const isCollapsed = !isCompact && !!collapsedGroups[group.id];
-          const hasActiveItem = group.items.some(isItemActive);
+          const hasActiveItem = group.items.some((item) => isNavItemActive(item, activeTab));
 
           return (
             <div key={group.id} className="space-y-1">
               {!isCompact ? (
-                /* Cabeçalho de Categoria Expansível / Recolhível */
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.id)}
@@ -615,19 +272,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                 </button>
               ) : (
-                /* Linha divisora minimalista no modo compacto */
                 <div className="h-px bg-slate-800 my-2 mx-1" title={group.label} />
               )}
 
               {(!isCollapsed || isCompact) && (
                 <div className="space-y-0.5">
-                  {group.items.map((item) => {
-                    // RBAC para itens individuais
-                    if (item.adminOnly && !isAdminOrGestor) {
-                      return null;
-                    }
-
-                    const isActive = isItemActive(item);
+                  {group.items.map((item: NavItemDef) => {
+                    const isActive = isNavItemActive(item, activeTab);
 
                     return (
                       <button
@@ -643,14 +294,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <span className={`shrink-0 ${isActive ? 'text-blue-400' : 'text-slate-400'}`}>
-                            {item.icon}
+                            {renderNavIcon(item.iconKey)}
                           </span>
                           {!isCompact && <span className="truncate">{item.label}</span>}
                         </div>
 
                         {!isCompact && item.badge !== undefined && (
                           <span
-                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold shrink-0 ml-1.5 ${
+                            className={`px-1.5 py-0.2 rounded text-[10px] font-semibold tabular-nums shrink-0 ml-1.5 ${
                               item.badgeColor || 'bg-slate-700 text-white'
                             }`}
                           >
@@ -692,7 +343,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {userProfile?.displayName || user.email?.split('@')[0] || 'Usuário SGQ'}
                 </p>
                 <p className="text-[10px] text-indigo-400 truncate">
-                  {userProfile?.role || 'AUDITOR'} • {orgName}
+                  {userProfile?.role || 'AUDITOR'} · {orgName}
                 </p>
               </div>
             )}
@@ -731,7 +382,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-      {/* 1. Desktop Persistent Sidebar with smooth collapse support */}
       <aside
         className={`hidden lg:flex ${
           isCompact ? 'w-18' : 'w-64'
@@ -740,17 +390,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {sidebarContent}
       </aside>
 
-      {/* 2. Mobile Drawer Backdrop & Sliding Panel */}
       {isOpenMobile && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
-          {/* Dark Overlay */}
           <div
             className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs transition-opacity animate-in fade-in"
             onClick={onCloseMobile}
             aria-hidden="true"
           />
-
-          {/* Slide-out Drawer */}
           <div className="relative w-4/5 max-w-xs h-full bg-slate-900 shadow-2xl z-10 animate-in slide-in-from-left duration-200">
             {sidebarContent}
           </div>

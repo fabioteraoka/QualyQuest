@@ -119,9 +119,10 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
 
   // Subscriptions
   useEffect(() => {
-    if (!currentOrgId) {
+    if (!currentOrgId || !user) {
       setUsersList([]);
       setInvitationsList([]);
+      setAuditLogs([]);
       setLoadingData(false);
       return;
     }
@@ -133,7 +134,10 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
         setUsersList(list);
         setLoadingData(false);
       },
-      (err) => console.warn('Erro ao sincronizar usuários:', err)
+      (err) => {
+        console.warn('Erro ao sincronizar usuários:', err);
+        setLoadingData(false);
+      }
     );
 
     const unsubInvites = subscribeToOrganizationInvitations(
@@ -148,11 +152,15 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
       orderBy('changedAt', 'desc'),
       limit(50)
     );
-    const unsubAudit = onSnapshot(auditQuery, (snap) => {
-      const logs: OrganizationAuditEntry[] = [];
-      snap.forEach((d) => logs.push({ id: d.id, ...d.data() } as OrganizationAuditEntry));
-      setAuditLogs(logs);
-    });
+    const unsubAudit = onSnapshot(
+      auditQuery,
+      (snap) => {
+        const logs: OrganizationAuditEntry[] = [];
+        snap.forEach((d) => logs.push({ id: d.id, ...d.data() } as OrganizationAuditEntry));
+        setAuditLogs(logs);
+      },
+      (err) => console.warn('Erro ao sincronizar trilha de auditoria:', err?.message || err)
+    );
 
     const unsubBases = subscribeToBasesOperacionais(currentOrgId, (bases) => {
       setBasesList(bases);
@@ -169,7 +177,7 @@ export const CentralAdministrationView: React.FC<CentralAdministrationViewProps>
       unsubBases();
       unsubPersons();
     };
-  }, [currentOrgId]);
+  }, [currentOrgId, user?.uid]);
 
   // ----------------------------------------------------
   // USERS TAB STATE & FILTERS

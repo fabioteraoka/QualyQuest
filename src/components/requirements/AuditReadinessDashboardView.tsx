@@ -43,13 +43,22 @@ import {
   ClienteExterno,
   SituacaoAplicabilidadeImpacto,
   StatusConformidadeSGQ,
-  ModalidadeComprovacaoEsperada
+  ModalidadeComprovacaoEsperada,
+  ManualRecord,
+  RegistroTreinamentoColaborador,
+  QualificacaoColaborador,
+  FerramentaCalibracao,
+  NCRecord,
+  AuditoriaExternaRecord,
+  ConstatacaoExternaRecord
 } from '../../types';
 import {
   subscribeToAuditPreparations,
   saveAuditPreparation,
   calcularIndicadoresPainel,
-  getPreparacoesIniciaisMemoria
+  getPreparacoesIniciaisMemoria,
+  detectarImpactosBaseInstitucional,
+  ContextoCruzadoSGQ
 } from '../../services/auditReadinessService';
 import { AuditReadinessDetailModal, MODALIDADE_CONFIG } from './AuditReadinessDetailModal';
 import { MASTER_CHECKLIST_ITEMS } from '../../data/corporateChecklistsData';
@@ -62,6 +71,13 @@ interface AuditReadinessDashboardViewProps {
   evidenciasDisponiveis?: EvidenciaRequisitoItem[];
   controlesCentrais?: ControleCentralSGQ[];
   clientes?: ClienteExterno[];
+  manuals?: ManualRecord[];
+  trainingRecords?: RegistroTreinamentoColaborador[];
+  qualifications?: QualificacaoColaborador[];
+  ferramentasCalibradas?: FerramentaCalibracao[];
+  recordsNC?: NCRecord[];
+  externalAudits?: AuditoriaExternaRecord[];
+  auditFindings?: ConstatacaoExternaRecord[];
   onNavigateToTab?: (tab: string) => void;
 }
 
@@ -128,6 +144,13 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
   evidenciasDisponiveis = [],
   controlesCentrais = [],
   clientes = [],
+  manuals = [],
+  trainingRecords = [],
+  qualifications = [],
+  ferramentasCalibradas = [],
+  recordsNC = [],
+  externalAudits = [],
+  auditFindings = [],
   onNavigateToTab
 }) => {
   const orgId = organizationId || 'org_impacto_aviation';
@@ -146,6 +169,36 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
     return () => unsub();
   }, [orgId]);
 
+  const contextoSGQ: ContextoCruzadoSGQ = useMemo(
+    () => ({
+      documentosControlados,
+      manuals,
+      evidenciasDisponiveis,
+      trainingRecords,
+      qualifications,
+      ferramentasCalibradas,
+      recordsNC,
+      externalAudits,
+      auditFindings
+    }),
+    [
+      documentosControlados,
+      manuals,
+      evidenciasDisponiveis,
+      trainingRecords,
+      qualifications,
+      ferramentasCalibradas,
+      recordsNC,
+      externalAudits,
+      auditFindings
+    ]
+  );
+
+  // Detecção contínua de impacto documental / vencimentos / RNCs sem sobrescrever respostas aprovadas
+  const preparacoesComImpacto = useMemo(() => {
+    return detectarImpactosBaseInstitucional(preparacoes, contextoSGQ);
+  }, [preparacoes, contextoSGQ]);
+
   // Modal de Detalhe Individual
   const [selectedPreparacao, setSelectedPreparacao] = useState<PreparacaoRequisitoAuditoria | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -158,16 +211,18 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
   const [filtroStatusResposta, setFiltroStatusResposta] = useState<string>('TODAS');
   const [filtroAplicabilidade, setFiltroAplicabilidade] = useState<string>('TODAS');
   const [filtroModalidade, setFiltroModalidade] = useState<string>('TODAS');
+  const [filtroOrigemBase, setFiltroOrigemBase] = useState<string>('TODAS');
   const [filtroApenasPendencias, setFiltroApenasPendencias] = useState(false);
+  const [filtroApenasReavaliacao, setFiltroApenasReavaliacao] = useState(false);
 
   // Indicadores do Painel Consolidados
   const indicadores = useMemo(() => {
-    return calcularIndicadoresPainel(preparacoes, MASTER_CHECKLIST_ITEMS);
-  }, [preparacoes]);
+    return calcularIndicadoresPainel(preparacoesComImpacto, MASTER_CHECKLIST_ITEMS);
+  }, [preparacoesComImpacto]);
 
   // Lista Filtrada de Requisitos
   const filteredPreparacoes = useMemo(() => {
-    return preparacoes.filter((p) => {
+    return preparacoesComImpacto.filter((p) => {
       // 1. Busca textual
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
@@ -215,16 +270,27 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
         if ((p.modalidadeComprovacao || 'COMBINACAO_DE_EVIDENCIAS') !== filtroModalidade) return false;
       }
 
+      // 6c. Filtro de Origem na Base Institucional
+      if (filtroOrigemBase !== 'TODAS') {
+        const origem = p.origemBase || 'BASE_INICIAL_177';
+        if (origem !== filtroOrigemBase) return false;
+      }
+
       // 7. Filtro rápido de pendências
       if (filtroApenasPendencias) {
         const temPend = p.pendencias && p.pendencias.some((pend) => pend.situacao !== 'CONCLUIDA' && pend.situacao !== 'CANCELADA');
         if (!temPend) return false;
       }
 
+      // 8. Filtro rápido de alerta de reavaliação
+      if (filtroApenasReavaliacao && !p.reavaliacaoNecessaria) {
+        return false;
+      }
+
       return true;
     });
   }, [
-    preparacoes,
+    preparacoesComImpacto,
     searchTerm,
     filtroAutoridade,
     filtroProntidao,
@@ -232,7 +298,9 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
     filtroStatusResposta,
     filtroAplicabilidade,
     filtroModalidade,
-    filtroApenasPendencias
+    filtroOrigemBase,
+    filtroApenasPendencias,
+    filtroApenasReavaliacao
   ]);
 
   // Salvar alteração do modal individual
@@ -288,15 +356,17 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
         </div>
       </div>
 
-      {/* Grid de Indicadores Consolidados (Métricas da Seção 6) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Grid de Indicadores Consolidados */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         
         {/* Total Requisitos */}
         <div className="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
-          <span className="text-slate-500 dark:text-slate-400 text-xs font-medium block">Total de Requisitos</span>
+          <span className="text-slate-500 dark:text-slate-400 text-xs font-medium block">Base Institucional</span>
           <div className="flex items-baseline gap-2 mt-1">
             <span className="text-2xl font-extrabold text-slate-900 dark:text-slate-100">{indicadores.totalRequisitos}</span>
-            <span className="text-[10px] text-slate-400 font-mono">11 Checklists</span>
+            <span className="text-[10px] text-slate-400 font-mono">
+              +{(indicadores.requisitosIncorporadosPosAuditoria || 0)} incorp.
+            </span>
           </div>
         </div>
 
@@ -347,6 +417,26 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
             <span className="text-[10px] text-rose-600 font-semibold">ações abertas</span>
           </div>
         </div>
+
+        {/* Alertas de Impacto / Reavaliação */}
+        <button
+          type="button"
+          onClick={() => setFiltroApenasReavaliacao((prev) => !prev)}
+          className={`text-left p-3.5 rounded-xl border shadow-xs transition-colors cursor-pointer ${
+            filtroApenasReavaliacao
+              ? 'bg-amber-100 dark:bg-amber-950/60 border-amber-500 ring-2 ring-amber-400/50'
+              : 'bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60 hover:bg-amber-100/70'
+          }`}
+        >
+          <span className="text-amber-700 dark:text-amber-400 text-xs font-bold block flex items-center gap-1">
+            <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+            Alerta Reavaliação
+          </span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-2xl font-extrabold text-amber-900 dark:text-amber-100">{indicadores.requisitosComAlertaReavaliacao || 0}</span>
+            <span className="text-[10px] text-amber-700 dark:text-amber-400 font-semibold">filtrar impactos</span>
+          </div>
+        </button>
 
       </div>
 
@@ -423,6 +513,17 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
             ))}
           </select>
 
+          {/* Filtro de Origem na Base */}
+          <select
+            value={filtroOrigemBase}
+            onChange={(e) => setFiltroOrigemBase(e.target.value)}
+            className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-xs font-semibold"
+          >
+            <option value="TODAS">Toda a Base Institucional</option>
+            <option value="BASE_INICIAL_177">Base Inicial (177 Requisitos)</option>
+            <option value="INCORPORADO_POS_AUDITORIA">Incorporados Pós-Auditoria</option>
+          </select>
+
           {/* Toggle Apenas com Pendências */}
           <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800">
             <input
@@ -433,11 +534,22 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
             />
             <span>Apenas com Pendências</span>
           </label>
+
+          {/* Toggle Apenas com Alerta de Reavaliação */}
+          <label className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 cursor-pointer px-2 py-1.5 rounded hover:bg-amber-50 dark:hover:bg-amber-950/40">
+            <input
+              type="checkbox"
+              checked={filtroApenasReavaliacao}
+              onChange={(e) => setFiltroApenasReavaliacao(e.target.checked)}
+              className="rounded text-amber-600 focus:ring-amber-500"
+            />
+            <span>Impacto SGQ ({indicadores.requisitosComAlertaReavaliacao || 0})</span>
+          </label>
         </div>
 
         <div className="flex items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800">
-          <span>Exibindo <strong>{filteredPreparacoes.length}</strong> de <strong>{preparacoes.length}</strong> requisitos catalogados</span>
-          {(searchTerm || filtroAutoridade !== 'TODAS' || filtroProntidao !== 'TODAS' || filtroOrigemResposta !== 'TODAS' || filtroModalidade !== 'TODAS' || filtroApenasPendencias) && (
+          <span>Exibindo <strong>{filteredPreparacoes.length}</strong> de <strong>{preparacoesComImpacto.length}</strong> requisitos catalogados</span>
+          {(searchTerm || filtroAutoridade !== 'TODAS' || filtroProntidao !== 'TODAS' || filtroOrigemResposta !== 'TODAS' || filtroModalidade !== 'TODAS' || filtroOrigemBase !== 'TODAS' || filtroApenasPendencias || filtroApenasReavaliacao) && (
             <button
               onClick={() => {
                 setSearchTerm('');
@@ -447,7 +559,9 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
                 setFiltroStatusResposta('TODAS');
                 setFiltroAplicabilidade('TODAS');
                 setFiltroModalidade('TODAS');
+                setFiltroOrigemBase('TODAS');
                 setFiltroApenasPendencias(false);
+                setFiltroApenasReavaliacao(false);
               }}
               className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
             >
@@ -489,6 +603,11 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
                       <span className="inline-block mt-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300">
                         {p.autoridadeOuCliente}
                       </span>
+                      {p.origemBase === 'INCORPORADO_POS_AUDITORIA' && (
+                        <span className="block mt-1 text-[9px] font-sans font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                          Pós-Auditoria
+                        </span>
+                      )}
                     </td>
 
                     {/* Requisito Original & Norma */}
@@ -549,7 +668,7 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
                             {p.pendencias.filter((pend) => pend.situacao !== 'CONCLUIDA' && pend.situacao !== 'CANCELADA').length} abertas
                           </span>
                           {temPendImpeditiva && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 border border-rose-300 animate-pulse">
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-800 border border-rose-300">
                               IMPEDITIVA
                             </span>
                           )}
@@ -561,10 +680,21 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
 
                     {/* Prontidão */}
                     <td className="py-3 px-3 align-top">
-                      <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${PRONTIDAO_BADGE[p.situacaoProntidao]?.badge}`}>
-                        <ProntIcon className="w-3 h-3 shrink-0" />
-                        <span>{PRONTIDAO_BADGE[p.situacaoProntidao]?.label}</span>
-                      </span>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border ${PRONTIDAO_BADGE[p.situacaoProntidao]?.badge}`}>
+                          <ProntIcon className="w-3 h-3 shrink-0" />
+                          <span>{PRONTIDAO_BADGE[p.situacaoProntidao]?.label}</span>
+                        </span>
+                        {p.reavaliacaoNecessaria && (
+                          <span
+                            title={(p.motivosReavaliacao || []).join(' | ')}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800"
+                          >
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            <span>Reavaliar ({p.motivosReavaliacao?.length || 1})</span>
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Ação */}
@@ -594,6 +724,7 @@ export const AuditReadinessDashboardView: React.FC<AuditReadinessDashboardViewPr
         documentosDisponiveis={documentosControlados}
         evidenciasDisponiveis={evidenciasDisponiveis}
         controlesCentrais={controlesCentrais}
+        contextoSGQ={contextoSGQ}
         currentUser={currentUser}
       />
 

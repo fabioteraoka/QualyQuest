@@ -732,6 +732,42 @@ service cloud.firestore {
           && !('base64Data' in incoming());
         allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(fileId);
       }
+
+      // ----------------------------------------------------
+      // ETAPA 7: Pré-Auditorias Consolidadas & Snapshots Imutáveis (organizations/{orgId}/pre_audits/{preAuditId})
+      // ----------------------------------------------------
+      match /pre_audits/{preAuditId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create: if userBelongsToOrg(organizationId)
+          && getUserRole() != 'CONSULTA'
+          && getUserRole() != 'VIEWER'
+          && isValidId(organizationId)
+          && isValidId(preAuditId)
+          && incoming().organizationId == organizationId
+          && (
+            !('statusPreAuditoria' in incoming()) ||
+            (incoming().statusPreAuditoria != 'PRONTA_PARA_AUDITORIA' && incoming().statusPreAuditoria != 'FINALIZADA_CONGELADA') ||
+            isGestorSGQ() ||
+            isSystemAdmin()
+          );
+        allow update: if userBelongsToOrg(organizationId)
+          && getUserRole() != 'CONSULTA'
+          && getUserRole() != 'VIEWER'
+          && isValidId(organizationId)
+          && isValidId(preAuditId)
+          && incoming().organizationId == organizationId
+          && (
+            !('statusPreAuditoria' in incoming()) ||
+            (incoming().statusPreAuditoria != 'PRONTA_PARA_AUDITORIA' && incoming().statusPreAuditoria != 'FINALIZADA_CONGELADA') ||
+            isGestorSGQ() ||
+            isSystemAdmin()
+          )
+          && (
+            !('snapshots' in existing()) ||
+            ('snapshots' in incoming() && incoming().snapshots.size() >= existing().snapshots.size())
+          );
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(preAuditId);
+      }
     }
 
     // ----------------------------------------------------

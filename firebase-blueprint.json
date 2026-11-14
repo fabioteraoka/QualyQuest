@@ -932,6 +932,10 @@
       "schema": "EvidenceFileMetadata",
       "description": "Object storage metadata and SHA-256 integrity references for objective audit evidence files (zero binary payload)"
     },
+    "/organizations/{organizationId}/pre_audits/{preAuditId}": {
+      "schema": "ClientEvaluation",
+      "description": "Consolidated pre-audit semantic comparisons against the Institutional Base (177+ requirements) with immutable snapshots"
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile records indexed strictly by Firebase Auth UID"

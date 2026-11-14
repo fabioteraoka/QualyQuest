@@ -161,7 +161,7 @@ export function subscribeToChecklistExecutions(
   organizationId: string,
   callback: (executions: ExecucaoChecklistAuditoria[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback([]);
     return () => {};
   }
@@ -502,7 +502,7 @@ export function subscribeToCorporateLibraryCriteria(
   organizationId: string,
   callback: (criteria: CriterioBibliotecaCorporativa[]) => void
 ): () => void {
-  if (!organizationId) {
+  if (!organizationId || !auth.currentUser) {
     callback(CANONICAL_CORPORATE_CRITERIA);
     return () => {};
   }

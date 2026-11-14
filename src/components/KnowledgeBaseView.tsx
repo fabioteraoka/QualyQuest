@@ -29,11 +29,14 @@ import {
   deleteValidatedKnowledge,
   subscribeToRNCComparisons,
 } from '../services/firebase/firestore';
+import { useAuth } from '../hooks/useAuth';
 
 interface KnowledgeBaseViewProps {
   organizationId: string;
   userProfile?: UserProfile | null;
   records: NCRecord[];
+  initialKnowledgeList?: ValidatedKnowledgeRecord[];
+  initialComparisons?: ComparacaoRNCRecord[];
   onNavigateToComparison?: () => void;
 }
 
@@ -41,10 +44,13 @@ export const KnowledgeBaseView: React.FC<KnowledgeBaseViewProps> = ({
   organizationId,
   userProfile,
   records,
+  initialKnowledgeList,
+  initialComparisons,
   onNavigateToComparison,
 }) => {
-  const [knowledgeList, setKnowledgeList] = useState<ValidatedKnowledgeRecord[]>([]);
-  const [comparisons, setComparisons] = useState<ComparacaoRNCRecord[]>([]);
+  const { user, loading: authLoading } = useAuth();
+  const [knowledgeList, setKnowledgeList] = useState<ValidatedKnowledgeRecord[]>(initialKnowledgeList || []);
+  const [comparisons, setComparisons] = useState<ComparacaoRNCRecord[]>(initialComparisons || []);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('TODAS');
@@ -56,6 +62,14 @@ export const KnowledgeBaseView: React.FC<KnowledgeBaseViewProps> = ({
   const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!user || !organizationId) {
+      setKnowledgeList(initialKnowledgeList || []);
+      setComparisons(initialComparisons || []);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     const unsubKnowledge = subscribeToValidatedKnowledge(
       organizationId,
@@ -63,20 +77,24 @@ export const KnowledgeBaseView: React.FC<KnowledgeBaseViewProps> = ({
         setKnowledgeList(list);
         setLoading(false);
       },
-      (err) => console.error('Erro ao buscar base de conhecimento:', err)
+      (err) => {
+        console.warn('Base de conhecimento indisponível para este perfil/sessão:', err?.message || err);
+        setKnowledgeList(initialKnowledgeList || []);
+        setLoading(false);
+      }
     );
 
     const unsubComp = subscribeToRNCComparisons(
       organizationId,
       (list) => setComparisons(list),
-      (err) => console.error('Erro ao buscar comparações:', err)
+      (err) => console.warn('Comparações indisponíveis para este perfil/sessão:', err?.message || err)
     );
 
     return () => {
       unsubKnowledge();
       unsubComp();
     };
-  }, [organizationId]);
+  }, [organizationId, user?.uid, authLoading, initialKnowledgeList, initialComparisons]);
 
   // Filtragem
   const filteredPatterns = knowledgeList.filter((item) => {

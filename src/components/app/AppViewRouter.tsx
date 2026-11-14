@@ -32,8 +32,12 @@ import {
   FerramentaCalibracao,
   RegistroImportacaoCompleto,
   TemplateMapeamentoAprovado,
+  PreparacaoRequisitoAuditoria,
 } from '../../types';
-import { RequisitoAuditoriaExterna } from '../../types/auditRequirements';
+import {
+  RequisitoAuditoriaExterna,
+  PreAuditoriaConsolidada,
+} from '../../types/auditRequirements';
 import { DashboardView } from '../DashboardView';
 import { SGQHealthView } from '../SGQHealthView';
 import { ReportListView } from '../ReportListView';
@@ -70,6 +74,8 @@ import { RequirementsLibraryView } from '../RequirementsLibraryView';
 import { AuditChecklistsLibraryView } from '../checklists/AuditChecklistsLibraryView';
 import { SystemDesignerOfficialView } from '../SystemDesignerOfficialView';
 import { RoosterModule } from '../RoosterModule';
+import { canUserAccessTab } from '../../config/navigationRegistry';
+import { Lock, ArrowLeft } from 'lucide-react';
 
 export interface AppViewRouterProps {
   activeTab: string;
@@ -128,6 +134,10 @@ export interface AppViewRouterProps {
   handleCriarRNCFromFinding: (finding: ConstatacaoExternaRecord, audit: AuditoriaExternaRecord) => Promise<void>;
   handleSaveLesson: (lesson: LicaoAprendidaAuditoria) => Promise<void>;
   handleCandidatarKnowledge: (licao: LicaoAprendidaAuditoria) => Promise<void>;
+  preparacoesInstitucionais?: PreparacaoRequisitoAuditoria[];
+  setPreparacoesInstitucionais?: React.Dispatch<React.SetStateAction<PreparacaoRequisitoAuditoria[]>>;
+  preAudits?: PreAuditoriaConsolidada[];
+  handleSavePreAudit?: (preAudit: PreAuditoriaConsolidada) => Promise<void>;
 
   // Pessoas & Competências
   persons: ColaboradorPessoa[];
@@ -175,6 +185,30 @@ export interface AppViewRouterProps {
 
 export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
   const { activeTab, setActiveTab } = props;
+
+  if (!canUserAccessTab(activeTab, props.userProfile)) {
+    return (
+      <div className="max-w-xl mx-auto my-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center space-y-4">
+        <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center mx-auto text-rose-500">
+          <Lock className="w-6 h-6" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+          Acesso Restrito pelo Perfil RBAC
+        </h2>
+        <p className="text-xs text-slate-600 dark:text-slate-400">
+          O perfil atual ({props.userProfile?.role || 'Visitante'}) não possui permissão para acessar esta funcionalidade.
+        </p>
+        <button
+          type="button"
+          onClick={() => setActiveTab('dashboard')}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold cursor-pointer"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Voltar ao Dashboard Executivo
+        </button>
+      </div>
+    );
+  }
 
   switch (activeTab) {
     case 'dashboard':
@@ -232,6 +266,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       );
 
     case 'conhecaQualigest':
+    case 'tour-interativo':
       return (
         <InteractiveTourView
           records={props.records}
@@ -401,6 +436,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           organizationId={props.activeOrgId}
           userProfile={props.userProfile}
           records={props.records}
+          initialComparisons={props.comparacoes}
           onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
           onNavigateToRecord={props.handleViewOfficial}
         />
@@ -451,6 +487,8 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           organizationId={props.activeOrgId}
           userProfile={props.userProfile}
           records={props.records}
+          initialKnowledgeList={props.knowledgeList}
+          initialComparisons={props.comparacoes}
           onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
         />
       );
@@ -569,13 +607,37 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
-    // 1 & 2. COLABORADORES & PERFIL 360° CANÔNICO
+    // 1. COLABORADORES, NOVO COLABORADOR & FUNÇÕES
     case 'colaboradores-lista':
     case 'colaborador-novo':
     case 'cadastros-funcoes-cargos':
     case 'pessoas-competencias':
     case 'rooster-pessoas':
     case 'pessoas':
+      return (
+        <PersonsCompetenciesView
+          organizationId={props.activeOrgId}
+          userProfile={props.userProfile}
+          persons={props.persons}
+          competencies={props.competencies}
+          personCompetencies={props.personCompetencies}
+          qualifications={props.qualifications}
+          trainingRecords={props.trainingRecords}
+          trainingCourses={props.trainingCourses}
+          documents={props.personDocuments}
+          activities={props.activityRequirements}
+          nonConformities={props.records}
+          bases={props.basesOperacionais}
+          initialStatusFilter={props.initialPersonStatusFilter}
+          initialSubTab={activeTab === 'cadastros-funcoes-cargos' ? 'FUNCOES_CARGOS' : 'COLABORADORES'}
+          initialOpenNovoColaborador={activeTab === 'colaborador-novo'}
+          onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
+          onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
+          onNavigateToImport={() => setActiveTab('importacao-certificados')}
+        />
+      );
+
+    // FICHA INDIVIDUAL DO MECÂNICO (ROOSTER MRO)
     case 'rooster-ficha':
     case 'ficha':
     case 'colaborador-perfil':
@@ -594,8 +656,8 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           nonConformities={props.records}
           bases={props.basesOperacionais}
           initialStatusFilter={props.initialPersonStatusFilter}
-          initialSubTab={activeTab === 'cadastros-funcoes-cargos' ? 'FUNCOES_CARGOS' : 'COLABORADORES'}
-          initialOpenNovoColaborador={activeTab === 'colaborador-novo'}
+          initialSubTab="ROOSTER_MRO"
+          initialRoosterTab="ficha"
           onNavigateToTrainings={() => setActiveTab('treinamentos-qualificacoes')}
           onNavigateToExpirations={() => setActiveTab('central-vencimentos-gaps')}
           onNavigateToImport={() => setActiveTab('importacao-certificados')}
@@ -696,9 +758,11 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
-    // 7. MÓDULOS TÉCNICOS ESPECIALIZADOS DE DESIGNAÇÃO & CONFERÊNCIA MRO (F 001-29)
+    // 7. MÓDULOS TÉCNICOS ESPECIALIZADOS DE DESIGNAÇÃO, ROSTER & CONFERÊNCIA MRO (F 001-29)
     case 'rooster-mro':
     case 'rooster':
+    case 'rooster-relatorio':
+    case 'rooster-roster':
     case 'rooster-designacao':
     case 'designacao':
     case 'lista-designacao':
@@ -712,7 +776,9 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
     case 'bases':
     case 'rooster-motores': {
       const roosterTab =
-        activeTab === 'rooster-designacoes-crud' || activeTab === 'designacoes_crud' || activeTab === 'designacoes'
+        activeTab === 'rooster-relatorio' || activeTab === 'rooster-roster' || activeTab === 'rooster'
+          ? 'roster'
+          : activeTab === 'rooster-designacoes-crud' || activeTab === 'designacoes_crud' || activeTab === 'designacoes'
           ? 'designacoes_crud'
           : activeTab === 'rooster-conferencia' || activeTab === 'conferencia'
           ? 'conferencia'
@@ -923,6 +989,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       );
 
     case 'smart-audit':
+    case 'pre-auditoria':
       return (
         <SmartAuditView
           clientes={props.clientesExternos}
@@ -933,7 +1000,9 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           avaliacoes={props.avaliacoesRequisitos}
           ferramentas={props.ferramentasCalibradas}
           treinamentos={props.trainingRecords}
+          qualificacoes={props.qualifications}
           documentos={props.documentosControlados}
+          manuals={props.manuals}
           pessoas={props.persons}
           audits={props.externalAudits}
           findings={props.auditFindings}
@@ -942,6 +1011,11 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           activeOrganization={props.activeOrganization}
           userProfile={props.userProfile}
           auditRequirements={props.auditRequirements}
+          preparacoesInstitucionais={props.preparacoesInstitucionais}
+          setPreparacoesInstitucionais={props.setPreparacoesInstitucionais}
+          preAudits={props.preAudits}
+          onSavePreAudit={props.handleSavePreAudit}
+          initialMode={activeTab === 'pre-auditoria' ? 'PRE_AUDITORIA' : undefined}
           onSaveAuditRequirement={props.handleSaveAuditRequirement}
           onSaveAuditRequirementsBatch={props.handleSaveBatchAuditRequirements}
           onSaveAvaliacao={props.handleSaveAvaliacaoCliente}
@@ -983,6 +1057,13 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           activeOrganization={props.activeOrganization}
           userProfile={props.userProfile}
           documentosControlados={props.documentosControlados}
+          manuals={props.manuals}
+          trainingRecords={props.trainingRecords}
+          qualifications={props.qualifications}
+          ferramentasCalibradas={props.ferramentasCalibradas}
+          recordsNC={props.records}
+          externalAudits={props.externalAudits}
+          auditFindings={props.auditFindings}
           initialSubTab="preparacao_auditoria"
           onNavigateToTab={(tab) => setActiveTab(tab as any)}
         />
@@ -1002,6 +1083,13 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           activeOrganization={props.activeOrganization}
           userProfile={props.userProfile}
           documentosControlados={props.documentosControlados}
+          manuals={props.manuals}
+          trainingRecords={props.trainingRecords}
+          qualifications={props.qualifications}
+          ferramentasCalibradas={props.ferramentasCalibradas}
+          recordsNC={props.records}
+          externalAudits={props.externalAudits}
+          auditFindings={props.auditFindings}
           onNavigateToTab={(tab) => setActiveTab(tab as any)}
         />
       );
@@ -1014,23 +1102,19 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
       return (
         <DashboardView
           records={props.records}
-          manuals={props.manuals}
+          manualsCount={props.manuals.length}
           alertas={props.alertas}
-          userProfile={props.userProfile}
-          organization={props.activeOrganization}
-          onNavigateToReport={props.handleOpenReportWithFilter}
-          onNavigateToForm={props.handleNewNC}
-          onNavigateToManuals={() => setActiveTab('manuais')}
-          onNavigateToComparison={() => setActiveTab('comparacaoRNC')}
-          onNavigateToAnalytics={() => setActiveTab('incidencias')}
-          onNavigateToKnowledge={() => setActiveTab('knowledgeBase')}
-          onNavigateToAudits={() => setActiveTab('auditorias-gestao')}
-          onNavigateToPersons={() => setActiveTab('pessoas-competencias')}
-          onNavigateToDocControl={() => setActiveTab('controle-documental')}
-          onNavigateToClientAudits={() => setActiveTab('clientes-requisitos')}
-          onNavigateToTechnicalDiagnostics={() => props.setIsDiagnosticsModalOpen(true)}
-          onNavigateToTour={() => setActiveTab('tour-interativo')}
-          onOpenChecklistModal={() => props.setIsChecklistModalOpen(true)}
+          onSelectNC={props.handleViewOfficial}
+          onViewOfficial={props.handleViewOfficial}
+          onNewNC={props.handleNewNC}
+          onOpenExtractor={() => setActiveTab('extrator')}
+          onOpenReportTab={props.handleOpenReportWithFilter}
+          onOpenAlertsTab={() => setActiveTab('alertas')}
+          onOpenManualsTab={() => setActiveTab('manuais')}
+          onOpenPresentationTab={() => setActiveTab('apresentacao')}
+          onOpenArchitectureTab={() => setActiveTab('arquitetura')}
+          onOpenTourTab={() => setActiveTab('conhecaQualigest')}
+          onAuditNC={props.handleAuditNC}
         />
       );
   }

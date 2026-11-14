@@ -43,7 +43,14 @@ import {
   SituacaoAplicabilidadeImpacto,
   StatusConformidadeSGQ,
   ModalidadeComprovacaoEsperada,
-  HistoricoModalidadeComprovacao
+  HistoricoModalidadeComprovacao,
+  ManualRecord,
+  RegistroTreinamentoColaborador,
+  QualificacaoColaborador,
+  FerramentaCalibracao,
+  NCRecord,
+  AuditoriaExternaRecord,
+  ConstatacaoExternaRecord
 } from '../types';
 import {
   sanitizeForFirestore,
@@ -343,6 +350,15 @@ export function gerarPreparacaoInicialRequisito(
     validadoPorNome: item.id === 'CRIT-RBAC145-12' ? 'Paulo Okubo (Gerente da Qualidade)' : undefined,
     validadoEm: item.id === 'CRIT-RBAC145-12' ? hoje : undefined,
     situacaoProntidao,
+    origemBase: 'BASE_INICIAL_177',
+    ultimaRespostaAprovadaSnapshot: item.id === 'CRIT-RBAC145-12'
+      ? {
+          texto: respostaTexto,
+          versao: '1.0',
+          validadoEm: hoje,
+          validadoPorNome: 'Paulo Okubo (Gerente da Qualidade)'
+        }
+      : undefined,
     createdAt: agora,
     updatedAt: agora
   };
@@ -374,6 +390,10 @@ export function subscribeToAuditPreparations(
   // Retorna os dados iniciais de memória imediatamente para evitar tela vazia
   const iniciais = getPreparacoesIniciaisMemoria(orgId);
   callback(iniciais);
+
+  if (!auth.currentUser) {
+    return () => {};
+  }
 
   const unsubscribe = onSnapshot(
     colRef,
@@ -452,9 +472,179 @@ export async function saveAuditPreparation(
   }
 }
 
+/// ============================================================================
+// 4. CONSULTA CRUZADA AOS MÓDULOS DO SGQ & SUGESTÃO BASEADA EM FONTES REAIS
 // ============================================================================
-// 4. MOTOR DE SUGESTÃO DE RESPOSTA BASEADA EM FONTES REAIS (HUMAN-IN-THE-LOOP)
-// ============================================================================
+
+export interface ContextoCruzadoSGQ {
+  documentosControlados?: DocumentoControlado[];
+  manuals?: ManualRecord[];
+  trainingRecords?: RegistroTreinamentoColaborador[];
+  qualifications?: QualificacaoColaborador[];
+  ferramentasCalibradas?: FerramentaCalibracao[];
+  recordsNC?: NCRecord[];
+  externalAudits?: AuditoriaExternaRecord[];
+  auditFindings?: ConstatacaoExternaRecord[];
+  evidenciasDisponiveis?: EvidenciaRequisitoItem[];
+}
+
+export interface ResultadoConsultaCruzadaSGQ {
+  documentosControlados: DocumentoControlado[];
+  manuaisNormativos: ManualRecord[];
+  treinamentosRelacionados: RegistroTreinamentoColaborador[];
+  qualificacoesRelacionadas: QualificacaoColaborador[];
+  ferramentasRelacionadas: FerramentaCalibracao[];
+  rncsRelacionadas: NCRecord[];
+  findingsRelacionados: ConstatacaoExternaRecord[];
+  evidenciasCompativeis: EvidenciaRequisitoItem[];
+  lacunasIdentificadas: string[];
+}
+
+const DOMAIN_TOPICS: Array<{ topic: string; patterns: RegExp }> = [
+  { topic: 'CALIBRACAO', patterns: /calibra|metrol|torqu|torque|tool|gage|gauge|inmetro|rbc|nist|145\.109/i },
+  { topic: 'TREINAMENTO', patterns: /treina|train|cht|qualifica|compet|human factor|ewis|fts|ojt|instructor|145\.163/i },
+  { topic: 'DOCUMENTACAO', patterns: /manual|momq|ptm|mpo|procedure|technical data|amm|cmm|srm|revis|logbook|diário de bordo|145\.145/i },
+  { topic: 'MATERIAIS', patterns: /part|material|estoque|quarenten|quarant|shelf|receb|receiving|8130|form 1|sup|suspected|flammab|esd/i },
+  { topic: 'FOD_EHS', patterns: /fod|foreign object|housekeep|ppe|epi|fire|exting|eyewash|safety|seguran|hangar|pátio|lighting|ilumina/i },
+  { topic: 'LIBERACAO_CRS', patterns: /crs|release to service|return to service|rii|inspection|sign-off|certify|airworthiness|145\.155/i },
+  { topic: 'QUALIDADE_AUDITORIA', patterns: /qualit|auditor|cap|corrective|rnc|non-conformance|sms|sgso|subcontract|vendor|145\.211/i }
+];
+
+function extractActiveTopics(text: string): Set<string> {
+  const active = new Set<string>();
+  DOMAIN_TOPICS.forEach((entry) => {
+    if (entry.patterns.test(text)) active.add(entry.topic);
+  });
+  return active;
+}
+
+export function consultarRegistrosRelacionadosSGQ(
+  requisito: {
+    id?: string;
+    requisitoId?: string;
+    tituloRequisito?: string;
+    perguntaOuCriterio?: string;
+    textoOriginal?: string;
+    normaDocumento?: string;
+    referenciaNormativa?: string;
+    secaoReferencia?: string;
+    moduloOuSecao?: string;
+    controleCentralId?: string;
+    controleCentralCodigo?: string;
+    modalidadeComprovacao?: ModalidadeComprovacaoEsperada;
+  },
+  contexto: ContextoCruzadoSGQ = {}
+): ResultadoConsultaCruzadaSGQ {
+  const textoReq = `${requisito.tituloRequisito || ''} ${requisito.perguntaOuCriterio || ''} ${requisito.textoOriginal || ''} ${requisito.normaDocumento || ''} ${requisito.referenciaNormativa || ''} ${requisito.secaoReferencia || ''}`.toLowerCase();
+  const ctrlId = requisito.controleCentralCodigo || requisito.controleCentralId || '';
+  const reqId = requisito.requisitoId || requisito.id || '';
+  const activeTopics = extractActiveTopics(textoReq);
+
+  // 1. Documentos Controlados (MOMQ, PTM, POP, IT, Form)
+  const documentosControlados = (contexto.documentosControlados || []).filter((docItem) => {
+    const docTxt = `${docItem.codigo} ${docItem.titulo} ${(docItem as any).areaOuSetor || ''} ${(docItem as any).resumoEscopo || ''}`.toLowerCase();
+    if (ctrlId === 'CTRL-FERRAM-01' && /fer|cal|06|momq/.test(docTxt)) return true;
+    if (ctrlId === 'CTRL-TREIN-01' && /ptm|trein|capac|07|momq/.test(docTxt)) return true;
+    if (ctrlId === 'CTRL-DOCS-01' && /momq|doc|021|public/.test(docTxt)) return true;
+    if (activeTopics.has('CALIBRACAO') && /calibra|metrol|fer|06|momq/.test(docTxt)) return true;
+    if (activeTopics.has('TREINAMENTO') && /ptm|treina|capacita|cht|07/.test(docTxt)) return true;
+    if (activeTopics.has('FOD_EHS') && /fod|epi|segur|hangar|30/.test(docTxt)) return true;
+    if (activeTopics.has('MATERIAIS') && /quarent|segrega|mater|receb|esd|sup/.test(docTxt)) return true;
+    if (activeTopics.has('LIBERACAO_CRS') && /crs|libera|rii|logbook|diário/.test(docTxt)) return true;
+    if (activeTopics.has('DOCUMENTACAO') && /momq|manual|revis|public|doc/.test(docTxt)) return true;
+    return false;
+  });
+
+  // 2. Manuais Normativos e Internos (ManualRecord)
+  const manuaisNormativos = (contexto.manuals || []).filter((m) => {
+    const mTxt = `${m.codigo} ${m.titulo} ${m.descricaoResumo || ''}`.toLowerCase();
+    if (textoReq.includes('rbac 145') && mTxt.includes('145')) return true;
+    if (textoReq.includes('rbac 43') && mTxt.includes('43')) return true;
+    if (textoReq.includes('easa') && mTxt.includes('easa')) return true;
+    if (textoReq.includes('faa') && mTxt.includes('faa')) return true;
+    if (/momq|mgq|ptm/.test(mTxt) && (activeTopics.has('DOCUMENTACAO') || activeTopics.has('QUALIDADE_AUDITORIA') || activeTopics.has('TREINAMENTO'))) return true;
+    return false;
+  });
+
+  // 3. Treinamentos & Qualificações (Rooster / Competências)
+  const treinamentosRelacionados = activeTopics.has('TREINAMENTO') || activeTopics.has('LIBERACAO_CRS') || requisito.modalidadeComprovacao === 'REGISTRO_TREINAMENTO_CHT'
+    ? (contexto.trainingRecords || []).slice(0, 12)
+    : [];
+  const qualificacoesRelacionadas = activeTopics.has('TREINAMENTO') || activeTopics.has('LIBERACAO_CRS') || requisito.modalidadeComprovacao === 'REGISTRO_TREINAMENTO_CHT'
+    ? (contexto.qualifications || []).slice(0, 12)
+    : [];
+
+  // 4. Ferramentas Calibradas (Metrologia)
+  const ferramentasRelacionadas = activeTopics.has('CALIBRACAO') || ctrlId === 'CTRL-FERRAM-01' || requisito.modalidadeComprovacao === 'CERTIFICADO_CALIBRACAO'
+    ? (contexto.ferramentasCalibradas || []).slice(0, 15)
+    : [];
+
+  // 5. RNCs relacionadas
+  const rncsRelacionadas = (contexto.recordsNC || []).filter((nc) => {
+    const ncTxt = `${nc.titulo} ${nc.categoria} ${nc.normaReferencia} ${nc.descricaoNC}`.toLowerCase();
+    if (requisito.normaDocumento && nc.normaReferencia && nc.normaReferencia.toLowerCase().includes(requisito.normaDocumento.toLowerCase().slice(0, 10))) return true;
+    for (const topic of activeTopics) {
+      const entry = DOMAIN_TOPICS.find((t) => t.topic === topic);
+      if (entry && entry.patterns.test(ncTxt)) return true;
+    }
+    return false;
+  });
+
+  // 6. Constatações / Findings anteriores
+  const findingsRelacionados = (contexto.auditFindings || []).filter((f) => {
+    const fTxt = `${f.descricaoOriginal} ${f.requisitoNormativo?.norma || ''} ${f.requisitoNormativo?.itemRequisito || ''}`.toLowerCase();
+    for (const topic of activeTopics) {
+      const entry = DOMAIN_TOPICS.find((t) => t.topic === topic);
+      if (entry && entry.patterns.test(fTxt)) return true;
+    }
+    return false;
+  });
+
+  // 7. Evidências compatíveis
+  const evidenciasCompativeis = (contexto.evidenciasDisponiveis || []).filter((ev) => {
+    if (ev.controleId === ctrlId || ev.controleCodigo === ctrlId || (reqId && ev.requisitoId === reqId)) return true;
+    if (activeTopics.has('CALIBRACAO') && ev.tipo === 'CERTIFICADO_CALIBRACAO') return true;
+    if (activeTopics.has('TREINAMENTO') && ev.tipo === 'REGISTRO_TREINAMENTO') return true;
+    return false;
+  });
+
+  // 8. Lacunas reais identificadas (nunca inventar comprovação inexistente)
+  const lacunasIdentificadas: string[] = [];
+  if (documentosControlados.length === 0 && manuaisNormativos.length === 0) {
+    lacunasIdentificadas.push('Nenhum documento controlado (MOMQ, PTM, POP ou IT) compatível localizado no acervo ativo.');
+  }
+  const docsObsoletos = documentosControlados.filter((d) => d.statusGeral === 'CANCELADO' || d.statusGeral === 'INATIVO');
+  if (docsObsoletos.length > 0) {
+    lacunasIdentificadas.push(`${docsObsoletos.length} documento(s) relacionado(s) com status não vigente (${docsObsoletos.map((d) => d.codigo).join(', ')}).`);
+  }
+  const evidsVencidas = evidenciasCompativeis.filter((e) => e.statusValidade === 'VENCIDO' || (e.dataValidade && e.dataValidade < new Date().toISOString().split('T')[0]));
+  if (evidsVencidas.length > 0) {
+    lacunasIdentificadas.push(`${evidsVencidas.length} evidência(s) com validade expirada no acervo.`);
+  }
+  const ferramVencidas = ferramentasRelacionadas.filter((f) => f.status === 'VENCIDA' || f.status === 'QUARENTENA');
+  if (ferramVencidas.length > 0) {
+    lacunasIdentificadas.push(`${ferramVencidas.length} ferramenta(s) calibrada(s) vencida(s) ou em quarentena no módulo de Metrologia.`);
+  }
+  const rncsAbertas = rncsRelacionadas.filter((r) => !['Encerrada', 'Cancelada', 'Rejeitada'].includes(r.statusGeral));
+  if (rncsAbertas.length > 0) {
+    lacunasIdentificadas.push(`${rncsAbertas.length} RNC(s) aberta(s) ou em tratativa relacionada(s) ao tema (${rncsAbertas.slice(0, 3).map((r) => r.numeroNC).join(', ')}).`);
+  }
+  if (requisito.modalidadeComprovacao !== 'DOCUMENTAL_PURO' && evidenciasCompativeis.length === 0 && ferramentasRelacionadas.length === 0 && treinamentosRelacionados.length === 0) {
+    lacunasIdentificadas.push('Nenhuma evidência operacional objetiva cadastrada nos módulos do SGQ para este requisito; anexação obrigatória antes da aprovação.');
+  }
+
+  return {
+    documentosControlados,
+    manuaisNormativos,
+    treinamentosRelacionados,
+    qualificacoesRelacionadas,
+    ferramentasRelacionadas,
+    rncsRelacionadas,
+    findingsRelacionados,
+    evidenciasCompativeis,
+    lacunasIdentificadas
+  };
+}
 
 export interface ResultadoSugestaoResposta {
   respostaSugerida: string;
@@ -463,53 +653,71 @@ export interface ResultadoSugestaoResposta {
   documentosRecomendados: DocumentoControlado[];
   evidenciasRecomendadas: EvidenciaRequisitoItem[];
   justificativaClassificacao: string;
+  lacunasIdentificadas: string[];
+  consultaCruzada?: ResultadoConsultaCruzadaSGQ;
 }
 
 export function sugerirRespostaBaseadaEmFontes(
   requisito: RequisitoClienteItem | typeof MASTER_CHECKLIST_ITEMS[0],
   controleCentral?: ControleCentralSGQ | null,
   documentosControlados: DocumentoControlado[] = [],
-  evidenciasDisponiveis: EvidenciaRequisitoItem[] = []
+  evidenciasDisponiveis: EvidenciaRequisitoItem[] = [],
+  contextoExtra?: ContextoCruzadoSGQ
 ): ResultadoSugestaoResposta {
   const anyReq = requisito as any;
-  const textoReq = (anyReq.perguntaOuCriterio || anyReq.textoOriginal || anyReq.tituloCurto || '').toLowerCase();
   const normaReq = (anyReq.referenciaNormativa || anyReq.normaReferencia || anyReq.normaDocumento || '').toLowerCase();
   const ctrlId = controleCentral?.codigo || anyReq.controleCentralId || anyReq.controleCentralCodigo || 'CTRL-DOCS-01';
 
+  const consultaCruzada = consultarRegistrosRelacionadosSGQ(
+    {
+      id: anyReq.id,
+      requisitoId: anyReq.requisitoId || anyReq.id,
+      tituloRequisito: anyReq.tituloRequisito || anyReq.tituloCurto,
+      perguntaOuCriterio: anyReq.perguntaOuCriterio,
+      textoOriginal: anyReq.textoOriginal,
+      normaDocumento: anyReq.normaDocumento,
+      referenciaNormativa: anyReq.referenciaNormativa || anyReq.normaReferencia,
+      secaoReferencia: anyReq.secaoReferencia || anyReq.moduloOuSecao,
+      controleCentralId: ctrlId,
+      controleCentralCodigo: ctrlId,
+      modalidadeComprovacao: anyReq.modalidadeComprovacao
+    },
+    {
+      ...contextoExtra,
+      documentosControlados: documentosControlados.length > 0 ? documentosControlados : contextoExtra?.documentosControlados,
+      evidenciasDisponiveis: evidenciasDisponiveis.length > 0 ? evidenciasDisponiveis : contextoExtra?.evidenciasDisponiveis
+    }
+  );
+
   const fontesIdentificadas: FonteUtilizadaResposta[] = [];
-  const documentosRecomendados: DocumentoControlado[] = [];
-  const evidenciasRecomendadas: EvidenciaRequisitoItem[] = [];
+  const documentosRecomendados = consultaCruzada.documentosControlados;
+  const evidenciasRecomendadas = consultaCruzada.evidenciasCompativeis;
 
-  // 1. Identificar documentos aplicáveis no acervo do SGQ
-  documentosControlados.forEach((docItem) => {
-    const cod = docItem.codigo.toLowerCase();
-    const tit = docItem.titulo.toLowerCase();
+  // 1. Documentos controlados reais encontrados no acervo SGQ
+  documentosRecomendados.forEach((docItem) => {
+    fontesIdentificadas.push({
+      tipo: docItem.categoria === 'DOCUMENTO_INTERNO' ? 'PROCEDIMENTO' : docItem.categoria === 'DOCUMENTO_AUTORIDADE' ? 'NORMA' : 'MANUAL',
+      nome: `${docItem.codigo} — ${docItem.titulo}`,
+      referencia: docItem.codigo,
+      revisao: docItem.revisaoVigenteNumero || 'Vigente',
+      identificador: docItem.id
+    });
+  });
 
-    const combina =
-      (textoReq.includes('calibra') && (cod.includes('fer') || cod.includes('06') || tit.includes('calibra') || cod.includes('momq'))) ||
-      (textoReq.includes('treina') && (cod.includes('ptm') || cod.includes('07') || tit.includes('treina') || tit.includes('capacita'))) ||
-      (textoReq.includes('fod') && (cod.includes('fod') || tit.includes('fod') || cod.includes('30'))) ||
-      (textoReq.includes('esd') && (cod.includes('esd') || tit.includes('eletrost') || cod.includes('momq'))) ||
-      (textoReq.includes('quarentena') && (cod.includes('qua') || tit.includes('segrega') || tit.includes('quarentena'))) ||
-      (textoReq.includes('diário de bordo') && (cod.includes('crs') || tit.includes('libera') || tit.includes('logbook'))) ||
-      (textoReq.includes('rii') && (tit.includes('rii') || cod.includes('rii') || tit.includes('inspeção'))) ||
-      (ctrlId === 'CTRL-FERRAM-01' && (cod.includes('fer') || cod.includes('06'))) ||
-      (ctrlId === 'CTRL-TREIN-01' && (cod.includes('ptm') || cod.includes('07'))) ||
-      (ctrlId === 'CTRL-DOCS-01' && (cod.includes('momq') || cod.includes('021')));
-
-    if (combina) {
-      documentosRecomendados.push(docItem);
+  // 2. Manuais cadastrados no repositório de manuais
+  consultaCruzada.manuaisNormativos.forEach((manualItem) => {
+    if (!fontesIdentificadas.some((f) => f.referencia === manualItem.codigo)) {
       fontesIdentificadas.push({
-        tipo: docItem.categoria === 'DOCUMENTO_INTERNO' ? 'PROCEDIMENTO' : docItem.categoria === 'DOCUMENTO_AUTORIDADE' ? 'NORMA' : 'MANUAL',
-        nome: `${docItem.codigo} — ${docItem.titulo}`,
-        referencia: docItem.codigo,
-        revisao: docItem.revisaoVigenteNumero || 'Vigente',
-        identificador: docItem.id
+        tipo: 'MANUAL',
+        nome: `${manualItem.codigo} — ${manualItem.titulo}`,
+        referencia: manualItem.codigo,
+        revisao: manualItem.revisao || 'Vigente',
+        identificador: manualItem.id
       });
     }
   });
 
-  // 2. Identificar se há procedimentos no Controle Central SGQ
+  // 3. Procedimentos de referência no Controle Central SGQ (apenas se houver controle explícito)
   if (controleCentral?.documentosInternosRelacionados) {
     controleCentral.documentosInternosRelacionados.forEach((docRef) => {
       if (!fontesIdentificadas.some((f) => f.referencia === docRef)) {
@@ -517,34 +725,24 @@ export function sugerirRespostaBaseadaEmFontes(
           tipo: 'PROCEDIMENTO',
           nome: docRef,
           referencia: docRef,
-          revisao: 'Vigente'
+          revisao: 'Referência de Controle'
         });
       }
     });
   }
 
-  // 3. Identificar evidências objetivas reais ativas
-  evidenciasDisponiveis.forEach((ev) => {
-    const combinaEv =
-      ev.controleId === ctrlId ||
-      ev.controleCodigo === ctrlId ||
-      ev.requisitoId === anyReq.id ||
-      (textoReq.includes('calibra') && ev.tipo === 'CERTIFICADO_CALIBRACAO') ||
-      (textoReq.includes('treina') && ev.tipo === 'REGISTRO_TREINAMENTO');
-
-    if (combinaEv) {
-      evidenciasRecomendadas.push(ev);
-      fontesIdentificadas.push({
-        tipo: 'REGISTRO',
-        nome: ev.titulo,
-        referencia: ev.numeroReferencia || ev.id,
-        revisao: ev.statusValidade || 'VALIDO',
-        identificador: ev.id
-      });
-    }
+  // 4. Evidências objetivas reais ativas
+  evidenciasRecomendadas.forEach((ev) => {
+    fontesIdentificadas.push({
+      tipo: 'REGISTRO',
+      nome: ev.titulo,
+      referencia: ev.numeroReferencia || ev.id,
+      revisao: ev.statusValidade || 'VALIDO',
+      identificador: ev.id
+    });
   });
 
-  // 4. Determinação estrita da classificação de origem
+  // 5. Determinação estrita da classificação de origem (anti-alucinação)
   let origemClassificada: OrigemRespostaAuditoria = 'TRATAMENTO_MANUAL';
   let justificativaClassificacao = '';
   let respostaSugerida = '';
@@ -555,37 +753,42 @@ export function sugerirRespostaBaseadaEmFontes(
   const temEvidenciaValida = evidenciasRecomendadas.some(
     (e) => e.statusValidade === 'VALIDO' || !e.statusValidade
   );
+  const lacunasTxt = consultaCruzada.lacunasIdentificadas.length > 0
+    ? `\n\n[Lacunas identificadas para complementação humana]:\n- ${consultaCruzada.lacunasIdentificadas.join('\n- ')}`
+    : '';
 
-  // Caso especial: TACV sem manual homologado
   if (anyReq.checklistId === 'CHK-TACV-LINE' || normaReq.includes('tacv') || normaReq.includes('aac')) {
     origemClassificada = 'TRATAMENTO_MANUAL';
     justificativaClassificacao = 'Requisito sob dependência de validação documental prévia do operador (TACV / Cabo Verde). Não há manual homologado arquivado.';
-    respostaSugerida = 'Tratamento manual obrigatório: A organização aguarda apresentação formal do GMM e certificado de reconhecimento operacional da Agência de Aviação Civil (AAC) de Cabo Verde para a frota Boeing 737-MAX na estação de linha de GRU antes de submeter resposta institucional aprovada.';
+    respostaSugerida = 'Tratamento manual obrigatório: Não consta no acervo SGQ o GMM aprovado nem o certificado de reconhecimento operacional emitido pela Agência de Aviação Civil (AAC) de Cabo Verde. É necessário obter e anexar a documentação oficial do operador antes de validar resposta institucional.';
   } else if (temProcedimentoFormal && temEvidenciaValida && evidenciasRecomendadas.length >= 1) {
     origemClassificada = 'AUTOMATICA';
-    justificativaClassificacao = `Foram identificados ${fontesIdentificadas.length} documentos procedimentais oficiais e ${evidenciasRecomendadas.length} evidências objetivas válidas para comprovação integral.`;
-    
+    justificativaClassificacao = `Identificados ${documentosRecomendados.length + consultaCruzada.manuaisNormativos.length} documento(s) do acervo e ${evidenciasRecomendadas.length} evidência(s) objetiva(s) válida(s) para revisão humana da Qualidade.`;
+
+    const docsStr = fontesIdentificadas
+      .filter((f) => f.tipo === 'PROCEDIMENTO' || f.tipo === 'MANUAL')
+      .map((f) => `${f.nome} (${f.revisao})`)
+      .join(', ');
+    const evidsStr = evidenciasRecomendadas.map((e) => `${e.titulo} (Ref: ${e.numeroReferencia || e.tipo}, Status: ${e.statusValidade || 'VALIDO'})`).join('; ');
+
+    respostaSugerida = `Proposta fundamentada no controle ${ctrlId} (${controleCentral?.nome || 'SGQ'}) e nos documentos controlados localizados no acervo [${docsStr}]. Evidências disponíveis para conferência: [${evidsStr}].${lacunasTxt}`;
+  } else if (temProcedimentoFormal) {
+    origemClassificada = 'AUTOMATICA_COM_VALIDACAO';
+    justificativaClassificacao = 'Documento procedimental identificado no acervo SGQ, porém faltam evidências objetivas vinculadas para comprovação operacional completa.';
     const docsStr = fontesIdentificadas
       .filter((f) => f.tipo === 'PROCEDIMENTO' || f.tipo === 'MANUAL')
       .map((f) => f.nome)
       .join(', ');
-    const evidsStr = evidenciasRecomendadas.map((e) => `${e.titulo} (Ref: ${e.numeroReferencia || e.tipo})`).join('; ');
 
-    respostaSugerida = `A IMPACTO cumpre o requisito regulatório/contratual por meio da execução padronizada do controle corporativo ${ctrlId} (${controleCentral?.nome || 'SGQ'}), amparado pelos documentos controlados [${docsStr}]. A conformidade prática e a eficácia operacional são comprovadas objetivamente através dos seguintes registros e certificados vigentes: [${evidsStr}]. Todos os registros são mantidos arquivados sob guarda da Garantia da Qualidade, acessíveis para auditoria.`;
-  } else if (temProcedimentoFormal) {
-    origemClassificada = 'AUTOMATICA_COM_VALIDACAO';
-    justificativaClassificacao = 'Identificado procedimento formal aplicável no acervo do SGQ, porém requer revisão humana e vinculação de evidências de campo da base auditada.';
-    const docsStr = fontesIdentificadas.map((f) => f.nome).join(', ');
-
-    respostaSugerida = `A organização possui diretriz procedimental estruturada em [${docsStr}], atendendo aos preceitos da Seção ${anyReq.moduloOuSecao || anyReq.secaoReferencia || 'Geral'}. Para apresentação formal em auditoria, a Qualidade deve revisar a redação institucional e anexar os registros de execução prática da estação aplicável.`;
-  } else if (controleCentral) {
+    respostaSugerida = `Rascunho parcial baseado nos documentos localizados [${docsStr}] (Seção ${anyReq.moduloOuSecao || anyReq.secaoReferencia || 'Geral'}). Não foram localizadas evidências objetivas suficientes neste requisito; a equipe da Qualidade deve revisar a redação e anexar os registros comprobatórios reais.${lacunasTxt}`;
+  } else if (controleCentral && (consultaCruzada.ferramentasRelacionadas.length > 0 || consultaCruzada.treinamentosRelacionados.length > 0)) {
     origemClassificada = 'COMPLEMENTACAO_NECESSARIA';
-    justificativaClassificacao = 'Existe processo geral no SGQ, mas faltam referências normativas específicas ou evidências objetivas cadastradas.';
-    respostaSugerida = `O processo é conduzido sob a governança do controle corporativo ${ctrlId} (${controleCentral.nome}), porém depende de detalhamento de instruções técnicas complementares e coleta de evidências de pátio/hangar para atingir o nível de prontidão auditável.`;
+    justificativaClassificacao = 'Registros operacionais correlatos encontrados nos módulos de Metrologia/Treinamento, porém sem procedimento formal vinculado diretamente.';
+    respostaSugerida = `Registros operacionais relacionados localizados sob o controle ${ctrlId} (${controleCentral.nome}), sem vínculo documental completo no acervo. Complementação humana obrigatória para associar os documentos vigentes (MOMQ/PTM) e confirmar evidências.${lacunasTxt}`;
   } else {
     origemClassificada = 'TRATAMENTO_MANUAL';
-    justificativaClassificacao = 'Nenhuma fonte documental ou registro interno suficiente foi localizado no sistema para este requisito específico.';
-    respostaSugerida = `Tratamento manual requerido: Não foram encontradas fontes suficientes no acervo do SGQ para responder automaticamente a este critério. A equipe da Qualidade deve analisar a norma [${anyReq.referenciaNormativa || anyReq.normaReferencia || 'Vigente'}], elaborar a resposta institucional e cadastrar os documentos pertinentes.`;
+    justificativaClassificacao = 'Informação insuficiente no acervo e nos módulos do SGQ para compor resposta automatizada sem risco de inferência.';
+    respostaSugerida = `[REQUER COMPLEMENTAÇÃO HUMANA] Não foram encontrados documentos controlados ou evidências suficientes no sistema para sustentar resposta automática ao critério (${anyReq.referenciaNormativa || anyReq.normaReferencia || anyReq.normaDocumento || 'Norma aplicável'}). Cadastre ou vincule os documentos e evidências reais antes da aprovação pela Qualidade.${lacunasTxt}`;
   }
 
   return {
@@ -594,8 +797,164 @@ export function sugerirRespostaBaseadaEmFontes(
     fontesIdentificadas,
     documentosRecomendados,
     evidenciasRecomendadas,
-    justificativaClassificacao
+    justificativaClassificacao,
+    lacunasIdentificadas: consultaCruzada.lacunasIdentificadas,
+    consultaCruzada
   };
+}
+
+// ============================================================================
+// 4B. DETECÇÃO CONTÍNUA DE IMPACTO NA BASE INSTITUCIONAL (SEM SOBRESCREVER APROVAÇÕES)
+// ============================================================================
+
+export function detectarImpactosBaseInstitucional(
+  preparacoes: PreparacaoRequisitoAuditoria[],
+  contexto: ContextoCruzadoSGQ
+): PreparacaoRequisitoAuditoria[] {
+  const agora = new Date().toISOString();
+  const hoje = agora.split('T')[0];
+  const em30Dias = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+
+  const docById = new Map<string, DocumentoControlado>();
+  const docByCode = new Map<string, DocumentoControlado>();
+  (contexto.documentosControlados || []).forEach((d) => {
+    docById.set(d.id, d);
+    docByCode.set(d.codigo.toUpperCase(), d);
+  });
+
+  return preparacoes.map((prep) => {
+    const motivos: string[] = [];
+
+    // 1. Verificar revisão de documentos vinculados
+    (prep.documentosRelacionados || []).forEach((docRel) => {
+      const liveDoc = docById.get(docRel.documentoId) || docByCode.get((docRel.codigo || '').toUpperCase());
+      if (liveDoc) {
+        if (liveDoc.statusGeral === 'CANCELADO' || liveDoc.statusGeral === 'INATIVO') {
+          motivos.push(`Documento vinculado [${liveDoc.codigo}] encontra-se ${liveDoc.statusGeral} no Controle Documental.`);
+        } else if (
+          docRel.revisao &&
+          liveDoc.revisaoVigenteNumero &&
+          docRel.revisao !== 'Vigente' &&
+          docRel.revisao !== liveDoc.revisaoVigenteNumero
+        ) {
+          motivos.push(`Nova revisão vigente detectada para [${liveDoc.codigo}]: vinculada (${docRel.revisao}) vs. atual (${liveDoc.revisaoVigenteNumero}).`);
+        }
+      }
+    });
+
+    // 2. Verificar validade de evidências vinculadas
+    (prep.evidenciasVinculadas || []).forEach((ev) => {
+      if (ev.statusValidade === 'VENCIDO' || (ev.dataValidade && ev.dataValidade < hoje)) {
+        motivos.push(`Evidência [${ev.titulo}] venceu em ${ev.dataValidade || 'data anterior'}.`);
+      } else if (ev.dataValidade && ev.dataValidade <= em30Dias) {
+        motivos.push(`Evidência [${ev.titulo}] vence em menos de 30 dias (${ev.dataValidade}).`);
+      }
+    });
+
+    // 3. Verificar impacto de ferramentas/treinamentos/RNCs abertas apenas para itens já aprovados ou com controle direto
+    const consulta = consultarRegistrosRelacionadosSGQ(prep, {
+      ferramentasCalibradas: contexto.ferramentasCalibradas,
+      trainingRecords: contexto.trainingRecords,
+      qualifications: contexto.qualifications,
+      recordsNC: contexto.recordsNC
+    });
+
+    const ferramVencidas = consulta.ferramentasRelacionadas.filter((f) => f.status === 'VENCIDA' || f.status === 'QUARENTENA');
+    if (ferramVencidas.length > 0 && prep.modalidadeComprovacao === 'CERTIFICADO_CALIBRACAO') {
+      motivos.push(`${ferramVencidas.length} instrumento(s) com status VENCIDA/QUARENTENA no módulo de Metrologia.`);
+    }
+
+    const rncsAbertas = consulta.rncsRelacionadas.filter((r) => !['Encerrada', 'Cancelada', 'Rejeitada'].includes(r.statusGeral));
+    if (rncsAbertas.length > 0 && prep.statusResposta === 'APROVADA') {
+      motivos.push(`${rncsAbertas.length} RNC(s) ativa(s) relacionada(s) (${rncsAbertas.slice(0, 2).map((r) => r.numeroNC).join(', ')}).`);
+    }
+
+    const precisaReavaliar = motivos.length > 0;
+    const approvedSnapshot =
+      prep.ultimaRespostaAprovadaSnapshot ||
+      (prep.statusResposta === 'APROVADA' && prep.respostaTexto
+        ? {
+            texto: prep.respostaTexto,
+            versao: prep.versaoResposta || '1.0',
+            validadoEm: prep.validadoEm,
+            validadoPorNome: prep.validadoPorNome
+          }
+        : undefined);
+
+    // IMPORTANTE: Nunca sobrescreve respostaTexto nem altera silenciosamente uma resposta já aprovada
+    return {
+      ...prep,
+      reavaliacaoNecessaria: precisaReavaliar,
+      motivosReavaliacao: motivos,
+      impactoDetectadoEm: precisaReavaliar ? (prep.impactoDetectadoEm || agora) : undefined,
+      ultimaRespostaAprovadaSnapshot: approvedSnapshot
+    };
+  });
+}
+
+// ============================================================================
+// 4C. INCORPORAÇÃO FORMAL DE NOVO REQUISITO À BASE INSTITUCIONAL PERMANENTE
+// ============================================================================
+
+export async function incorporarRequisitoNaBaseInstitucional(
+  organizationId: string,
+  novaPreparacao: PreparacaoRequisitoAuditoria,
+  currentUser?: UserProfile | null,
+  baseExistente: PreparacaoRequisitoAuditoria[] = []
+): Promise<PreparacaoRequisitoAuditoria> {
+  const role = (currentUser?.role || '').toUpperCase();
+  const canApprovePermanent = ['ADMIN', 'ADMINISTRADOR', 'GESTOR_SGQ', 'GESTOR'].includes(role);
+  if (!canApprovePermanent) {
+    throw new Error('Apenas perfis de liderança da Qualidade (ADMIN / GESTOR_SGQ) podem aprovar e incorporar novos requisitos na Base Institucional permanente.');
+  }
+
+  const textoNorm = (novaPreparacao.textoOriginal || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const duplicado = baseExistente.find(
+    (item) =>
+      item.id === novaPreparacao.id ||
+      (item.textoOriginal && item.textoOriginal.trim().toLowerCase().replace(/\s+/g, ' ') === textoNorm &&
+        item.autoridadeOuCliente.toLowerCase() === novaPreparacao.autoridadeOuCliente.toLowerCase())
+  );
+  if (duplicado) {
+    throw new Error(`Requisito equivalente já existe na Base Institucional (${duplicado.id} — ${duplicado.numeroItem}). Evite duplicidade.`);
+  }
+
+  const agora = new Date().toISOString();
+  const hoje = agora.split('T')[0];
+
+  const consolidado: PreparacaoRequisitoAuditoria = {
+    ...novaPreparacao,
+    organizationId: organizationId || 'org_impacto_aviation',
+    origemBase: 'INCORPORADO_POS_AUDITORIA',
+    incorporadoEm: novaPreparacao.incorporadoEm || agora,
+    incorporadoPorNome: novaPreparacao.incorporadoPorNome || currentUser?.displayName || 'Qualidade SGQ',
+    validadoPorNome: novaPreparacao.validadoPorNome || currentUser?.displayName || 'Qualidade SGQ',
+    validadoPorUid: auth.currentUser?.uid || currentUser?.uid,
+    validadoEm: novaPreparacao.validadoEm || hoje,
+    ultimaRespostaAprovadaSnapshot:
+      novaPreparacao.statusResposta === 'APROVADA'
+        ? {
+            texto: novaPreparacao.respostaTexto,
+            versao: novaPreparacao.versaoResposta || '1.0',
+            validadoEm: hoje,
+            validadoPorNome: currentUser?.displayName || 'Qualidade SGQ'
+          }
+        : undefined,
+    updatedAt: agora
+  };
+
+  await saveAuditPreparation(organizationId, consolidado, currentUser);
+
+  await recordOrganizationAudit(organizationId, {
+    entity: 'CLIENT_REQUIREMENT',
+    entityId: consolidado.id,
+    action: 'CREATE',
+    summary: `Novo requisito incorporado permanentemente à Base Institucional: ${consolidado.requisitoId} (${consolidado.autoridadeOuCliente})`,
+    changedByUid: auth.currentUser?.uid || currentUser?.uid,
+    changedByEmail: auth.currentUser?.email || currentUser?.email
+  });
+
+  return consolidado;
 }
 
 // ============================================================================
@@ -1278,6 +1637,14 @@ export function aprovarValidacaoQualidade(
     validadoEm: hoje,
     justificativaExcecao: isExcecao ? justificativaExcecao : undefined,
     situacaoProntidao: isExcecao ? 'EXCECAO_JUSTIFICADA' : 'PRONTO_PARA_AUDITORIA',
+    reavaliacaoNecessaria: false,
+    motivosReavaliacao: [],
+    ultimaRespostaAprovadaSnapshot: {
+      texto: preparacao.respostaTexto,
+      versao: preparacao.versaoResposta || '1.0',
+      validadoEm: hoje,
+      validadoPorNome: currentUser?.displayName || 'Paulo Okubo (Gerente da Qualidade)'
+    },
     historicoRespostas: [historico, ...(preparacao.historicoRespostas || [])],
     updatedAt: agora
   };
@@ -1308,6 +1675,8 @@ export function calcularIndicadoresPainel(
   let requisitosComEvidenciasSuficientes = 0;
   let requisitosComPendencias = 0;
   let requisitosProntosParaAuditoria = 0;
+  let requisitosComAlertaReavaliacao = 0;
+  let requisitosIncorporadosPosAuditoria = 0;
 
   preparacoes.forEach((p) => {
     if (p.statusResposta === 'NAO_INICIADA') respostasNaoIniciadas++;
@@ -1333,6 +1702,14 @@ export function calcularIndicadoresPainel(
     if (p.situacaoProntidao === 'PRONTO_PARA_AUDITORIA' || p.situacaoProntidao === 'EXCECAO_JUSTIFICADA') {
       requisitosProntosParaAuditoria++;
     }
+
+    if (p.reavaliacaoNecessaria) {
+      requisitosComAlertaReavaliacao++;
+    }
+
+    if (p.origemBase === 'INCORPORADO_POS_AUDITORIA') {
+      requisitosIncorporadosPosAuditoria++;
+    }
   });
 
   const taxaProntidaoGeral = totalRequisitos > 0
@@ -1349,6 +1726,8 @@ export function calcularIndicadoresPainel(
     requisitosComEvidenciasSuficientes,
     requisitosComPendencias,
     requisitosProntosParaAuditoria,
-    taxaProntidaoGeral
+    taxaProntidaoGeral,
+    requisitosComAlertaReavaliacao,
+    requisitosIncorporadosPosAuditoria
   };
 }

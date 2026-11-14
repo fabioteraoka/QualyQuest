@@ -1,500 +1,416 @@
-# QualyQuest SGQ & Rooster MRO Enterprise
+# QualyQuest SGQ & Rooster MRO
 
-<div align="center">
-
-[![Versão](https://img.shields.io/badge/Versão-v2.8.0--enterprise-0284c7.svg?style=for-the-badge)](https://impacto.aero)
-[![Compliance](https://img.shields.io/badge/Homologação-ANAC%20RBAC%20145%20%7C%20EASA%20%7C%20FAA-10b981.svg?style=for-the-badge)](https://impacto.aero)
-[![Segurança](https://img.shields.io/badge/Multi--Tenancy-Firestore%20Rules%20Audited-6366f1.svg?style=for-the-badge)](https://impacto.aero)
-[![Testes](https://img.shields.io/badge/Testes%20de%20Integração-81%2F81%20PASS-10b981.svg?style=for-the-badge)](https://impacto.aero)
-[![PPTX Auto-Fit](https://img.shields.io/badge/PPTX%20Auto--Fit-100%25%20Homologado%20(0%20Overflow)-10b981.svg?style=for-the-badge)](https://impacto.aero)
-
-**A Plataforma Corporativa Unificada de Garantia da Qualidade, Gestão de Competências Técnicas e Governança Regulatória para Centros de Manutenção Aeronáutica (MRO), Oficinas Homologadas e Operadores Aéreos.**
-
-[1. Apresentação](#1-nome-e-apresentação-do-qualyquest--rooster) • [2. Finalidade](#2-finalidade-do-sistema) • [3. Problemas Operacionais](#3-problemas-operacionais-resolvidos) • [4. Funcionalidades](#4-principais-funcionalidades-implementadas) • [5. Módulos](#5-módulos-disponíveis-9-domínios-canônicos) • [6. Pessoas](#6-gestão-de-colaboradores-e-efetivo-técnico) • [7. Treinamentos](#7-treinamentos-habilitações-e-qualificações-cht) • [8. Cursos](#8-catálogo-de-cursos-e-modelos-de-capacitação) • [9. Validades](#9-controle-de-validade-e-recorrência-5-estados) • [10. Documentos](#10-governança-documental-e-consulta-temporal-na-data-da-os) • [11. Dashboards](#11-consultas-indicadores-e-dashboards) • [12. Integrações](#12-integrações-existentes-e-apis) • [13. Perfis RBAC](#13-perfis-de-acesso-e-regras-de-segurança-firestore) • [14. Arquitetura](#14-arquitetura-tecnológica-real) • [15. Instalação](#15-instalação-e-execução) • [16. Ambiente](#16-configuração-de-ambiente) • [17. Testes](#17-testes-disponíveis-e-situação-conhecida) • [18. Limitações](#18-limitações-atuais) • [19. Em Andamento](#19-funcionalidades-em-homologação-e-desenvolvimento) • [20. Roadmap](#20-roadmap-estratégico-e-próximas-etapas) • [21. Screenshots](#21-screenshots-reais-da-aplicação)
-
----
-
-</div>
+**Plataforma Corporativa Integrada de Sistema de Garantia da Qualidade (SGQ), Gestão de Competências Aeronáuticas (Rooster MRO), Controle Documental e Reutilização Inteligente de Requisitos em Auditorias.**
 
 <p align="center">
-  <img src="docs/screenshots/dashboard_overview.png" alt="Painel Executivo QualyQuest SGQ & Rooster MRO" width="100%" style="border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);" />
+  <img src="docs/screenshots/dashboard_overview.png" alt="Painel Executivo QualyQuest SGQ & Rooster MRO" width="100%" />
 </p>
 
 ---
 
-## 1. Nome e Apresentação do QualyQuest / Rooster
+## Sumário
 
-O ecossistema **QualyQuest SGQ & Rooster MRO Enterprise** é a solução definitiva de software integrada para oficinas de manutenção aeronáutica homologadas sob os regulamentos **ANAC RBAC 145**, **EASA Part-145**, **FAA Part 145**, **ISO 9001:2015** e **AS9100**.
-
-O sistema opera a partir da fusão arquitetural e operacional de dois pilares complementares:
-1. **Rooster MRO Enterprise — Sistema Mestre de Registro (System of Record):** Estabelecido como fonte canônica e imutável para gestão de Pessoas (`persons`), Catálogo Oficial de Cursos por Frota/Motor (`trainingCourses`), Registros de Treinamentos e Reciclagens (`trainingRecords`), Licenças e Habilitações ANAC (`qualifications`) e Bases Operacionais (`operational_bases`).
-2. **QualyQuest SGQ — Motor Integrado da Qualidade & Governança:** Plataforma de gestão do Sistema de Garantia da Qualidade, gerenciando Não Conformidades (RNC Formulário F 001-29), Matriz de Risco Aeronáutico 5x5, Análise Causal (Ishikawa 6M e 5 Porquês), Planos Corretivos 5W2H, Acervo Documental com Consulta Temporal na data da OS, Gestão Metrológica de Ferramentas (RBAC 145.109), Auditorias por Requisitos e Apresentações Gerenciais 70/30.
+1. [Identificação do Sistema](#1-identificação-do-sistema)
+2. [Finalidade e Contexto Aeronáutico / MRO](#2-finalidade-e-contexto-aeronáutico--mro)
+3. [Problemas Operacionais Resolvidos](#3-problemas-operacionais-resolvidos)
+4. [Funcionalidades Implementadas](#4-funcionalidades-implementadas)
+5. [Módulos e Navegação Unificada](#5-módulos-e-navegação-unificada)
+6. [Base Institucional de Requisitos, Respostas e Evidências (177+)](#6-base-institucional-de-requisitos-respostas-e-evidências-177)
+7. [Importação de Novas Auditorias e Pré-Auditoria Consolidada](#7-importação-de-novas-auditorias-e-pré-auditoria-consolidada)
+8. [Gestão de Colaboradores, Competências, Treinamentos e Qualificações](#8-gestão-de-colaboradores-competências-treinamentos-e-qualificações)
+9. [Controle de Validades e Alertas](#9-controle-de-validades-e-alertas)
+10. [Controle Documental e Consulta Temporal](#10-controle-documental-e-consulta-temporal)
+11. [Relatórios, Dashboards e Apresentações PPTX](#11-relatórios-dashboards-e-apresentações-pptx)
+12. [Inventário Documentado dos Arquivos PPTX](#12-inventário-documentado-dos-arquivos-pptx)
+13. [Integrações e APIs Existentes](#13-integrações-e-apis-existentes)
+14. [Inteligência Artificial (Gemini) e Fallbacks](#14-inteligência-artificial-gemini-e-fallbacks)
+15. [Perfis de Acesso (RBAC) e Regras Firestore](#15-perfis-de-acesso-rbac-e-regras-firestore)
+16. [Arquitetura Técnica Real](#16-arquitetura-técnica-real)
+17. [Banco de Dados, Persistência e Evidence Storage](#17-banco-de-dados-persistência-e-evidence-storage)
+18. [Variáveis de Ambiente](#18-variáveis-de-ambiente)
+19. [Instalação e Execução Local](#19-instalação-e-execução-local)
+20. [Scripts Disponíveis](#20-scripts-disponíveis)
+21. [Testes Disponíveis e Situação Real](#21-testes-disponíveis-e-situação-real)
+22. [Classificação Objetiva por Funcionalidade](#22-classificação-objetiva-por-funcionalidade)
+23. [Limitações Conhecidas](#23-limitações-conhecidas)
+24. [Funcionalidades Dependentes de Configuração Externa](#24-funcionalidades-dependentes-de-configuração-externa)
+25. [Próximas Etapas / Roadmap](#25-próximas-etapas--roadmap)
+26. [Screenshots Reais da Aplicação](#26-screenshots-reais-da-aplicação)
+27. [Aviso de Integridade e Anti-Alucinação](#27-aviso-de-integridade-e-anti-alucinação)
 
 ---
 
-## 2. Finalidade do Sistema
+## 1. Identificação do Sistema
 
-A finalidade central do QualyQuest / Rooster é garantir a **aeronavegabilidade continuada e a segurança de voo** por meio da conformidade técnica e regulatória ininterrupta das operações de manutenção:
-- **Blindagem Operacional:** Impedir que aeronaves sejam liberadas para voo (*Return to Service - RTS* ou *Certificado de Liberação de Aeronave - CRS*) por técnicos com habilitações, carteiras CHT ou reciclagens regulamentares vencidas.
-- **Rastreabilidade Ininterrupta:** Assegurar que qualquer manutenção realizada no passado possa ser reconstituída formalmente, comprovando qual técnico executou o serviço, quais ferramentas calibradas na RBC foram utilizadas e qual a revisão exata do manual do fabricante estava legalmente vigente no dia da Ordem de Serviço.
-- **Governança Executiva:** Fornecer à Diretoria, Responsáveis Técnicos e Gerentes da Qualidade um espelho fidedigno e auditável em tempo real sobre a saúde do SGQ, sem aproximações fictícias ou extrapolações não comprovadas.
+- **Nome da Aplicação:** QualyQuest SGQ & Rooster MRO (`qualigest-rnc` no `package.json`)
+- **Organização Principal de Referência:** IMPACTO Aviation (`org_impacto_aviation`)
+- **Domínio:** Garantia da Qualidade Aeronáutica, Manutenção de Aeronaves (MRO) e Governança de Auditorias Regulatórias e de Clientes
+- **Arquitetura de Operação:** Aplicação Web SPA integrada com servidor backend Node.js/Express, persistência em Google Cloud Firestore e armazenamento de arquivos de evidência em objeto/disco
+
+---
+
+## 2. Finalidade e Contexto Aeronáutico / MRO
+
+O **QualyQuest SGQ & Rooster MRO** sustenta a conformidade operacional e regulatória de organizações de manutenção aeronáutica homologadas ou auditadas sob **ANAC RBAC 145 / RBAC 43**, **EASA Part-145**, **FAA 14 CFR Part 145**, **IOSA** e checklists específicos de clientes e operadores aéreos (como Kalitta Air QA-14, TACV, entre outros).
+
+O sistema integra duas frentes operacionais em uma única plataforma:
+1. **Rooster MRO (Sistema de Registro de Efetivo e Competências):** Cadastro canônico de colaboradores técnicos, licenças CHT/CANAC, autorizações de retorno ao serviço (APRS/RTS), catálogos de treinamentos por frota e motor, matrizes de capacitação e bases operacionais.
+2. **QualyQuest SGQ (Garantia da Qualidade e Auditorias):** Gestão de Não Conformidades (Formulário F 001-29), Matriz de Risco 5x5, Ishikawa 6M, Planos 5W2H, Controle Documental com Consulta Temporal na data da Ordem de Serviço, Metrologia (RBC/Inmetro), **Base Institucional de 177+ Requisitos** e **Pré-Auditoria Consolidada** com reuso inteligente entre auditorias.
 
 ---
 
 ## 3. Problemas Operacionais Resolvidos
 
-| Problema Operacional Tradicional no MRO | Consequência Regulatória | Solução QualyQuest / Rooster MRO |
+| Problema Operacional | Risco / Impacto | Solução Implementada no Sistema |
 | :--- | :--- | :--- |
-| **Planilhas Isoladas de Treinamentos** | Divergência entre bases, registros desatualizados e turmas expiradas. | **Rooster MRO como Fonte Canônica Centralizada:** Base única multi-tenant no Firestore com cálculo preditivo e atualização em tempo real. |
-| **Presunção Arbitrária de Validade** | Atribuição indiscriminada de 730 ou 1825 dias para cursos sem regra documentada. | **5 Estados de Validade Estritos:** Distinção matemática entre sem vencimento aplicável, sem validade definida, dados insuficientes, em dia e vencido. |
-| **Uso de Manuais Técnicos Obsoletos** | Infração gravíssima do RBAC 145.109 por utilizar cartões de trabalho desatualizados. | **Consulta Temporal na Data da OS:** Algoritmo que audita qual revisão do AMM/CMM/MOE estava em vigor no exato dia da execução do serviço. |
-| **Ferramentas com Calibração Vencida** | Comprometimento legal do certificado de liberação de aeronave (CRS). | **Conta Corrente de Créditos Metrológicos (RBC):** Alerta antecipado aos 30 e 60 dias e segregação em quarentena com trava física e digital. |
-| **Falsos Sucessos de Gravação Offline** | Dados perdidos por falhas transitórias de conexão simuladas como gravadas. | **Persistência Real Comprovada:** O sistema jamais confirma uma gravação sem validação remota definitiva do Firestore (`savePessoa()` e equivalentes). |
-| **Silos Departamentais** | A qualidade não conversa com o almoxarifado, planejamento ou RH operacional. | **Cadeia Circular em 15 Fases Integradas:** Do requisito do cliente e auditoria externa à competência do técnico e lição aprendida corporativa. |
+| **Retrabalho a cada nova auditoria** | Equipe da Qualidade recomeça do zero respostas e levantamentos já realizados em auditorias anteriores. | **Base Institucional Permanente (177+ requisitos)** combinada com **Pré-Auditoria Consolidada**, que compara automaticamente checklists recebidos contra respostas aprovadas e evidências vigentes. |
+| **Reutilização indevida fora de escopo** | Usar resposta de um cliente/base/aeronave sem validar diferenças regulatórias ou operacionais. | Motor de comparação separa explicitamente `EQUIVALÊNCIA CONFIRMADA` de `EQUIVALÊNCIA PARCIAL` sempre que houver divergência de cliente, localidade, frota, norma ou evidência vencida. |
+| **Presunção arbitrária de validades de cursos** | Suposição manual de prazos sem regra de catálogo. | **Motor estrito de 5 estados de validade** calculado por meses reais de calendário ou data explícita, sem inventar vencimentos. |
+| **Uso ou citação de manuais obsoletos** | Não conformidade por falta de comprovação da revisão vigente na data da OS. | **Consulta Temporal na Data da OS** e alertas automáticos de impacto quando revisões documentais mudam ou documentos são inativados. |
+| **Silos entre Qualidade, Treinamentos, Metrologia e Documentos** | Respostas de auditoria desconectadas de laudos, treinamentos e RNCs reais. | Consulta cruzada em tempo real (`consultarRegistrosRelacionadosSGQ`) conectando documentos controlados, manuais, treinamentos, CHTs, ferramentas calibradas e RNCs. |
 
 ---
 
-## 4. Principais Funcionalidades Implementadas
+## 4. Funcionalidades Implementadas
 
-- **Fluxo Digital de Não Conformidades (F 001-29):** Digitalização com numeração única e auditável, triagem de ação preventiva/corretiva, verificação de eficácia de 60 dias e bloqueio de encerramento sem evidência comprovada.
-- **Matriz de Risco Aeronáutico 5x5:** Severidade (1 a 5) versus Probabilidade (A a E) com cálculo estrito de pontuação e segregação de ocorrências na faixa crítica P1.
-- **Metodologia Causal Estruturada:** Integração do Diagrama de Ishikawa 6M (Método, Mão de Obra, Máquina, Material, Meio Ambiente, Medição) com a técnica dos 5 Porquês e planos 5W2H.
-- **Rooster MRO — Pessoas, Competências & CHTs:** Visão 360° do colaborador técnico, especialidades (Célula, Grupo Motopropulsor, Aviônica), restrições físicas/operacionais e controle de assinaturas.
-- **Catálogo de Cursos & Matrizes por Frota/Motor:** Requisitos mandatórios por aeronave (A320, B737, B767, B777, ATR, Caravan, King Air) e motor (CFM56, LEAP, V2500, Trent, GE90, PT6A).
-- **Central Preditiva de Vencimentos & Gaps:** Filtros dinâmicos por faixas temporais (≤30 dias, ≤60 dias, ≤90 dias) e identificação de lacunas técnicas por posto de trabalho.
-- **Governança Documental & Consulta Temporal (Fase 10):** Catálogo de publicações controladas com histórico de revisões vigentes e motor de busca temporal para auditorias ANAC/EASA.
-- **Metrologia & Ferramental Calibrado (RBAC 145.109):** Conta de créditos de calibração, controle de laudos RBC vinculados e quarentena para instrumentos com crédito esgotado.
-- **Apresentação Gerencial 70/30 (Web & PPTX Auto-Fit):** Relatório oficial com 20+ slides vetoriais, proporção 70% Situação Real / 30% Evolução Sistêmica, cálculo dinâmico de fontes e margem mínima de 0.20" garantida.
-- **Auditoria Inteligente por Requisitos (Fase 13):** Arquitetura "Um Controle, Vários Requisitos" com checklist Kalitta Air QA-14 / EASA / ANAC e confirmação em lote por exceção.
-- **System Designer Permanente & ADRs (Fase 14):** Catálogo vivo de Decisões Arquiteturais de Software (Architecture Decision Records) documentadas e rastreáveis.
-- **Motor Smart Import em 4 Etapas (Fase 15):** Carga assistida de planilhas com mapeamento inteligente, diff visual de reconciliação (novo, atualizado, idêntico) e botão seguro de reversão (Undo).
+- **Base Institucional de Requisitos, Respostas e Evidências (177+ requisitos reais):** Edição individual, consulta cruzada ao SGQ, vínculo com controles internos e documentos (MOMQ, PTM, POP, IT), gestão de lacunas, validação humana obrigatória, trilha de versões e detecção contínua de impactos sem sobrescrever respostas aprovadas.
+- **Importação de Auditorias e Pré-Auditoria Consolidada:** Extração de checklists (Excel, CSV, PDF, texto/DOCX), preservação *ipsis litteris* da redação original, comparação semântica e contextual contra a Base Institucional, geração de pré-auditoria persistida, adaptação por auditoria sem contaminar a base mestra, **Snapshots Imutáveis** e **Incorporação Pós-Auditoria** aprovada pela Qualidade.
+- **Gestão de Não Conformidades (RNC F 001-29):** Fluxo completo com numeração auditável, Matriz de Risco 5x5, Causa Raiz (Ishikawa 6M e 5 Porquês), Planos de Ação 5W2H e verificação de eficácia.
+- **Rooster MRO (Pessoas, Competências e Treinamentos):** Dossiê completo de mecânicos e inspetores, licenças CHT, designações técnicas (F 001-29), autorizações por frota (APRS), catálogo de 15 cursos técnicos, matrizes de capacitação, fila de validação de certificados e central de vencimentos/gaps.
+- **Controle Documental & Consulta Temporal:** Cadastro de publicações controladas, controle de revisões vigentes, solicitações de revisão a clientes/fabricantes, comparador de revisões e apuração histórica por data da Ordem de Serviço.
+- **Ferramentas & Metrologia:** Controle de equipamentos calibrados (RBC/Inmetro), conta de créditos de calibração e identificação de instrumentos vencidos ou em quarentena.
+- **Apresentação Gerencial 70/30 e Exportação PPTX:** Visualização web interativa e geração automatizada de apresentações PowerPoint widescreen (`PptxGenJS`).
+- **Importação Inteligente e Extrator de NCs:** Importação assistida de planilhas em 4 etapas com prévia e reversão e extração estruturada de documentos.
 
 ---
 
-## 5. Módulos Disponíveis (9 Domínios Canônicos)
+## 5. Módulos e Navegação Unificada
 
-A navegação do sistema é unificada em um menu lateral persistente estruturado em **9 domínios canônicos**, com submenus expansíveis e controle de rotas sem pontas soltas:
+Toda a navegação é centralizada em `src/config/navigationRegistry.ts` (`NAV_GROUPS`), eliminando entradas duplicadas entre menu lateral, títulos de página, navegação móvel e roteamento interno (`AppViewRouter.tsx`). A estrutura oficial conta com **8 grupos canônicos** e **45 itens únicos**:
 
-```
-QualyQuest SGQ & Rooster MRO Enterprise
-├── [+ Nova Não Conformidade] (Ação Primária Instantânea)
-├── 1. PAINEL
-│   ├── Dashboard Executivo (Visão Geral de RNCs, Matriz 5x5 e Alertas)
-│   ├── Saúde do SGQ (Índice sgqHealth e Maturidade Regulatória)
-│   ├── Pendências & Alertas Críticos (Fila com Contadores em Tempo Real)
-│   └── Apresentação Gerencial (Viewer Oficial SSoT 20 Slides 70/30)
-├── 2. PESSOAS E COLABORADORES (Rooster MRO)
-│   ├── Colaboradores (Lista Oficial, Filtros por Base e Status Operacional)
-│   ├── Novo Colaborador (Cadastro com Validação Remota Obrigatória)
-│   ├── Perfil do Colaborador (Dossiê Técnico Roster e Vínculos)
-│   ├── Habilitações & Licenças (Carteiras CHT ANAC, FAA e Autorizações RTS)
-│   └── Painel de Competências Técnicas (Proficiência por Especialidade)
-├── 3. TREINAMENTOS (Rooster MRO)
-│   ├── Catálogo de Cursos (Recorrência, Cargas Horárias e Frotas)
-│   ├── Modelos de Capacitação (Requisitos Formais por Cargo/Função)
-│   ├── Matriz de Treinamentos (Mapas de Cobertura por Frota e Motor)
-│   ├── Registros de Treinamento (Histórico de Execução com 5 Estados)
-│   ├── Importação de Certificados (Carga em Lote de Treinamentos)
-│   ├── Fila de Validação — Certificados (Triagem Técnica DHO)
-│   ├── Fila de Validação — Qualidade (Homologação SGQ)
-│   ├── Central de Vencimentos & Gaps (Monitoramento Preditivo ≤30/60/90d)
-│   └── Dashboard de Treinamentos (Indicadores Agregados de Efetivo)
-├── 4. CADASTROS MESTRES (Rooster MRO como Fonte Canônica)
-│   ├── Bases e Locais Operacionais (Hubs, Linha e Sites / Status e Vínculos)
-│   ├── Funções e Cargos (Especialidades Técnicas e Requisitos Mínimos)
-│   ├── Motores & Frota (Catálogo de Modelos CFM56, V2500, GE90, Trent, PT6A)
-│   └── Parâmetros Necessários ao Fluxo (Regras de Tolerância e Prazos)
-├── 5. QUALIDADE E CONTROLES
-│   ├── Não Conformidades (Fluxo Digital F 001-29 / 6M + 5 Porquês + 5W2H)
-│   ├── Análise & Indicadores (Pareto 80/20, MTTR e Capítulos ATA 100)
-│   ├── Validação & Aprovação (Fila de Maturação N1 a N5)
-│   ├── Auditorias Internas & Externas (ANAC, EASA, FAA e Clientes)
-│   ├── Auditoria Inteligente & Clientes (Checklist Kalitta QA-14 / Exceção)
-│   ├── Acervo & Revisões (Controle Documental & Consulta Temporal na OS)
-│   └── Ferramentas & Metrologia (Calibração RBC & Conta de Créditos)
-├── 6. RELATÓRIOS
-│   ├── Relatório do Roster (Exportação Oficial A4 e Excel)
-│   ├── Dossiê Oficial F 001-29 (Ficha Técnica para Auditoria Externa)
-│   ├── Histórico Documental (Pareceres de Vigência Temporal na OS)
-│   ├── Constatações de Auditoria (Findings e Prazos Regulatórios)
-│   └── Conferência de Frota & Pré-Turno (Prontidão Operacional)
-├── 7. ADMINISTRAÇÃO E SEGURANÇA
-│   ├── Usuários & Permissões RBAC (Admin, Gestor, Auditor, Consulta)
-│   ├── Configurações Organizacionais (Tenant, Identidade Corporativa)
-│   ├── System Designer Permanente (Catálogo Oficial de ADRs)
-│   └── Diagnósticos Técnicos (Arquitetura, Health Check e Infraestrutura)
-├── 8. AUDITORIA E HISTÓRICO
-│   └── Audit Trail do Sistema (Trilha de Auditoria Imutável Append-Only)
-└── 9. CONFIGURAÇÕES E FERRAMENTAS
-    ├── Importação Inteligente de Dados (Wizard em 4 Etapas com Undo)
-    ├── Extrator de NCs com IA (Leitura de DOCX, PDF e Imagens)
-    ├── Base de Conhecimento SGQ (Lições Aprendidas N1-N5)
-    └── Manual de Utilização (35 Capítulos Oficiais Integrados)
-```
+1. **Painel:** Dashboard Executivo (`dashboard`), Saúde do SGQ (`saudeSGQ`), Pendências & Alertas (`alertas`), Apresentação Gerencial (`apresentacao`).
+2. **Pessoas e Colaboradores:** Colaboradores & Perfis (`pessoas-competencias`), Novo Colaborador (`colaborador-novo`), Habilitações e Licenças (`cht-qualificacoes`), Lista de Designação Técnica (`rooster-designacao`), Designações & Frotas APRS (`rooster-designacoes-crud`).
+3. **Treinamentos:** Catálogo de Treinamentos (`rooster-catalogo`), Matriz & Capacitação (`rooster-matrizes`), Registros de Treinamento (`treinamentos-qualificacoes`), Importação de Certificados (`importacao-certificados`), Fila de Validação de Certificados (`validacao-treinamentos`), Central de Vencimentos & Gaps (`central-vencimentos-gaps`), Dashboard de Treinamentos (`competencias-dashboard`).
+4. **Cadastros Mestres:** Bases e Locais Operacionais (`cadastros-bases`), Funções e Cargos (`cadastros-funcoes-cargos`), Motores & Frotas (`rooster-motores`).
+5. **Qualidade e Auditorias:** Não Conformidades RNC (`relatorio`), Análise & Indicadores (`incidencias`), Validação & Aprovação RNC (`validacao-qualidade`), Auditorias Internas & Externas (`auditorias-gestao`), **Base Institucional (177 Req.) (`preparacao-auditorias`)**, **Auditoria Inteligente & Pré-Auditoria (`smart-audit`)**, Requisitos de Clientes & Matriz (`clientes-requisitos`), Checklists de Auditoria (`biblioteca-checklists`), Biblioteca Normativa & Fontes (`biblioteca-requisitos`), Banco de Manuais IA (`manuais`), Controle Documental & Revisões (`controle-documental`), Ferramentas & Metrologia (`ferramentas-metrologia`).
+6. **Relatórios:** Relatório do Roster (`rooster-relatorio`), Dossiê Oficial F 001-29 (`oficial`), Constatações & Lições (`auditorias-constatacoes`), Conferência de Frota & Turno (`rooster-conferencia`).
+7. **Administração e Segurança** *(acesso restrito a `ADMIN` / `ADMINISTRADOR` / `GESTOR_SGQ`)*: Usuários & Permissões RBAC (`admin-central`), Configurações & Parâmetros (`configuracoes-org`), Audit Trail do Sistema (`admin-audit-trail`), System Designer ADRs (`system-designer`), Diagnósticos Técnicos (`diagnosticos-tecnicos`), Implantação & Onboarding (`onboarding-novo-cliente`).
+8. **Ferramentas e Conhecimento:** Importação Inteligente de Dados (`importacao-inteligente`), Extrator de NCs com IA (`extrator`), Base de Conhecimento SGQ (`knowledgeBase`), Manual de Utilização (`manual-utilizacao`).
+
+> **Aliases legados preservados sem duplicação no menu:** identificadores históricos como `rooster-ficha`, `pre-auditoria`, `consulta-temporal`, `validacaoQueue`, `modelos-capacitacao` e `tour-interativo` redirecionam diretamente ao módulo canônico correspondente com abertura na subaba correta.
 
 ---
 
-## 6. Gestão de Colaboradores e Efetivo Técnico
+## 6. Base Institucional de Requisitos, Respostas e Evidências (177+)
 
-O cadastro de pessoas é governado exclusivamente pelo módulo **Rooster MRO**, armazenado na coleção canonical `/organizations/{orgId}/persons`:
-- **Campos Obrigatórios:** Nome completo, matrícula funcional única, cargo operacional, especialidade técnica, data de admissão, base operacional e status.
-- **Segregação Rigorosa de Status:**
-  - `ATIVO`: Plena aptidão operacional e contratual.
-  - `EM_TREINAMENTO`: Em integração prática ou supervisão on-the-job no hangar.
-  - `RESTRITO`: Restrição médica ou técnica ativa (bloqueio automático de liberação de voo no SGQ).
-  - `SUSPENSO`: Bloqueio cautelar administrativo ou disciplinar.
-  - `AFASTADO`: Licença previdenciária, médica ou temporária.
-  - `INATIVO` / `DESLIGADO`: Histórico preservado para rastreabilidade de ordens de serviço passadas.
-  - `STATUS_NAO_INFORMADO`: Registros migrados que demandam triagem cadastral.
+O módulo **Base Institucional (177 Req.)** (`preparacao-auditorias` / coleção `audit_readiness_preparations`) permite à equipe da Qualidade tratar individualmente os **177 requisitos originais** (`MASTER_CHECKLIST_ITEMS`) e os novos requisitos incorporados após auditorias:
+
+- **Origem e Rastreabilidade:** Exibe fonte, autoridade/cliente, norma, seção, revisão, controle central SGQ e tipo de origem (`BASE_INICIAL_177` ou `INCORPORADO_POS_AUDITORIA`).
+- **Redação Original Intacta:** O campo `textoOriginal` é preservado sem edição destrutiva para referência auditável.
+- **Consulta Cruzada aos Módulos do SGQ (`consultarRegistrosRelacionadosSGQ`):** Ao abrir um requisito, o sistema consulta ao vivo documentos controlados (MOMQ, PTM, POP, IT), manuais normativos, registros de treinamento, qualificações/CHTs, ferramentas calibradas (Metrologia), RNCs abertas/encerradas e evidências cadastradas, apontando objetivamente as **lacunas reais de documentação ou comprovação** sem inventar fontes inexistentes.
+- **Proposta Assistida e Validação Humana (Human-in-the-Loop):** Permite gerar rascunho fundamentado exclusivamente nas fontes reais vinculadas, anexar evidências com data de validade e submeter para aprovação formal da liderança da Qualidade (`statusResposta: 'APROVADA'`), registrando responsável, parecer, data, versão e histórico imutável de alterações.
+- **Monitoramento Contínuo de Impactos (`detectarImpactosBaseInstitucional`):** Quando um documento vinculado muda de revisão/status, uma evidência vence (ou entra nos próximos 30 dias), uma ferramenta entra em quarentena/vencimento ou surge RNC crítica relacionada, o requisito recebe a sinalização não destrutiva **`reavaliacaoNecessaria: true`** com os motivos detalhados e a referência congelada da última versão aprovada (`ultimaRespostaAprovadaSnapshot`), sem apagar ou sobrescrever o texto aprovado anteriormente.
 
 ---
 
-## 7. Treinamentos, Habilitações e Qualificações (CHT)
+## 7. Importação de Novas Auditorias e Pré-Auditoria Consolidada
 
-O sistema gerencia o ciclo integral de habilitações aeronáuticas:
-- **Licenças Técnicas ANAC (CHTs):** Carteiras de Célula (CEL), Grupo Motopropulsor (GMP) e Aviônica (AVI), com número CANAC, data de emissão, data de validade e anexos digitais.
-- **Autorizações RTS (Return to Service):** Credenciamento interno da organização para liberação de tipos específicos de aeronaves e limites de manutenção (ex: inspeções de até 100 horas, pré-voo, trânsito).
-- **Renovação Não-Destrutiva:** Toda renovação de treinamento ou licença gera um novo registro vinculado ao registro anterior via `registroOrigemId` e `registroSubstitutoId`, preservando a rastreabilidade histórica completa sem sobrescrever dados anteriores.
+Na aba **Auditoria Inteligente & Pré-Auditoria** (`smart-audit` / `PreAuditWorkspaceView`), o fluxo para novas auditorias segue etapas auditáveis:
 
----
-
-## 8. Catálogo de Cursos e Modelos de Capacitação
-
-O catálogo de treinamentos (`trainingCourses` / `rooster-catalogo`) padroniza a matriz curricular da oficina:
-- **Estruturação por Frotas:** Frotas comerciais (Airbus A320, A330, Boeing 737, 767, 777), regionais (ATR 42/72) e executivas (Cessna Caravan C208, Beechcraft King Air).
-- **Módulos por Nível:**
-  - *Nível 1 — Familiarização Geral:* Arquitetura básica, zonas da aeronave e precauções de segurança.
-  - *Nível 2 — Ramp & Transit:* Operações de trânsito, checagens de linha e sistemas principais.
-  - *Nível 3 — Line & Base Maintenance:* Manutenção pesada de hangar, remoção/instalação de componentes e diagnósticos profundos de falha (*troubleshooting*).
-- **Modelos de Capacitação:** Matrizes que estabelecem o pacote mínimo de treinamentos mandatórios para cada cargo (Mecânico de Pátio, Mecânico de Hangar, Inspetor da Qualidade, Especialista em Ensaios Não Destrutivos - NDT).
+1. **Importação e Leitura do Checklist:** Importação de documentos/planilhas com identificação de número do item, capítulo/seção, referência normativa e **preservação integral (*ipsis litteris*) da redação original** de cada requisito (`textoOriginalRequisito`).
+2. **Comparação Semântica e Contextual (`analisarAuditoriaContraBaseInstitucional`):** Cada requisito importado é comparado contra todos os requisitos da Base Institucional (os 177 iniciais + requisitos incorporados posteriormente) combinando análise conceitual bilíngue PT/EN de domínio aeronáutico (metrologia, CHT/treinamento, recebimento/quarentena/shelf-life, dados técnicos, CRS/RII, FOD/EHS, NDT, SGQ/SMS, roster, químicos), sobreposição lexical normalizada e correspondência de cláusulas normativas.
+3. **Classificação Obrigatória em 4 Categorias:**
+   - **`EQUIVALÊNCIA CONFIRMADA`**: Requisito semanticamente equivalente localizado na base, com resposta institucional `APROVADA`, escopo compatível (cliente, localidade, frota, norma), ausência de alertas de reavaliação e evidências vigentes aplicáveis.
+   - **`EQUIVALÊNCIA PARCIAL`**: Correspondência identificada com resposta base aprovada, porém exigindo adaptação ou complementação devido a diferença de cliente/operador (ex.: requisitos de GMM específico), base/localidade, aeronave, norma regulatória, evidência vencida/ausente ou alerta pendente na base.
+   - **`REQUISITO SEM RESPOSTA APROVADA`**: Requisito correlacionado existente na base institucional cujo tratamento ainda está em `NAO_INICIADA`, `RASCUNHO`, `EM_ELABORACAO` ou `AGUARDANDO_VALIDACAO`.
+   - **`NOVO REQUISITO`**: Nenhuma equivalência suficiente encontrada na Base Institucional; tratado como item novo na auditoria.
+4. **Separação Estrita (Base Institucional vs. Adaptação da Auditoria):** A visualização apresenta lado a lado a **Resposta Institucional Base (somente leitura)** e o campo de **Resposta Adaptada para a Auditoria Atual**. Editar a resposta para uma auditoria específica **jamais** altera a resposta institucional permanente.
+5. **Persistência e Snapshots Imutáveis:** A pré-auditoria consolidada é gravada em `organizations/{orgId}/pre_audits/{preAuditId}` com possibilidade de gerar **Snapshots Imutáveis** (`PreAuditSnapshot`, append-only protegido nas regras do Firestore) registrando data, responsável e fotografia integral dos itens no momento do congelamento.
+6. **Incorporação Controlada Pós-Auditoria:** Itens classificados como `NOVO REQUISITO` podem ser incorporados permanentemente à Base Institucional (`incorporarRequisitoNaBaseInstitucional`), ação restrita por RBAC à liderança da Qualidade (`ADMIN`, `ADMINISTRADOR`, `GESTOR_SGQ`, `GESTOR`) e protegida contra duplicidades.
 
 ---
 
-## 9. Controle de Validade e Recorrência (5 Estados)
+## 8. Gestão de Colaboradores, Competências, Treinamentos e Qualificações
 
-A determinação de validade de treinamentos e habilitações obedece rigorosamente ao **motor matemático de 5 estados**, sem suposições arbitrárias:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                      MATRIZ DOS 5 ESTADOS DE VALIDADE                  │
-├──────────────────────────────┬─────────────────────────────────────────┤
-│ 1. Sem vencimento aplicável  │ Regra explícita cadastrada:             │
-│                              │ curso permanente / sem_validade: true   │
-├──────────────────────────────┼─────────────────────────────────────────┤
-│ 2. Sem validade definida     │ Ausência de periodicidade sem regra     │
-│                              │ explícita (requer análise de engenharia)│
-├──────────────────────────────┼─────────────────────────────────────────┤
-│ 3. Dados insuficientes       │ Registro sem data de realização         │
-│                              │ ou campos mandatórios incompletos       │
-├──────────────────────────────┼─────────────────────────────────────────┤
-│ 4. Em dia                    │ Validade futura calculada por meses     │
-│                              │ exatos de calendário ou data explícita  │
-├──────────────────────────────┼─────────────────────────────────────────┤
-│ 5. Vencido                   │ Data de validade menor que a data       │
-│                              │ de referência atual (bloqueio ativo)    │
-└──────────────────────────────┴─────────────────────────────────────────┘
-```
-
-> **Regras Absolutas:**
-> - A ausência de periodicidade no catálogo **jamais** é convertida automaticamente em "sem vencimento".
-> - É terminantemente proibido arbitrar prazos fictícios de 730 ou 1825 dias.
-> - O cálculo de meses adiciona meses reais de calendário sobre a data de realização, sem aproximação por buckets fixos de 30 dias.
-> - Se houver data de validade explicitamente cadastrada no registro original, ela tem precedência soberana sobre o cálculo derivado.
+- **Cadastro Técnico Canônico (`/persons`):** Controle de matrícula, código CANAC, base operacional, especialidade (CEL, GMP, AVI), status operacional (`ATIVO`, `EM_TREINAMENTO`, `RESTRITO`, `SUSPENSO`, `AFASTADO`, `INATIVO`, `DESLIGADO`, `STATUS_NAO_INFORMADO`) e vínculos históricos.
+- **Habilitações, CHTs e APRS/RTS:** Controle de carteiras ANAC, licenças e autorizações por frota e escopo de manutenção, incluindo Lista de Designação Técnica vinculada ao formulário **F 001-29**.
+- **Catálogo de Cursos & Matrizes:** 15 cursos técnicos estruturados no catálogo inicial (EWIS, FTS Fase 2, Fatores Humanos, Recebimento/SUPs, Torqueamento AC 43.13-1B, Ensaio por Líquido Penetrante, e níveis Nível 1/2/3 para A320, A330, B737, B777 e ATR 42/72) com carga horária, modalidade e regras explícitas de recorrência.
+- **Fila de Validação & Certificados:** Importação em lote e fila de homologação técnica dos registros de treinamento.
 
 ---
 
-## 10. Governança Documental e Consulta Temporal na Data da OS
+## 9. Controle de Validades e Alertas
 
-O módulo de Controle Documental (Fase 10 / Coleção `/manuals` e `/documentosControlados`) atende ao RBAC 145.109:
-- **Acervo Vigente:** Gestão do acervo de Manuais de Procedimentos (MOE/MPM), Manuais de Manutenção (AMM), Manuais de Revisão de Peças (CMM) e Manuais do SGQ.
-- **Máquina Temporal Regulatória:** Permite ao auditor ou perito selecionar qualquer data do passado e consultar instantaneamente:
-  - Qual manual estava aprovado e vigente naquele exato dia;
-  - Qual era a revisão legal em vigor;
-  - Histórico de aprovações com parecer técnico em PDF pronto para auditorias de autoridades aeronáuticas.
-
----
-
-## 11. Consultas, Indicadores e Dashboards
-
-- **Índice de Saúde do SGQ (`sgqHealth`):** Algoritmo ponderado de maturidade operacional que analisa pontualidade de ações 5W2H, severidade na Matriz 5x5, vigência documental e habilitações CHT.
-- **Painel Executivo da Qualidade:** Indicadores em tempo real com distribuição de desvios por setor, causas raízes mais frequentes e eficácia comprovada de soluções.
-- **Central de Vencimentos & Gaps:** Visão consolidada em colunas de urgência (≤30 dias, ≤60 dias, ≤90 dias) e tabela analítica por colaborador.
-- **Apresentação Gerencial Oficial 70/30 (Web e PPTX):**
-  - *Parte I (Slides 1 a 14 - 70%):* Espelho da situação real da empresa (RNCs F 001-29, Ishikawa 6M, 5 Porquês, 5W2H, Pessoas/CHTs, Documentos na data da OS, Metrologia RBC, Alertas e Decisões Imediatas).
-  - *Parte II (Slides 15 a 20+ - 30%):* Governança tecnológica e evolução contínua (Ecossistema de 15 fases, Régua de Maturidade N1 a N5, Status de Homologação, Roadmap H1 a H4, Parecer da Qualidade e Metadados com hash de integridade).
-  - *Homologação PPTX:* Arquivo `.pptx` widescreen (16:9) gerado dinamicamente com garantia geométrica de **Zero Overflows** e respeito integral à Safe Area (margem para rodapé ≥ 0.20").
+- **Motor de 5 Estados de Validade:**
+  1. `Sem vencimento aplicável` (exclusivo para cursos marcados explicitamente com `recorrente: false` / permanente);
+  2. `Sem validade definida` (ausência de regra explícita no catálogo — nunca assumida como vitalícia);
+  3. `Dados insuficientes` (ausência de data de realização ou dado mandatório);
+  4. `Em dia` (validade futura calculada por meses reais de calendário ou data explícita);
+  5. `Vencido` (prazo expirado na data de referência).
+- **Central de Vencimentos & Gaps:** Classificação automática por janelas de criticidade (vencidos, ≤30 dias, ≤60 dias, ≤90 dias).
+- **Alertas na Base Institucional e Metrologia:** Detecção automática de evidências vencidas ou a vencer em 30 dias, revisões documentais alteradas e instrumentos fora da validade de calibração.
 
 ---
 
-## 12. Integrações Existentes e APIs
+## 10. Controle Documental e Consulta Temporal
 
-### Conectores Server-Side (Impacto MRO Connect)
-Disponíveis através do servidor seguro Node.js Express (`server.ts`) na porta 3000:
-- `GET /api/impacto/health`: Health check de conectividade da infraestrutura.
-- `GET /api/impacto/colaboradores`: Efetivo técnico ativo e status operacional.
-- `GET /api/impacto/ferramentas`: Ferramental calibrado e status RBC.
-- `GET /api/impacto/aeronaves`: Frotas e modelos atendidos no hangar.
-- `GET /api/impacto/ordens-servico`: Ordens de Serviço ativas e concluídas.
-- `GET /api/impacto/ordens-servico/:id/contexto-qualidade`: Dossiê consolidado de qualidade da OS cruzando técnico executor, ferramentas aplicadas e manuais consultados.
-
-### Segurança de Chaves e Inteligência Artificial
-A integração com o **Google Gemini AI** opera exclusivamente do lado do servidor via `@google/genai` utilizando `process.env.GEMINI_API_KEY`. Nenhuma chave ou credencial é exposta no cliente Web.
+- **Acervo Controlado (`controlled_documents` / `document_revisions`):** Gestão de MOMQ, PTM, AMM, CMM, MPM e instruções internas com unicidade controlada de códigos e revisões.
+- **Consulta Temporal na Data da OS:** Permite selecionar uma data histórica de execução de Ordem de Serviço para apurar exatamente qual revisão do manual estava aprovada e vigente naquela data.
+- **Solicitações Externas e Comparador de Revisões:** Fluxos de controle para consulta a fontes públicas, notificações de revisão a clientes/fabricantes e comparação entre versões.
 
 ---
 
-## 13. Perfis de Acesso e Regras de Segurança Firestore
+## 11. Relatórios, Dashboards e Apresentações PPTX
 
-A persistência do sistema é protegida pelas regras estritas de `firestore.rules`:
+- **Dashboards Executivos:** Painel geral SGQ, Saúde do SGQ, Análise de Incidências (Pareto / Setores), Dashboard de Competências e Painel de Prontidão dos 177+ requisitos.
+- **Relatórios Operacionais:** Dossiê Oficial F 001-29, Relatório Oficial do Roster (exportação A4 e Excel/XLSX), Constatações & Lições Aprendidas e Conferência de Frota & Turno.
+- **Apresentação Gerencial 70/30:** Geração em tela web e exportação para `.pptx` widescreen (16:9) via `PptxGenJS` com controle de layout e paginação.
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                      MATRIZ DE PERMISSÕES RBAC                         │
-├───────────────┬────────────────────────────────────────────────────────┤
-│ Administrador │ Leitura e escrita completas em todas as coleções       │
-│               │ corporativas, gerenciamento de usuários e regras.      │
-├───────────────┼────────────────────────────────────────────────────────┤
-│ Gestor        │ Criação e edição de RNCs, Pessoas, Treinamentos,       │
-│               │ Manuais e Metrologia; aprovação formal de ações.       │
-├───────────────┼────────────────────────────────────────────────────────┤
-│ Auditor       │ Leitura irrestrita de registros, relatórios, evidências│
-│               │ e trilhas de auditoria; emissão de constatações.       │
-├───────────────┼────────────────────────────────────────────────────────┤
-│ Consulta      │ Leitura restrita aos dashboards e consultas da sua     │
-│               │ própria organização; gravação e edição BLOQUEADAS.     │
-└───────────────┴────────────────────────────────────────────────────────┘
+---
+
+## 12. Inventário Documentado dos Arquivos PPTX
+
+O levantamento integral, com hashes SHA-256, contagem real de slides/notas e metadados XML extraídos diretamente dos binários, está registrado em **[docs/INVENTARIO_TREINAMENTOS_PPTX.md](docs/INVENTARIO_TREINAMENTOS_PPTX.md)**.
+
+Resumo factual verificado:
+- **Total no código-fonte / docs / raiz:** **7 arquivos `.pptx`** (nenhum arquivo `.ppt` legado).
+- **Natureza real:** Todos os 7 arquivos são **apresentações gerenciais do SGQ geradas via `PptxGenJS`** (`docs/Apresentacao_Gerencial_QualyQuest_Rooster.pptx` e sua cópia idêntica em `public/Apresentacao_Gerencial_QualyQuest_Rooster.pptx` com 25 slides de 2026-11-03, mais os 5 artefatos de regressão de layout `pptx_1_normal.pptx` a `pptx_5_empty_data.pptx` de 2026-10-16).
+- **Treinamentos técnicos em PPTX:** **Não existem** apostilas ou decks técnicos de cursos aeronáuticos em `.pptx` no repositório; o catálogo dos 15 cursos técnicos (`TRN-*`) é mantido em código e Firestore (`src/data/initialCompetenciesData.ts` e coleções `trainingCourses` / `roster_cursos_catalogo`).
+- Todos os arquivos `.pptx` existentes foram preservados integralmente sem exclusão.
+
+---
+
+## 13. Integrações e APIs Existentes
+
+O backend Express (`server.ts`, porta `3000`) expõe endpoints HTTP ativos para o frontend:
+
+- **Saúde e Observabilidade:** `GET /api/health`, `GET /api/gemini/metrics`, `POST /api/gemini/cache/clear`.
+- **Análise de RNCs e Documentos:** `POST /api/extract-document-text`, `POST /api/extract-nc`, `POST /api/ai-suggest`, `POST /api/evaluate-root-cause-coherence`, `POST /api/audit-compliance`, `POST /api/match-rnc`, `POST /api/compare-rnc`, `POST /api/generate-knowledge-pattern`, `POST /api/suggest-sector`, `POST /api/audit-assist`.
+- **Manuais e Acervo IA:** `POST/GET /api/manual-files/:manualId`, `POST /api/parse-manual`, `POST /api/consult-manuals`, `GET/POST /api/manuals/schema-json`, `/api/manuals/validate-json`, `/api/manuals/upload-json`, `/api/manuals/ingest-pipeline`, `/api/manuals/tasks*`, `/api/manuals/:docId/fragments`, `/api/manuals/:docId/coverage-report`, `/api/manuals/enquadrar-nc`, `/api/manuals/compare-revisions`, `/api/manuals/stats`.
+- **Smart Import & Smart Audit:** `POST /api/smart-import/analyze`, `POST /api/smart-import/parse-file`, `POST /api/smart-audit/parse-checklist`, `POST /api/smart-audit/parse-document`, `POST /api/smart-audit/evaluate-checklist-item`, `POST /api/smart-audit/assist-requirement-response`, `POST /api/smart-audit/suggest-resolution`.
+- **Controle Documental & Fontes Externas:** `POST /api/documentos/verificar-fontes-publicas`, `POST /api/documentos/notificar-cliente-revisao`, `POST /api/documentos/solicitar-fabricante-revisao`, `POST /api/documentos/relatorio-conformidade`, `POST /api/documentos/auditoria-duplicidades`.
+- **Evidence Storage (`/api/evidence/*`):** Upload, download autenticado e remoção de arquivos binários de evidências com registro de auditoria (`server/evidenceStorageRouter.ts`).
+- **Conectores Impacto MRO Connect:** `GET /api/impacto/health`, `/api/impacto/status`, `/api/impacto/bases`, `/api/impacto/tecnicos`, `/api/impacto/tecnicos/:id`, `/api/impacto/qualificacoes`, `/api/impacto/treinamentos`, `/api/impacto/ferramentas`, `/api/impacto/ferramentas/:id`, `/api/impacto/ordens-servico`, `/api/impacto/ordens-servico/:id`, `/api/impacto/ordens-servico/:id/contexto-qualidade` *(operam com dados reais via `IMPACTO_MRO_API_URL` + `IMPACTO_MRO_API_KEY` quando configurados; sem URL externa, respondem com status explícito de conector não configurado ou fallback estrutural local).*
+
+---
+
+## 14. Inteligência Artificial (Gemini) e Fallbacks
+
+- A SDK `@google/genai` é utilizada **exclusivamente no backend (`server.ts` e `server/gemini/*`)** mediante `process.env.GEMINI_API_KEY`, sem exposição de chave no cliente.
+- As rotinas de extração documental, sugestão de análise causal, comparação de checklists e assistência de resposta possuem **fallback heurístico / determinístico** quando `GEMINI_API_KEY` não está configurada ou em contingência de rede.
+- A validação de equivalência contra a Base Institucional (`preAuditMatchingService.ts`) e as sugestões baseadas em fontes reais (`sugerirRespostaBaseadaEmFontes`) executam regras determinísticas e semânticas auditáveis com **bloqueio estrito contra invenção de evidências**.
+
+---
+
+## 15. Perfis de Acesso (RBAC) e Regras Firestore
+
+As regras declaradas em `firestore.rules` aplicam isolamento multi-tenant (`organizations/{organizationId}/*`) e controle por perfil:
+
+| Perfil | Escopo de Acesso Efetivo |
+| :--- | :--- |
+| **`ADMIN` / `ADMINISTRADOR`** | Leitura e escrita irrestrita no tenant, administração de usuários/convites, exclusão autorizada, aprovação permanente na Base Institucional e congelamento de Pré-Auditorias. |
+| **`GESTOR_SGQ` / `GESTOR`** | Criação, edição e aprovação formal de RNCs, manuais, documentos controlados, requisitos da Base Institucional (`APROVADA` / `PRONTO_PARA_AUDITORIA`), incorporação permanente de novos requisitos e finalização de Pré-Auditorias (`PRONTA_PARA_AUDITORIA` / `FINALIZADA_CONGELADA`). |
+| **`AUDITOR`** | Leitura completa no tenant, registro de constatações, lançamentos operacionais e preparação de pré-auditorias em elaboração; **sem** permissão para autoaprovar requisitos institucionais permanentes (`APROVADA`), alterar RBAC ou excluir registros críticos. |
+| **`CONSULTA` / `VIEWER`** | Leitura restrita ao próprio tenant; **bloqueado para criação, edição ou exclusão** em coleções operacionais, Base Institucional, evidências e Pré-Auditorias. |
+
+- Coleções `auditTrails` são estritamente **append-only** (`update, delete: if false`).
+- Em `pre_audits`, as regras impedem redução ou remoção do array histórico `snapshots` em atualizações (`incoming().snapshots.size() >= existing().snapshots.size()`).
+
+---
+
+## 16. Arquitetura Técnica Real
+
+- **Frontend:** React 19 + TypeScript (`~5.8.2`), empacotado com Vite 6.
+- **Estilização:** Tailwind CSS v4 (`@tailwindcss/vite`) e ícones `lucide-react`.
+- **Backend Integrado:** Node.js + Express 4 executando `server.ts` via `tsx` em desenvolvimento (com `vite.middlewares` na porta `3000`) e bundle CJS via `esbuild` para produção (`dist/server.cjs`).
+- **Banco de Dados e Auth:** Firebase 12 (Authentication + Cloud Firestore com listeners `onSnapshot`).
+- **Processamento de Arquivos e Documentos:** `pdf-parse`, `mammoth` (DOCX), `xlsx` (planilhas), `jspdf`, `html2canvas`, `pptxgenjs`, `recharts`.
+
+---
+
+## 17. Banco de Dados, Persistência e Evidence Storage
+
+- **Cloud Firestore:** Fonte de verdade multi-tenant sob `/organizations/{organizationId}/...`, incluindo `nonConformities`, `persons`, `trainingCourses`, `trainingRecords`, `qualifications`, `controlled_documents`, `document_revisions`, `manuals`, `calibrated_tools`, `externalAudits`, `auditFindings`, `auditRequirements`, **`audit_readiness_preparations`**, **`evidence_files`**, **`pre_audits`** e `auditTrails`.
+- **Schema Oficial:** Documentado em `firebase-blueprint.json` e regras correspondentes em `firestore.rules`.
+- **Armazenamento de Evidências Binárias:** Controlado por `EVIDENCE_STORAGE_BACKEND` em `server.ts`:
+  - **Modo padrão atual quando não configurado (`local`):** `LocalEphemeralStorageBackend` gravando em `/data/evidence_storage/<orgId>/*.bin` + `*.meta.json` com log em `/data/evidence_storage/_audit/evidence_storage_audit.jsonl`.
+  - **Modo produção (`gcs`):** `GcsStorageBackend` apontando para bucket provisionado em Google Cloud Storage (`EVIDENCE_STORAGE_BUCKET`).
+
+---
+
+## 18. Variáveis de Ambiente
+
+Base definidas em `.env.example` e esperadas pelo servidor/cliente:
+
+```env
+# Armazenamento de Evidências Binárias ('gcs' para produção ou vazio para modo local efêmero)
+EVIDENCE_STORAGE_BACKEND=
+EVIDENCE_STORAGE_BUCKET=
+
+# Chaves e credenciais Firebase / GCP (server-side)
+FIREBASE_API_KEY=
+GOOGLE_APPLICATION_CREDENTIALS=
+
+# Integração opcional com ERP/MRO externo (Impacto MRO Connect)
+IMPACTO_MRO_API_KEY=
+IMPACTO_MRO_API_URL=
+
+# Opcional: Chave Gemini exclusiva no servidor (ativação de parsing/sugestões com LLM)
+GEMINI_API_KEY=
+PORT=3000
 ```
 
-> **Blindagens Ativas de Segurança:**
-> - Usuários autenticados sem perfil atribuído em `/users/{userId}` têm acesso sumariamente negado a dados de organizações.
-> - A leitura de `/organizations/{organizationId}` é estritamente restrita a usuários com perfil associado ao respectivo tenant.
-> - Operações de listagem (`list`) em `/users` e `/userInvitations` são filtradas por organização com exigência de privilégio administrativo.
-> - Eliminação de qualquer exceção ou brecha para organização com `getUserOrgId()` vazio.
+> A configuração do Firebase Web Client para o projeto encontra-se em `firebase-applet-config.json` (carregada por `src/services/firebase/config.ts`).
 
 ---
 
-## 14. Arquitetura Tecnológica Real
-
-- **Framework Web:** React 19 SPA rodando sobre Vite 6 com suporte a TypeScript em modo estrito.
-- **Backend / Proxy de API:** Node.js 22 + Express 4 (`server.ts`) montado com `vite.middlewares` no ambiente de desenvolvimento.
-- **Banco de Dados em Nuvem:** Google Cloud Firestore (SDK Firebase 12) operando como SSoT com listeners `onSnapshot`.
-- **Estilização e Design System:** Tailwind CSS v4, componentes responsivos com suporte nativo ao Modo Escuro aeronáutico e ícones Lucide React.
-- **Visualização de Dados:** Gráficos interativos em Recharts e geração nativa de apresentações corporativas com PptxGenJS.
-- **Geração de Documentos:** jsPDF, html2canvas e biblioteca interna de exportação A4.
-
----
-
-## 15. Instalação e Execução
-
-### Pré-requisitos
-- Node.js 20+ ou 22+
-- Gerenciador de pacotes npm
-
-### Passos de Instalação
+## 19. Instalação e Execução Local
 
 ```bash
-# 1. Clonar o repositório
-git clone https://github.com/seu-repositorio/qualyquest-rooster.git
-cd qualyquest-rooster
-
-# 2. Instalar dependências
+# 1. Instalar dependências
 npm install
 
-# 3. Configurar variáveis de ambiente
+# 2. Copiar variáveis de ambiente (ajuste conforme necessário)
 cp .env.example .env
 
-# 4. Executar o servidor de desenvolvimento (Porta 3000)
+# 3. Iniciar aplicação em desenvolvimento (Frontend + API Express na porta 3000)
 npm run dev
-```
 
-### Comandos de Build e Verificação
-
-```bash
-# Validação de tipos TypeScript
+# 4. Verificação de tipos TypeScript
 npm run lint
 
-# Execução da suíte completa de testes de integração (81 testes)
-npm run test:integration
-
-# Teste de homologação geométrica extrema da apresentação PPTX (35 slides)
-npx tsx scripts/homologation-fase12-3.ts
-
-# Geração física do arquivo PPTX oficial
-npx tsx scripts/generate_official_pptx.ts
-
-# Compilação para produção
+# 5. Build de produção (Vite + esbuild do server.ts)
 npm run build
 
-# Execução do bundle de produção
+# 6. Executar servidor em produção
 npm run start
 ```
 
 ---
 
-## 16. Configuração de Ambiente
+## 20. Scripts Disponíveis
 
-Crie o arquivo `.env` na raiz do projeto com base no arquivo `.env.example`:
+### Scripts definidos em `package.json`
+- `npm run dev` — Inicia `tsx server.ts` com middlewares Vite na porta `3000`.
+- `npm run build` — Compila frontend (`vite build`) e backend (`esbuild server.ts ... --outfile=dist/server.cjs`).
+- `npm run start` — Executa `node server.ts` em produção.
+- `npm run clean` — Remove `dist/` e `server.js`.
+- `npm run lint` — Executa `tsc --noEmit` (checagem estrita de tipos).
+- `npm run test:integration` — Executa a suíte `scripts/test_integration_qualyquest_rooster.ts`.
 
-```env
-# Porta do servidor integrado Express + Vite (padrão: 3000)
-PORT=3000
-
-# Chave de API Google Gemini (protegida exclusivamente no servidor)
-GEMINI_API_KEY=sua_chave_aqui
-
-# Configuração do Firebase Client (acessível via Vite)
-VITE_FIREBASE_API_KEY=sua_api_key
-VITE_FIREBASE_AUTH_DOMAIN=seu_projeto.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=seu_projeto_id
-VITE_FIREBASE_STORAGE_BUCKET=seu_projeto.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=seu_sender_id
-VITE_FIREBASE_APP_ID=seu_app_id
-```
+### Scripts operacionais e de verificação em `scripts/`
+- `scripts/test_integration_qualyquest_rooster.ts` — Suíte integrada em 11 eixos (Segurança Firestore, Persistência, Validade 5 Estados, Navegação, Integridade Referencial, Importação, Merge Engine e Resiliência).
+- `scripts/generate_official_pptx.ts` e `scripts/homologation-fase12-3.ts` — Geração oficial e verificação geométrica PPTX.
+- `scripts/migrate_evidences_to_gcs.ts` — Script utilitário de migração do Evidence Storage local para GCS.
+- `scripts/test_fase_1_4_3_verification.ts` a `scripts/test_fase_1_4_7_persistent_storage.ts`, `scripts/operational_validation_fase_1_4_4.ts`, `scripts/playwright_fase_1_4_6_visual.ts` — Scripts históricos de verificação de fases anteriores.
 
 ---
 
-## 17. Testes Disponíveis e Situação Conhecida
+## 21. Testes Disponíveis e Situação Real
 
-O repositório conta com baterias automatizadas de testes e rotinas de validação:
+Resultados observados na execução real durante esta revisão:
 
-| Eixo de Teste | Arquivo / Comando | Qtd Testes | Situação |
-| :--- | :--- | :---: | :---: |
-| **1. Segurança Firestore** | `npm run test:integration` | 18 | 🟢 **PASS (100%)** |
-| **2. Persistência Real** | `npm run test:integration` | 6 | 🟢 **PASS (100%)** |
-| **3. Regras de Validade (5 Estados)** | `npm run test:integration` | 12 | 🟢 **PASS (100%)** |
-| **4. Navegação e Rotas Reais** | `npm run test:integration` | 35 | 🟢 **PASS (100%)** |
-| **5. Integridade Referencial** | `npm run test:integration` | 10 | 🟢 **PASS (100%)** |
-| **Estresse Geométrico PPTX (Fase 12.3)** | `npx tsx scripts/homologation-fase12-3.ts` | 35 slides | 🟢 **PASS (0 Overflows)** |
-| **Geração de Arquivo PPTX Oficial** | `npx tsx scripts/generate_official_pptx.ts` | 24 slides | 🟢 **PASS (616 elementos)** |
-| **Compilação TypeScript** | `npm run lint` (`tsc --noEmit`) | Código Geral | 🟢 **PASS (0 erros)** |
-| **Emulador Local Firestore (Testes Unitários)** | `firebase emulators:exec` | — | 🟡 **NÃO EXECUTADO** (Ambiente CI sem Java Runtime / JRE) |
+| Verificação / Suíte | Comando | Resultado Real Medido |
+| :--- | :--- | :--- |
+| **Compilação TypeScript** | `npm run lint` (`tsc --noEmit`) | **PASS — 0 erros** |
+| **Build Completo de Produção** | `npm run build` (`vite build` + `esbuild`) | **PASS — Compilação Vite + Server concluída** |
+| **Suíte de Integração QualyQuest & Rooster (11 eixos)** | `npm run test:integration` | **PASS — 163 / 163 aprovados (0 falhas)** (Eixo 1: 18/18, Eixo 2: 6/6, Eixo 3: 12/12, Eixo 4 Navegação: 41/41, Eixo 5: 10/10, Eixo 6: 16/16, Eixo 7: 12/12, Eixo 8: 11/11, Eixo 9: 11/11, Eixo 10: 11/11, Eixo 11: 15/15) |
+| **Validação Lógica Base Institucional (177+) & Pré-Auditoria** | Execução direta via `tsx` sobre `auditReadinessService.ts` e `preAuditMatchingService.ts` | **PASS** — 177 requisitos carregados, 8 grupos / 45 rotas únicas validadas, 4 classificações e bloqueio de escopo/RBAC/duplicidade verificados, 69 itens Kalitta QA-14 avaliados sem fabricação de aprovação |
+| **Firebase Local Emulator (Regras Firestore unitárias)** | `firebase emulators:exec` | **NÃO DISPONÍVEL no contêiner** (ausência de Java Runtime / JRE neste ambiente) |
 
 ---
 
-## 18. Limitações Atuais
+## 22. Classificação Objetiva por Funcionalidade
 
-1. **Ambiente de Emulador Local sem JRE:** O contêiner de desenvolvimento e integração contínua não dispõe de Java Runtime Environment (JRE) instalado para execução direta do binário do Firebase Emulator local; a segurança foi homologada através de auditoria estática rigorosa das regras e testes de conexão com a API real do Firestore.
-2. **Integrações de ERP em Estágio de Conectores:** Os conectores com sistemas de terceiros como SAP, Totvs e Quantum estão definidos via contratos de API na camada proxy, com homologação de conectores em andamento para ambientes legados de produção.
-
----
-
-## 19. Funcionalidades em Homologação e Desenvolvimento
-
-- **Homologação dos Endpoints Proxy `/api/impacto/*`:** Testes de carga e resiliência em lote para sincronização contínua de ordens de serviço e ferramental.
-- **Conferência de Turno de Linha:** Expansão das rotinas de conferência de pré-turno e prontidão física de técnicos no pátio de manobras.
-
----
-
-## 20. Roadmap Estratégico e Próximas Etapas
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                   HORIZONTES DE EVOLUÇÃO ESTRATÉGICA                   │
-├────────────────────┬───────────────────────────────────────────────────┤
-│ Horizonte 1        │ 🟢 100% Homologado em Produção                    │
-│ Core Consolidado   │ RNC F 001-29, 6M/5W2H, Rooster MRO (Pessoas,      │
-│                    │ Treinamentos, 5 Estados, Bases), Consulta Temporal│
-│                    │ Metrologia RBC, Apresentação 70/30, ADRs e Import │
-├────────────────────┼───────────────────────────────────────────────────┤
-│ Horizonte 2        │ 🟡 Em Homologação / Andamento                     │
-│ Conectores & ERPs  │ API Impacto MRO Connect, Diário de Bordo          │
-│                    │ Eletrônico (ELB), integração SAP / Totvs / Quantum│
-├────────────────────┼───────────────────────────────────────────────────┤
-│ Horizonte 3        │ 🔵 Planejado (Médio/Longo Prazo)                  │
-│ Predição ATA 100   │ Modelagem probabilística de falhas de frota,      │
-│                    │ confiabilidade estocástica e alertas de AD/DA     │
-├────────────────────┼───────────────────────────────────────────────────┤
-│ Horizonte 4        │ ⚪ Visão de Longo Prazo                           │
-│ Ecossistema Global │ Rede colaborativa inter-MRO de lições aprendidas  │
-│                    │ anonimizadas e benchmarking de segurança de voo   │
-└────────────────────┴───────────────────────────────────────────────────┘
-```
+| Funcionalidade / Módulo | Classificação Objetiva |
+| :--- | :--- |
+| Navegação unificada (`navigationRegistry.ts`), rotas, aliases e RBAC de menu | `IMPLEMENTADO E DISPONÍVEL` |
+| Gestão de Não Conformidades (RNC F 001-29, 5x5, 6M, 5W2H) | `IMPLEMENTADO E DISPONÍVEL` |
+| Rooster MRO (Pessoas, CHTs, Catálogo 15 Cursos, Matrizes, F 001-29, Validades 5 Estados) | `IMPLEMENTADO E DISPONÍVEL` |
+| Base Institucional (177+ Requisitos), consulta cruzada SGQ e alerta não destrutivo de impacto | `IMPLEMENTADO E DISPONÍVEL` |
+| Importação de Auditorias + Motor Semântico + Pré-Auditoria Consolidada + Snapshots Imutáveis + Incorporação Pós-Auditoria | `IMPLEMENTADO E DISPONÍVEL` |
+| Controle Documental, Revisões e Consulta Temporal na data da OS | `IMPLEMENTADO E DISPONÍVEL` |
+| Inventário Documental PPTX (`docs/INVENTARIO_TREINAMENTOS_PPTX.md`) e Geração Gerencial `.pptx` | `IMPLEMENTADO E DISPONÍVEL` |
+| Evidence Storage persistente em nuvem (Google Cloud Storage) | `IMPLEMENTADO, MAS DEPENDENTE DE CONFIGURAÇÃO` |
+| Recursos assistidos por modelo LLM (`GEMINI_API_KEY` server-side) | `IMPLEMENTADO, MAS DEPENDENTE DE CONFIGURAÇÃO` |
+| Conectores externos Impacto MRO Connect (`/api/impacto/*` com ERP externo) | `IMPLEMENTADO, MAS DEPENDENTE DE CONFIGURAÇÃO` |
+| Publicação das regras atualizadas (`firestore.rules`, incluindo `pre_audits`) no projeto Firebase | `IMPLEMENTADO E DISPONÍVEL` |
+| Execução local do Firestore Emulator para testes unitários de regras | `NÃO DISPONÍVEL` |
+| Materiais didáticos técnicos em `.pptx` para os 15 cursos do catálogo Rooster | `NÃO DISPONÍVEL` |
 
 ---
 
-## 21. Screenshots Reais da Aplicação
+## 23. Limitações Conhecidas
 
-Todas as imagens a seguir foram capturadas diretamente da aplicação em execução no ambiente local (`http://localhost:3000`), refletindo a interface autêntica do QualyQuest / Rooster MRO:
-
-### 21.1. Painel Executivo / Dashboard SGQ
-*Visão macro de indicadores da qualidade, distribuição de Não Conformidades por fase, matriz de risco aeronáutico 5x5, desvios por setor e fila de alertas.*
-![Painel Executivo Dashboard](docs/screenshots/dashboard_overview.png)
+1. **Evidence Storage local em modo padrão:** Sem `EVIDENCE_STORAGE_BACKEND=gcs` e credenciais GCS válidas, uploads de evidências utilizam armazenamento em disco local do contêiner (`/data/evidence_storage`), inadequado para escala multi-instância em produção.
+2. **Base de 177 requisitos inicialmente em preparação:** Dos 177 requisitos iniciais semeados a partir do checklist mestre, a maioria inicia em `NAO_INICIADA` ou `EM_ELABORACAO` para que a equipe de Qualidade da IMPACTO elabore, anexe evidências reais e aprove formalmente cada resposta institucional (apenas requisitos previamente homologados em demonstração têm status `APROVADA`).
+3. **Ausência de JRE no ambiente de desenvolvimento:** Impossibilita rodar `firebase emulators:exec` localmente; testes de `firestore.rules` dependem de auditoria estática ou execução contra projeto Firebase provisionado.
+4. **Comparação semântica determinística sem embeddings externos:** O motor de Pré-Auditoria utiliza correspondência conceitual aeronáutica PT/EN, similaridade lexical e cláusulas normativas; interpretações altamente contextuais exigem revisão humana na triagem de `EQUIVALÊNCIA PARCIAL` e `NOVO REQUISITO`.
 
 ---
 
-### 21.2. Lista de Colaboradores e Efetivo Técnico (Rooster MRO)
-*Quadro mestre de técnicos e mecânicos com matrícula, CANAC, base operacional, status de prontidão e filtros avançados por cargo e setor.*
+## 24. Funcionalidades Dependentes de Configuração Externa
+
+- **Google Cloud Storage para Evidências:** requer `EVIDENCE_STORAGE_BACKEND=gcs`, `EVIDENCE_STORAGE_BUCKET` e `GOOGLE_APPLICATION_CREDENTIALS` (ou conta de serviço do runtime).
+- **Google Gemini AI:** requer `GEMINI_API_KEY` no ambiente do servidor (`server.ts`). Sem ela, operam os fallbacks heurísticos locais.
+- **Impacto MRO Connect (ERP externo):** requer `IMPACTO_MRO_API_URL` e `IMPACTO_MRO_API_KEY`.
+- **Persistência e Autenticação Multi-Usuário em Nuvem:** requer projeto Firebase ativo (`firebase-applet-config.json`) com `firestore.rules` publicadas.
+
+---
+
+## 25. Próximas Etapas / Roadmap
+
+- **Curto Prazo (Operação Qualidade IMPACTO):** Tratar e aprovar progressivamente os 177 requisitos da Base Institucional com upload de evidências vigentes e validação formal da Qualidade; validar a importação de novos checklists (ex.: Kalitta QA-14, EASA, ANAC) diretamente na tela de Pré-Auditoria Consolidada.
+- **Infraestrutura / Produção:** Provisionar `EVIDENCE_STORAGE_BACKEND=gcs` com bucket dedicado e aplicar `scripts/migrate_evidences_to_gcs.ts` caso existam anexos locais; publicar as regras atualizadas de `firestore.rules` (incluindo `pre_audits`).
+- **Médio Prazo:** Integrar ERP/MRO externo via `IMPACTO_MRO_API_URL` e incorporar apostilas didáticas oficiais dos 15 cursos técnicos ao repositório documental controlado.
+
+---
+
+## 26. Screenshots Reais da Aplicação
+
+As capturas abaixo existem em `docs/screenshots/`:
+
+### Painel Executivo (Dashboard SGQ)
+![Dashboard Executivo](docs/screenshots/dashboard_overview.png)
+
+### Lista de Colaboradores & Efetivo Técnico (Rooster MRO)
 ![Lista de Colaboradores](docs/screenshots/colaboradores_lista.png)
 
----
+### Ficha / Dossiê do Colaborador
+![Ficha do Mecânico](docs/screenshots/ficha_mecanico.png)
 
-### 21.3. Dossiê do Mecânico / Perfil do Colaborador
-*Ficha técnica individual com carteiras CHT, registros de treinamentos mandatórios, autorizações de liberação (RTS) e controle de restrições.*
-![Dossiê do Mecânico](docs/screenshots/ficha_mecanico.png)
+### Registros de Treinamentos & Qualificações
+![Treinamentos e Qualificações](docs/screenshots/treinamentos_qualificacoes.png)
 
----
-
-### 21.4. Registros de Treinamentos e Qualificações
-*Histórico regulamentar de cursos realizados com aplicação rigorosa dos 5 estados de validade, vínculos de renovação e anexos comprobatórios.*
-![Registros de Treinamentos](docs/screenshots/treinamentos_qualificacoes.png)
-
----
-
-### 21.5. Catálogo Oficial de Cursos e Treinamentos
-*Estruturação curricular por frotas (Airbus, Boeing, ATR, Cessna, King Air) e motores, com níveis de formação e regras de recorrência.*
+### Catálogo Oficial de Cursos
 ![Catálogo de Cursos](docs/screenshots/catalogo_cursos.png)
 
----
+### Matriz de Treinamentos por Frota e Motor
+![Matriz de Treinamento](docs/screenshots/matriz_treinamento.png)
 
-### 21.6. Matriz de Treinamentos por Frota e Motor
-*Cruzamento visual entre o corpo técnico e os requisitos de certificação por modelo de aeronave e motorização aeronáutica.*
-![Matriz de Treinamentos](docs/screenshots/matriz_treinamento.png)
-
----
-
-### 21.7. Modelos de Capacitação Operacional por Cargo
-*Configuração padronizada das competências e treinamentos mínimos exigidos para cada função e posto técnico de trabalho na oficina.*
+### Modelos de Capacitação Operacional
 ![Modelos de Capacitação](docs/screenshots/modelos_capacitacao.png)
 
----
+### Central de Vencimentos & Gaps
+![Vencimentos e Gaps](docs/screenshots/vencimentos_gaps.png)
 
-### 21.8. Central Preditiva de Vencimentos & Gaps
-*Monitoramento antecipado de expirações em colunas de urgência temporal (≤30 dias, ≤60 dias, ≤90 dias) e detecção de lacunas de qualificação.*
-![Central de Vencimentos](docs/screenshots/vencimentos_gaps.png)
-
----
-
-### 21.9. Bases e Locais Operacionais
-*Cadastro mestre de instalações e aeroportos com segregação entre Hubs Centrais, Estações de Linha e Sites Remotos de Atendimento.*
+### Bases e Locais Operacionais
 ![Bases Operacionais](docs/screenshots/cadastros_bases.png)
 
----
+### Gestão de Não Conformidades (RNC F 001-29)
+![Relatório RNC](docs/screenshots/relatorio_rnc.png)
 
-### 21.10. Gestão de Não Conformidades (Formulário RNC F 001-29)
-*Módulo de tratamento de desvios com metodologia 6M de Ishikawa, 5 Porquês, matriz de risco 5x5 e planos de ação corretiva 5W2H.*
-![Gestão de RNCs](docs/screenshots/relatorio_rnc.png)
-
----
-
-### 21.11. Controle Documental e Consulta Temporal na Data da OS
-*Acervo normativo de manuais técnicos com mecanismo cronológico de busca para comprovação da revisão vigente no dia da execução da ordem de serviço.*
+### Controle Documental & Revisões
 ![Controle Documental](docs/screenshots/controle_documental.png)
 
----
-
-### 21.12. Apresentação Gerencial Oficial 70/30 (Web Viewer & PPTX)
-*Visualizador corporativo em formato widescreen (16:9) com 24 slides estruturados e botão de exportação para arquivo PowerPoint auditável.*
+### Apresentação Gerencial (70/30)
 ![Apresentação Gerencial](docs/screenshots/apresentacao_gerencial.png)
 
 ---
 
-## 22. Apresentação Executiva em PowerPoint (.pptx)
+## 27. Aviso de Integridade e Anti-Alucinação
 
-O sistema disponibiliza o arquivo PPTX oficial pronto para apresentação perante diretorias, comitês executivos e auditorias regulatórias:
-- **Download do PPTX:** O arquivo encontra-se compilado na pasta [`docs/Apresentacao_Gerencial_QualyQuest_Rooster.pptx`](./docs/Apresentacao_Gerencial_QualyQuest_Rooster.pptx) e na pasta pública [`public/Apresentacao_Gerencial_QualyQuest_Rooster.pptx`](./public/Apresentacao_Gerencial_QualyQuest_Rooster.pptx).
-- **Homologação:** 24 slides em conformidade estrita com o Safe Area widescreen, testados sob estresse extremo com **0 infrações de overflow**.
-
----
-
-<div align="center">
-  <sub>QualyQuest SGQ & Rooster MRO Enterprise • Excelência Técnica em Manutenção Aeronáutica e Segurança de Voo</sub>
-</div>
+Este software opera sob diretriz estrita de integridade regulatória aeronáutica:
+- O sistema **não inventa** respostas institucionais aprovadas, documentos controlados, revisões vigentes, treinamentos ou evidências operacionais inexistentes.
+- Requisitos sem aprovação formal ou com evidência vencida/ausente **nunca** são classificados como `EQUIVALÊNCIA CONFIRMADA` nem promovidos automaticamente a `PRONTO_PARA_AUDITORIA`.
+- Toda aprovação institucional (`APROVADA`), incorporação permanente de novos requisitos à base e congelamento final de pré-auditoria exige decisão humana explícita de perfil autorizado da Qualidade.

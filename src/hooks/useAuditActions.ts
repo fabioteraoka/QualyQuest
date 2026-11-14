@@ -4,7 +4,10 @@ import {
   ConstatacaoExternaRecord,
   LicaoAprendidaAuditoria,
 } from '../types';
-import { RequisitoAuditoriaExterna } from '../types/auditRequirements';
+import {
+  RequisitoAuditoriaExterna,
+  PreAuditoriaConsolidada,
+} from '../types/auditRequirements';
 import {
   saveExternalAudit,
   saveAuditFinding,
@@ -21,6 +24,7 @@ import {
   archiveAudit,
   deleteAuditWithDependencyCheck,
 } from '../services/firebase/auditRequirementsFirestore';
+import { savePreAudit } from '../services/firebase/preAuditsFirestore';
 
 export interface UseAuditActionsProps {
   activeOrgId: string;
@@ -30,6 +34,7 @@ export interface UseAuditActionsProps {
   setAuditRequirements: React.Dispatch<React.SetStateAction<RequisitoAuditoriaExterna[]>>;
   setAuditFindings: React.Dispatch<React.SetStateAction<ConstatacaoExternaRecord[]>>;
   setAuditLessons: React.Dispatch<React.SetStateAction<LicaoAprendidaAuditoria[]>>;
+  setPreAudits?: React.Dispatch<React.SetStateAction<PreAuditoriaConsolidada[]>>;
 }
 
 export function useAuditActions({
@@ -40,6 +45,7 @@ export function useAuditActions({
   setAuditRequirements,
   setAuditFindings,
   setAuditLessons,
+  setPreAudits,
 }: UseAuditActionsProps) {
   const handleSaveAudit = async (audit: AuditoriaExternaRecord) => {
     try {
@@ -190,6 +196,24 @@ export function useAuditActions({
     }
   };
 
+  const handleSavePreAudit = async (preAudit: PreAuditoriaConsolidada) => {
+    const saved = user
+      ? await savePreAudit(activeOrgId, preAudit, userProfile)
+      : preAudit;
+
+    if (setPreAudits) {
+      setPreAudits((prev) => {
+        const idx = prev.findIndex((p) => p.id === saved.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = saved;
+          return next;
+        }
+        return [saved, ...prev];
+      });
+    }
+  };
+
   return {
     handleSaveAudit,
     handleDeleteAudit,
@@ -203,5 +227,6 @@ export function useAuditActions({
     handleSaveLesson,
     handleCriarRNCFromFinding,
     handleCandidatarKnowledge,
+    handleSavePreAudit,
   };
 }

@@ -28,17 +28,22 @@ import {
   ProgramaChecklistCliente,
   LicaoAprendidaAuditoria,
   UserProfile,
-  OrganizationRecord
+  OrganizationRecord,
+  PreparacaoRequisitoAuditoria
 } from '../../types';
 import {
   RequisitoAuditoriaExterna,
   ExtracaoChecklistResultado,
+  PreAuditoriaConsolidada
 } from '../../types/auditRequirements';
 import { AuditImportPreviewModal } from './AuditImportPreviewModal';
 import { KALITTA_QA14_METADATA, KALITTA_QA14_ITEMS } from '../../data/sampleKalittaQA14Checklist';
 import { saveAuditRequirementsBatch } from '../../services/firebase/auditRequirementsFirestore';
 import { saveDocumentFileToStorage } from '../../utils/documentFilesStorage';
 import { geminiClientCache } from '../../utils/geminiClientCache';
+import { analisarAuditoriaContraBaseInstitucional } from '../../services/preAuditMatchingService';
+import { ContextoCruzadoSGQ, getPreparacoesIniciaisMemoria } from '../../services/auditReadinessService';
+import { savePreAudit } from '../../services/firebase/preAuditsFirestore';
 
 export interface UploadedFileItem {
   id: string;
@@ -58,6 +63,10 @@ interface SmartAuditImportViewProps {
   existingRequirements: RequisitoClienteItem[];
   userProfile?: UserProfile | null;
   activeOrganization?: OrganizationRecord | null;
+  preparacoesBase?: PreparacaoRequisitoAuditoria[];
+  contextoSGQ?: ContextoCruzadoSGQ;
+  onSavePreAudit?: (preAudit: PreAuditoriaConsolidada) => Promise<void>;
+  onPreAuditGenerated?: (preAudit: PreAuditoriaConsolidada) => void;
   onSaveAudit?: (audit: AuditoriaExternaRecord) => Promise<void>;
   onSaveFinding?: (finding: ConstatacaoExternaRecord) => Promise<void>;
   onSaveRequirement?: (req: RequisitoClienteItem) => Promise<void>;
@@ -72,6 +81,10 @@ export const SmartAuditImportView: React.FC<SmartAuditImportViewProps> = ({
   existingRequirements = [],
   userProfile,
   activeOrganization,
+  preparacoesBase,
+  contextoSGQ,
+  onSavePreAudit,
+  onPreAuditGenerated,
   onSaveAudit,
   onSaveFinding,
   onSaveRequirement,
@@ -367,9 +380,10 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
         : `AUD-${new Date().getFullYear()}-${cleanClienteTag}-${Date.now().toString().slice(-4)}`;
       const auditId = `AUD-${Date.now()}`;
 
+      let novaAuditoriaCriada: AuditoriaExternaRecord | null = null;
       // 1. Gravar ou atualizar a Auditoria Externa
       if (onSaveAudit) {
-        const novaAuditoria: AuditoriaExternaRecord = {
+        novaAuditoriaCriada = {
           id: auditId,
           organizationId: orgId,
           numeroAuditoria,
@@ -406,7 +420,7 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
           createdByUserUid: userProfile?.uid || 'user_sgq',
         };
 
-        await onSaveAudit(novaAuditoria);
+        await onSaveAudit(novaAuditoriaCriada);
       }
 
       // 2. Gravar os Requisitos individuais vinculados
@@ -470,13 +484,44 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
         await saveAuditRequirementsBatch(orgId, reqsToSave, userProfile);
       }
 
+      // 3. Comparar automaticamente com a Base Institucional (177+ requisitos) e montar Pré-Auditoria
+      const baseParaComparar = preparacoesBase && preparacoesBase.length > 0
+        ? preparacoesBase
+        : getPreparacoesIniciaisMemoria(orgId);
+
+      const preAuditoriaGerada = analisarAuditoriaContraBaseInstitucional({
+        organizationId: orgId,
+        audit: novaAuditoriaCriada || {
+          id: auditId,
+          numeroAuditoria,
+          entidadeAuditora: clienteDetectado,
+          origem: clienteDetectado,
+          escopo: `${codigoForm} - Checklist de Auditoria`,
+          local: 'Hangar de Manutenção de Linha / Base SOD',
+          checklistCodigo: codigoForm,
+          checklistRevisao: dadosRevisados.revisaoChecklist
+        },
+        requisitosAuditados: reqsToSave,
+        preparacoesBase: baseParaComparar,
+        contextoSGQ,
+        currentUser: userProfile
+      });
+
+      if (onSavePreAudit) {
+        await onSavePreAudit(preAuditoriaGerada);
+      } else {
+        await savePreAudit(orgId, preAuditoriaGerada, userProfile);
+      }
+
       setPreviewModalOpen(false);
       showNotification(
         'success',
-        `Checklist "${codigoForm}" (${clienteDetectado}) importado com sucesso! ${reqsToSave.length} requisitos e auditoria "${numeroAuditoria}" registrados no SGQ.`
+        `Checklist "${codigoForm}" importado e Pré-Auditoria montada! Confirmados: ${preAuditoriaGerada.resumo.equivalenciaConfirmada} | Parciais: ${preAuditoriaGerada.resumo.equivalenciaParcial} | Sem Aprovação: ${preAuditoriaGerada.resumo.semRespostaAprovada} | Novos: ${preAuditoriaGerada.resumo.novoRequisito}.`
       );
 
-      if (onImportComplete) {
+      if (onPreAuditGenerated) {
+        setTimeout(() => onPreAuditGenerated(preAuditoriaGerada), 900);
+      } else if (onImportComplete) {
         setTimeout(onImportComplete, 1200);
       }
     } catch (err: any) {
@@ -639,6 +684,78 @@ Category: Pátio e Hangar | Criticality: ALTO | Metodo: ASSISTIDO | Suggested Co
             updatedAt: new Date().toISOString(),
           };
           await onSaveLesson(licao);
+        }
+      }
+
+      // 5. Se houver requisitos de checklist importados diretamente, gerar também Requisitos da Auditoria e Pré-Auditoria comparativa
+      if (incorporarRequisitos && dadosExtraidos.requisitosChecklist && dadosExtraidos.requisitosChecklist.length > 0) {
+        const reqsAudDiretos: RequisitoAuditoriaExterna[] = dadosExtraidos.requisitosChecklist.map((r: any, idx: number) => ({
+          id: `REQ-DIR-${auditId}-${idx + 1}`,
+          organizationId: orgId,
+          auditId,
+          numeroAuditoria,
+          clienteOuEntidade: audDados.entidadeAuditora || audDados.clienteNome || 'Cliente Aéreo',
+          dataAuditoria: audDados.dataInicio || new Date().toISOString().split('T')[0],
+          numeroItem: r.numeroItem || `${idx + 1}.1`,
+          capituloOuSecao: r.categoria || 'Geral',
+          hierarquia: { capitulo: r.categoria || 'Geral', secao: r.categoria || 'Geral', ordem: idx + 1 },
+          tituloCurto: r.tituloCurto || `Requisito ${r.numeroItem || idx + 1}`,
+          textoOriginal: r.textoOriginal || r.tituloCurto || '',
+          perguntaOuCriterio: r.textoOriginal || r.tituloCurto || '',
+          referenciaNormativa: r.referenciaNormativa || audDados.referenciaExterna,
+          situacaoAtendimento: 'EM_AVALIACAO',
+          estadoAcompanhamento: 'NAO_INICIADO',
+          prioridade: 'ALTA',
+          setorResponsavel: 'Garantia da Qualidade',
+          responsavelInterno: userProfile?.displayName || 'Qualidade SGQ',
+          statusRegistro: 'ATIVO',
+          grauConfiancaExtracao: 90,
+          necessitaRevisaoHumana: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          criadoPorUid: userProfile?.uid || 'user_sgq',
+          criadoPorNome: userProfile?.displayName || 'QualiGest SGQ',
+          trilhaAuditoria: []
+        }));
+
+        if (onSaveAuditRequirementsBatch) {
+          await onSaveAuditRequirementsBatch(reqsAudDiretos);
+        }
+
+        const baseParaComparar = preparacoesBase && preparacoesBase.length > 0
+          ? preparacoesBase
+          : getPreparacoesIniciaisMemoria(orgId);
+
+        const preAud = analisarAuditoriaContraBaseInstitucional({
+          organizationId: orgId,
+          audit: {
+            id: auditId,
+            numeroAuditoria,
+            entidadeAuditora: audDados.entidadeAuditora || audDados.clienteNome || 'Cliente Aéreo',
+            origem: audDados.clienteNome || 'Cliente Aéreo',
+            escopo: audDados.escopo || 'Auditoria Importada',
+            local: audDados.baseOuLocal || 'Sorocaba (SOD)',
+            checklistCodigo: numeroAuditoria
+          },
+          requisitosAuditados: reqsAudDiretos,
+          preparacoesBase: baseParaComparar,
+          contextoSGQ,
+          currentUser: userProfile
+        });
+
+        if (onSavePreAudit) {
+          await onSavePreAudit(preAud);
+        } else {
+          await savePreAudit(orgId, preAud, userProfile);
+        }
+
+        showNotification(
+          'success',
+          `Incorporação concluída e Pré-Auditoria gerada (${preAud.resumo.equivalenciaConfirmada} confirmados, ${preAud.resumo.equivalenciaParcial} parciais, ${preAud.resumo.semRespostaAprovada} sem aprovação, ${preAud.resumo.novoRequisito} novos)!`
+        );
+        if (onPreAuditGenerated) {
+          setTimeout(() => onPreAuditGenerated(preAud), 900);
+          return;
         }
       }
 

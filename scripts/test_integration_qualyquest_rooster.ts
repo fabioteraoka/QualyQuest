@@ -516,67 +516,68 @@ async function runAllTests() {
   // ==========================================================================
   console.log('\n--- EIXO 4: CONSISTÊNCIA DE NAVEGAÇÃO E ROTAS REAIS ---');
 
-  const sidebarContent = fs.readFileSync('src/components/Sidebar.tsx', 'utf8');
+  const registryContent = fs.readFileSync('src/config/navigationRegistry.ts', 'utf8');
   const routerContent = fs.readFileSync('src/components/app/AppViewRouter.tsx', 'utf8');
 
   // 4.1 Desduplicação de validacaoQueue
-  const matchesValidacaoTreinamentos = sidebarContent.includes("id: 'validacao-treinamentos'");
-  const matchesValidacaoQualidade = sidebarContent.includes("id: 'validacao-qualidade'");
+  const matchesValidacaoTreinamentos = registryContent.includes("id: 'validacao-treinamentos'");
+  const matchesValidacaoQualidade = registryContent.includes("id: 'validacao-qualidade'");
   assert(
     matchesValidacaoTreinamentos && matchesValidacaoQualidade,
     '4. Navegação',
     'Desduplicação de validacaoQueue: separada em validacao-treinamentos e validacao-qualidade',
-    'IDs das filas de validação não foram separados no Sidebar.tsx'
+    'IDs das filas de validação não foram separados no navigationRegistry.ts'
   );
 
-  // 4.2 Destino real de "Modelos de capacitação" (modelos-capacitacao)
+  // 4.2 Destino real de "Modelos de capacitação" (modelos-capacitacao -> alias canônico de rooster-matrizes)
   const modelosHandled = routerContent.includes("case 'rooster-matrizes':") && routerContent.includes("'modelos-capacitacao'");
   assert(
     modelosHandled,
     '4. Navegação',
-    'Item "Modelos de capacitação" (modelos-capacitacao) possui rota real para a matriz de requisitos',
+    'Rota legada "Modelos de capacitação" (modelos-capacitacao) possui rota real e alias canônico para a matriz de requisitos',
     'modelos-capacitacao não possui destino explícito no roteador'
   );
 
-  // 4.3 Verificação de unicidade de IDs dos itens de navegação no Sidebar.tsx
-  // Extrai todos os id: '...' dentro de navGroups
-  const navItemIdMatches = [...sidebarContent.matchAll(/id:\s*['"]([a-zA-Z0-9_-]+)['"]/g)].map((m) => m[1]);
-  // Filtra apenas os IDs de itens de primeiro e segundo nível
+  // 4.3 Verificação de unicidade de IDs dos itens de navegação no navigationRegistry.ts
+  const itemMatches = [...registryContent.matchAll(/\{\s*id:\s*['"]([a-zA-Z0-9_-]+)['"],\s*label:/g)].map((m) => m[1]);
   const idCounts = new Map<string, number>();
-  navItemIdMatches.forEach((id) => {
+  itemMatches.forEach((id) => {
     idCounts.set(id, (idCounts.get(id) || 0) + 1);
   });
   const duplicateIds = [...idCounts.entries()].filter(([_, count]) => count > 1).map(([id]) => id);
   assert(
     duplicateIds.length === 0,
     '4. Navegação',
-    'Ausência de IDs duplicados em Sidebar.tsx',
+    'Ausência de IDs duplicados em navigationRegistry.ts',
     `IDs duplicados encontrados: ${duplicateIds.join(', ')}`
   );
 
-  // 4.4 Mapeamento de todas as rotas mandatadas no AppViewRouter.tsx (sem depender de fallback)
+  // 4.4 Mapeamento de todas as rotas e aliases preservados no AppViewRouter.tsx e navigationRegistry.ts
   const rotasObrigatorias = [
-    { id: 'pessoas-competencias', label: 'Lista de colaboradores' },
+    { id: 'pessoas-competencias', label: 'Colaboradores & Perfis' },
     { id: 'colaborador-novo', label: 'Novo colaborador' },
-    { id: 'rooster-ficha', label: 'Perfil do colaborador' },
+    { id: 'rooster-ficha', label: 'Perfil do colaborador (alias legado)' },
     { id: 'cht-qualificacoes', label: 'Habilitações e licenças' },
     { id: 'rooster-catalogo', label: 'Catálogo de treinamentos' },
-    { id: 'modelos-capacitacao', label: 'Modelos de capacitação' },
-    { id: 'rooster-matrizes', label: 'Matriz de treinamento' },
+    { id: 'modelos-capacitacao', label: 'Modelos de capacitação (alias legado)' },
+    { id: 'rooster-matrizes', label: 'Matriz & Capacitação' },
     { id: 'treinamentos-qualificacoes', label: 'Registros de treinamento' },
     { id: 'importacao-certificados', label: 'Importação de certificados' },
     { id: 'validacao-treinamentos', label: 'Fila de validação (certificados)' },
     { id: 'validacao-qualidade', label: 'Fila de validação (qualidade)' },
-    { id: 'central-vencimentos-gaps', label: 'Vencimentos' },
+    { id: 'central-vencimentos-gaps', label: 'Vencimentos & Gaps' },
     { id: 'competencias-dashboard', label: 'Dashboard de treinamentos' },
     { id: 'cadastros-bases', label: 'Bases e locais operacionais' },
     { id: 'cadastros-funcoes-cargos', label: 'Funções e cargos' },
-    { id: 'parametros-fluxo', label: 'Parâmetros necessários ao fluxo' },
+    { id: 'parametros-fluxo', label: 'Parâmetros operacionais (alias legado)' },
+    { id: 'rooster-relatorio', label: 'Relatório do Roster' },
+    { id: 'preparacao-auditorias', label: 'Base Institucional (177 Req.)' },
+    { id: 'smart-audit', label: 'Auditoria Inteligente & Pré-Auditoria' },
   ];
 
   rotasObrigatorias.forEach((rota) => {
-    const declaredInSidebar = sidebarContent.includes(`'${rota.id}'`) || sidebarContent.includes(`"${rota.id}"`);
-    assert(declaredInSidebar, '4. Navegação', `Rota "${rota.label}" [${rota.id}] declarada no menu Sidebar.tsx`, `Falta no Sidebar.tsx`);
+    const declaredInRegistry = registryContent.includes(`'${rota.id}'`) || registryContent.includes(`"${rota.id}"`);
+    assert(declaredInRegistry, '4. Navegação', `Rota "${rota.label}" [${rota.id}] declarada no navigationRegistry.ts`, `Falta no navigationRegistry.ts`);
 
     const hasDedicatedHandler = routerContent.includes(`case '${rota.id}':`) || routerContent.includes(`case "${rota.id}":`);
     assert(hasDedicatedHandler, '4. Navegação', `Rota "${rota.label}" [${rota.id}] possui case dedicado em AppViewRouter.tsx`, `Falta case no router`);

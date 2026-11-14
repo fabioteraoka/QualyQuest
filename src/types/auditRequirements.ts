@@ -439,4 +439,121 @@ export interface PropostaPreparacaoRequisitoOutput {
   };
 }
 
+// -------------------------------------------------------------------------
+// ETAPA 6 & 7: PRÉ-AUDITORIA CONTRA BASE INSTITUCIONAL (177+ REQUISITOS)
+// -------------------------------------------------------------------------
+
+export type ClassificacaoCorrespondenciaBase =
+  | 'EQUIVALÊNCIA CONFIRMADA'
+  | 'EQUIVALÊNCIA PARCIAL'
+  | 'REQUISITO SEM RESPOSTA APROVADA'
+  | 'NOVO REQUISITO';
+
+export interface EscopoComparacaoAuditoria {
+  cliente?: string;
+  norma?: string;
+  aeronave?: string;
+  localidade?: string;
+  atividade?: string;
+}
+
+export interface ItemPreAuditoriaComparado {
+  id: string;
+  requisitoAuditoriaId: string;
+  numeroItem: string;
+  capituloOuSecao: string;
+  textoOriginalRequisito: string; // Preservação ipsis litteris obrigatória
+  referenciaNormativa?: string;
+
+  // Classificação obrigatória
+  classificacao: ClassificacaoCorrespondenciaBase;
+  justificativaClassificacao: string;
+  scoreSemantico: number; // 0 a 100
+  fatoresDivergenciaEscopo?: string[];
+
+  // Vínculo com Base Institucional (somente leitura)
+  requisitoBaseId?: string;
+  requisitoBaseCodigo?: string;
+  origemBaseMatch?: 'BASE_INICIAL_177' | 'INCORPORADO_POS_AUDITORIA';
+  statusRespostaBaseNoMomento?: string;
+  respostaInstitucionalBase?: string; // Somente leitura — nunca sobrescrita pela adaptação local
+
+  // Adaptação específica desta auditoria
+  respostaAdaptadaAuditoria?: string;
+  observacoesEscopo?: string;
+
+  // Documentos, evidências e lacunas reais
+  documentosRelacionados: Array<{
+    codigo: string;
+    titulo: string;
+    revisao?: string;
+    situacao?: string;
+  }>;
+  evidenciasValidas: Array<{
+    id: string;
+    titulo: string;
+    numeroReferencia?: string;
+    dataValidade?: string;
+    statusValidade?: string;
+  }>;
+  lacunasIdentificadas: string[];
+
+  // Tratamento e incorporação pós-auditoria
+  statusTratamento:
+    | 'PENDENTE'
+    | 'VALIDADO_PARA_AUDITORIA'
+    | 'APROVADO_QUALIDADE'
+    | 'INCORPORADO_NA_BASE';
+  incorporadoNaBaseId?: string;
+  incorporadoEm?: string;
+  validadoPorNome?: string;
+  validadoEm?: string;
+}
+
+export interface ResumoClassificacaoPreAuditoria {
+  totalItens: number;
+  equivalenciaConfirmada: number;
+  equivalenciaParcial: number;
+  semRespostaAprovada: number;
+  novoRequisito: number;
+  validadosParaAuditoria: number;
+  incorporadosNaBase: number;
+}
+
+export interface PreAuditoriaSnapshot {
+  snapshotId: string;
+  versaoSnapshot: number;
+  geradoEm: string;
+  geradoPorNome: string;
+  geradoPorUid?: string;
+  resumo: ResumoClassificacaoPreAuditoria;
+  itensSnapshot: ItemPreAuditoriaComparado[];
+  observacoes?: string;
+  imutavel: true;
+}
+
+export interface PreAuditoriaConsolidada {
+  id: string;
+  organizationId: string;
+  auditId: string;
+  numeroAuditoria: string;
+  clienteOuEntidade: string;
+  codigoChecklist?: string;
+  revisaoChecklist?: string;
+  escopoAuditoria?: EscopoComparacaoAuditoria;
+  statusPreAuditoria:
+    | 'EM_ANALISE'
+    | 'CONSOLIDADA_COM_PENDENCIAS'
+    | 'PRONTA_PARA_AUDITORIA'
+    | 'FINALIZADA_CONGELADA';
+  resumo: ResumoClassificacaoPreAuditoria;
+  itens: ItemPreAuditoriaComparado[];
+  snapshots: PreAuditoriaSnapshot[];
+  baseInstitucionalTotalNoMomento: number;
+  createdAt: string;
+  updatedAt: string;
+  criadoPorUid?: string;
+  criadoPorNome?: string;
+}
+
 export const AUDIT_REQUIREMENTS_MODULE = true;
