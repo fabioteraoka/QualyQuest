@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { auth } from '../services/firebase/config';
 import { ShieldCheck, Mail, Lock, User, LogIn, UserPlus, KeyRound, AlertCircle, CheckCircle2, X, Copy, Check, Globe, Sparkles } from 'lucide-react';
 
 interface AuthModalProps {
@@ -21,10 +22,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
+  const activeError = formError || error;
   const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
   const isUnauthorizedDomain = Boolean(
-    (formError || error)?.includes('unauthorized-domain') || 
-    (formError || error)?.toLowerCase().includes('domínio')
+    activeError?.includes('unauthorized-domain') ||
+    activeError?.toLowerCase().includes('domínio')
+  );
+  const isOperationNotAllowed = Boolean(
+    activeError?.includes('operation-not-allowed') ||
+    activeError?.toLowerCase().includes('provedor email/senha não está ativado') ||
+    activeError?.toLowerCase().includes('cadastro por email/senha não está ativado')
   );
 
   const handleCopyHostname = () => {
@@ -87,7 +94,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
     setLoading(true);
     try {
       await loginWithGoogle();
-      onClose();
+      if (auth.currentUser) {
+        onClose();
+      }
     } catch (err: any) {
       setFormError(err?.message || 'Falha ao autenticar com Google.');
     } finally {
@@ -119,25 +128,52 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
         {/* Form Body */}
         <div className="p-6">
+          {/* Primary Google Sign-In (provisioned by default in Firebase Auth) */}
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={loading}
+              className="w-full py-2.5 px-4 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-[8px] text-xs font-bold flex items-center justify-center gap-2.5 transition-colors shadow-xs cursor-pointer"
+            >
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+              </svg>
+              <span>Entrar com Google (Recomendado)</span>
+            </button>
+          </div>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-slate-200"></div>
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase font-bold text-slate-400">
+              <span className="bg-white px-2">Ou acessar com Email e Senha</span>
+            </div>
+          </div>
+
           {/* Mode Switcher */}
           <div className="flex bg-slate-100 p-1 rounded-[8px] mb-5 text-xs font-semibold text-slate-600">
             <button
               type="button"
-              onClick={() => { setMode('login'); setFormError(null); }}
+              onClick={() => { setMode('login'); setFormError(null); clearError(); }}
               className={`flex-1 py-1.5 rounded-[6px] transition-colors ${mode === 'login' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'}`}
             >
               Entrar
             </button>
             <button
               type="button"
-              onClick={() => { setMode('register'); setFormError(null); }}
+              onClick={() => { setMode('register'); setFormError(null); clearError(); }}
               className={`flex-1 py-1.5 rounded-[6px] transition-colors ${mode === 'register' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'}`}
             >
               Criar Conta
             </button>
             <button
               type="button"
-              onClick={() => { setMode('forgot'); setFormError(null); }}
+              onClick={() => { setMode('forgot'); setFormError(null); clearError(); }}
               className={`flex-1 py-1.5 rounded-[6px] transition-colors ${mode === 'forgot' ? 'bg-white text-slate-900 shadow-xs' : 'hover:text-slate-900'}`}
             >
               Recuperar
@@ -145,7 +181,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           </div>
 
           {/* Feedback Messages */}
-          {(formError || error) && (
+          {activeError && (
             isUnauthorizedDomain ? (
               <div className="mb-4 p-3.5 rounded-[10px] bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-2.5">
                 <div className="flex items-start gap-2">
@@ -185,18 +221,67 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
                 <div className="text-[10px] text-amber-800 bg-amber-100/60 p-2 rounded-[6px] space-y-0.5">
                   <p className="font-semibold">Como autorizar no Firebase Console:</p>
-                  <p>1. Acesse o <strong>Firebase Console</strong> (Projeto: <code>ai-studio-applet-webapp-bdbf6</code>)</p>
-                  <p>2. Vá em <strong>Authentication</strong> &gt; <strong>Settings</strong> &gt; <strong>Authorized domains</strong></p>
-                  <p>3. Adicione o domínio copiado acima.</p>
+                  <p>
+                    1. Acesse o{' '}
+                    <a
+                      href="https://console.firebase.google.com/project/ai-studio-applet-webapp-bdbf6/authentication/settings"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-bold text-amber-950 hover:text-amber-700"
+                    >
+                      Firebase Console — Authentication Settings
+                    </a>{' '}
+                    (Projeto: <code>ai-studio-applet-webapp-bdbf6</code>)
+                  </p>
+                  <p>2. Vá em <strong>Settings</strong> &gt; <strong>Authorized domains</strong> &gt; <strong>Add domain</strong></p>
+                  <p>3. Cole o domínio copiado acima e clique em <strong>Add</strong>.</p>
                 </div>
 
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => { setMode('login'); setFormError(null); }}
+                    onClick={handleGoogleLogin}
+                    disabled={loading}
                     className="flex-1 py-1.5 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded-[6px] text-[11px] font-semibold text-center transition-colors cursor-pointer"
                   >
-                    Usar Email / Senha
+                    Tentar Google Novamente
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex-1 py-1.5 px-2 bg-white hover:bg-slate-50 border border-amber-300 text-amber-900 rounded-[6px] text-[11px] font-semibold text-center transition-colors cursor-pointer"
+                  >
+                    Modo Demo (Sem Login)
+                  </button>
+                </div>
+              </div>
+            ) : isOperationNotAllowed ? (
+              <div className="mb-4 p-3.5 rounded-[10px] bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-2.5">
+                <div className="flex items-start gap-2">
+                  <KeyRound className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-amber-950 text-xs">Provedor Email/Senha Desativado no Firebase</h4>
+                    <p className="text-[11px] text-amber-800 mt-0.5">
+                      Este projeto Firebase está provisionado com login via <strong>Google</strong>. O acesso por Email/Senha precisa ser habilitado manualmente no console se desejado.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-[10px] text-amber-800 bg-amber-100/60 p-2 rounded-[6px] space-y-0.5">
+                  <p className="font-semibold">Como habilitar Email/Senha no Firebase Console:</p>
+                  <p>1. Acesse o <strong>Firebase Console</strong> (Projeto: <code>ai-studio-applet-webapp-bdbf6</code>)</p>
+                  <p>2. Vá em <strong>Authentication</strong> &gt; <strong>Sign-in method</strong> &gt; <strong>Add new provider</strong></p>
+                  <p>3. Selecione <strong>Email/Password</strong>, ative e salve.</p>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleGoogleLogin}
+                    disabled={loading}
+                    className="flex-1 py-1.5 px-2 bg-amber-600 hover:bg-amber-700 text-white rounded-[6px] text-[11px] font-semibold text-center transition-colors cursor-pointer"
+                  >
+                    Entrar com Google Agora
                   </button>
                   <button
                     type="button"
@@ -210,7 +295,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
             ) : (
               <div className="mb-4 p-3 rounded-[8px] bg-rose-50 border border-rose-200 flex items-start gap-2 text-xs text-rose-800">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                <span>{formError || error}</span>
+                <span>{activeError}</span>
               </div>
             )
           )}
@@ -281,7 +366,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               ) : mode === 'login' ? (
                 <>
                   <LogIn className="w-4 h-4" />
-                  <span>Acessar Conta</span>
+                  <span>Acessar com Email</span>
                 </>
               ) : mode === 'register' ? (
                 <>
@@ -296,35 +381,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               )}
             </button>
           </form>
-
-          {/* Social / Google Login */}
-          {mode !== 'forgot' && (
-            <>
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-200"></div>
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase font-bold text-slate-400">
-                  <span className="bg-white px-2">Ou autenticar via</span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={loading}
-                className="w-full py-2 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-[8px] text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                </svg>
-                <span>Entrar com Google</span>
-              </button>
-            </>
-          )}
 
           <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col items-center gap-2">
             <button

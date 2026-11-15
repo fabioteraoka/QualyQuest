@@ -70,7 +70,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus('AUTHENTICATED');
     } catch (err: any) {
       let msg = 'Falha ao autenticar usuário.';
-      if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found' || err?.code === 'auth/wrong-password') {
+      if (err?.code === 'auth/operation-not-allowed' || err?.message?.includes('auth/operation-not-allowed')) {
+        msg = 'auth/operation-not-allowed: O provedor Email/Senha não está ativado no Firebase Console. Utilize "Entrar com Google" ou habilite Email/Password em Authentication > Sign-in method.';
+      } else if (err?.code === 'auth/invalid-credential' || err?.code === 'auth/user-not-found' || err?.code === 'auth/wrong-password') {
         msg = 'Email ou senha incorretos.';
       } else if (err?.code === 'auth/invalid-email') {
         msg = 'Endereço de email inválido.';
@@ -93,7 +95,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setStatus('AUTHENTICATED');
     } catch (err: any) {
       let msg = 'Falha ao criar conta.';
-      if (err?.code === 'auth/email-already-in-use') {
+      if (err?.code === 'auth/operation-not-allowed' || err?.message?.includes('auth/operation-not-allowed')) {
+        msg = 'auth/operation-not-allowed: O cadastro por Email/Senha não está ativado no Firebase Console. Utilize "Entrar com Google" ou habilite Email/Password em Authentication > Sign-in method.';
+      } else if (err?.code === 'auth/email-already-in-use') {
         msg = 'Este endereço de email já está cadastrado.';
       } else if (err?.code === 'auth/weak-password') {
         msg = 'A senha deve ter no mínimo 6 caracteres.';
@@ -147,7 +151,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await AuthService.resetPassword(email);
     } catch (err: any) {
       let msg = 'Falha ao enviar email de recuperação.';
-      if (err?.code === 'auth/user-not-found') {
+      if (err?.code === 'auth/operation-not-allowed' || err?.message?.includes('auth/operation-not-allowed')) {
+        msg = 'auth/operation-not-allowed: O provedor Email/Senha não está ativado no Firebase Console. Utilize "Entrar com Google".';
+      } else if (err?.code === 'auth/user-not-found') {
         msg = 'Nenhuma conta encontrada com este email.';
       } else if (err?.code === 'auth/invalid-email') {
         msg = 'Email inválido.';

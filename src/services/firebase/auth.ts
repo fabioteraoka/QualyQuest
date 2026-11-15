@@ -29,7 +29,14 @@ export class AuthService {
       const profile = await ensureUserProfile(cred.user.uid, cred.user.email || email, cred.user.displayName || undefined);
       return { user: cred.user, profile };
     } catch (error: any) {
-      console.error('AuthService.loginWithEmail error:', error);
+      console.warn('AuthService.loginWithEmail:', error?.code || error?.message);
+      if (error?.code === 'auth/operation-not-allowed' || error?.message?.includes('auth/operation-not-allowed')) {
+        const customErr = new Error(
+          'O login com Email e Senha não está habilitado no Firebase Authentication deste projeto. Utilize "Entrar com Google" ou ative o provedor Email/Senha no Firebase Console (Authentication > Sign-in method).'
+        );
+        (customErr as any).code = 'auth/operation-not-allowed';
+        throw customErr;
+      }
       throw error;
     }
   }
@@ -50,7 +57,14 @@ export class AuthService {
       const profile = await ensureUserProfile(cred.user.uid, cred.user.email || email, displayName);
       return { user: cred.user, profile };
     } catch (error: any) {
-      console.error('AuthService.registerWithEmail error:', error);
+      console.warn('AuthService.registerWithEmail:', error?.code || error?.message);
+      if (error?.code === 'auth/operation-not-allowed' || error?.message?.includes('auth/operation-not-allowed')) {
+        const customErr = new Error(
+          'O cadastro por Email e Senha não está habilitado no Firebase Authentication deste projeto. Utilize "Entrar com Google" ou ative o provedor Email/Senha no Firebase Console (Authentication > Sign-in method).'
+        );
+        (customErr as any).code = 'auth/operation-not-allowed';
+        throw customErr;
+      }
       throw error;
     }
   }
@@ -85,7 +99,14 @@ export class AuthService {
     try {
       await sendPasswordResetEmail(auth, email.trim());
     } catch (error: any) {
-      console.error('AuthService.resetPassword error:', error);
+      console.warn('AuthService.resetPassword:', error?.code || error?.message);
+      if (error?.code === 'auth/operation-not-allowed' || error?.message?.includes('auth/operation-not-allowed')) {
+        const customErr = new Error(
+          'A recuperação de senha por Email não está habilitada porque o provedor Email/Senha está desativado no Firebase Console.'
+        );
+        (customErr as any).code = 'auth/operation-not-allowed';
+        throw customErr;
+      }
       throw error;
     }
   }
