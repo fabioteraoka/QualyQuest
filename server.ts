@@ -564,7 +564,7 @@ app.post("/api/extract-document-text", async (req, res) => {
         const cleanMime = mimeType?.includes("pdf") ? "application/pdf" : (mimeType || "application/pdf");
         const orgId = extractValidatedTenant(req);
         const response = await generateContentWithModelFallback(ai, {
-          models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+          models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
           operation: "extract-document-text",
           organizationId: orgId,
           contents: {
@@ -672,7 +672,7 @@ ${textContent ? `Texto extraído do documento:\n${textContent}` : "Extraia a par
   try {
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "extract-nc",
       organizationId: orgId,
       contents: { parts },
@@ -992,7 +992,7 @@ DIRETRIZES FUNDAMENTAIS DE COERÊNCIA CAUSAL (OBRIGATÓRIO):
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "evaluate-nc",
       organizationId: orgId,
       contents: prompt,
@@ -1279,7 +1279,7 @@ CRITÉRIOS DE AUDITORIA CAUSAL:
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "evaluate-root-cause-coherence",
       organizationId: orgId,
       contents: prompt,
@@ -1582,7 +1582,7 @@ ${manualsContext || 'Nenhum manual específico cadastrado.'}`;
   try {
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "audit-compliance",
       organizationId: orgId,
       contents: promptText,
@@ -2178,7 +2178,7 @@ DIRETRIZES FUNDAMENTAIS:
   try {
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "parse-manual",
       organizationId: orgId,
       contents: { parts },
@@ -2340,7 +2340,7 @@ SUA MISSÃO:
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "consult-manuals",
       organizationId: orgId,
       contents: prompt,
@@ -2834,7 +2834,7 @@ Responda em JSON:
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "match-rnc",
       organizationId: orgId,
       contents: prompt,
@@ -3085,7 +3085,7 @@ Responda em formato JSON rigoroso:
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "compare-rnc",
       organizationId: orgId,
       contents: prompt,
@@ -3178,7 +3178,7 @@ Responda em formato JSON:
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "generate-knowledge-pattern",
       organizationId: orgId,
       contents: prompt,
@@ -3317,7 +3317,7 @@ Responda em formato JSON estrito:
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "suggest-sector",
       organizationId: orgId,
       contents: prompt,
@@ -3430,7 +3430,7 @@ DIRETRIZES DE GOVERNANÇA AERONÁUTICA:
 
     const orgId = extractValidatedTenant(req);
     const response = await generateContentWithModelFallback(ai, {
-      models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+      models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
       operation: "audit-assist",
       organizationId: orgId,
       contents: prompt,
@@ -3579,7 +3579,7 @@ Responda ESTRITAMENTE em formato JSON com o seguinte formato:
     try {
       const orgId = extractValidatedTenant(req);
       const response = await generateContentWithModelFallback(ai, {
-        models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+        models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
         operation: "smart-import-analyze",
         organizationId: orgId,
         contents: prompt,
@@ -3689,7 +3689,7 @@ Responda ESTRITAMENTE em formato JSON:
 }`;
             const orgId = extractValidatedTenant(req);
             const resGemini = await generateContentWithModelFallback(ai, {
-              models: ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"],
+              models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
               operation: "smart-import-parse-file-complement",
               organizationId: orgId,
               contents: promptPdf,

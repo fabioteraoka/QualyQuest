@@ -34,6 +34,38 @@ export interface ExecuteGeminiResult<T = any> {
  * 4. Fallback inteligente com backoff exponencial e proteção contra 429/503
  * 5. Métricas de observabilidade: latência real, tokens reais e estimados
  */
+const DEFAULT_GEMINI_MODELS = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+
+function normalizeModelChain(models?: string[]): string[] {
+  const aliasMap: Record<string, string> = {
+    'gemini-3.8-flash': 'gemini-4-hydrogen',
+    'gemini-flash-latest': 'gemini-3.1-flash-lite',
+    'gemini-2.0-flash': 'gemini-4-hydrogen',
+    'gemini-1.5-flash': 'gemini-3.1-flash-lite',
+  };
+  const source = Array.isArray(models) && models.length > 0 ? models : DEFAULT_GEMINI_MODELS;
+  const normalized: string[] = [];
+  for (const raw of source) {
+    const mapped = aliasMap[raw] || raw;
+    if (mapped && !normalized.includes(mapped)) {
+      normalized.push(mapped);
+    }
+  }
+  if (!normalized.includes('gemini-3.1-flash-lite')) {
+    normalized.push('gemini-3.1-flash-lite');
+  }
+  return normalized;
+}
+
+function sanitizeModelConfig(model: string, config?: any): any {
+  if (!config || typeof config !== 'object') return config;
+  if (model.startsWith('gemini-4-')) {
+    const { temperature: _t, topP: _p, topK: _k, candidateCount: _c, thinkingBudget: _b, ...rest } = config;
+    return rest;
+  }
+  return config;
+}
+
 export async function executeGeminiRequest<T = any>(
   options: ExecuteGeminiOptions
 ): Promise<ExecuteGeminiResult<T>> {
@@ -41,7 +73,7 @@ export async function executeGeminiRequest<T = any>(
     operation,
     contents,
     config,
-    models = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'],
+    models: rawModels,
     ttlMs,
     organizationId,
     allowPublicTenant = false,
@@ -49,6 +81,8 @@ export async function executeGeminiRequest<T = any>(
     promptVersion = 'v1',
     schemaVersion = 'v1',
   } = options;
+
+  const models = normalizeModelChain(rawModels);
 
   // Validação estrita de Tenant: impede o uso acidental de 'public' em dados operacionais
   let finalOrgId = (organizationId || '').trim();
@@ -108,11 +142,12 @@ export async function executeGeminiRequest<T = any>(
     let lastError: any = null;
     let successfulResult: { text: string; model: string; usageMetadata?: any } | null = null;
 
-    // 4. Execução resiliente com fallback ordenado
+    // 4. Execução resiliente com fallback ordenado e backoff exponencial
     for (const model of models) {
       try {
         let attempt = 1;
-        const maxAttemptsForModel = 2;
+        const maxAttemptsForModel = 3;
+        const effectiveConfig = sanitizeModelConfig(model, config);
 
         while (attempt <= maxAttemptsForModel) {
           try {
@@ -120,7 +155,7 @@ export async function executeGeminiRequest<T = any>(
             const response = await ai.models.generateContent({
               model,
               contents,
-              config,
+              config: effectiveConfig,
             });
 
             const textOutput = response.text || '';
@@ -139,12 +174,11 @@ export async function executeGeminiRequest<T = any>(
             const is503 = status === 503 || msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand');
             const isNetwork = msg.includes('fetch failed') || msg.includes('ECONNREFUSED') || msg.includes('ETIMEDOUT');
 
-            if (is429) {
+            if (is429 && attempt < maxAttemptsForModel) {
               geminiMetrics.record429();
-              // Backoff com jitter para não causar tempestade
-              const jitter = Math.floor(Math.random() * 500);
-              const backoffMs = attempt * 1200 + jitter;
-              console.warn(`[Gemini Gateway] 429 Rate Limit detectado no modelo ${model}. Backoff de ${backoffMs}ms...`);
+              const jitter = Math.floor(Math.random() * 450);
+              const backoffMs = Math.min(6000, 1200 * Math.pow(2, attempt - 1)) + jitter;
+              console.info(`[Gemini Gateway] 429 Rate Limit em ${model} (tentativa ${attempt}/${maxAttemptsForModel}). Backoff de ${backoffMs}ms...`);
               await new Promise((r) => setTimeout(r, backoffMs));
               geminiMetrics.recordRetry();
               attempt++;
@@ -153,8 +187,9 @@ export async function executeGeminiRequest<T = any>(
 
             if ((is503 || isNetwork) && attempt < maxAttemptsForModel) {
               if (is503) geminiMetrics.record503();
-              const backoffMs = attempt * 800 + Math.floor(Math.random() * 300);
-              console.warn(`[Gemini Gateway] 503/Indisponibilidade temporária no modelo ${model}. Backoff de ${backoffMs}ms...`);
+              const jitter = Math.floor(Math.random() * 350);
+              const backoffMs = Math.min(5000, 900 * Math.pow(2, attempt - 1)) + jitter;
+              console.info(`[Gemini Gateway] 503/Indisponibilidade temporária em ${model} (tentativa ${attempt}/${maxAttemptsForModel}). Backoff de ${backoffMs}ms...`);
               await new Promise((r) => setTimeout(r, backoffMs));
               geminiMetrics.recordRetry();
               attempt++;
@@ -168,7 +203,7 @@ export async function executeGeminiRequest<T = any>(
 
             // Passa para o próximo modelo com registro de fallback
             geminiMetrics.recordFallback();
-            console.warn(`[Gemini Gateway] Tentando modelo alternativo após falha em ${model}:`, msg.slice(0, 120));
+            console.info(`[Gemini Gateway] Alternando para modelo de contingência após indisponibilidade em ${model}.`);
             break;
           }
         }
@@ -183,6 +218,7 @@ export async function executeGeminiRequest<T = any>(
 
     if (!successfulResult) {
       geminiMetrics.recordError(operation);
+      console.error(`[Gemini Gateway] Todos os modelos falharam para '${operation}':`, lastError?.message || lastError);
       throw lastError || new Error(`Falha ao obter resposta do Gemini para a operação ${operation}.`);
     }
 

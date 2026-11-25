@@ -609,7 +609,7 @@ ${snippet}
           const response = await executeGeminiRequest<{ itens: ParsedAuditPrepItem[] }>({
             operation: "audit-prep-parse-items",
             contents: prompt,
-            models: ["gemini-4-hydrogen", "gemini-flash-latest"],
+            models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
             config: {
               responseMimeType: "application/json",
               responseSchema: AUDIT_PREP_ITEMS_SCHEMA,
@@ -776,7 +776,7 @@ Responda estritamente no schema JSON solicitado.`;
         const response = await executeGeminiRequest<any>({
           operation: "audit-prep-suggest-answer",
           contents: prompt,
-          models: ["gemini-4-hydrogen", "gemini-flash-latest"],
+          models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
           config: {
             responseMimeType: "application/json",
             responseSchema: AUDIT_PREP_SUGGESTION_SCHEMA,
