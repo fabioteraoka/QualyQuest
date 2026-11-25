@@ -421,12 +421,12 @@ export const ClientAuditsManagementView: React.FC<ClientAuditsManagementViewProp
 
         {onNavigateToTab && (
           <button
-            onClick={() => onNavigateToTab('biblioteca-requisitos')}
+            onClick={() => onNavigateToTab('preparacao-auditorias')}
             className="ml-auto px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 transition-colors flex items-center gap-1.5 cursor-pointer shrink-0"
-            title="Abrir Biblioteca Central Multi-Fontes (ANAC, EASA, IOSA, Clientes, IMPACTO)"
+            title="Abrir Central de Preparação para Auditorias (ANAC, EASA, FAA, IOSA, Clientes)"
           >
             <BookOpen className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Biblioteca Central Multi-Fontes</span>
+            <span>Central de Preparação para Auditorias</span>
             <ArrowUpRight className="w-3 h-3 text-emerald-500" />
           </button>
         )}

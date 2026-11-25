@@ -80,7 +80,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           }`}
         >
           <ShieldCheck className="w-4 h-4" />
-          <span className="whitespace-nowrap">Base 177</span>
+          <span className="whitespace-nowrap">Auditorias</span>
         </button>
       )}
 

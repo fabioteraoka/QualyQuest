@@ -57,6 +57,7 @@ import {
   LocalEphemeralStorageBackend,
   type EvidenceStorageBackend,
 } from "./server/evidenceStorageBackend.ts";
+import { createAuditPrepRouter } from "./server/auditPrepRouter.ts";
 
 const app = express();
 
@@ -2108,6 +2109,8 @@ app.use(
     verifyUser: verifyFirebaseIdTokenAndUser,
   })
 );
+
+app.use("/api/audit-prep", createAuditPrepRouter());
 
 // Endpoint to parse uploaded manual (Word .docx/.doc, PDF, TXT) with AI and robust fallback
 app.post("/api/parse-manual", async (req, res) => {

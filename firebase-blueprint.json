@@ -741,6 +741,48 @@
         "migradoDeBase64": { "type": "boolean" }
       },
       "required": ["fileId", "organizationId", "storagePath", "arquivoNome", "mimeType", "tamanhoBytes", "hashSha256", "dataUpload", "versao"]
+    },
+    "AuditPreparation": {
+      "title": "Audit Preparation Record",
+      "description": "Simplified audit preparation header in Central de Preparação para Auditorias",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "nome": { "type": "string" },
+        "entidade": { "type": "string" },
+        "tipo": { "type": "string", "enum": ["ANAC", "EASA", "FAA", "IOSA", "Cliente", "Auditoria Interna", "Outros"] },
+        "dataAuditoria": { "type": "string" },
+        "periodo": { "type": "string" },
+        "responsavelPreparacao": { "type": "string" },
+        "observacoes": { "type": "string" },
+        "status": { "type": "string", "enum": ["EM_PREPARACAO", "PRONTA", "CONCLUIDA", "ARQUIVADA"] },
+        "arquivada": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "organizationId", "nome", "entidade", "tipo", "dataAuditoria", "responsavelPreparacao", "status"]
+    },
+    "AuditPreparationItem": {
+      "title": "Audit Preparation Item",
+      "description": "Individual audit item/question with 7 core fields, reusable evidence references, AI draft separation, and revision history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "organizationId": { "type": "string" },
+        "auditId": { "type": "string" },
+        "numeroItem": { "type": "string" },
+        "perguntaOriginal": { "type": "string" },
+        "referenciaNormativa": { "type": "string" },
+        "respostaImpacto": { "type": "string" },
+        "evidencias": { "type": "array" },
+        "situacao": { "type": "string", "enum": ["ATENDIDO", "PARCIALMENTE_ATENDIDO", "NAO_ATENDIDO", "NAO_APLICAVEL", "PENDENTE_DE_AVALIACAO"] },
+        "observacoesPendencias": { "type": "string" },
+        "validadoQualidade": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "organizationId", "auditId", "numeroItem", "perguntaOriginal", "situacao"]
     }
   },
   "firestore": {
@@ -935,6 +977,14 @@
     "/organizations/{organizationId}/pre_audits/{preAuditId}": {
       "schema": "ClientEvaluation",
       "description": "Consolidated pre-audit semantic comparisons against the Institutional Base (177+ requirements) with immutable snapshots"
+    },
+    "/organizations/{organizationId}/audit_preparations/{auditId}": {
+      "schema": "AuditPreparation",
+      "description": "Audit preparations managed in Central de Preparação para Auditorias"
+    },
+    "/organizations/{organizationId}/audit_preparation_items/{itemId}": {
+      "schema": "AuditPreparationItem",
+      "description": "Individual audit checklist items, responses, linked evidences, and audit trail"
     },
     "/users/{userId}": {
       "schema": "UserProfile",

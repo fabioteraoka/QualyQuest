@@ -70,8 +70,7 @@ import { ClientAuditsManagementView } from '../ClientAuditsManagementView';
 import { FerramentasMetrologiaView } from '../FerramentasMetrologiaView';
 import { SmartImportMigrationView } from '../SmartImportMigrationView';
 import { SmartAuditView } from '../SmartAuditView';
-import { RequirementsLibraryView } from '../RequirementsLibraryView';
-import { AuditChecklistsLibraryView } from '../checklists/AuditChecklistsLibraryView';
+import { AuditPreparationCenterView } from '../AuditPreparationCenterView';
 import { SystemDesignerOfficialView } from '../SystemDesignerOfficialView';
 import { RoosterModule } from '../RoosterModule';
 import { canUserAccessTab } from '../../config/navigationRegistry';
@@ -1033,27 +1032,16 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
         />
       );
 
+    case 'preparacao-auditorias':
+    case 'preparacao-requisitos':
+    case 'biblioteca-requisitos':
+    case 'requisitos-mestre':
+    case 'requisitos-normativos':
     case 'biblioteca-checklists':
     case 'checklists-auditoria':
     case 'checklists-corporativos':
       return (
-        <AuditChecklistsLibraryView
-          organizationId={props.activeOrgId}
-          currentUser={props.userProfile}
-          onNavigateToTab={(tab) => setActiveTab(tab as any)}
-        />
-      );
-
-    case 'preparacao-auditorias':
-    case 'preparacao-requisitos':
-      return (
-        <RequirementsLibraryView
-          requisitos={props.requisitosClientes}
-          setRequisitos={props.setRequisitosClientes}
-          clientes={props.clientesExternos}
-          bases={props.basesOperacionais}
-          controles={props.controlesCentrais}
-          programas={props.programasClientes}
+        <AuditPreparationCenterView
           activeOrganization={props.activeOrganization}
           userProfile={props.userProfile}
           documentosControlados={props.documentosControlados}
@@ -1061,35 +1049,9 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           trainingRecords={props.trainingRecords}
           qualifications={props.qualifications}
           ferramentasCalibradas={props.ferramentasCalibradas}
-          recordsNC={props.records}
+          records={props.records}
           externalAudits={props.externalAudits}
-          auditFindings={props.auditFindings}
-          initialSubTab="preparacao_auditoria"
-          onNavigateToTab={(tab) => setActiveTab(tab as any)}
-        />
-      );
-
-    case 'biblioteca-requisitos':
-    case 'requisitos-mestre':
-    case 'requisitos-normativos':
-      return (
-        <RequirementsLibraryView
-          requisitos={props.requisitosClientes}
-          setRequisitos={props.setRequisitosClientes}
-          clientes={props.clientesExternos}
-          bases={props.basesOperacionais}
-          controles={props.controlesCentrais}
-          programas={props.programasClientes}
-          activeOrganization={props.activeOrganization}
-          userProfile={props.userProfile}
-          documentosControlados={props.documentosControlados}
-          manuals={props.manuals}
-          trainingRecords={props.trainingRecords}
-          qualifications={props.qualifications}
-          ferramentasCalibradas={props.ferramentasCalibradas}
-          recordsNC={props.records}
-          externalAudits={props.externalAudits}
-          auditFindings={props.auditFindings}
+          auditRequirements={props.auditRequirements}
           onNavigateToTab={(tab) => setActiveTab(tab as any)}
         />
       );

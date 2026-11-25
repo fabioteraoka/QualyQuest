@@ -768,6 +768,38 @@ service cloud.firestore {
           );
         allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(preAuditId);
       }
+
+      // ----------------------------------------------------
+      // Central de Preparação para Auditorias (organizations/{orgId}/audit_preparations/{auditId})
+      // ----------------------------------------------------
+      match /audit_preparations/{auditId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId)
+          && getUserRole() != 'CONSULTA'
+          && getUserRole() != 'VIEWER'
+          && isValidId(organizationId)
+          && isValidId(auditId)
+          && incoming().organizationId == organizationId
+          && incoming().nome is string && incoming().nome.size() > 0
+          && incoming().entidade is string && incoming().entidade.size() > 0;
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(auditId);
+      }
+
+      // ----------------------------------------------------
+      // Itens da Central de Preparação para Auditorias (organizations/{orgId}/audit_preparation_items/{itemId})
+      // ----------------------------------------------------
+      match /audit_preparation_items/{itemId} {
+        allow get, list: if userBelongsToOrg(organizationId);
+        allow create, update: if userBelongsToOrg(organizationId)
+          && getUserRole() != 'CONSULTA'
+          && getUserRole() != 'VIEWER'
+          && isValidId(organizationId)
+          && isValidId(itemId)
+          && incoming().organizationId == organizationId
+          && incoming().auditId is string && incoming().auditId.size() > 0
+          && (!('validadoQualidade' in incoming()) || incoming().validadoQualidade != true || isAuditor());
+        allow delete: if userBelongsToOrg(organizationId) && (isGestorSGQ() || isSystemAdmin()) && isValidId(organizationId) && isValidId(itemId);
+      }
     }
 
     // ----------------------------------------------------
