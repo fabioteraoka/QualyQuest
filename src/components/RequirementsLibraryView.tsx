@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   BookOpen,
   Search,
@@ -68,6 +68,10 @@ import {
 import {
   executarDiagnosticoRequisitos
 } from '../services/requirementsDataLoadService';
+import {
+  exportRequirementsToSpreadsheetXML,
+  exportRequirementsToXLSX
+} from '../utils/requirementsExportHelpers';
 import {
   DocumentoControlado,
   ManualRecord,
@@ -249,6 +253,26 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsExportMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [isExportMenuOpen]);
 
   // Diagnóstico em tempo real
   const diagnostico = useMemo(() => {
@@ -339,15 +363,49 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
     });
   }, [requisitos, searchTerm, selectedFonte, onlyIosa, selectedAplicabilidade, selectedCliente, selectedCriticidade]);
 
-  // Handlers
+  // Handlers de Exportação (Planilha XML, Excel XLSX e JSON)
+  const buildExportContext = () => {
+    const activeFilters: string[] = [];
+    if (searchTerm.trim()) activeFilters.push(`Busca="${searchTerm.trim()}"`);
+    if (selectedFonte !== 'TODAS') activeFilters.push(`Origem=${selectedFonte}`);
+    if (selectedAplicabilidade !== 'TODAS') activeFilters.push(`Aplicabilidade=${selectedAplicabilidade}`);
+    if (selectedCliente !== 'TODOS') activeFilters.push(`Cliente=${selectedCliente}`);
+    if (selectedCriticidade !== 'TODAS') activeFilters.push(`Criticidade=${selectedCriticidade}`);
+    if (onlyIosa) activeFilters.push('IOSA=Sim');
+
+    return {
+      organizationName: activeOrganization?.nome || 'IMPACTO Aviation MRO',
+      requisitos: filteredRequirements,
+      totalAcervo: requisitos.length,
+      controles,
+      respostasInstitucionais,
+      evidencias,
+      filtrosAtivosResumo: activeFilters.length > 0 ? activeFilters.join(' | ') : 'Todos os requisitos do acervo',
+    };
+  };
+
+  const handleExportSpreadsheetXML = () => {
+    setIsExportMenuOpen(false);
+    exportRequirementsToSpreadsheetXML(buildExportContext());
+  };
+
+  const handleExportXLSX = () => {
+    setIsExportMenuOpen(false);
+    exportRequirementsToXLSX(buildExportContext());
+  };
+
   const handleExportJSON = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(filteredRequirements, null, 2));
+    setIsExportMenuOpen(false);
+    const jsonStr = JSON.stringify(filteredRequirements, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const downloadAnchor = document.createElement('a');
-    downloadAnchor.setAttribute('href', dataStr);
+    downloadAnchor.setAttribute('href', url);
     downloadAnchor.setAttribute('download', `qualyquest_requisitos_${new Date().toISOString().split('T')[0]}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleDeleteItem = async (req: RequisitoClienteItem) => {
@@ -398,14 +456,77 @@ export const RequirementsLibraryView: React.FC<RequirementsLibraryViewProps> = (
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              onClick={handleExportJSON}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-              title="Exportar requisitos filtrados em formato JSON"
-            >
-              <Download className="w-4 h-4" />
-              <span>Exportar</span>
-            </button>
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsExportMenuOpen((prev) => !prev)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+                title="Exportar relatório de requisitos em Planilha XML (.xml), Excel (.xlsx) ou JSON"
+              >
+                <Download className="w-4 h-4" />
+                <span>Exportar</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </button>
+
+              {isExportMenuOpen && (
+                <div className="absolute right-0 mt-1.5 w-72 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 py-1.5 z-40">
+                  <div className="px-3 py-1.5 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Exportar {filteredRequirements.length} requisitos filtrados
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleExportSpreadsheetXML}
+                    className="w-full px-3 py-2.5 text-left hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-start gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                        <span>Planilha XML (.xml)</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/70 dark:text-emerald-200">
+                          Excel / Calc
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        XML SpreadsheetML multi-abas com resumo e controles.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportXLSX}
+                    className="w-full px-3 py-2.5 text-left hover:bg-blue-50 dark:hover:bg-blue-950/40 flex items-start gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                        Planilha Excel (.xlsx)
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Pasta de trabalho Excel nativa multi-abas.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportJSON}
+                    className="w-full px-3 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/70 flex items-start gap-2.5 transition-colors border-t border-slate-100 dark:border-slate-800 cursor-pointer"
+                  >
+                    <FileText className="w-4 h-4 text-slate-500 dark:text-slate-400 shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                        Dados Estruturados (.json)
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                        Backup bruto para integração técnica.
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {!isConsulta && (
               <button
