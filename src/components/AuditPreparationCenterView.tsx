@@ -63,6 +63,7 @@ import type {
   OrganizationRecord,
   QualificacaoColaborador,
   RegistroTreinamentoColaborador,
+  RevisaoDocumental,
   UserProfile,
 } from '../types';
 import type { RequisitoAuditoriaExterna } from '../types/auditRequirements';
@@ -79,6 +80,7 @@ export interface AuditPreparationCenterViewProps {
   activeOrganization: OrganizationRecord | null;
   userProfile?: UserProfile | null;
   documentosControlados: DocumentoControlado[];
+  revisoesDocumentais?: RevisaoDocumental[];
   manuals: ManualRecord[];
   trainingRecords: RegistroTreinamentoColaborador[];
   qualifications: QualificacaoColaborador[];
@@ -147,6 +149,7 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
   activeOrganization,
   userProfile,
   documentosControlados,
+  revisoesDocumentais = [],
   manuals,
   trainingRecords,
   qualifications,
@@ -920,19 +923,56 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
           },
           sgqContext: {
             documentosControlados: documentosControlados.map((d) => ({
+              id: d.id,
               codigo: d.codigo,
               titulo: d.titulo,
               categoria: d.categoria,
-              numeroRevisao: d.numeroRevisao,
+              tipoSubcategoria: d.tipoSubcategoria,
+              tipoOrigemDocumental: d.tipoOrigemDocumental,
+              emissor: d.emissor,
+              proprietario: d.proprietario || d.proprietarioCessor,
+              numeroRevisao: d.numeroRevisao || d.revisaoVigenteNumero,
               statusGeral: d.statusGeral,
+              detalhes: d.detalhesUltimaVerificacao,
+              aplicabilidade: d.aplicabilidadePadrao
+                ? `${(d.aplicabilidadePadrao.processos || []).join(', ')} — ${d.aplicabilidadePadrao.observacoesAplicabilidade || ''}`
+                : '',
             })),
+            revisoesDocumentais: revisoesDocumentais
+              .filter((rv) => rv.statusCicloVida === 'VIGENTE' || rv.conteudoTextoIntegral || (rv.capitulosIndexados && rv.capitulosIndexados.length > 0))
+              .slice(0, 30)
+              .map((rv) => ({
+                documentoId: rv.documentoId,
+                codigoDocumento: rv.codigoDocumento,
+                tituloDocumento: rv.tituloDocumento,
+                numeroRevisao: rv.numeroRevisao,
+                origemRevisao: rv.origemRevisao,
+                escopoAlteracoes: rv.escopoAlteracoes,
+                conteudoTextoIntegral: (rv.conteudoTextoIntegral || '').slice(0, 12000),
+                capitulosIndexados: (rv.capitulosIndexados || []).map((c) => ({
+                  numero: c.numero,
+                  titulo: c.titulo,
+                  requisitoTexto: c.requisitoTexto,
+                  palavrasChave: c.palavrasChave,
+                })),
+              })),
             manuals: manuals.map((m) => ({
               codigo: m.codigo,
               titulo: m.titulo,
               revisao: m.revisao,
               status: m.status,
+              tipoDocumento: m.tipoDocumento,
+              proprietario: m.proprietario,
+              orgaoRegulador: m.orgaoRegulador,
+              fonte: m.fonte,
               descricaoResumo: m.descricaoResumo,
-              conteudoTexto: (m.conteudoTexto || '').slice(0, 600),
+              conteudoTexto: (m.arquivoTextoCompleto || m.conteudoTexto || '').slice(0, 16000),
+              capitulos: (m.capitulos || []).map((c) => ({
+                numero: c.numero,
+                titulo: c.titulo,
+                requisitoTexto: c.requisitoTexto,
+                palavrasChave: c.palavrasChave,
+              })),
             })),
             trainingRecords: trainingRecords.slice(0, 60).map((t) => ({
               cursoNome: t.cursoNome,

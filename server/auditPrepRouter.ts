@@ -265,18 +265,252 @@ function parsePlainTextChecklist(fullText: string): ParsedAuditPrepItem[] {
   return items;
 }
 
-function normalizeTokens(text: string): string[] {
+function normalizeSearchText(text: string): string {
   return String(text || "")
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9\.\-]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 3);
+    .replace(/[\u0300-\u036f]/g, "");
 }
 
-function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any) {
+const STOP_WORDS = new Set([
+  "para", "como", "com", "que", "dos", "das", "nos", "nas", "uma", "uns", "umas",
+  "por", "pela", "pelo", "pelas", "pelos", "sobre", "entre", "esta", "este", "essa",
+  "esse", "isso", "isto", "qual", "quais", "onde", "quando", "existe", "existem",
+  "possui", "possuem", "mantem", "manter", "todos", "todas", "cada", "deve", "devem",
+  "the", "and", "for", "with", "that", "this", "from", "are", "have", "has", "does",
+]);
+
+function normalizeTokens(text: string): string[] {
+  return normalizeSearchText(text)
+    .replace(/[^a-z0-9\.\-]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !STOP_WORDS.has(t));
+}
+
+interface ExtractedChapterSection {
+  numero: string;
+  titulo: string;
+  texto: string;
+  palavrasChave?: string[];
+}
+
+function isInternalCompanyDoc(doc: {
+  codigo?: string;
+  titulo?: string;
+  categoria?: string;
+  tipoDocumento?: string;
+  tipoOrigemDocumental?: string;
+  origemRevisao?: string;
+  proprietario?: string;
+  emissor?: string;
+  orgaoRegulador?: string;
+  fonte?: string;
+}): boolean {
+  const code = String(doc.codigo || "").trim();
+  const tipoDoc = normalizeSearchText(doc.tipoDocumento || "");
+  const categoria = normalizeSearchText(doc.categoria || "");
+  const origemDoc = normalizeSearchText(doc.tipoOrigemDocumental || "");
+  const origemRev = normalizeSearchText(doc.origemRevisao || "");
+  const owner = normalizeSearchText(
+    `${doc.proprietario || ""} ${doc.emissor || ""} ${doc.fonte || ""}`
+  );
+  const reg = normalizeSearchText(doc.orgaoRegulador || "");
+
+  if (
+    categoria === "documento_interno" ||
+    origemDoc === "interno" ||
+    origemRev === "interna" ||
+    tipoDoc.includes("manual interno") ||
+    tipoDoc.includes("procedimento") ||
+    tipoDoc.includes("instrucao")
+  ) {
+    return true;
+  }
+
+  if (
+    /^(rbac|iso|nbr|abnt|14\s*cfr|cfr|easa|faa\s*order|iosa|is\s*\d|ac\s*\d)/i.test(code) &&
+    !/(supplement|suplemento)/i.test(code)
+  ) {
+    return false;
+  }
+
+  if (
+    /^(momq|moe|mgq|sgso|ptm|pop|it[\s\-]|pol[\s\-]|seg[\s\-]|pro[\s\-]|man[\s\-]|f\s*001)/i.test(
+      code
+    ) ||
+    owner.includes("impacto") ||
+    reg.includes("sgq interno")
+  ) {
+    return true;
+  }
+
+  if (
+    tipoDoc.includes("normativo oficial") ||
+    /^(anac|abnt|iso|faa|easa|iata)$/i.test(reg.trim())
+  ) {
+    return false;
+  }
+
+  return owner.includes("interno");
+}
+
+function extractSectionsFromRawText(rawText: string): ExtractedChapterSection[] {
+  const text = String(rawText || "").trim();
+  if (!text) return [];
+
+  const lines = text.split(/\r?\n/);
+  const sections: ExtractedChapterSection[] = [];
+  let currentChapter = "";
+  let currentSection: ExtractedChapterSection | null = null;
+
+  const pushCurrent = () => {
+    if (currentSection && currentSection.texto.trim().length >= 15) {
+      sections.push({
+        numero: currentSection.numero,
+        titulo: currentSection.titulo,
+        texto: currentSection.texto.trim().slice(0, 750),
+      });
+    }
+    currentSection = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    // Cabeçalho de Capítulo: "Capítulo 3 - Controle de Ferramentas..."
+    const chapMatch = line.match(/^(?:Cap[íi]tulo|Chapter|Parte|Se[çc][ãa]o)\s+([0-9A-Z]+(?:\.\d+)*)\s*[-–:\.]\s*(.+)$/i);
+    if (chapMatch) {
+      currentChapter = `Cap. ${chapMatch[1]} (${chapMatch[2].trim()})`;
+      // Se for uma Seção/Subseção direta com conteúdo, também inicia bloco
+      if (/^Se[çc][ãa]o/i.test(line)) {
+        pushCurrent();
+        currentSection = {
+          numero: chapMatch[1].trim(),
+          titulo: chapMatch[2].trim(),
+          texto: "",
+        };
+      }
+      continue;
+    }
+
+    // Subseção numerada: "3.4.3 Gestão e Controle...: texto..." ou "3.4.3 - Título: texto"
+    const subMatch = line.match(
+      /^(\d+(?:\.\d+){1,3})\s*[-–:\.]?\s+([^:]{3,90}?)(?:\s*:\s*(.+))?$/
+    );
+    if (subMatch && subMatch[2].trim().length >= 4) {
+      const secNum = subMatch[1].trim();
+      const rawRest = (subMatch[3] || "").trim();
+      const rawTitle = subMatch[2].trim();
+      const looksLikeHeading =
+        rawRest.length > 0 ||
+        (rawTitle.length <= 75 && !/[.!?]$/.test(rawTitle));
+
+      if (looksLikeHeading) {
+        pushCurrent();
+        currentSection = {
+          numero: currentChapter ? `${currentChapter} · ${secNum}` : secNum,
+          titulo: rawTitle,
+          texto: rawRest,
+        };
+        continue;
+      }
+    }
+
+    if (currentSection) {
+      currentSection.texto = `${currentSection.texto} ${line}`.trim();
+    } else if (line.length >= 25) {
+      currentSection = {
+        numero: currentChapter || "Geral",
+        titulo: "Disposição do Manual",
+        texto: line,
+      };
+    }
+  }
+  pushCurrent();
+
+  return sections;
+}
+
+function findMatchingSectionsForDoc(
+  structuredChapters: any[] | undefined,
+  rawText: string | undefined,
+  tokens: string[],
+  queryNorm: string
+): Array<ExtractedChapterSection & { score: number }> {
+  const candidates: ExtractedChapterSection[] = [];
+
+  if (Array.isArray(structuredChapters)) {
+    for (const c of structuredChapters) {
+      if (!c) continue;
+      const num = String(c.numero || c.secao || c.capitulo || "").trim();
+      const titulo = String(c.titulo || c.capituloTitulo || "").trim();
+      const texto = String(c.requisitoTexto || c.conteudo || "").trim();
+      if (!num && !titulo && !texto) continue;
+      candidates.push({
+        numero: num || "Seção",
+        titulo: titulo || "Disposição",
+        texto,
+        palavrasChave: Array.isArray(c.palavrasChave) ? c.palavrasChave : undefined,
+      });
+    }
+  }
+
+  const parsedFromText = extractSectionsFromRawText(rawText || "");
+  for (const s of parsedFromText) {
+    // Evita duplicar se já existe seção estruturada com mesmo número e texto parecido
+    const alreadyExists = candidates.some(
+      (c) =>
+        c.numero === s.numero ||
+        (s.numero.includes(c.numero) && c.numero.length >= 3)
+    );
+    if (!alreadyExists) {
+      candidates.push(s);
+    } else {
+      // Se o texto estruturado for mais curto que o texto integral extraído da mesma seção, enriquece
+      const idx = candidates.findIndex(
+        (c) => c.numero === s.numero || (s.numero.includes(c.numero) && c.numero.length >= 3)
+      );
+      if (idx >= 0 && s.texto.length > candidates[idx].texto.length + 30) {
+        candidates[idx] = {
+          ...candidates[idx],
+          numero: s.numero,
+          texto: s.texto,
+        };
+      }
+    }
+  }
+
+  const scored: Array<ExtractedChapterSection & { score: number }> = [];
+  for (const sec of candidates) {
+    const searchable = normalizeSearchText(
+      `${sec.numero} ${sec.titulo} ${sec.texto} ${(sec.palavrasChave || []).join(" ")}`
+    );
+    let score = 0;
+    for (const tk of tokens) {
+      if (searchable.includes(tk)) {
+        score += 1;
+        if (normalizeSearchText(sec.titulo).includes(tk)) score += 0.5;
+        if ((sec.palavrasChave || []).some((kw) => normalizeSearchText(kw).includes(tk))) {
+          score += 0.5;
+        }
+      }
+    }
+    const numOnly = sec.numero.replace(/^Cap\.\s*[^·]+·\s*/i, "").trim().toLowerCase();
+    if (numOnly.length >= 3 && queryNorm.includes(numOnly)) {
+      score += 4;
+    }
+    if (score >= 1) {
+      scored.push({ ...sec, score });
+    }
+  }
+
+  return scored.sort((a, b) => b.score - a.score).slice(0, 2);
+}
+
+function buildDeterministicSGQSuggestion(item: any, _audit: any, sgqContext: any) {
   const queryText = `${item?.numeroItem || ""} ${item?.perguntaOriginal || ""} ${item?.referenciaNormativa || ""}`;
+  const queryNorm = normalizeSearchText(queryText);
   const tokens = normalizeTokens(queryText);
 
   const fontesEncontradas: Array<{
@@ -289,6 +523,9 @@ function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any)
 
   const docs = Array.isArray(sgqContext?.documentosControlados)
     ? sgqContext.documentosControlados
+    : [];
+  const revisoes = Array.isArray(sgqContext?.revisoesDocumentais)
+    ? sgqContext.revisoesDocumentais
     : [];
   const manuals = Array.isArray(sgqContext?.manuals) ? sgqContext.manuals : [];
   const trainings = Array.isArray(sgqContext?.trainingRecords)
@@ -311,10 +548,7 @@ function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any)
     : [];
 
   const scoreMatch = (target: string): number => {
-    const lower = String(target || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
+    const lower = normalizeSearchText(target);
     let hits = 0;
     for (const tk of tokens) {
       if (lower.includes(tk)) hits++;
@@ -322,44 +556,152 @@ function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any)
     return hits;
   };
 
-  // 1. Documentos Controlados e Manuais (Procedimentos / Normas)
-  const docMatches: Array<{ score: number; codigo: string; titulo: string; revisao: string; status?: string }> = [];
-  for (const d of docs) {
-    const score = scoreMatch(`${d.codigo || ""} ${d.titulo || ""} ${d.categoria || ""}`);
-    if (score >= 1) {
-      docMatches.push({
-        score,
-        codigo: String(d.codigo || d.id || "DOC"),
-        titulo: String(d.titulo || "Documento Controlado"),
-        revisao: String(d.numeroRevisao || "Revisão não informada"),
-        status: d.statusGeral,
-      });
-    }
+  interface MatchedDocDetail {
+    score: number;
+    isInternal: boolean;
+    codigo: string;
+    titulo: string;
+    revisao: string;
+    status?: string;
+    sections: Array<ExtractedChapterSection & { score: number }>;
+    fallbackExcerpt?: string;
   }
+
+  const matchedDocsByCode = new Map<string, MatchedDocDetail>();
+
+  const registerDocCandidate = (cand: MatchedDocDetail) => {
+    const key = cand.codigo.toUpperCase();
+    const prev = matchedDocsByCode.get(key);
+    if (!prev) {
+      matchedDocsByCode.set(key, cand);
+      return;
+    }
+    // Mescla priorizando quem tem capítulos/seções e maior score
+    const mergedSections = [...prev.sections, ...cand.sections]
+      .sort((a, b) => b.score - a.score)
+      .filter(
+        (s, idx, arr) =>
+          arr.findIndex((x) => x.numero === s.numero && x.titulo === s.titulo) === idx
+      )
+      .slice(0, 2);
+    matchedDocsByCode.set(key, {
+      ...prev,
+      score: Math.max(prev.score, cand.score),
+      isInternal: prev.isInternal || cand.isInternal,
+      revisao: prev.revisao !== "Revisão não informada" ? prev.revisao : cand.revisao,
+      sections: mergedSections,
+      fallbackExcerpt: prev.fallbackExcerpt || cand.fallbackExcerpt,
+    });
+  };
+
+  // 1a. Manuais (contêm capítulos estruturados e texto integral)
   for (const m of manuals) {
-    const score = scoreMatch(`${m.codigo || ""} ${m.titulo || ""} ${m.descricaoResumo || ""} ${m.conteudoTexto || ""}`);
-    if (score >= 1) {
-      docMatches.push({
-        score,
+    const isInternal = isInternalCompanyDoc(m);
+    const matchingSections = findMatchingSectionsForDoc(
+      m.capitulos,
+      m.conteudoTexto,
+      tokens,
+      queryNorm
+    );
+    const metaScore = scoreMatch(
+      `${m.codigo || ""} ${m.titulo || ""} ${m.descricaoResumo || ""} ${m.conteudoTexto || ""}`
+    );
+    const sectionBoost = matchingSections.length > 0 ? matchingSections[0].score * 2 : 0;
+    const totalScore = metaScore + sectionBoost + (isInternal ? 3 : 0);
+
+    if (metaScore >= 1 || matchingSections.length > 0) {
+      registerDocCandidate({
+        score: totalScore,
+        isInternal,
         codigo: String(m.codigo || m.id || "MANUAL"),
         titulo: String(m.titulo || "Manual SGQ"),
         revisao: String(m.revisao || "Revisão não informada"),
         status: m.status,
+        sections: matchingSections,
+        fallbackExcerpt: m.descricaoResumo ? String(m.descricaoResumo) : undefined,
       });
     }
   }
-  docMatches
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4)
-    .forEach((dm) => {
-      fontesEncontradas.push({
-        tipo: "PROCEDIMENTO_NORMA",
-        codigo: dm.codigo,
-        titulo: dm.titulo,
-        revisao: dm.revisao,
-        observacao: dm.status ? `Situação documental: ${dm.status}` : undefined,
-      });
+
+  // 1b. Revisões Documentais (Acervo com texto integral ou capítulos indexados)
+  for (const rv of revisoes) {
+    const matchingSections = findMatchingSectionsForDoc(
+      rv.capitulosIndexados,
+      rv.conteudoTextoIntegral,
+      tokens,
+      queryNorm
+    );
+    const metaScore = scoreMatch(
+      `${rv.codigoDocumento || ""} ${rv.tituloDocumento || ""} ${rv.escopoAlteracoes || ""} ${rv.conteudoTextoIntegral || ""}`
+    );
+    const isInternal = isInternalCompanyDoc({
+      codigo: rv.codigoDocumento,
+      titulo: rv.tituloDocumento,
+      origemRevisao: rv.origemRevisao,
     });
+    if (metaScore >= 1 || matchingSections.length > 0) {
+      registerDocCandidate({
+        score: metaScore + (matchingSections[0]?.score || 0) * 2 + (isInternal ? 3 : 0),
+        isInternal,
+        codigo: String(rv.codigoDocumento || "DOC"),
+        titulo: String(rv.tituloDocumento || "Documento Controlado"),
+        revisao: String(rv.numeroRevisao || "Revisão não informada"),
+        sections: matchingSections,
+        fallbackExcerpt: rv.escopoAlteracoes ? String(rv.escopoAlteracoes) : undefined,
+      });
+    }
+  }
+
+  // 1c. Documentos Controlados (Master List)
+  for (const d of docs) {
+    const isInternal = isInternalCompanyDoc(d);
+    const metaScore = scoreMatch(
+      `${d.codigo || ""} ${d.titulo || ""} ${d.categoria || ""} ${d.tipoSubcategoria || ""} ${d.aplicabilidade || ""} ${d.detalhes || ""}`
+    );
+    if (metaScore >= 1) {
+      registerDocCandidate({
+        score: metaScore + (isInternal ? 3 : 0),
+        isInternal,
+        codigo: String(d.codigo || d.id || "DOC"),
+        titulo: String(d.titulo || "Documento Controlado"),
+        revisao: String(d.numeroRevisao || "Revisão não informada"),
+        status: d.statusGeral,
+        sections: [],
+        fallbackExcerpt: d.aplicabilidade || d.detalhes || undefined,
+      });
+    }
+  }
+
+  const allMatchedDocs = Array.from(matchedDocsByCode.values());
+  const internalDocMatches = allMatchedDocs
+    .filter((d) => d.isInternal)
+    .sort((a, b) => b.score - a.score);
+  const authorityDocMatches = allMatchedDocs
+    .filter((d) => !d.isInternal)
+    .sort((a, b) => b.score - a.score);
+
+  // Prioriza estritamente os manuais e procedimentos da IMPACTO; usa normas externas apenas se não houver interno ou 1 complementar
+  const selectedDocs =
+    internalDocMatches.length > 0
+      ? [...internalDocMatches.slice(0, 3), ...authorityDocMatches.slice(0, 1)]
+      : authorityDocMatches.slice(0, 2);
+
+  selectedDocs.forEach((dm) => {
+    const capSummary =
+      dm.sections.length > 0
+        ? dm.sections.map((s) => `Cap./Seção ${s.numero} — ${s.titulo}`).join(" | ")
+        : dm.status
+        ? `Situação documental: ${dm.status}`
+        : undefined;
+
+    fontesEncontradas.push({
+      tipo: "PROCEDIMENTO_NORMA",
+      codigo: dm.codigo,
+      titulo: dm.titulo,
+      revisao: dm.revisao,
+      observacao: capSummary,
+    });
+  });
 
   // 2. Evidências e Registros operacionais reais
   const lowerQuery = queryText.toLowerCase();
@@ -367,7 +709,9 @@ function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any)
     tools.length > 0 &&
     /(calibr|ferrament|torque|metrol|instrument|tool|rbc)/i.test(lowerQuery)
   ) {
-    const validTools = tools.filter((t: any) => t.status === "CALIBRADA" || t.status === "VALIDA" || t.dataProximaCalibracao);
+    const validTools = tools.filter(
+      (t: any) => t.status === "CALIBRADA" || t.status === "VALIDA" || t.dataProximaCalibracao
+    );
     fontesEncontradas.push({
       tipo: "EVIDENCIA_REGISTRO",
       codigo: "METROLOGIA-SGQ",
@@ -438,7 +782,11 @@ function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any)
 
   if (!hasProcedure) {
     lacunasOuFaltantes.push(
-      "Nenhum manual ou procedimento controlado correspondente foi localizado automaticamente no módulo Documental."
+      "Nenhum manual ou procedimento interno da IMPACTO correspondente foi localizado automaticamente no módulo Documental."
+    );
+  } else if (internalDocMatches.length === 0) {
+    lacunasOuFaltantes.push(
+      "Apenas norma de autoridade foi localizada; confirme qual capítulo do manual interno da IMPACTO (ex.: MOMQ, MOE, PTM ou POP) implementa este requisito."
     );
   }
   if (!hasEvidence) {
@@ -452,11 +800,51 @@ function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any)
   let respostaSugerida = "";
   if (informacaoInsuficiente) {
     respostaSugerida =
-      "INFORMAÇÃO NÃO ENCONTRADA — Não foram localizados documentos controlados, registros operacionais ou respostas anteriores compatíveis na base do QualyQuest para este requisito. Preencha manualmente após consultar a documentação aplicável e anexar as evidências objetivas.";
+      "INFORMAÇÃO NÃO ENCONTRADA — Não foram localizados manuais internos, procedimentos controlados, registros operacionais ou respostas anteriores compatíveis na base do QualyQuest para este requisito. Preencha manualmente após consultar a documentação aplicável e anexar as evidências objetivas.";
   } else {
-    const procList = fontesEncontradas
-      .filter((f) => f.tipo === "PROCEDIMENTO_NORMA")
-      .map((f) => `${f.codigo} (${f.revisao}) — ${f.titulo}`);
+    const parts: string[] = [];
+
+    if (internalDocMatches.length > 0) {
+      const internalLines = internalDocMatches.slice(0, 3).map((dm) => {
+        if (dm.sections.length > 0) {
+          const secDetails = dm.sections
+            .map((s) => {
+              const quote = s.texto
+                ? `: "${s.texto.slice(0, 380)}${s.texto.length > 380 ? "..." : ""}"`
+                : "";
+              return `  - Cap./Seção ${s.numero} — ${s.titulo}${quote}`;
+            })
+            .join("\n");
+          return `• ${dm.codigo} (${dm.revisao}) — ${dm.titulo}:\n${secDetails}`;
+        }
+        const resumo = dm.fallbackExcerpt ? ` — Escopo: ${dm.fallbackExcerpt}` : "";
+        return `• ${dm.codigo} (${dm.revisao}) — ${dm.titulo}${resumo}`;
+      });
+      parts.push(
+        `[Procedimentos e Manuais Internos da IMPACTO — descrição documental]:\n${internalLines.join("\n")}`
+      );
+    }
+
+    if (authorityDocMatches.length > 0 && internalDocMatches.length === 0) {
+      const authLines = authorityDocMatches.slice(0, 2).map((dm) => {
+        if (dm.sections.length > 0) {
+          const secDetails = dm.sections
+            .map((s) => {
+              const quote = s.texto
+                ? `: "${s.texto.slice(0, 320)}${s.texto.length > 320 ? "..." : ""}"`
+                : "";
+              return `  - Seção ${s.numero} — ${s.titulo}${quote}`;
+            })
+            .join("\n");
+          return `• ${dm.codigo} (${dm.revisao}) — ${dm.titulo}:\n${secDetails}`;
+        }
+        return `• ${dm.codigo} (${dm.revisao}) — ${dm.titulo}`;
+      });
+      parts.push(
+        `[Norma de Referência Externa localizada — sem procedimento interno correspondente indexado]:\n${authLines.join("\n")}`
+      );
+    }
+
     const evidList = fontesEncontradas
       .filter((f) => f.tipo === "EVIDENCIA_REGISTRO")
       .map((f) => `${f.codigo} — ${f.titulo}`);
@@ -464,12 +852,6 @@ function buildDeterministicSGQSuggestion(item: any, audit: any, sgqContext: any)
       .filter((f) => f.tipo === "AUDITORIA_ANTERIOR")
       .map((f) => `${f.titulo} [${f.revisao}]`);
 
-    const parts: string[] = [];
-    if (procList.length > 0) {
-      parts.push(
-        `[Procedimentos / Normas localizados — descrição documental]: A IMPACTO possui previsão documental nos seguintes documentos do acervo: ${procList.join("; ")}.`
-      );
-    }
     if (evidList.length > 0) {
       parts.push(
         `[Evidências / Registros localizados no SGQ — comprovação de execução]: Foram identificados registros relacionados: ${evidList.join("; ")}.`
@@ -703,15 +1085,93 @@ ${snippet}
         return res.json({ success: true, sugestao: deterministicFallback });
       }
 
-      // Monta contexto estritamente com dados reais enviados do SGQ QualyQuest
-      const docsResumo = (sgqContext?.documentosControlados || [])
-        .slice(0, 60)
-        .map((d: any) => `- [${d.codigo}] ${d.titulo} | Rev: ${d.numeroRevisao || "N/I"} | Status: ${d.statusGeral || "N/I"}`)
+      // Monta contexto estritamente com dados reais enviados do SGQ QualyQuest,
+      // separando Manuais/Procedimentos INTERNOS da IMPACTO (com capítulos e texto) das normas de autoridades
+      const itemQueryTokens = normalizeTokens(
+        `${item.numeroItem || ""} ${item.perguntaOriginal || ""} ${item.referenciaNormativa || ""}`
+      );
+      const itemQueryNorm = normalizeSearchText(
+        `${item.numeroItem || ""} ${item.perguntaOriginal || ""} ${item.referenciaNormativa || ""}`
+      );
+
+      const allDocsList = Array.isArray(sgqContext?.documentosControlados)
+        ? sgqContext.documentosControlados
+        : [];
+      const allManualsList = Array.isArray(sgqContext?.manuals) ? sgqContext.manuals : [];
+      const allRevisoesList = Array.isArray(sgqContext?.revisoesDocumentais)
+        ? sgqContext.revisoesDocumentais
+        : [];
+
+      const internalManualBlocks: string[] = [];
+      const authorityManualBlocks: string[] = [];
+
+      for (const m of allManualsList.slice(0, 25)) {
+        const isInternal = isInternalCompanyDoc(m);
+        const topSections = findMatchingSectionsForDoc(
+          m.capitulos,
+          m.conteudoTexto,
+          itemQueryTokens,
+          itemQueryNorm
+        );
+        const allChapOverview = Array.isArray(m.capitulos)
+          ? m.capitulos
+              .slice(0, 12)
+              .map((c: any) => `Cap./Seção ${c.numero} (${c.titulo}): ${String(c.requisitoTexto || "").slice(0, 260)}`)
+              .join("\n    ")
+          : "";
+        const matchedText =
+          topSections.length > 0
+            ? topSections
+                .map((s) => `  > Trecho relevante [Cap./Seção ${s.numero} — ${s.titulo}]: "${s.texto.slice(0, 500)}"`)
+                .join("\n")
+            : allChapOverview
+            ? `  > Capítulos indexados:\n    ${allChapOverview}`
+            : `  > Resumo: ${(m.descricaoResumo || "").slice(0, 250)}`;
+
+        const block = `- [${m.codigo}] ${m.titulo} | Rev: ${m.revisao || "N/I"} | Status: ${m.status || "N/I"}\n${matchedText}`;
+        if (isInternal) {
+          internalManualBlocks.push(block);
+        } else {
+          authorityManualBlocks.push(block);
+        }
+      }
+
+      for (const rv of allRevisoesList.slice(0, 20)) {
+        const isInternal = isInternalCompanyDoc({
+          codigo: rv.codigoDocumento,
+          titulo: rv.tituloDocumento,
+          origemRevisao: rv.origemRevisao,
+        });
+        const topSections = findMatchingSectionsForDoc(
+          rv.capitulosIndexados,
+          rv.conteudoTextoIntegral,
+          itemQueryTokens,
+          itemQueryNorm
+        );
+        if (topSections.length > 0) {
+          const block = `- [${rv.codigoDocumento}] ${rv.tituloDocumento} | Rev: ${rv.numeroRevisao || "N/I"}\n${topSections
+            .map((s) => `  > Trecho [Cap./Seção ${s.numero} — ${s.titulo}]: "${s.texto.slice(0, 500)}"`)
+            .join("\n")}`;
+          if (isInternal) internalManualBlocks.push(block);
+          else authorityManualBlocks.push(block);
+        }
+      }
+
+      const internalDocsResumo = allDocsList
+        .filter((d: any) => isInternalCompanyDoc(d))
+        .slice(0, 40)
+        .map(
+          (d: any) =>
+            `- [${d.codigo}] ${d.titulo} | Rev: ${d.numeroRevisao || "N/I"} | Status: ${d.statusGeral || "N/I"}${
+              d.aplicabilidade ? ` | Aplicabilidade: ${d.aplicabilidade}` : ""
+            }`
+        )
         .join("\n");
 
-      const manualsResumo = (sgqContext?.manuals || [])
+      const authorityDocsResumo = allDocsList
+        .filter((d: any) => !isInternalCompanyDoc(d))
         .slice(0, 25)
-        .map((m: any) => `- [${m.codigo}] ${m.titulo} | Rev: ${m.revisao || "N/I"} | Resumo: ${(m.descricaoResumo || "").slice(0, 180)}`)
+        .map((d: any) => `- [${d.codigo}] ${d.titulo} | Rev: ${d.numeroRevisao || "N/I"} | Status: ${d.statusGeral || "N/I"}`)
         .join("\n");
 
       const trainingsSummary = `Total de registros de treinamento no SGQ: ${(sgqContext?.trainingRecords || []).length}; Qualificações/CHTs: ${(sgqContext?.qualifications || []).length}`;
@@ -742,11 +1202,12 @@ DADOS DA AUDITORIA E DO ITEM:
 - Referência Normativa: "${item.referenciaNormativa || "Não informada"}"
 
 DADOS REAIS DO QUALYQUEST SGQ (ÚNICAS FONTES PERMITIDAS):
-[1. Documentos Controlados]
-${docsResumo || "Nenhum documento controlado informado."}
+[1. Manuais e Procedimentos INTERNOS da IMPACTO (PRIORIDADE MÁXIMA — MOMQ, MOE, PTM, SGSO, POP, IT)]
+${internalManualBlocks.join("\n") || "Nenhum manual interno com conteúdo detalhado informado."}
+${internalDocsResumo ? `\nDocumentos internos na Master List:\n${internalDocsResumo}` : ""}
 
-[2. Manuais SGQ]
-${manualsResumo || "Nenhum manual informado."}
+[2. Normas Externas / Autoridades (RBAC, ISO, FAA, EASA — usar apenas como referência secundária)]
+${authorityManualBlocks.join("\n") || authorityDocsResumo || "Nenhuma norma externa informada."}
 
 [3. Treinamentos, Qualificações e Metrologia]
 ${trainingsSummary}
@@ -762,13 +1223,14 @@ ${prevResumo || "Nenhuma resposta de auditoria anterior listada."}
 ${evidResumo || "Nenhuma evidência anexada no acervo."}
 
 REGRAS OBRIGATÓRIAS E ANTI-ALUCINAÇÃO (DESCUMPRIR INVALIDA A RESPOSTA):
-1. Cite EXCLUSIVAMENTE documentos, códigos e revisões que constam nos blocos [1] a [6] acima.
-2. NUNCA invente datas, certificados, treinamentos, aprovações, números de OS ou revisões inexistentes.
-3. Diferencie explicitamente no texto o que é "descrição de procedimento/norma" (tipo: PROCEDIMENTO_NORMA) e o que é "evidência objetiva de execução" (tipo: EVIDENCIA_REGISTRO).
-4. Nunca afirme que uma atividade foi executada se não houver evidência ou registro real nos dados acima.
-5. Se as informações fornecidas forem insuficientes para responder com segurança, defina "informacaoInsuficiente": true e escreva claramente "INFORMAÇÃO NÃO ENCONTRADA" indicando exatamente o que falta.
-6. Se identificar conflito ou divergência de revisão entre documentos/auditorias anteriores, registre em "conflitosOuDivergencias" solicitando validação humana.
-7. Deixe claro que esta é uma sugestão preliminar que requer validação da equipe de Qualidade.
+1. PRIORIZE SEMPRE os manuais e procedimentos INTERNOS da IMPACTO (Bloco [1], como MOMQ, MOE, PTM, SGSO, POP, IT) em vez de citar apenas normas das autoridades (Bloco [2]).
+2. CITE EXPLICITAMENTE O CAPÍTULO / SEÇÃO encontrado (ex.: "MOMQ Rev. 14, Cap./Seção 3.4.3 — Gestão e Controle Centralizado de Calibração") e TRANSCREVA OU RESUMA FIELMENTE O QUE ESTÁ ESCRITO no procedimento da empresa conforme os trechos fornecidos no Bloco [1].
+3. Cite EXCLUSIVAMENTE documentos, códigos, capítulos e revisões que constam nos blocos [1] a [6] acima. NUNCA invente capítulos, datas, certificados, treinamentos, aprovações ou revisões inexistentes.
+4. Diferencie explicitamente no texto o que é "previsão em procedimento/manual interno da IMPACTO" (tipo: PROCEDIMENTO_NORMA) e o que é "evidência objetiva de execução" (tipo: EVIDENCIA_REGISTRO).
+5. Nunca afirme que uma atividade foi executada se não houver evidência ou registro real nos dados acima.
+6. Se as informações fornecidas forem insuficientes para responder com segurança, defina "informacaoInsuficiente": true e escreva claramente "INFORMAÇÃO NÃO ENCONTRADA" indicando exatamente o que falta.
+7. Se identificar conflito ou divergência de revisão entre documentos/auditorias anteriores, registre em "conflitosOuDivergencias" solicitando validação humana.
+8. Deixe claro que esta é uma sugestão preliminar que requer validação da equipe de Qualidade.
 
 Responda estritamente no schema JSON solicitado.`;
 

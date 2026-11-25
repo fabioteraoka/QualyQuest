@@ -352,6 +352,103 @@ async function run() {
         String(suggestMissingJson.sugestao?.respostaSugerida || '').includes('INFORMAÇÃO NÃO ENCONTRADA'),
       'Retorna INFORMAÇÃO NÃO ENCONTRADA quando base SGQ não possui dados suficientes (anti-alucinação)'
     );
+
+    // 3f. Priorização de manuais internos (MOMQ/PTM) com citação de capítulo e texto escrito do procedimento sobre normas externas (RBAC 145)
+    const respSuggestManualChapter = await fetch(`${baseUrl}/suggest-answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        organizationId: 'org_impacto_aviation',
+        audit: { nome: 'Auditoria ANAC', entidade: 'ANAC', tipo: 'ANAC', dataAuditoria: '2026-07-15' },
+        item: {
+          numeroItem: '5.1',
+          perguntaOriginal: 'Como a oficina realiza a gestão e controle centralizado de calibração de ferramentas e instrumentos?',
+          referenciaNormativa: 'RBAC 145.109(b)',
+        },
+        sgqContext: {
+          documentosControlados: [
+            {
+              codigo: 'RBAC 145',
+              titulo: 'Regulamento Brasileiro da Aviação Civil - Organizações de Manutenção',
+              categoria: 'NORMA_EXTERNA',
+              tipoOrigemDocumental: 'EXTERNO',
+              emissor: 'ANAC',
+              numeroRevisao: 'Emenda 07',
+              statusGeral: 'VIGENTE',
+            },
+            {
+              codigo: 'MOMQ',
+              titulo: 'Manual da Organização de Manutenção da Qualidade',
+              categoria: 'DOCUMENTO_INTERNO',
+              tipoOrigemDocumental: 'INTERNO',
+              proprietario: 'IMPACTO Aviation MRO',
+              numeroRevisao: 'Rev. 14',
+              statusGeral: 'VIGENTE',
+            },
+          ],
+          manuals: [
+            {
+              codigo: 'RBAC 145',
+              titulo: 'Regulamento Brasileiro da Aviação Civil - Organizações de Manutenção',
+              tipoDocumento: 'Documento Normativo Oficial',
+              orgaoRegulador: 'ANAC',
+              revisao: 'Emenda 07',
+              status: 'VIGENTE',
+              conteudoTexto: '145.109(b) A organização deve assegurar calibração rastreável de equipamentos.',
+              capitulos: [
+                {
+                  numero: '145.109(b)',
+                  titulo: 'Equipamentos e Ferramentas',
+                  requisitoTexto: 'Exigência regulatória de calibração rastreável para oficina certificada.',
+                  palavrasChave: ['calibracao', 'ferramentas'],
+                },
+              ],
+            },
+            {
+              codigo: 'MOMQ',
+              titulo: 'Manual da Organização de Manutenção da Qualidade',
+              tipoDocumento: 'Manual Interno',
+              proprietario: 'IMPACTO Aviation MRO',
+              revisao: 'Rev. 14',
+              status: 'VIGENTE',
+              conteudoTexto:
+                'CAPÍTULO 3 — CONTROLE METROLÓGICO\n3.4.3 Gestão e Controle Centralizado de Calibração: O Controle da Qualidade mantém o registro mestre de todas as ferramentas calibradas, emitindo alertas 30 dias antes do vencimento e segregando instrumentos vencidos em armário lacrado.',
+              capitulos: [
+                {
+                  numero: '3.4.3',
+                  titulo: 'Gestão e Controle Centralizado de Calibração',
+                  requisitoTexto:
+                    'O Controle da Qualidade mantém o registro mestre de todas as ferramentas calibradas, emitindo alertas 30 dias antes do vencimento e segregando instrumentos vencidos em armário lacrado.',
+                  palavrasChave: ['calibracao', 'ferramentas', 'instrumentos', 'gestao'],
+                },
+              ],
+            },
+          ],
+          revisoesDocumentais: [],
+          trainingRecords: [],
+          qualifications: [],
+          ferramentasCalibradas: [],
+          nonConformities: [],
+          previousAuditsAndAnswers: [],
+          availableEvidences: [],
+        },
+      }),
+    });
+    const suggestChapterJson: any = await respSuggestManualChapter.json();
+    const textoSugerido = String(suggestChapterJson.sugestao?.respostaSugerida || '');
+    const fontes = suggestChapterJson.sugestao?.fontesEncontradas || [];
+    const idxMomq = textoSugerido.indexOf('MOMQ');
+    const idxRbac = textoSugerido.indexOf('RBAC 145');
+    check(
+      respSuggestManualChapter.ok &&
+        suggestChapterJson.success &&
+        textoSugerido.includes('MOMQ') &&
+        textoSugerido.includes('3.4.3') &&
+        textoSugerido.includes('segregando instrumentos vencidos') &&
+        (idxRbac === -1 || (idxMomq !== -1 && idxMomq < idxRbac)) &&
+        fontes[0]?.codigo === 'MOMQ',
+      'Prioriza manual interno da empresa (MOMQ) sobre norma externa (RBAC 145) citando capítulo 3.4.3 e texto do procedimento'
+    );
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

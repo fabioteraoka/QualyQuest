@@ -1045,6 +1045,7 @@ export const AppViewRouter: React.FC<AppViewRouterProps> = (props) => {
           activeOrganization={props.activeOrganization}
           userProfile={props.userProfile}
           documentosControlados={props.documentosControlados}
+          revisoesDocumentais={props.revisoesDocumentais}
           manuals={props.manuals}
           trainingRecords={props.trainingRecords}
           qualifications={props.qualifications}
