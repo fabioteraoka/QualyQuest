@@ -7,6 +7,8 @@ import {
   getGeminiClient,
   executeGeminiRequest,
 } from "./gemini/index.ts";
+import { findBestQuestionMatch } from "../src/utils/auditPrepMatcher.ts";
+import type { PreviousItemCandidate } from "../src/utils/auditPrepMatcher.ts";
 
 export interface ParsedAuditPrepItem {
   numeroItem: string;
@@ -68,6 +70,26 @@ const AUDIT_PREP_SUGGESTION_SCHEMA = {
     "lacunasOuFaltantes",
     "conflitosOuDivergencias",
   ],
+};
+
+const AUDIT_PREP_MATCH_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    matches: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          tempId: { type: Type.STRING },
+          candidateKey: { type: Type.STRING },
+          score: { type: Type.NUMBER },
+          justificativa: { type: Type.STRING },
+        },
+        required: ["tempId", "candidateKey", "score", "justificativa"],
+      },
+    },
+  },
+  required: ["matches"],
 };
 
 async function extractPdfTextFromBuffer(buffer: Buffer): Promise<string> {
@@ -791,7 +813,7 @@ function buildDeterministicSGQSuggestion(item: any, _audit: any, sgqContext: any
   }
   if (!hasEvidence) {
     lacunasOuFaltantes.push(
-      "Nenhuma evidência objetiva de execução (registro, certificado ou anexo específico) foi localizada automaticamente — confirmar ou anexar evidência real."
+      "Nenhum registro automático localizado no acervo (anexo de evidência é opcional caso seja verificação visual/inspeção direta)."
     );
   }
 
@@ -800,7 +822,7 @@ function buildDeterministicSGQSuggestion(item: any, _audit: any, sgqContext: any
   let respostaSugerida = "";
   if (informacaoInsuficiente) {
     respostaSugerida =
-      "INFORMAÇÃO NÃO ENCONTRADA — Não foram localizados manuais internos, procedimentos controlados, registros operacionais ou respostas anteriores compatíveis na base do QualyQuest para este requisito. Preencha manualmente após consultar a documentação aplicável e anexar as evidências objetivas.";
+      "INFORMAÇÃO NÃO ENCONTRADA — Não foram localizados manuais internos, procedimentos controlados, registros operacionais ou respostas anteriores compatíveis na base do QualyQuest para este requisito. Preencha manualmente após consultar a documentação aplicável ou registre sua avaliação.";
   } else {
     const parts: string[] = [];
 
@@ -858,7 +880,7 @@ function buildDeterministicSGQSuggestion(item: any, _audit: any, sgqContext: any
       );
     } else {
       parts.push(
-        `[Evidências de execução]: INFORMAÇÃO NÃO ENCONTRADA — Procedimento localizado, porém sem evidência objetiva específica anexada a este item. Anexar comprovação antes de concluir o atendimento.`
+        `[Evidências de execução]: Nenhum registro automático localizado no acervo para este item (anexo opcional para verificações visuais ou inspeções diretas).`
       );
     }
     if (prevList.length > 0) {
@@ -1293,6 +1315,257 @@ Responda estritamente no schema JSON solicitado.`;
       return res.status(500).json({
         success: false,
         error: err?.message || "Erro ao gerar sugestão de resposta.",
+      });
+    }
+  });
+
+  // 3. Verificação de perguntas iguais ou equivalentes em outras listas (determinística + semântica multilíngue IA)
+  router.post("/match-previous", async (req, res) => {
+    try {
+      const { organizationId, importedItems, candidates } = req.body || {};
+      const orgId =
+        typeof organizationId === "string" && organizationId.trim()
+          ? organizationId.trim()
+          : "org_impacto_aviation";
+
+      if (!Array.isArray(importedItems) || !Array.isArray(candidates)) {
+        return res.status(400).json({
+          success: false,
+          error: "importedItems e candidates são obrigatórios.",
+        });
+      }
+
+      const validCandidates: PreviousItemCandidate[] = candidates
+        .filter((c: any) => c && c.key && c.pergunta)
+        .slice(0, 250)
+        .map((c: any) => ({
+          key: String(c.key),
+          auditId: String(c.auditId || ""),
+          auditNome: String(c.auditNome || "Auditoria Anterior"),
+          entidade: String(c.entidade || ""),
+          dataAuditoria: String(c.dataAuditoria || ""),
+          itemNumero: String(c.itemNumero || "-"),
+          pergunta: String(c.pergunta),
+          referenciaNormativa: String(c.referenciaNormativa || ""),
+          resposta: String(c.resposta || ""),
+          situacao: c.situacao || "PENDENTE_DE_AVALIACAO",
+          validadoQualidade: Boolean(c.validadoQualidade),
+          evidencias: Array.isArray(c.evidencias) ? c.evidencias : [],
+          origem: c.origem === "HISTORICO_SGQ" ? "HISTORICO_SGQ" : "CENTRAL_AUDITORIAS",
+        }));
+
+      const candidateMap = new Map(validCandidates.map((c) => [c.key, c]));
+      const results: Record<
+        string,
+        {
+          candidateKey: string;
+          score: number;
+          matchType: "EXATA" | "EQUIVALENTE" | "SEMANTICA_IA";
+          reason: string;
+        }
+      > = {};
+
+      const remainingForAI: Array<{
+        tempId: string;
+        numeroItem: string;
+        perguntaOriginal: string;
+        referenciaNormativa: string;
+      }> = [];
+
+      const deterministicFallbackMap = new Map<
+        string,
+        {
+          candidateKey: string;
+          score: number;
+          matchType: "EXATA" | "EQUIVALENTE" | "SEMANTICA_IA";
+          reason: string;
+        }
+      >();
+
+      for (const it of importedItems.slice(0, 250)) {
+        if (!it || !it.tempId || !it.perguntaOriginal) continue;
+        const tid = String(it.tempId);
+        const det = findBestQuestionMatch(
+          {
+            perguntaOriginal: String(it.perguntaOriginal),
+            referenciaNormativa: String(it.referenciaNormativa || ""),
+          },
+          validCandidates
+        );
+        if (det && det.score >= 78) {
+          results[tid] = {
+            candidateKey: det.candidate.key,
+            score: det.score,
+            matchType: det.matchType,
+            reason: det.reason,
+          };
+        } else {
+          if (det) {
+            deterministicFallbackMap.set(tid, {
+              candidateKey: det.candidate.key,
+              score: det.score,
+              matchType: det.matchType,
+              reason: det.reason,
+            });
+          }
+          remainingForAI.push({
+            tempId: tid,
+            numeroItem: String(it.numeroItem || ""),
+            perguntaOriginal: String(it.perguntaOriginal),
+            referenciaNormativa: String(it.referenciaNormativa || ""),
+          });
+        }
+      }
+
+      const ai = getGeminiClient();
+      let aiCheckedCount = 0;
+      let aiErrorMsg: string | null = null;
+
+      if (ai && remainingForAI.length > 0 && validCandidates.length > 0) {
+        // Usa apelidos curtos (C1, C2...) para evitar que a IA altere ou trunque IDs longos do Firestore
+        const aiCandidates = validCandidates.slice(0, 200);
+        const aliasToCandidateKey = new Map<string, string>();
+        const candListText = aiCandidates
+          .map((c, idx) => {
+            const alias = `C${idx + 1}`;
+            aliasToCandidateKey.set(alias, c.key);
+            return `- [${alias}] (${c.auditNome} · Item ${c.itemNumero}${
+              c.referenciaNormativa ? ` · Ref: ${c.referenciaNormativa}` : ""
+            }) "${c.pergunta.replace(/\s+/g, " ").trim().slice(0, 240)}"`;
+          })
+          .join("\n");
+
+        const BATCH_SIZE = 25;
+        const batches: Array<typeof remainingForAI> = [];
+        for (let i = 0; i < remainingForAI.length && batches.length < 8; i += BATCH_SIZE) {
+          batches.push(remainingForAI.slice(i, i + BATCH_SIZE));
+        }
+
+        for (const batchItems of batches) {
+          const aliasToTempId = new Map<string, string>();
+          const queryListText = batchItems
+            .map((q, idx) => {
+              const alias = `Q${idx + 1}`;
+              aliasToTempId.set(alias, q.tempId);
+              return `- [${alias}] (Item ${q.numeroItem}${
+                q.referenciaNormativa ? ` · Ref: ${q.referenciaNormativa}` : ""
+              }) "${q.perguntaOriginal.replace(/\s+/g, " ").trim().slice(0, 240)}"`;
+            })
+            .join("\n");
+
+          const prompt = `Você é um especialista bilíngue (Português, Inglês e Espanhol) de Garantia da Qualidade e Aeronáutica da IMPACTO Aviation MRO (RBAC 145 / FAA 14 CFR 145 / EASA Part-145 / IOSA / ISO 9001).
+Compare TODAS as NOVAS PERGUNTAS IMPORTADAS com o BANCO DE PERGUNTAS DE LISTAS ANTERIORES.
+ATENÇÃO ESPECIAL A OUTROS IDIOMAS: as listas podem estar em idiomas diferentes (por exemplo, pergunta importada em Inglês ou Espanhol e banco anterior em Português, ou vice-versa). Identifique sempre que duas perguntas tratam da MESMA exigência técnica ou regulatória, mesmo traduzidas ou redigidas de forma diferente.
+
+NOVAS PERGUNTAS IMPORTADAS:
+${queryListText}
+
+BANCO DE PERGUNTAS DE LISTAS ANTERIORES:
+${candListText}
+
+REGRAS OBRIGATÓRIAS:
+1. Para cada pergunta em NOVAS PERGUNTAS IMPORTADAS que possua equivalente real no BANCO (no mesmo idioma ou em outro idioma), retorne tempId = código Q (ex.: "Q1") e candidateKey = código C (ex.: "C4").
+2. Retorne apenas correspondências técnicas reais com score >= 65 (de 0 a 100). Use 85-98 quando pedir exatamente a mesma verificação (mesmo traduzida) e 65-84 quando for equivalente parcial/próxima. Se não houver equivalente real, NÃO inclua o código Q.
+3. Use EXATAMENTE os códigos Q1, Q2... e C1, C2... mostrados entre colchetes. NUNCA invente códigos.
+4. Em "justificativa", escreva 1 frase curta em português indicando o motivo (ex.: "Equivalente em inglês sobre calibração rastreável de torquímetros").`;
+
+          try {
+            const response = await executeGeminiRequest<{
+              matches: Array<{
+                tempId: string;
+                candidateKey: string;
+                score: number;
+                justificativa: string;
+              }>;
+            }>({
+              operation: "audit-prep-match-previous",
+              contents: prompt,
+              models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: AUDIT_PREP_MATCH_SCHEMA,
+              },
+              ttlMs: 2 * 60 * 60 * 1000,
+              organizationId: orgId,
+              promptVersion: "v2-multilingual",
+            });
+
+            aiCheckedCount += batchItems.length;
+
+            let parsedObj: any = response.parsed;
+            if (!parsedObj && response.text) {
+              const cleanedText = response.text
+                .trim()
+                .replace(/^```(?:json)?\s*/i, "")
+                .replace(/\s*```$/i, "")
+                .trim();
+              try {
+                parsedObj = JSON.parse(cleanedText);
+              } catch {
+                const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                  try {
+                    parsedObj = JSON.parse(jsonMatch[0]);
+                  } catch {
+                    parsedObj = null;
+                  }
+                }
+              }
+            }
+
+            const aiMatches = Array.isArray(parsedObj?.matches) ? parsedObj.matches : [];
+            for (const m of aiMatches) {
+              const rawQ = String(m.tempId || "").trim().replace(/^\[|\]$/g, "");
+              const rawC = String(m.candidateKey || "").trim().replace(/^\[|\]$/g, "");
+              const realTempId = aliasToTempId.get(rawQ) || (batchItems.some((b) => b.tempId === rawQ) ? rawQ : "");
+              const realCandKey = aliasToCandidateKey.get(rawC) || (candidateMap.has(rawC) ? rawC : "");
+              const score = Math.round(Number(m.score || 0));
+
+              if (realTempId && realCandKey && candidateMap.has(realCandKey) && score >= 65) {
+                const existing = results[realTempId];
+                if (!existing || score > existing.score) {
+                  results[realTempId] = {
+                    candidateKey: realCandKey,
+                    score: Math.min(98, score),
+                    matchType: "SEMANTICA_IA",
+                    reason: String(m.justificativa || "Equivalência semântica identificada pela IA"),
+                  };
+                }
+              }
+            }
+          } catch (aiErr: any) {
+            aiErrorMsg = String(aiErr?.message || "IA indisponível temporariamente");
+            console.warn(
+              "[auditPrepRouter] Fallback determinístico após aviso Gemini em /match-previous:",
+              aiErrorMsg
+            );
+          }
+        }
+      }
+
+      // Completa com matches determinísticos de faixa média (58..77) caso IA não tenha encontrado melhor
+      for (const it of remainingForAI) {
+        if (results[it.tempId]) continue;
+        const detFallback = deterministicFallbackMap.get(it.tempId);
+        if (detFallback) {
+          results[it.tempId] = detFallback;
+        }
+      }
+
+      return res.json({
+        success: true,
+        matches: results,
+        meta: {
+          aiAvailable: Boolean(ai),
+          aiCheckedCount,
+          aiError: aiErrorMsg,
+          totalCandidatesChecked: validCandidates.length,
+        },
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "Erro ao verificar equivalência com listas anteriores.",
       });
     }
   });

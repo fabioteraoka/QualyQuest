@@ -168,6 +168,15 @@ export interface ResumoAuditoriaPrep {
   situacaoGeral: string;
 }
 
+export function isItemRespondidoPrep(
+  item: Pick<ItemAuditoriaPreparacao, 'situacao' | 'respostaImpacto'>
+): boolean {
+  return (
+    item.situacao !== 'PENDENTE_DE_AVALIACAO' ||
+    Boolean(item.respostaImpacto && item.respostaImpacto.trim().length > 0)
+  );
+}
+
 export function calcularResumoAuditoriaPrep(items: ItemAuditoriaPreparacao[]): ResumoAuditoriaPrep {
   const totalItens = items.length;
   const atendidos = items.filter((i) => i.situacao === 'ATENDIDO').length;
@@ -176,6 +185,7 @@ export function calcularResumoAuditoriaPrep(items: ItemAuditoriaPreparacao[]): R
   const naoAplicaveis = items.filter((i) => i.situacao === 'NAO_APLICAVEL').length;
   const pendentes = items.filter((i) => i.situacao === 'PENDENTE_DE_AVALIACAO').length;
 
+  // Contagem meramente informativa; evidência anexa não é obrigatória (itens visuais são válidos sem anexo)
   const itensSemEvidencia = items.filter(
     (i) =>
       (i.situacao === 'ATENDIDO' || i.situacao === 'PARCIALMENTE_ATENDIDO') &&
@@ -185,14 +195,12 @@ export function calcularResumoAuditoriaPrep(items: ItemAuditoriaPreparacao[]): R
   let situacaoGeral = 'Sem itens cadastrados';
   if (totalItens > 0) {
     const concluidos = atendidos + naoAplicaveis;
-    if (concluidos === totalItens && itensSemEvidencia === 0) {
-      situacaoGeral = 'Pronta para Auditoria';
-    } else if (naoAtendidos > 0) {
-      situacaoGeral = `${naoAtendidos} Não Atendido(s)`;
+    if (naoAtendidos > 0) {
+      situacaoGeral = `${naoAtendidos} Não Conforme(s)`;
     } else if (pendentes > 0 || parcialmenteAtendidos > 0) {
       situacaoGeral = `${pendentes + parcialmenteAtendidos} Pendente(s)`;
-    } else if (itensSemEvidencia > 0) {
-      situacaoGeral = `${itensSemEvidencia} Sem Evidência`;
+    } else if (concluidos === totalItens) {
+      situacaoGeral = 'Pronta para Auditoria';
     } else {
       situacaoGeral = 'Em Preparação';
     }

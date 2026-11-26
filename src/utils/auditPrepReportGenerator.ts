@@ -25,9 +25,9 @@ import {
 } from '../types/auditPrep';
 
 export const SITUACAO_LABELS: Record<SituacaoItemAuditoriaPrep, string> = {
-  ATENDIDO: 'ATENDIDO',
-  PARCIALMENTE_ATENDIDO: 'PARCIALMENTE ATENDIDO',
-  NAO_ATENDIDO: 'NÃO ATENDIDO',
+  ATENDIDO: 'CONFORME',
+  PARCIALMENTE_ATENDIDO: 'PARCIALMENTE CONFORME',
+  NAO_ATENDIDO: 'NÃO CONFORME',
   NAO_APLICAVEL: 'NÃO APLICÁVEL',
   PENDENTE_DE_AVALIACAO: 'PENDENTE DE AVALIAÇÃO',
 };
@@ -49,8 +49,7 @@ function getPendingItems(items: ItemAuditoriaPreparacao[]): ItemAuditoriaPrepara
       it.situacao === 'NAO_ATENDIDO' ||
       it.situacao === 'PARCIALMENTE_ATENDIDO' ||
       it.situacao === 'PENDENTE_DE_AVALIACAO' ||
-      (it.observacoesPendencias && it.observacoesPendencias.trim().length > 0) ||
-      (it.situacao === 'ATENDIDO' && (!it.evidencias || it.evidencias.length === 0))
+      (it.observacoesPendencias && it.observacoesPendencias.trim().length > 0)
   );
 }
 
@@ -245,19 +244,13 @@ export function createAuditPrepDocxDocument(
       }),
       new TableRow({
         children: [
-          makeCell('Itens Atendidos'),
+          makeCell('Itens Conformes'),
           makeCell(String(resumo.atendidos), { bold: true, color: '15803D', align: AlignmentType.RIGHT }),
         ],
       }),
       new TableRow({
         children: [
-          makeCell('Itens Parcialmente Atendidos'),
-          makeCell(String(resumo.parcialmenteAtendidos), { bold: true, color: 'B45309', align: AlignmentType.RIGHT }),
-        ],
-      }),
-      new TableRow({
-        children: [
-          makeCell('Itens Não Atendidos'),
+          makeCell('Itens Não Conformes'),
           makeCell(String(resumo.naoAtendidos), { bold: true, color: 'B91C1C', align: AlignmentType.RIGHT }),
         ],
       }),
@@ -270,13 +263,13 @@ export function createAuditPrepDocxDocument(
       new TableRow({
         children: [
           makeCell('Itens Pendentes de Avaliação'),
-          makeCell(String(resumo.pendentes), { bold: true, color: '475569', align: AlignmentType.RIGHT }),
+          makeCell(String(resumo.pendentes + resumo.parcialmenteAtendidos), { bold: true, color: '475569', align: AlignmentType.RIGHT }),
         ],
       }),
       new TableRow({
         children: [
-          makeCell('Itens Atendidos / Parciais sem Evidência Associada'),
-          makeCell(String(resumo.itensSemEvidencia), { bold: true, color: resumo.itensSemEvidencia > 0 ? 'B91C1C' : '15803D', align: AlignmentType.RIGHT }),
+          makeCell('Itens com Evidência Anexada (opcional)'),
+          makeCell(String(items.filter((i) => (i.evidencias?.length || 0) > 0).length), { bold: true, color: '1D4ED8', align: AlignmentType.RIGHT }),
         ],
       }),
     ],
@@ -319,10 +312,12 @@ export function createAuditPrepDocxDocument(
                   }`
               )
               .join('\n')
-          : 'Nenhuma evidência associada.';
+          : 'Sem anexo (evidência opcional / verificação visual).';
 
       const respLabel = it.respostaImpacto?.trim()
         ? it.respostaImpacto.trim()
+        : it.situacao !== 'PENDENTE_DE_AVALIACAO'
+        ? `Avaliação registrada diretamente como: ${SITUACAO_LABELS[it.situacao] || it.situacao}.`
         : 'Resposta ainda não preenchida.';
 
       const validTag = it.validadoQualidade
@@ -404,7 +399,7 @@ export function createAuditPrepDocxDocument(
         spacing: { after: 120 },
         children: [
           new TextRun({
-            text: 'Nenhuma pendência aberta ou item sem evidência identificado nesta auditoria.',
+            text: 'Nenhuma não conformidade ou pendência aberta identificada nesta auditoria.',
             color: '15803D',
             bold: true,
             size: 20,
@@ -430,12 +425,6 @@ export function createAuditPrepDocxDocument(
           ...pendentes.map((p) => {
             const obsParts: string[] = [];
             if (p.observacoesPendencias?.trim()) obsParts.push(p.observacoesPendencias.trim());
-            if (
-              (p.situacao === 'ATENDIDO' || p.situacao === 'PARCIALMENTE_ATENDIDO') &&
-              (!p.evidencias || p.evidencias.length === 0)
-            ) {
-              obsParts.push('Sem evidência objetiva associada.');
-            }
             if (obsParts.length === 0) {
               obsParts.push(`Situação atual: ${SITUACAO_LABELS[p.situacao]}`);
             }
@@ -645,12 +634,11 @@ export function buildAuditPrepPdf(
   y += 2;
   const summaryLines = [
     `Total de itens cadastrados: ${resumo.totalItens}`,
-    `Atendidos: ${resumo.atendidos}`,
-    `Parcialmente atendidos: ${resumo.parcialmenteAtendidos}`,
-    `Não atendidos: ${resumo.naoAtendidos}`,
+    `Conformes: ${resumo.atendidos}`,
+    `Não conformes: ${resumo.naoAtendidos}`,
     `Não aplicáveis: ${resumo.naoAplicaveis}`,
-    `Pendentes de avaliação: ${resumo.pendentes}`,
-    `Atendidos/Parciais sem evidência associada: ${resumo.itensSemEvidencia}`,
+    `Pendentes de avaliação: ${resumo.pendentes + resumo.parcialmenteAtendidos}`,
+    `Itens com evidência anexada (opcional): ${items.filter((i) => (i.evidencias?.length || 0) > 0).length}`,
   ];
   summaryLines.forEach((line) => addWrappedText(`• ${line}`, margin + 2, maxWidth - 4, 5.5, 10, 'normal'));
 
@@ -679,8 +667,13 @@ export function buildAuditPrepPdf(
       );
       addWrappedText(`Pergunta / Requisito: ${it.perguntaOriginal}`, margin, maxWidth, 4.8, 9.5, 'normal');
       addWrappedText(`Referência Normativa: ${it.referenciaNormativa || 'Não informada'}`, margin, maxWidth, 4.8, 9.5, 'normal', [51, 65, 85]);
+      const pdfResposta = it.respostaImpacto?.trim()
+        ? it.respostaImpacto.trim()
+        : it.situacao !== 'PENDENTE_DE_AVALIACAO'
+        ? `Avaliação registrada: ${SITUACAO_LABELS[it.situacao] || it.situacao}`
+        : 'Não preenchida';
       addWrappedText(
-        `Resposta da IMPACTO: ${it.respostaImpacto?.trim() || 'Não preenchida'} (${
+        `Resposta da IMPACTO: ${pdfResposta} (${
           it.validadoQualidade ? 'Validada pela Qualidade' : 'Rascunho / Pendente de validação'
         })`,
         margin,
@@ -694,7 +687,7 @@ export function buildAuditPrepPdf(
           ? it.evidencias
               .map((e) => `${e.titulo} [${e.tipo}] (${e.referencia || 'N/I'})`)
               .join('; ')
-          : 'Nenhuma evidência associada';
+          : 'Sem anexo (evidência opcional / verificação visual)';
       addWrappedText(`Evidências: ${evStr}`, margin, maxWidth, 4.8, 9.5, 'normal', [51, 65, 85]);
       if (it.observacoesPendencias?.trim()) {
         addWrappedText(`Observações / Pendências: ${it.observacoesPendencias.trim()}`, margin, maxWidth, 4.8, 9.5, 'normal', [180, 83, 9]);
@@ -709,15 +702,10 @@ export function buildAuditPrepPdf(
   addWrappedText('3. LISTA CONSOLIDADA DE PENDÊNCIAS', margin, maxWidth, 7, 13, 'bold', [15, 23, 42]);
   y += 2;
   if (pendentes.length === 0) {
-    addWrappedText('Nenhuma pendência aberta identificada.', margin, maxWidth, 5.5, 10, 'bold', [21, 128, 61]);
+    addWrappedText('Nenhuma não conformidade ou pendência aberta identificada.', margin, maxWidth, 5.5, 10, 'bold', [21, 128, 61]);
   } else {
     pendentes.forEach((p) => {
-      const obs =
-        p.observacoesPendencias?.trim() ||
-        ((p.situacao === 'ATENDIDO' || p.situacao === 'PARCIALMENTE_ATENDIDO') &&
-        (!p.evidencias || p.evidencias.length === 0)
-          ? 'Sem evidência objetiva associada.'
-          : SITUACAO_LABELS[p.situacao]);
+      const obs = p.observacoesPendencias?.trim() || SITUACAO_LABELS[p.situacao];
       addWrappedText(
         `• Item ${p.numeroItem} [${SITUACAO_LABELS[p.situacao]}]: ${obs}`,
         margin + 2,

@@ -10,6 +10,7 @@ import {
   AuditoriaPreparacao,
   ItemAuditoriaPreparacao,
   calcularResumoAuditoriaPrep,
+  isItemRespondidoPrep,
 } from '../src/types/auditPrep.ts';
 import {
   canUserDeleteAuditPrep,
@@ -20,6 +21,10 @@ import {
   buildAuditPrepDocxBuffer,
   buildAuditPrepPdf,
 } from '../src/utils/auditPrepReportGenerator.ts';
+import {
+  buildPreviousItemCandidates,
+  findBestQuestionMatch,
+} from '../src/utils/auditPrepMatcher.ts';
 import type { UserProfile } from '../src/types.ts';
 
 let passed = 0;
@@ -38,8 +43,8 @@ function check(cond: boolean, label: string, detail?: string) {
 async function run() {
   console.log('=== VALIDAÇÃO INTEGRADA — CENTRAL DE PREPARAÇÃO PARA AUDITORIAS ===\n');
 
-  // 1. Resumo e Cálculos Reais (Área A & Área C)
-  console.log('1. Cálculos de Resumo e Detecção de Lacunas');
+  // 1. Resumo, Clique como Resposta e Evidência Opcional (Área A & Área C)
+  console.log('1. Cálculos de Resumo, Clique como Resposta e Evidência Opcional');
   const sampleItems: ItemAuditoriaPreparacao[] = [
     {
       id: 'IT-1',
@@ -86,10 +91,10 @@ async function run() {
       numeroItem: '1.2',
       perguntaOriginal: 'Os torquímetros estão com calibração válida rastreável à RBC?',
       referenciaNormativa: 'RBAC 145.109(b)',
-      respostaImpacto: 'Torquímetros calibrados conforme planilha metrológica.',
-      evidencias: [], // propositalmente sem evidência para testar detecção
+      respostaImpacto: '', // sem texto adicional, apenas clique em Conforme
+      evidencias: [], // verificação visual sem evidência anexa (opcional)
       situacao: 'ATENDIDO',
-      observacoesPendencias: 'Anexar certificado RBC T-04',
+      observacoesPendencias: '',
       fonteImportacao: {
         tipo: 'EXCEL',
         nomeArquivo: 'checklist_anac.xlsx',
@@ -133,9 +138,19 @@ async function run() {
 
   const resumo = calcularResumoAuditoriaPrep(sampleItems);
   check(resumo.totalItens === 3, 'Total de itens calculado corretamente (3)');
-  check(resumo.atendidos === 2, 'Atendidos calculado corretamente (2)');
+  check(resumo.atendidos === 2, 'Conformes calculado corretamente (2)');
   check(resumo.pendentes === 1, 'Pendentes calculado corretamente (1)');
-  check(resumo.itensSemEvidencia === 1, 'Detecção automática de item atendido sem evidência (1)');
+  check(isItemRespondidoPrep(sampleItems[1]) === true, 'Item clicado como Conforme sem texto adicional já é considerado respondido');
+  check(isItemRespondidoPrep(sampleItems[2]) === false, 'Item pendente sem texto continua não respondido');
+
+  const visualOnlyAuditSummary = calcularResumoAuditoriaPrep([
+    sampleItems[1],
+    { ...sampleItems[2], situacao: 'NAO_APLICAVEL', observacoesPendencias: '' },
+  ]);
+  check(
+    visualOnlyAuditSummary.situacaoGeral === 'Pronta para Auditoria',
+    'Auditoria com itens Conforme/Não Aplicável sem evidência anexa (verificação visual) fica Pronta para Auditoria'
+  );
 
   // 2. RBAC Helpers
   console.log('\n2. Regras RBAC (Leitura, Escrita, Aprovação, Exclusão)');
@@ -448,6 +463,114 @@ async function run() {
         (idxRbac === -1 || (idxMomq !== -1 && idxMomq < idxRbac)) &&
         fontes[0]?.codigo === 'MOMQ',
       'Prioriza manual interno da empresa (MOMQ) sobre norma externa (RBAC 145) citando capítulo 3.4.3 e texto do procedimento'
+    );
+
+    // 3g. Comparação automática de perguntas idênticas ou equivalentes ao importar nova lista
+    const prevAudit: AuditoriaPreparacao = {
+      id: 'AUD-OLD',
+      organizationId: 'org_impacto_aviation',
+      nome: 'Auditoria ANAC Anterior',
+      entidade: 'ANAC',
+      tipo: 'ANAC',
+      dataAuditoria: '2026-01-15',
+      responsavelPreparacao: 'Gestor SGQ',
+      status: 'CONCLUIDA',
+      arquivada: false,
+      criadoPorUid: 'u1',
+      criadoPorNome: 'Qualidade',
+      createdAt: '2026-01-15T09:00:00Z',
+      updatedAt: '2026-01-15T09:00:00Z',
+    };
+    const matcherCandidates = buildPreviousItemCandidates([prevAudit], [
+      { ...sampleItems[0], auditId: 'AUD-OLD' },
+      { ...sampleItems[1], auditId: 'AUD-OLD' }, // clique apenas em Conforme sem resposta textual
+      { ...sampleItems[2], auditId: 'AUD-OLD' }, // pendente (não deve entrar como respondido)
+    ]);
+    check(
+      matcherCandidates.length === 2,
+      `buildPreviousItemCandidates incluiu item com texto e item clicado apenas como Conforme (excluiu pendente): ${matcherCandidates.length}`
+    );
+
+    const exactMatch = findBestQuestionMatch(
+      {
+        perguntaOriginal: 'A oficina mantém o MOMQ atualizado e acessível ao pessoal técnico?',
+        referenciaNormativa: 'RBAC 145.207',
+      },
+      matcherCandidates
+    );
+    check(
+      Boolean(exactMatch) && exactMatch?.score === 100 && exactMatch?.matchType === 'EXATA',
+      'findBestQuestionMatch detecta pergunta idêntica com 100% (EXATA)'
+    );
+
+    const equivMatch = findBestQuestionMatch(
+      {
+        perguntaOriginal: 'Os equipamentos de medição possuem aferição vigente com rastreabilidade RBC?',
+        referenciaNormativa: 'RBAC 145.109(b)',
+      },
+      matcherCandidates
+    );
+    check(
+      Boolean(equivMatch) &&
+        equivMatch?.candidate.itemNumero === '1.2' &&
+        equivMatch?.candidate.situacao === 'ATENDIDO' &&
+        equivMatch.score >= 58,
+      `findBestQuestionMatch detecta equivalência aeronáutica com item clicado como Conforme (score: ${equivMatch?.score ?? 0}%)`
+    );
+
+    const respMatchEndpoint = await fetch(`${baseUrl}/match-previous`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        organizationId: 'org_impacto_aviation',
+        importedItems: [
+          {
+            tempId: 'IMP-1',
+            numeroItem: '10.1',
+            perguntaOriginal: 'A oficina mantém o MOMQ atualizado e acessível ao pessoal técnico?',
+            referenciaNormativa: 'RBAC 145.207',
+          },
+          {
+            tempId: 'IMP-2',
+            numeroItem: '10.2',
+            perguntaOriginal: 'Os equipamentos de medição possuem aferição vigente com rastreabilidade RBC?',
+            referenciaNormativa: 'RBAC 145.109(b)',
+          },
+          {
+            tempId: 'IMP-EN-1',
+            numeroItem: '10.3',
+            perguntaOriginal: 'Does the repair station maintain current Quality Control Manual (QCM) accessible to technical personnel?',
+            referenciaNormativa: '',
+          },
+          {
+            tempId: 'IMP-EN-2',
+            numeroItem: '10.4',
+            perguntaOriginal: 'Are torque wrenches and measuring tools calibrated and traceable to national standards?',
+            referenciaNormativa: '',
+          },
+          {
+            tempId: 'IMP-ES-1',
+            numeroItem: '10.5',
+            perguntaOriginal: '¿Los equipos de medición y herramientas tienen calibración vigente y trazable?',
+            referenciaNormativa: '',
+          },
+        ],
+        candidates: matcherCandidates,
+      }),
+    });
+    const matchEndpointJson: any = await respMatchEndpoint.json();
+    check(
+      respMatchEndpoint.ok &&
+        matchEndpointJson.success &&
+        matchEndpointJson.matches?.['IMP-1']?.score === 100 &&
+        matchEndpointJson.matches?.['IMP-2']?.candidateKey === 'PREP-IT-2',
+      'Endpoint POST /api/audit-prep/match-previous retorna correspondências exata e equivalente para importação'
+    );
+    check(
+      matchEndpointJson.matches?.['IMP-EN-1']?.candidateKey === 'PREP-IT-1' &&
+        matchEndpointJson.matches?.['IMP-EN-2']?.candidateKey === 'PREP-IT-2' &&
+        matchEndpointJson.matches?.['IMP-ES-1']?.candidateKey === 'PREP-IT-2',
+      `Endpoint POST /api/audit-prep/match-previous identifica equivalência entre idiomas (EN->PT: ${matchEndpointJson.matches?.['IMP-EN-1']?.score ?? 0}% / ${matchEndpointJson.matches?.['IMP-EN-2']?.score ?? 0}%, ES->PT: ${matchEndpointJson.matches?.['IMP-ES-1']?.score ?? 0}%)`
     );
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));

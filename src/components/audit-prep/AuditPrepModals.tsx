@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   X,
   Upload,
@@ -23,15 +23,24 @@ import type {
   UserProfile,
 } from '../../types';
 import type { RequisitoAuditoriaExterna } from '../../types/auditRequirements';
-import type {
+import {
   AuditoriaPreparacao,
   EvidenciaVinculadaPrep,
   FonteImportacaoItemPrep,
   ItemAuditoriaPreparacao,
+  SituacaoItemAuditoriaPrep,
   TipoAuditoriaPreparacao,
   TipoEvidenciaVinculadaPrep,
+  isItemRespondidoPrep,
 } from '../../types/auditPrep';
 import { uploadEvidenceFile } from '../../services/evidenceStorageService';
+import {
+  MatchConfidenceType,
+  PreviousItemCandidate,
+  buildPreviousItemCandidates,
+  findBestQuestionMatch,
+} from '../../utils/auditPrepMatcher';
+import { SITUACAO_LABELS } from '../../utils/auditPrepReportGenerator';
 
 const TIPOS_AUDITORIA: TipoAuditoriaPreparacao[] = [
   'ANAC',
@@ -365,12 +374,22 @@ export interface ImportedItemDraft {
   numeroItem: string;
   perguntaOriginal: string;
   referenciaNormativa: string;
+  matchedCandidate?: PreviousItemCandidate;
+  matchScore?: number;
+  matchType?: MatchConfidenceType;
+  matchReason?: string;
+  applyMatchedAnswer?: boolean;
+  includeMatchedEvidences?: boolean;
 }
 
 export interface AuditImportModalProps {
   open: boolean;
   organizationId: string;
   userName: string;
+  audits?: AuditoriaPreparacao[];
+  allItems?: ItemAuditoriaPreparacao[];
+  historicalRequirements?: RequisitoAuditoriaExterna[];
+  currentAuditId?: string;
   onImportConfirm: (
     items: ImportedItemDraft[],
     fonte: FonteImportacaoItemPrep
@@ -382,10 +401,15 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
   open,
   organizationId,
   userName,
+  audits = [],
+  allItems = [],
+  historicalRequirements = [],
+  currentAuditId,
   onImportConfirm,
   onClose,
 }) => {
   const [parsing, setParsing] = useState(false);
+  const [matchingSemantic, setMatchingSemantic] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState('');
@@ -393,6 +417,128 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
   const [hashSha256, setHashSha256] = useState('');
   const [origemExtracao, setOrigemExtracao] = useState('');
   const [draftItems, setDraftItems] = useState<ImportedItemDraft[]>([]);
+  const [includeMatchedEvidences, setIncludeMatchedEvidences] = useState(true);
+  const [matchStatusInfo, setMatchStatusInfo] = useState<{
+    checkedCandidates: number;
+    aiCheckedCount: number;
+    aiAvailable: boolean;
+    warning?: string;
+  } | null>(null);
+
+  const previousCandidates = useMemo(
+    () => buildPreviousItemCandidates(audits, allItems, historicalRequirements, currentAuditId),
+    [audits, allItems, historicalRequirements, currentAuditId]
+  );
+
+  const matchedCount = useMemo(
+    () => draftItems.filter((d) => Boolean(d.matchedCandidate)).length,
+    [draftItems]
+  );
+  const selectedReuseCount = useMemo(
+    () => draftItems.filter((d) => Boolean(d.matchedCandidate && d.applyMatchedAnswer)).length,
+    [draftItems]
+  );
+
+  const runCrossLanguageMatching = async (itemsToCheck: ImportedItemDraft[]) => {
+    if (previousCandidates.length === 0 || itemsToCheck.length === 0) {
+      setMatchStatusInfo({
+        checkedCandidates: previousCandidates.length,
+        aiCheckedCount: 0,
+        aiAvailable: false,
+      });
+      return;
+    }
+
+    const needSemantic = itemsToCheck.filter(
+      (m) => !m.matchedCandidate || (m.matchScore || 0) < 78
+    );
+    if (needSemantic.length === 0) {
+      setMatchStatusInfo({
+        checkedCandidates: previousCandidates.length,
+        aiCheckedCount: 0,
+        aiAvailable: true,
+      });
+      return;
+    }
+
+    setMatchingSemantic(true);
+    try {
+      const resp = await fetch('/api/audit-prep/match-previous', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          importedItems: needSemantic.slice(0, 250).map((it) => ({
+            tempId: it.tempId,
+            numeroItem: it.numeroItem,
+            perguntaOriginal: it.perguntaOriginal,
+            referenciaNormativa: it.referenciaNormativa,
+          })),
+          candidates: previousCandidates.slice(0, 250).map((c) => ({
+            key: c.key,
+            auditId: c.auditId,
+            auditNome: c.auditNome,
+            entidade: c.entidade,
+            dataAuditoria: c.dataAuditoria,
+            itemNumero: c.itemNumero,
+            pergunta: c.pergunta,
+            referenciaNormativa: c.referenciaNormativa,
+            resposta: c.resposta,
+            situacao: c.situacao,
+            validadoQualidade: c.validadoQualidade,
+            origem: c.origem,
+          })),
+        }),
+      });
+      const matchJson = await resp.json();
+      if (!resp.ok || !matchJson?.success) {
+        throw new Error(matchJson?.error || 'Falha ao consultar equivalência semântica.');
+      }
+
+      const candMap = new Map(previousCandidates.map((c) => [c.key, c]));
+      if (matchJson.matches) {
+        setDraftItems((prev) =>
+          prev.map((item) => {
+            const m = matchJson.matches[item.tempId];
+            if (!m) return item;
+            const cand = candMap.get(m.candidateKey);
+            if (!cand) return item;
+            if (item.matchScore && item.matchScore > m.score) return item;
+            return {
+              ...item,
+              matchedCandidate: cand,
+              matchScore: m.score,
+              matchType: m.matchType,
+              matchReason: m.reason,
+              applyMatchedAnswer: m.score >= 68,
+            };
+          })
+        );
+      }
+
+      const meta = matchJson.meta || {};
+      setMatchStatusInfo({
+        checkedCandidates: Number(meta.totalCandidatesChecked ?? previousCandidates.length),
+        aiCheckedCount: Number(meta.aiCheckedCount ?? 0),
+        aiAvailable: Boolean(meta.aiAvailable),
+        warning: meta.aiError
+          ? 'IA indisponível temporariamente — comparação feita por vocabulário técnico multilíngue.'
+          : meta.aiAvailable === false
+            ? 'IA não configurada — comparação feita por vocabulário técnico multilíngue.'
+            : undefined,
+      });
+    } catch {
+      setMatchStatusInfo({
+        checkedCandidates: previousCandidates.length,
+        aiCheckedCount: 0,
+        aiAvailable: false,
+        warning:
+          'Não foi possível consultar o servidor de equivalência semântica; mantida a comparação automática local.',
+      });
+    } finally {
+      setMatchingSemantic(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -408,6 +554,8 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
 
     setError(null);
     setParsing(true);
+    setMatchingSemantic(false);
+    setMatchStatusInfo(null);
     setDraftItems([]);
     setFileName(file.name);
 
@@ -428,12 +576,26 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
         throw new Error(data?.error || 'Não foi possível extrair os itens do arquivo.');
       }
 
-      const mapped: ImportedItemDraft[] = (data.itens || []).map((it: any, idx: number) => ({
-        tempId: `IMP-${Date.now()}-${idx}`,
-        numeroItem: String(it.numeroItem || idx + 1),
-        perguntaOriginal: String(it.perguntaOriginal || '').trim(),
-        referenciaNormativa: String(it.referenciaNormativa || '').trim(),
-      }));
+      const mapped: ImportedItemDraft[] = (data.itens || []).map((it: any, idx: number) => {
+        const perguntaOriginal = String(it.perguntaOriginal || '').trim();
+        const referenciaNormativa = String(it.referenciaNormativa || '').trim();
+        const match =
+          previousCandidates.length > 0
+            ? findBestQuestionMatch({ perguntaOriginal, referenciaNormativa }, previousCandidates)
+            : null;
+        return {
+          tempId: `IMP-${Date.now()}-${idx}`,
+          numeroItem: String(it.numeroItem || idx + 1),
+          perguntaOriginal,
+          referenciaNormativa,
+          matchedCandidate: match?.candidate,
+          matchScore: match?.score,
+          matchType: match?.matchType,
+          matchReason: match?.reason,
+          applyMatchedAnswer: match ? match.score >= 68 : false,
+          includeMatchedEvidences: true,
+        };
+      });
 
       if (mapped.length === 0) {
         throw new Error('Nenhum item identificável foi localizado neste arquivo.');
@@ -443,6 +605,8 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
       setHashSha256(String(data.hashSha256 || ''));
       setOrigemExtracao(String(data.origemExtracao || ''));
       setDraftItems(mapped);
+
+      void runCrossLanguageMatching(mapped);
     } catch (err: any) {
       setError(err?.message || 'Falha ao processar o arquivo enviado.');
     } finally {
@@ -451,7 +615,12 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
   };
 
   const handleConfirm = async () => {
-    const valid = draftItems.filter((d) => d.perguntaOriginal.trim().length > 0);
+    const valid = draftItems
+      .filter((d) => d.perguntaOriginal.trim().length > 0)
+      .map((d) => ({
+        ...d,
+        includeMatchedEvidences,
+      }));
     if (valid.length === 0) {
       setError('Mantenha ao menos um item válido para importar.');
       return;
@@ -544,8 +713,93 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
                     </>
                   )}
                 </div>
-                <span>Revise antes de gravar na auditoria</span>
+                {matchingSemantic ? (
+                  <span className="inline-flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Verificando equivalências (inclusive em outros idiomas)...</span>
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {previousCandidates.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => void runCrossLanguageMatching(draftItems)}
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                      >
+                        Reverificar equivalências
+                      </button>
+                    )}
+                    <span>Revise antes de gravar na auditoria</span>
+                  </div>
+                )}
               </div>
+
+              {previousCandidates.length === 0 ? (
+                <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-xs text-slate-600 dark:text-slate-400">
+                  Comparação automática entre listas: nenhuma outra auditoria possui itens já respondidos ou marcados (Conforme / Não Conforme / Não Aplicável) para trazer respostas.
+                </div>
+              ) : !matchingSemantic && matchedCount === 0 && matchStatusInfo ? (
+                <div className="p-3 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/60 text-xs text-slate-600 dark:text-slate-400 flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    Comparado com {matchStatusInfo.checkedCandidates} item(ns) respondido(s) de outras listas (inclusive em outros idiomas): nenhuma pergunta equivalente localizada.
+                    {matchStatusInfo.warning ? ` (${matchStatusInfo.warning})` : ''}
+                  </span>
+                </div>
+              ) : null}
+
+              {matchStatusInfo?.warning && matchedCount > 0 && (
+                <div className="p-2.5 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 text-[11px] text-amber-800 dark:text-amber-300">
+                  {matchStatusInfo.warning}
+                </div>
+              )}
+
+              {/* Resumo de correspondências encontradas em outras listas */}
+              {matchedCount > 0 && (
+                <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/70 dark:bg-emerald-950/30 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="font-semibold text-emerald-900 dark:text-emerald-200">
+                      {matchedCount} pergunta(s) igual(is) ou equivalente(s) localizada(s) em outras listas ({selectedReuseCount} selecionada(s) para trazer resposta/marcação)
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraftItems((prev) =>
+                            prev.map((x) =>
+                              x.matchedCandidate ? { ...x, applyMatchedAnswer: true } : x
+                            )
+                          )
+                        }
+                        className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                      >
+                        Trazer Todas ({matchedCount})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDraftItems((prev) =>
+                            prev.map((x) =>
+                              x.matchedCandidate ? { ...x, applyMatchedAnswer: false } : x
+                            )
+                          )
+                        }
+                        className="px-2.5 py-1 text-[11px] font-medium rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-900 cursor-pointer"
+                      >
+                        Desmarcar Todas
+                      </button>
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-[11px] text-emerald-900 dark:text-emerald-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeMatchedEvidences}
+                      onChange={(e) => setIncludeMatchedEvidences(e.target.checked)}
+                      className="rounded border-emerald-400"
+                    />
+                    <span>Trazer também as referências de evidências vinculadas (quando existirem)</span>
+                  </label>
+                </div>
+              )}
 
               <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
                 <table className="w-full text-left text-xs">
@@ -553,7 +807,7 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
                     <tr>
                       <th className="px-3 py-2 font-medium w-24">Número</th>
                       <th className="px-3 py-2 font-medium">Pergunta / Requisito Original</th>
-                      <th className="px-3 py-2 font-medium w-44">Referência</th>
+                      <th className="px-3 py-2 font-medium w-40">Referência</th>
                       <th className="px-3 py-2 font-medium w-12 text-right">Remover</th>
                     </tr>
                   </thead>
@@ -572,7 +826,7 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
                             className="w-full px-2 py-1 text-xs font-mono tabular-nums rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
                           />
                         </td>
-                        <td className="px-3 py-2">
+                        <td className="px-3 py-2 space-y-2">
                           <textarea
                             rows={2}
                             value={item.perguntaOriginal}
@@ -585,6 +839,64 @@ export const AuditImportModal: React.FC<AuditImportModalProps> = ({
                             }
                             className="w-full px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
                           />
+                          {item.matchedCandidate && (
+                            <div className="p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-900/80 bg-emerald-50/50 dark:bg-emerald-950/20 space-y-1.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300">
+                                  {item.matchType === 'EXATA'
+                                    ? 'Pergunta idêntica (100%)'
+                                    : item.matchType === 'SEMANTICA_IA'
+                                    ? `Equivalente por IA / outro idioma (${item.matchScore}%)`
+                                    : `Equivalente (${item.matchScore}%)`}
+                                  {' · '}
+                                  {item.matchedCandidate.auditNome} (Item {item.matchedCandidate.itemNumero})
+                                </span>
+                                <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                                  Marcação: {SITUACAO_LABELS[item.matchedCandidate.situacao]}
+                                </span>
+                              </div>
+                              {item.matchReason && (
+                                <p className="text-[11px] text-emerald-800/90 dark:text-emerald-300/90">
+                                  {item.matchReason}
+                                </p>
+                              )}
+                              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                                <span className="font-medium">Pergunta anterior:</span>{' '}
+                                {item.matchedCandidate.pergunta}
+                              </p>
+                              {item.matchedCandidate.resposta?.trim() && (
+                                <p className="text-[11px] text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60 p-1.5 rounded border border-slate-200/70 dark:border-slate-800">
+                                  <span className="font-medium">Resposta anterior:</span>{' '}
+                                  {item.matchedCandidate.resposta.slice(0, 220)}
+                                  {item.matchedCandidate.resposta.length > 220 ? '...' : ''}
+                                </p>
+                              )}
+                              <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                                <label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-900 dark:text-emerald-200 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(item.applyMatchedAnswer)}
+                                    onChange={(e) =>
+                                      setDraftItems((prev) =>
+                                        prev.map((x, i) =>
+                                          i === idx ? { ...x, applyMatchedAnswer: e.target.checked } : x
+                                        )
+                                      )
+                                    }
+                                    className="rounded border-emerald-400"
+                                  />
+                                  <span>
+                                    Trazer resposta e confirmação ({SITUACAO_LABELS[item.matchedCandidate.situacao]})
+                                  </span>
+                                </label>
+                                {item.matchedCandidate.evidencias.length > 0 && (
+                                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                                    +{item.matchedCandidate.evidencias.length} evidência(s)
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-3 py-2">
                           <input
@@ -1109,6 +1421,7 @@ export interface PreviousAuditsSearchModalProps {
     dataAuditoria: string;
     itemNumero: string;
     resposta: string;
+    situacao?: SituacaoItemAuditoriaPrep;
     referenciaNormativa?: string;
     evidencias?: EvidenciaVinculadaPrep[];
   }) => void;
@@ -1143,13 +1456,14 @@ export const PreviousAuditsSearchModal: React.FC<PreviousAuditsSearchModalProps>
       pergunta: string;
       referenciaNormativa: string;
       resposta: string;
+      situacao: SituacaoItemAuditoriaPrep;
       evidencias: EvidenciaVinculadaPrep[];
       origem: 'CENTRAL_AUDITORIAS' | 'HISTORICO_SGQ';
     }> = [];
 
     allItems.forEach((it) => {
       if (currentAuditId && it.auditId === currentAuditId) return;
-      if (!it.respostaImpacto || !it.respostaImpacto.trim()) return;
+      if (!isItemRespondidoPrep(it)) return;
       const a = auditMap.get(it.auditId);
       results.push({
         key: `PREP-${it.id}`,
@@ -1160,7 +1474,8 @@ export const PreviousAuditsSearchModal: React.FC<PreviousAuditsSearchModalProps>
         itemNumero: it.numeroItem,
         pergunta: it.perguntaOriginal,
         referenciaNormativa: it.referenciaNormativa,
-        resposta: it.respostaImpacto,
+        resposta: it.respostaImpacto || '',
+        situacao: it.situacao,
         evidencias: it.evidencias || [],
         origem: 'CENTRAL_AUDITORIAS',
       });
@@ -1180,6 +1495,14 @@ export const PreviousAuditsSearchModal: React.FC<PreviousAuditsSearchModalProps>
         pergunta: req.requisitoOriginal || req.titulo || '',
         referenciaNormativa: req.normaReferencia || '',
         resposta: resp,
+        situacao:
+          req.statusAtendimento === 'CONFORME'
+            ? 'ATENDIDO'
+            : req.statusAtendimento === 'NAO_CONFORME'
+            ? 'NAO_ATENDIDO'
+            : req.statusAtendimento === 'NAO_APLICAVEL'
+            ? 'NAO_APLICAVEL'
+            : 'PENDENTE_DE_AVALIACAO',
         evidencias: [],
         origem: 'HISTORICO_SGQ',
       });
@@ -1273,6 +1596,10 @@ export const PreviousAuditsSearchModal: React.FC<PreviousAuditsSearchModalProps>
                     )}
                     <span aria-hidden="true"> · </span>
                     <span className="font-mono">Item {entry.itemNumero}</span>
+                    <span aria-hidden="true"> · </span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      {SITUACAO_LABELS[entry.situacao]}
+                    </span>
                   </div>
                   {canApplyToCurrentItem && onApplyToCurrentItem && (
                     <button
@@ -1285,6 +1612,7 @@ export const PreviousAuditsSearchModal: React.FC<PreviousAuditsSearchModalProps>
                           dataAuditoria: entry.dataAuditoria,
                           itemNumero: entry.itemNumero,
                           resposta: entry.resposta,
+                          situacao: entry.situacao,
                           referenciaNormativa: entry.referenciaNormativa,
                           evidencias: includeEvidences ? entry.evidencias : [],
                         });
@@ -1307,7 +1635,9 @@ export const PreviousAuditsSearchModal: React.FC<PreviousAuditsSearchModalProps>
                   </p>
                 )}
                 <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-950 text-xs text-slate-700 dark:text-slate-300 whitespace-pre-line">
-                  {entry.resposta}
+                  {entry.resposta.trim()
+                    ? entry.resposta
+                    : `Avaliação marcada como: ${SITUACAO_LABELS[entry.situacao]} (sem texto adicional).`}
                 </div>
                 {entry.evidencias.length > 0 && (
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -1323,3 +1653,456 @@ export const PreviousAuditsSearchModal: React.FC<PreviousAuditsSearchModalProps>
     </div>
   );
 };
+
+// ============================================================================
+// 6. MODAL DE VERIFICAÇÃO EM LOTE PARA LISTA JÁ IMPORTADA (MULTILÍNGUE)
+// ============================================================================
+export interface ExistingItemMatchDraft {
+  item: ItemAuditoriaPreparacao;
+  matchedCandidate?: PreviousItemCandidate;
+  matchScore?: number;
+  matchType?: MatchConfidenceType;
+  matchReason?: string;
+  applyMatchedAnswer: boolean;
+}
+
+export interface ExistingItemsMatchModalProps {
+  open: boolean;
+  organizationId: string;
+  currentAuditId: string;
+  currentAuditName: string;
+  currentItems: ItemAuditoriaPreparacao[];
+  audits: AuditoriaPreparacao[];
+  allItems: ItemAuditoriaPreparacao[];
+  historicalRequirements?: RequisitoAuditoriaExterna[];
+  onApplyMatches: (
+    selected: Array<{
+      item: ItemAuditoriaPreparacao;
+      candidate: PreviousItemCandidate;
+      score: number;
+      matchType: MatchConfidenceType;
+      reason: string;
+      includeEvidences: boolean;
+    }>
+  ) => Promise<void>;
+  onClose: () => void;
+}
+
+export const ExistingItemsMatchModal: React.FC<ExistingItemsMatchModalProps> = ({
+  open,
+  organizationId,
+  currentAuditId,
+  currentAuditName,
+  currentItems,
+  audits,
+  allItems,
+  historicalRequirements = [],
+  onApplyMatches,
+  onClose,
+}) => {
+  const [onlyPending, setOnlyPending] = useState(true);
+  const [includeEvidences, setIncludeEvidences] = useState(true);
+  const [matchingSemantic, setMatchingSemantic] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [rows, setRows] = useState<ExistingItemMatchDraft[]>([]);
+  const [statusInfo, setStatusInfo] = useState<{
+    checkedCandidates: number;
+    warning?: string;
+  } | null>(null);
+
+  const previousCandidates = useMemo(
+    () => buildPreviousItemCandidates(audits, allItems, historicalRequirements, currentAuditId),
+    [audits, allItems, historicalRequirements, currentAuditId]
+  );
+
+  const targetItems = useMemo(() => {
+    return currentItems.filter((it) => (onlyPending ? !isItemRespondidoPrep(it) : true));
+  }, [currentItems, onlyPending]);
+
+  const runBatchCheck = async (itemsToScan: ItemAuditoriaPreparacao[]) => {
+    setError(null);
+    const initialRows: ExistingItemMatchDraft[] = itemsToScan.map((item) => {
+      const det =
+        previousCandidates.length > 0
+          ? findBestQuestionMatch(
+              {
+                perguntaOriginal: item.perguntaOriginal,
+                referenciaNormativa: item.referenciaNormativa,
+              },
+              previousCandidates
+            )
+          : null;
+      return {
+        item,
+        matchedCandidate: det?.candidate,
+        matchScore: det?.score,
+        matchType: det?.matchType,
+        matchReason: det?.reason,
+        applyMatchedAnswer: Boolean(det && det.score >= 68),
+      };
+    });
+    setRows(initialRows);
+
+    if (previousCandidates.length === 0 || itemsToScan.length === 0) {
+      setStatusInfo({ checkedCandidates: previousCandidates.length });
+      return;
+    }
+
+    const needSemantic = initialRows.filter(
+      (r) => !r.matchedCandidate || (r.matchScore || 0) < 78
+    );
+    if (needSemantic.length === 0) {
+      setStatusInfo({ checkedCandidates: previousCandidates.length });
+      return;
+    }
+
+    setMatchingSemantic(true);
+    try {
+      const resp = await fetch('/api/audit-prep/match-previous', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          importedItems: needSemantic.slice(0, 250).map((r) => ({
+            tempId: r.item.id,
+            numeroItem: r.item.numeroItem,
+            perguntaOriginal: r.item.perguntaOriginal,
+            referenciaNormativa: r.item.referenciaNormativa,
+          })),
+          candidates: previousCandidates.slice(0, 250).map((c) => ({
+            key: c.key,
+            auditId: c.auditId,
+            auditNome: c.auditNome,
+            entidade: c.entidade,
+            dataAuditoria: c.dataAuditoria,
+            itemNumero: c.itemNumero,
+            pergunta: c.pergunta,
+            referenciaNormativa: c.referenciaNormativa,
+            resposta: c.resposta,
+            situacao: c.situacao,
+            validadoQualidade: c.validadoQualidade,
+            origem: c.origem,
+          })),
+        }),
+      });
+      const matchJson = await resp.json();
+      if (!resp.ok || !matchJson?.success) {
+        throw new Error(matchJson?.error || 'Falha ao verificar equivalências entre listas.');
+      }
+
+      const candMap = new Map(previousCandidates.map((c) => [c.key, c]));
+      if (matchJson.matches) {
+        setRows((prev) =>
+          prev.map((row) => {
+            const m = matchJson.matches[row.item.id];
+            if (!m) return row;
+            const cand = candMap.get(m.candidateKey);
+            if (!cand) return row;
+            if (row.matchScore && row.matchScore > m.score) return row;
+            return {
+              ...row,
+              matchedCandidate: cand,
+              matchScore: m.score,
+              matchType: m.matchType,
+              matchReason: m.reason,
+              applyMatchedAnswer: m.score >= 68,
+            };
+          })
+        );
+      }
+
+      const meta = matchJson.meta || {};
+      setStatusInfo({
+        checkedCandidates: Number(meta.totalCandidatesChecked ?? previousCandidates.length),
+        warning: meta.aiError
+          ? 'IA indisponível temporariamente — comparação feita por vocabulário técnico multilíngue.'
+          : meta.aiAvailable === false
+            ? 'IA não configurada — comparação feita por vocabulário técnico multilíngue.'
+            : undefined,
+      });
+    } catch {
+      setStatusInfo({
+        checkedCandidates: previousCandidates.length,
+        warning:
+          'Não foi possível consultar o servidor de equivalência semântica; mantida a comparação automática local.',
+      });
+    } finally {
+      setMatchingSemantic(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    void runBatchCheck(targetItems);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, onlyPending, currentAuditId]);
+
+  const matchedRows = useMemo(
+    () => rows.filter((r) => Boolean(r.matchedCandidate)),
+    [rows]
+  );
+  const selectedRows = useMemo(
+    () => matchedRows.filter((r) => r.applyMatchedAnswer),
+    [matchedRows]
+  );
+
+  if (!open) return null;
+
+  const handleApplySelected = async () => {
+    if (selectedRows.length === 0) return;
+    setApplying(true);
+    setError(null);
+    try {
+      await onApplyMatches(
+        selectedRows.map((r) => ({
+          item: r.item,
+          candidate: r.matchedCandidate!,
+          score: r.matchScore || 0,
+          matchType: r.matchType || 'EQUIVALENTE',
+          reason: r.matchReason || 'Equivalência encontrada em outra lista',
+          includeEvidences,
+        }))
+      );
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao aplicar respostas reutilizadas.');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4">
+      <div className="w-full max-w-4xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[88vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-800">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Verificar Perguntas Equivalentes em Outras Listas
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Auditoria atual: {currentAuditName} · Compara perguntas já cadastradas (inclusive em outros idiomas) com outras listas respondidas.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={applying}
+            className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1 rounded-md cursor-pointer"
+            aria-label="Fechar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={onlyPending}
+                  onChange={(e) => setOnlyPending(e.target.checked)}
+                  disabled={matchingSemantic || applying}
+                  className="rounded border-slate-300"
+                />
+                <span>Verificar apenas itens pendentes/sem resposta ({currentItems.filter((i) => !isItemRespondidoPrep(i)).length})</span>
+              </label>
+              <label className="inline-flex items-center gap-2 text-slate-700 dark:text-slate-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeEvidences}
+                  onChange={(e) => setIncludeEvidences(e.target.checked)}
+                  disabled={applying}
+                  className="rounded border-slate-300"
+                />
+                <span>Trazer também referências de evidências</span>
+              </label>
+            </div>
+
+            {previousCandidates.length > 0 && targetItems.length > 0 && (
+              <button
+                type="button"
+                onClick={() => void runBatchCheck(targetItems)}
+                disabled={matchingSemantic || applying}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+              >
+                {matchingSemantic ? 'Verificando...' : 'Reverificar agora'}
+              </button>
+            )}
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300">
+              {error}
+            </div>
+          )}
+
+          {matchingSemantic && (
+            <div className="p-3 rounded-lg border border-blue-200 dark:border-blue-900 bg-blue-50/70 dark:bg-blue-950/30 text-xs text-blue-800 dark:text-blue-300 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+              <span>
+                Comparando {targetItems.length} item(ns) desta auditoria com {previousCandidates.length} item(ns) respondido(s) de outras listas (inclusive em outros idiomas)...
+              </span>
+            </div>
+          )}
+
+          {statusInfo?.warning && (
+            <div className="p-2.5 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-950/30 text-[11px] text-amber-800 dark:text-amber-300">
+              {statusInfo.warning}
+            </div>
+          )}
+
+          {previousCandidates.length === 0 ? (
+            <div className="p-6 text-center border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-600 dark:text-slate-400">
+              Nenhuma outra auditoria possui itens marcados (Conforme / Não Conforme / Não Aplicável) ou respondidos para reutilização.
+            </div>
+          ) : targetItems.length === 0 ? (
+            <div className="p-6 text-center border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-600 dark:text-slate-400">
+              Todos os itens desta auditoria já possuem resposta ou marcação registrada. Desmarque o filtro acima caso queira comparar mesmo os itens já respondidos.
+            </div>
+          ) : !matchingSemantic && matchedRows.length === 0 ? (
+            <div className="p-6 text-center border border-slate-200 dark:border-slate-800 rounded-lg text-xs text-slate-600 dark:text-slate-400">
+              Comparados {targetItems.length} item(ns) desta lista com {statusInfo?.checkedCandidates ?? previousCandidates.length} item(ns) respondido(s) de outras listas: nenhuma correspondência encontrada.
+            </div>
+          ) : matchedRows.length > 0 ? (
+            <div className="space-y-3">
+              <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50/70 dark:bg-emerald-950/30 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-emerald-900 dark:text-emerald-200">
+                  {matchedRows.length} item(ns) com pergunta igual ou equivalente encontrada ({selectedRows.length} selecionado(s) para aplicar)
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRows((prev) =>
+                        prev.map((r) =>
+                          r.matchedCandidate ? { ...r, applyMatchedAnswer: true } : r
+                        )
+                      )
+                    }
+                    className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                  >
+                    Selecionar Todos ({matchedRows.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setRows((prev) =>
+                        prev.map((r) =>
+                          r.matchedCandidate ? { ...r, applyMatchedAnswer: false } : r
+                        )
+                      )
+                    }
+                    className="px-2.5 py-1 text-[11px] font-medium rounded-md border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-900 cursor-pointer"
+                  >
+                    Desmarcar Todos
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {matchedRows.map((row) => {
+                  const cand = row.matchedCandidate!;
+                  return (
+                    <div
+                      key={row.item.id}
+                      className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <label className="inline-flex items-start gap-2 text-xs font-semibold text-slate-900 dark:text-slate-100 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={row.applyMatchedAnswer}
+                            onChange={(e) =>
+                              setRows((prev) =>
+                                prev.map((x) =>
+                                  x.item.id === row.item.id
+                                    ? { ...x, applyMatchedAnswer: e.target.checked }
+                                    : x
+                                )
+                              )
+                            }
+                            className="mt-0.5 rounded border-emerald-500"
+                          />
+                          <span>
+                            Item {row.item.numeroItem}: {row.item.perguntaOriginal}
+                          </span>
+                        </label>
+                        <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
+                          {row.matchType === 'EXATA'
+                            ? 'Idêntica (100%)'
+                            : row.matchType === 'SEMANTICA_IA'
+                              ? `Equivalente IA / outro idioma (${row.matchScore}%)`
+                              : `Equivalente (${row.matchScore}%)`}
+                        </span>
+                      </div>
+
+                      <div className="pl-6 space-y-1 text-[11px]">
+                        <div className="text-slate-600 dark:text-slate-400">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            Origem: {cand.auditNome} · Item {cand.itemNumero}
+                          </span>
+                          {' · '}
+                          <span className="font-semibold">
+                            Marcação: {SITUACAO_LABELS[cand.situacao]}
+                          </span>
+                          {cand.evidencias.length > 0 && (
+                            <>
+                              {' · '}
+                              <span>+{cand.evidencias.length} evidência(s)</span>
+                            </>
+                          )}
+                        </div>
+                        {row.matchReason && (
+                          <p className="text-emerald-800 dark:text-emerald-300">{row.matchReason}</p>
+                        )}
+                        <p className="text-slate-600 dark:text-slate-400">
+                          <span className="font-medium">Pergunta anterior:</span> {cand.pergunta}
+                        </p>
+                        {cand.resposta.trim() && (
+                          <p className="p-2 rounded bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300">
+                            <span className="font-medium">Resposta anterior:</span>{' '}
+                            {cand.resposta.slice(0, 260)}
+                            {cand.resposta.length > 260 ? '...' : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-200 dark:border-slate-800">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={applying}
+            className="px-4 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            Fechar
+          </button>
+          {matchedRows.length > 0 && (
+            <button
+              type="button"
+              onClick={handleApplySelected}
+              disabled={applying || selectedRows.length === 0}
+              className="px-4 py-2 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+            >
+              {applying ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Check className="w-3.5 h-3.5" />
+              )}
+              <span>Aplicar Selecionadas ({selectedRows.length})</span>
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+

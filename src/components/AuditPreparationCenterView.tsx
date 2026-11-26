@@ -53,6 +53,7 @@ import {
   SugestaoIAAuditoriaPrep,
   TipoAuditoriaPreparacao,
   calcularResumoAuditoriaPrep,
+  isItemRespondidoPrep,
 } from '../types/auditPrep';
 import type {
   AuditoriaExternaRecord,
@@ -72,9 +73,11 @@ import {
   AuditImportModal,
   ConfirmActionModal,
   EvidencePickerModal,
+  ExistingItemsMatchModal,
   ImportedItemDraft,
   PreviousAuditsSearchModal,
 } from './audit-prep/AuditPrepModals';
+import type { MatchConfidenceType, PreviousItemCandidate } from '../utils/auditPrepMatcher';
 
 export interface AuditPreparationCenterViewProps {
   activeOrganization: OrganizationRecord | null;
@@ -93,11 +96,39 @@ export interface AuditPreparationCenterViewProps {
 
 type MainArea = 'AUDITORIAS' | 'ITENS' | 'RELATORIO';
 
+const SITUACAO_CHOICE_OPTIONS: Array<{
+  value: 'ATENDIDO' | 'NAO_ATENDIDO' | 'NAO_APLICAVEL';
+  label: string;
+  activeClass: string;
+  idleClass: string;
+}> = [
+  {
+    value: 'ATENDIDO',
+    label: 'Conforme',
+    activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-xs',
+    idleClass:
+      'bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-500 hover:text-emerald-700 dark:hover:text-emerald-400',
+  },
+  {
+    value: 'NAO_ATENDIDO',
+    label: 'Não Conforme',
+    activeClass: 'bg-rose-600 text-white border-rose-600 shadow-xs',
+    idleClass:
+      'bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-rose-500 hover:text-rose-700 dark:hover:text-rose-400',
+  },
+  {
+    value: 'NAO_APLICAVEL',
+    label: 'Não Aplicável',
+    activeClass: 'bg-slate-700 text-white border-slate-700 shadow-xs',
+    idleClass:
+      'bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400 hover:text-slate-900 dark:hover:text-slate-100',
+  },
+];
+
 const SITUACAO_OPTIONS: Array<{ value: SituacaoItemAuditoriaPrep; label: string }> = [
   { value: 'PENDENTE_DE_AVALIACAO', label: 'Pendente de Avaliação' },
-  { value: 'ATENDIDO', label: 'Atendido' },
-  { value: 'PARCIALMENTE_ATENDIDO', label: 'Parcialmente Atendido' },
-  { value: 'NAO_ATENDIDO', label: 'Não Atendido' },
+  { value: 'ATENDIDO', label: 'Conforme' },
+  { value: 'NAO_ATENDIDO', label: 'Não Conforme' },
   { value: 'NAO_APLICAVEL', label: 'Não Aplicável' },
 ];
 
@@ -183,13 +214,13 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
   // Filtros Área B
   const [itemSearch, setItemSearch] = useState('');
   const [itemSituacaoFilter, setItemSituacaoFilter] = useState<'TODOS' | SituacaoItemAuditoriaPrep>('TODOS');
-  const [onlyMissingEvidence, setOnlyMissingEvidence] = useState(false);
 
   // Modais e feedback
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [editingAudit, setEditingAudit] = useState<AuditoriaPreparacao | null>(null);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isExistingMatchOpen, setIsExistingMatchOpen] = useState(false);
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
   const [isPreviousSearchOpen, setIsPreviousSearchOpen] = useState(false);
   const [previousSearchForCurrentItem, setPreviousSearchForCurrentItem] = useState(false);
@@ -397,15 +428,6 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     const q = itemSearch.trim().toLowerCase();
     return selectedAuditItems.filter((it) => {
       if (itemSituacaoFilter !== 'TODOS' && it.situacao !== itemSituacaoFilter) return false;
-      if (
-        onlyMissingEvidence &&
-        !(
-          (it.situacao === 'ATENDIDO' || it.situacao === 'PARCIALMENTE_ATENDIDO') &&
-          (!it.evidencias || it.evidencias.length === 0)
-        )
-      ) {
-        return false;
-      }
       if (!q) return true;
       return (
         it.numeroItem.toLowerCase().includes(q) ||
@@ -414,23 +436,19 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
         (it.respostaImpacto || '').toLowerCase().includes(q)
       );
     });
-  }, [selectedAuditItems, itemSearch, itemSituacaoFilter, onlyMissingEvidence]);
+  }, [selectedAuditItems, itemSearch, itemSituacaoFilter]);
 
-  // Checklist de prontidão dinâmica (Área C)
+  // Checklist de prontidão dinâmica (Área C) — clique em uma das 3 opções já conta como resposta e evidência é opcional
   const readinessChecks = useMemo(() => {
-    const semResposta = selectedAuditItems.filter(
-      (i) => i.situacao !== 'NAO_APLICAVEL' && !i.respostaImpacto?.trim()
-    );
-    const semEvidencia = selectedAuditItems.filter(
-      (i) =>
-        (i.situacao === 'ATENDIDO' || i.situacao === 'PARCIALMENTE_ATENDIDO') &&
-        (!i.evidencias || i.evidencias.length === 0)
+    const semResposta = selectedAuditItems.filter((i) => !isItemRespondidoPrep(i));
+    const comEvidencia = selectedAuditItems.filter(
+      (i) => Boolean(i.evidencias && i.evidencias.length > 0)
     );
     const reutilizadasSemConfirmacao = selectedAuditItems.filter(
       (i) => i.reutilizadaDe && !i.reutilizadaDe.validadeVerificada
     );
     const aguardandoValidacao = selectedAuditItems.filter(
-      (i) => i.respostaImpacto?.trim() && !i.validadoQualidade
+      (i) => isItemRespondidoPrep(i) && !i.validadoQualidade
     );
     const pendenciasAbertas = selectedAuditItems.filter(
       (i) =>
@@ -441,7 +459,7 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     );
     return {
       semResposta,
-      semEvidencia,
+      comEvidencia,
       reutilizadasSemConfirmacao,
       aguardandoValidacao,
       pendenciasAbertas,
@@ -570,39 +588,99 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     if (!selectedAudit) return;
     const now = new Date().toISOString();
     const baseOrder = selectedAuditItems.length;
-    const newItems: ItemAuditoriaPreparacao[] = drafts.map((d, idx) => ({
-      id: `ITEM-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
-      organizationId: orgId,
-      auditId: selectedAudit.id,
-      ordem: baseOrder + idx + 1,
-      numeroItem: d.numeroItem.trim() || String(baseOrder + idx + 1),
-      perguntaOriginal: d.perguntaOriginal.trim(),
-      referenciaNormativa: d.referenciaNormativa.trim(),
-      respostaImpacto: '',
-      evidencias: [],
-      situacao: 'PENDENTE_DE_AVALIACAO',
-      observacoesPendencias: '',
-      fonteImportacao: fonte,
-      origemResposta: 'NAO_PREENCHIDA',
-      validadoQualidade: false,
-      criadoPorUid: actorUid,
-      criadoPorNome: actorName,
-      atualizadoPorUid: actorUid,
-      atualizadoPorNome: actorName,
-      createdAt: now,
-      updatedAt: now,
-      historicoAlteracoes: [
+    let reusedCount = 0;
+
+    const newItems: ItemAuditoriaPreparacao[] = drafts.map((d, idx) => {
+      const applyMatch = Boolean(d.applyMatchedAnswer && d.matchedCandidate);
+      const cand = applyMatch ? d.matchedCandidate! : undefined;
+
+      const situacaoInicial: SituacaoItemAuditoriaPrep =
+        cand && cand.situacao && cand.situacao !== 'PENDENTE_DE_AVALIACAO'
+          ? cand.situacao
+          : 'PENDENTE_DE_AVALIACAO';
+
+      const respostaInicial = cand ? (cand.resposta || '').trim() : '';
+
+      const evidenciasIniciais: EvidenciaVinculadaPrep[] =
+        cand && d.includeMatchedEvidences !== false && cand.evidencias?.length > 0
+          ? cand.evidencias.map((ev, evIdx) => ({
+              ...ev,
+              evidenciaId: `EV-REUSE-${Date.now()}-${idx}-${evIdx}-${Math.random().toString(36).slice(2, 5)}`,
+              anexadoEm: now,
+              anexadoPorNome: actorName,
+            }))
+          : [];
+
+      const referenciaInicial =
+        d.referenciaNormativa.trim() || (cand ? cand.referenciaNormativa || '' : '');
+
+      const historico: HistoricoAlteracaoItemPrep[] = [
         {
           id: `HIST-${Date.now()}-${idx}`,
           dataHora: now,
           usuarioUid: actorUid,
           usuarioNome: actorName,
           acao: 'CRIACAO',
-          situacaoNova: 'PENDENTE_DE_AVALIACAO',
+          situacaoNova: situacaoInicial,
           detalhes: `Item importado de ${fonte.tipo} (${fonte.nomeArquivo || 'arquivo'}).`,
         },
-      ],
-    }));
+      ];
+
+      if (cand) {
+        reusedCount++;
+        const tipoMatchLabel =
+          d.matchType === 'EXATA'
+            ? 'pergunta idêntica'
+            : d.matchType === 'SEMANTICA_IA'
+              ? 'equivalência semântica'
+              : 'pergunta equivalente';
+        historico.unshift({
+          id: `HIST-REUSE-${Date.now()}-${idx}`,
+          dataHora: now,
+          usuarioUid: actorUid,
+          usuarioNome: actorName,
+          acao: 'REUTILIZACAO_AUDITORIA',
+          situacaoNova: situacaoInicial,
+          detalhes: `Resposta e confirmação (${SITUACAO_LABELS[situacaoInicial]}) trazidas automaticamente de "${cand.auditNome}" · Item ${cand.itemNumero} (${d.matchScore || 0}% · ${tipoMatchLabel}${d.matchReason ? `: ${d.matchReason}` : ''}).`,
+        });
+      }
+
+      return {
+        id: `ITEM-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        organizationId: orgId,
+        auditId: selectedAudit.id,
+        ordem: baseOrder + idx + 1,
+        numeroItem: d.numeroItem.trim() || String(baseOrder + idx + 1),
+        perguntaOriginal: d.perguntaOriginal.trim(),
+        referenciaNormativa: referenciaInicial,
+        respostaImpacto: respostaInicial,
+        evidencias: evidenciasIniciais,
+        situacao: situacaoInicial,
+        observacoesPendencias: '',
+        fonteImportacao: fonte,
+        origemResposta: cand ? 'REUTILIZADA_AUDITORIA_ANTERIOR' : 'NAO_PREENCHIDA',
+        ...(cand
+          ? {
+              reutilizadaDe: {
+                auditId: cand.auditId,
+                auditNome: cand.auditNome,
+                entidade: cand.entidade,
+                dataAuditoria: cand.dataAuditoria,
+                itemNumero: cand.itemNumero,
+                validadeVerificada: false,
+              },
+            }
+          : {}),
+        validadoQualidade: false,
+        criadoPorUid: actorUid,
+        criadoPorNome: actorName,
+        atualizadoPorUid: actorUid,
+        atualizadoPorNome: actorName,
+        createdAt: now,
+        updatedAt: now,
+        historicoAlteracoes: historico,
+      };
+    });
 
     if (auth.currentUser) {
       await saveAuditPrepItemsBatch(orgId, newItems, userProfile);
@@ -618,7 +696,10 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     }
     setFeedback({
       type: 'success',
-      text: `${newItems.length} item(ns) importado(s) de "${fonte.nomeArquivo}" com preservação do texto original.`,
+      text:
+        reusedCount > 0
+          ? `${newItems.length} item(ns) importado(s) de "${fonte.nomeArquivo}" (${reusedCount} já com resposta/confirmação trazida de listas anteriores — confirme a validade ao revisar).`
+          : `${newItems.length} item(ns) importado(s) de "${fonte.nomeArquivo}" com preservação do texto original.`,
     });
   };
 
@@ -655,7 +736,9 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
       const now = new Date().toISOString();
       if (isCreatingManualItem || !selectedItem) {
         const newId = `ITEM-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const origemResp: ItemAuditoriaPreparacao['origemResposta'] = draftResposta.trim()
+        const hasMarkedAnswer =
+          draftSituacao !== 'PENDENTE_DE_AVALIACAO' || Boolean(draftResposta.trim());
+        const origemResp: ItemAuditoriaPreparacao['origemResposta'] = hasMarkedAnswer
           ? draftOrigemResposta === 'NAO_PREENCHIDA'
             ? 'MANUAL'
             : draftOrigemResposta
@@ -681,11 +764,11 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
           origemResposta: origemResp,
           sugestaoIA: draftSugestaoIA,
           reutilizadaDe: draftReutilizadaDe,
-          validadoQualidade: Boolean(draftValidadoQualidade && draftResposta.trim()),
+          validadoQualidade: Boolean(draftValidadoQualidade && hasMarkedAnswer),
           validadoQualidadePorNome:
-            draftValidadoQualidade && draftResposta.trim() ? actorName : undefined,
+            draftValidadoQualidade && hasMarkedAnswer ? actorName : undefined,
           validadoQualidadeEm:
-            draftValidadoQualidade && draftResposta.trim() ? now : undefined,
+            draftValidadoQualidade && hasMarkedAnswer ? now : undefined,
           criadoPorUid: actorUid,
           criadoPorNome: actorName,
           atualizadoPorUid: actorUid,
@@ -753,10 +836,12 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
           historico.unshift(snapshot);
         }
 
+        const hasMarkedAnswer =
+          draftSituacao !== 'PENDENTE_DE_AVALIACAO' || Boolean(draftResposta.trim());
         let origemResp = draftOrigemResposta;
-        if (draftResposta.trim() && origemResp === 'NAO_PREENCHIDA') {
+        if (hasMarkedAnswer && origemResp === 'NAO_PREENCHIDA') {
           origemResp = 'MANUAL';
-        } else if (!draftResposta.trim()) {
+        } else if (!hasMarkedAnswer) {
           origemResp = 'NAO_PREENCHIDA';
         }
 
@@ -772,13 +857,13 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
           origemResposta: origemResp,
           sugestaoIA: draftSugestaoIA,
           reutilizadaDe: draftReutilizadaDe,
-          validadoQualidade: Boolean(draftValidadoQualidade && draftResposta.trim()),
+          validadoQualidade: Boolean(draftValidadoQualidade && hasMarkedAnswer),
           validadoQualidadePorNome:
-            draftValidadoQualidade && draftResposta.trim()
+            draftValidadoQualidade && hasMarkedAnswer
               ? selectedItem.validadoQualidadePorNome || actorName
               : undefined,
           validadoQualidadeEm:
-            draftValidadoQualidade && draftResposta.trim()
+            draftValidadoQualidade && hasMarkedAnswer
               ? selectedItem.validadoQualidadeEm || now
               : undefined,
           atualizadoPorUid: actorUid,
@@ -804,12 +889,81 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     }
   };
 
+  // Marcação rápida com 1 clique nas 3 opções (Conforme, Não Conforme, Não Aplicável) — já considera como resposta
+  const handleQuickSelectSituacao = async (
+    targetItem: ItemAuditoriaPreparacao,
+    nextSituacao: 'ATENDIDO' | 'NAO_ATENDIDO' | 'NAO_APLICAVEL'
+  ) => {
+    if (!canWrite) return;
+    const isSameItemInEditor = !isCreatingManualItem && selectedItem?.id === targetItem.id;
+    const now = new Date().toISOString();
+    const historico = [...(targetItem.historicoAlteracoes || [])];
+
+    if (targetItem.situacao !== nextSituacao) {
+      historico.unshift({
+        id: `HIST-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+        dataHora: now,
+        usuarioUid: actorUid,
+        usuarioNome: actorName,
+        acao: 'EDICAO',
+        situacaoAnterior: targetItem.situacao,
+        situacaoNova: nextSituacao,
+        detalhes: `Avaliação marcada como ${SITUACAO_LABELS[nextSituacao]}.`,
+      });
+    }
+
+    const baseResposta = isSameItemInEditor ? draftResposta.trim() : targetItem.respostaImpacto;
+    const baseEvidencias = isSameItemInEditor ? draftEvidencias : targetItem.evidencias;
+    const baseObs = isSameItemInEditor ? draftObservacoes.trim() : targetItem.observacoesPendencias;
+    const baseNumero = isSameItemInEditor && draftNumero.trim() ? draftNumero.trim() : targetItem.numeroItem;
+    const basePergunta = isSameItemInEditor && draftPergunta.trim() ? draftPergunta.trim() : targetItem.perguntaOriginal;
+    const baseRef = isSameItemInEditor ? draftReferencia.trim() : targetItem.referenciaNormativa;
+
+    const origemResp =
+      targetItem.origemResposta === 'NAO_PREENCHIDA' ? 'MANUAL' : targetItem.origemResposta;
+
+    const updated: ItemAuditoriaPreparacao = {
+      ...targetItem,
+      numeroItem: baseNumero,
+      perguntaOriginal: basePergunta,
+      referenciaNormativa: baseRef,
+      respostaImpacto: baseResposta,
+      evidencias: baseEvidencias,
+      observacoesPendencias: baseObs,
+      situacao: nextSituacao,
+      origemResposta: origemResp,
+      atualizadoPorUid: actorUid,
+      atualizadoPorNome: actorName,
+      updatedAt: now,
+      historicoAlteracoes: historico,
+    };
+
+    if (isSameItemInEditor) {
+      setDraftSituacao(nextSituacao);
+      setDraftOrigemResposta(origemResp);
+    }
+
+    try {
+      if (auth.currentUser) {
+        await saveAuditPrepItem(orgId, updated, userProfile, false);
+      } else {
+        const next = allItems.map((x) => (x.id === updated.id ? updated : x));
+        setAllItems(next);
+        persistLocalFallback(undefined, next);
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err?.message || 'Erro ao salvar marcação do item.' });
+    }
+  };
+
   const handleToggleQualityValidation = async () => {
     if (!selectedItem || !canApprove) return;
-    if (!draftResposta.trim()) {
+    const hasAnswer =
+      draftSituacao !== 'PENDENTE_DE_AVALIACAO' || Boolean(draftResposta.trim());
+    if (!hasAnswer) {
       setFeedback({
         type: 'error',
-        text: 'Preencha a resposta da IMPACTO antes de validar pela Qualidade.',
+        text: 'Selecione Conforme, Não Conforme ou Não Aplicável (ou preencha uma resposta) antes de validar pela Qualidade.',
       });
       return;
     }
@@ -1031,6 +1185,56 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     });
   };
 
+  const handleConfirmReusedValidity = async () => {
+    if (!draftReutilizadaDe) return;
+    const now = new Date().toISOString();
+    const verifiedRef = {
+      ...draftReutilizadaDe,
+      validadeVerificada: true,
+      verificadaPorNome: actorName,
+      verificadaEm: now,
+    };
+    setDraftReutilizadaDe(verifiedRef);
+
+    if (selectedItem && !isCreatingManualItem) {
+      const historico: HistoricoAlteracaoItemPrep[] = [
+        {
+          id: `HIST-VERIF-${Date.now()}`,
+          dataHora: now,
+          usuarioUid: actorUid,
+          usuarioNome: actorName,
+          acao: 'REUTILIZACAO_AUDITORIA',
+          situacaoNova: draftSituacao,
+          detalhes: `Validade e aplicabilidade da resposta reutilizada de "${verifiedRef.auditNome}" confirmada por ${actorName}.`,
+        },
+        ...(selectedItem.historicoAlteracoes || []),
+      ];
+      const updated: ItemAuditoriaPreparacao = {
+        ...selectedItem,
+        reutilizadaDe: verifiedRef,
+        atualizadoPorUid: actorUid,
+        atualizadoPorNome: actorName,
+        updatedAt: now,
+        historicoAlteracoes: historico,
+      };
+      try {
+        if (auth.currentUser) {
+          await saveAuditPrepItem(orgId, updated, userProfile, false);
+        } else {
+          const next = allItems.map((x) => (x.id === updated.id ? updated : x));
+          setAllItems(next);
+          persistLocalFallback(undefined, next);
+        }
+        setFeedback({
+          type: 'success',
+          text: `Validade da resposta reutilizada confirmada para o Item ${selectedItem.numeroItem}.`,
+        });
+      } catch (err: any) {
+        setFeedback({ type: 'error', text: err?.message || 'Erro ao confirmar validade da resposta reutilizada.' });
+      }
+    }
+  };
+
   const handleApplyPreviousAnswer = (match: {
     auditId: string;
     auditNome: string;
@@ -1038,10 +1242,14 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     dataAuditoria: string;
     itemNumero: string;
     resposta: string;
+    situacao?: SituacaoItemAuditoriaPrep;
     referenciaNormativa?: string;
     evidencias?: EvidenciaVinculadaPrep[];
   }) => {
     setDraftResposta(match.resposta);
+    if (match.situacao && match.situacao !== 'PENDENTE_DE_AVALIACAO') {
+      setDraftSituacao(match.situacao);
+    }
     if (!draftReferencia.trim() && match.referenciaNormativa) {
       setDraftReferencia(match.referenciaNormativa);
     }
@@ -1074,6 +1282,120 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
     setFeedback({
       type: 'success',
       text: `Resposta reutilizada de "${match.auditNome}". Confirme a validade e aplicabilidade antes de validar.`,
+    });
+  };
+
+  const handleApplyExistingMatches = async (
+    selections: Array<{
+      item: ItemAuditoriaPreparacao;
+      candidate: PreviousItemCandidate;
+      score: number;
+      matchType: MatchConfidenceType;
+      reason: string;
+      includeEvidences: boolean;
+    }>
+  ) => {
+    if (!selectedAudit || selections.length === 0) return;
+    const now = new Date().toISOString();
+
+    const updatedItems: ItemAuditoriaPreparacao[] = selections.map((sel, idx) => {
+      const { item, candidate, score, matchType, reason, includeEvidences } = sel;
+      const nextSituacao: SituacaoItemAuditoriaPrep =
+        candidate.situacao && candidate.situacao !== 'PENDENTE_DE_AVALIACAO'
+          ? candidate.situacao
+          : item.situacao;
+
+      const nextResposta = (candidate.resposta || '').trim() || item.respostaImpacto;
+      const nextRef = item.referenciaNormativa?.trim() || candidate.referenciaNormativa || '';
+
+      let mergedEvidences = [...(item.evidencias || [])];
+      if (includeEvidences && candidate.evidencias?.length > 0) {
+        const existingKeys = new Set(
+          mergedEvidences.map((e) => e.arquivoRef?.hashSha256 || `${e.tipo}:${e.referencia}`)
+        );
+        const extras = candidate.evidencias
+          .filter((e) => !existingKeys.has(e.arquivoRef?.hashSha256 || `${e.tipo}:${e.referencia}`))
+          .map((e, evIdx) => ({
+            ...e,
+            evidenciaId: `EV-BATCH-${Date.now()}-${idx}-${evIdx}-${Math.random().toString(36).slice(2, 5)}`,
+            anexadoEm: now,
+            anexadoPorNome: actorName,
+          }));
+        mergedEvidences = [...mergedEvidences, ...extras];
+      }
+
+      const tipoLabel =
+        matchType === 'EXATA'
+          ? 'pergunta idêntica'
+          : matchType === 'SEMANTICA_IA'
+            ? 'equivalência semântica'
+            : 'pergunta equivalente';
+
+      const reutilizadaRef = {
+        auditId: candidate.auditId,
+        auditNome: candidate.auditNome,
+        entidade: candidate.entidade,
+        dataAuditoria: candidate.dataAuditoria,
+        itemNumero: candidate.itemNumero,
+        validadeVerificada: false,
+      };
+
+      const historico: HistoricoAlteracaoItemPrep[] = [
+        {
+          id: `HIST-BATCH-REUSE-${Date.now()}-${idx}`,
+          dataHora: now,
+          usuarioUid: actorUid,
+          usuarioNome: actorName,
+          acao: 'REUTILIZACAO_AUDITORIA',
+          situacaoAnterior: item.situacao,
+          situacaoNova: nextSituacao,
+          respostaAnterior: item.respostaImpacto || undefined,
+          detalhes: `Resposta e confirmação (${SITUACAO_LABELS[nextSituacao]}) trazidas de "${candidate.auditNome}" · Item ${candidate.itemNumero} (${score}% · ${tipoLabel}${reason ? `: ${reason}` : ''}).`,
+        },
+        ...(item.historicoAlteracoes || []),
+      ];
+
+      return {
+        ...item,
+        referenciaNormativa: nextRef,
+        respostaImpacto: nextResposta,
+        evidencias: mergedEvidences,
+        situacao: nextSituacao,
+        origemResposta: 'REUTILIZADA_AUDITORIA_ANTERIOR',
+        reutilizadaDe: reutilizadaRef,
+        validadoQualidade: false,
+        atualizadoPorUid: actorUid,
+        atualizadoPorNome: actorName,
+        updatedAt: now,
+        historicoAlteracoes: historico,
+      };
+    });
+
+    if (auth.currentUser) {
+      await saveAuditPrepItemsBatch(orgId, updatedItems, userProfile);
+    } else {
+      const updatedMap = new Map(updatedItems.map((u) => [u.id, u]));
+      const next = allItems.map((it) => updatedMap.get(it.id) || it);
+      setAllItems(next);
+      persistLocalFallback(undefined, next);
+    }
+
+    const updatedCurrent = selectedItem
+      ? updatedItems.find((u) => u.id === selectedItem.id)
+      : undefined;
+    if (updatedCurrent && !isCreatingManualItem) {
+      setDraftReferencia(updatedCurrent.referenciaNormativa);
+      setDraftResposta(updatedCurrent.respostaImpacto);
+      setDraftEvidencias(updatedCurrent.evidencias);
+      setDraftSituacao(updatedCurrent.situacao);
+      setDraftOrigemResposta(updatedCurrent.origemResposta);
+      setDraftReutilizadaDe(updatedCurrent.reutilizadaDe);
+      setDraftValidadoQualidade(false);
+    }
+
+    setFeedback({
+      type: 'success',
+      text: `${updatedItems.length} item(ns) atualizado(s) com respostas e marcações de outras listas. Confirme a validade ao revisar.`,
     });
   };
 
@@ -1318,7 +1640,7 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                     <th className="px-4 py-3 font-medium">Entidade</th>
                     <th className="px-4 py-3 font-medium">Data</th>
                     <th className="px-4 py-3 font-medium text-right">Itens</th>
-                    <th className="px-4 py-3 font-medium text-right">Atendidos</th>
+                    <th className="px-4 py-3 font-medium text-right">Conformes</th>
                     <th className="px-4 py-3 font-medium text-right">Pendentes</th>
                     <th className="px-4 py-3 font-medium">Situação Geral</th>
                     <th className="px-4 py-3 font-medium text-right">Ações</th>
@@ -1502,20 +1824,20 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                     <span>Total: {selectedAuditResumo.totalItens}</span>
                     <span aria-hidden="true">·</span>
                     <span className="text-emerald-700 dark:text-emerald-400">
-                      Atendidos: {selectedAuditResumo.atendidos}
+                      Conformes: {selectedAuditResumo.atendidos}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span className="text-rose-700 dark:text-rose-400">
+                      Não Conformes: {selectedAuditResumo.naoAtendidos}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      Não Aplicáveis: {selectedAuditResumo.naoAplicaveis}
                     </span>
                     <span aria-hidden="true">·</span>
                     <span className="text-amber-700 dark:text-amber-400">
-                      Pendentes: {selectedAuditResumo.pendentes + selectedAuditResumo.parcialmenteAtendidos + selectedAuditResumo.naoAtendidos}
+                      Pendentes: {selectedAuditResumo.pendentes + selectedAuditResumo.parcialmenteAtendidos}
                     </span>
-                    {selectedAuditResumo.itensSemEvidencia > 0 && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="text-rose-700 dark:text-rose-400 font-medium">
-                          Sem evidência: {selectedAuditResumo.itensSemEvidencia}
-                        </span>
-                      </>
-                    )}
                   </div>
                 </div>
 
@@ -1530,6 +1852,16 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                         <Upload className="w-3.5 h-3.5" />
                         <span>Importar (XLSX / DOCX / PDF)</span>
                       </button>
+                      {selectedAuditItems.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setIsExistingMatchOpen(true)}
+                          className="px-3.5 py-2 text-xs font-medium rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100/80 dark:hover:bg-emerald-950/60 whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          <span>Verificar Outras Listas</span>
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={handleStartNewManualItem}
@@ -1579,15 +1911,6 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                           </option>
                         ))}
                       </select>
-                      <label className="inline-flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={onlyMissingEvidence}
-                          onChange={(e) => setOnlyMissingEvidence(e.target.checked)}
-                          className="rounded border-slate-300"
-                        />
-                        <span>Sem evidência</span>
-                      </label>
                     </div>
                   </div>
 
@@ -1602,51 +1925,80 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                     ) : (
                       filteredAuditItems.map((it) => {
                         const isSelected = !isCreatingManualItem && selectedItemId === it.id;
-                        const faltaEvid =
-                          (it.situacao === 'ATENDIDO' || it.situacao === 'PARCIALMENTE_ATENDIDO') &&
-                          (!it.evidencias || it.evidencias.length === 0);
+                        const respondido = isItemRespondidoPrep(it);
                         return (
-                          <button
+                          <div
                             key={it.id}
-                            type="button"
-                            onClick={() => {
-                              setIsCreatingManualItem(false);
-                              setSelectedItemId(it.id);
-                              setShowHistory(false);
-                            }}
-                            className={`w-full text-left px-4 py-3 transition-colors cursor-pointer space-y-1 ${
+                            className={`px-4 py-3 transition-colors space-y-2 ${
                               isSelected
                                 ? 'bg-blue-50/80 dark:bg-blue-950/40'
                                 : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
                             }`}
                           >
-                            <div className="flex items-center justify-between gap-2 text-xs">
-                              <span className="font-mono font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
-                                Item {it.numeroItem}
-                              </span>
-                              <span className={`font-medium ${getSituacaoTextClass(it.situacao)}`}>
-                                {SITUACAO_LABELS[it.situacao]}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-700 dark:text-slate-300 line-clamp-2">
-                              {it.perguntaOriginal}
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
-                              <span>Evidências: {it.evidencias?.length || 0}</span>
-                              <span aria-hidden="true">·</span>
-                              <span>
-                                {it.validadoQualidade ? 'Validado pela Qualidade' : 'Rascunho'}
-                              </span>
-                              {faltaEvid && (
-                                <>
-                                  <span aria-hidden="true">·</span>
-                                  <span className="text-rose-600 dark:text-rose-400 font-medium">
-                                    Falta evidência
-                                  </span>
-                                </>
-                              )}
-                            </div>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsCreatingManualItem(false);
+                                setSelectedItemId(it.id);
+                                setShowHistory(false);
+                              }}
+                              className="w-full text-left cursor-pointer space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-2 text-xs">
+                                <span className="font-mono font-semibold text-slate-900 dark:text-slate-100 tabular-nums">
+                                  Item {it.numeroItem}
+                                </span>
+                                <span className={`font-medium ${getSituacaoTextClass(it.situacao)}`}>
+                                  {SITUACAO_LABELS[it.situacao]}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-700 dark:text-slate-300 line-clamp-2">
+                                {it.perguntaOriginal}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
+                                <span>{respondido ? 'Respondido' : 'Sem resposta'}</span>
+                                {(it.evidencias?.length || 0) > 0 && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span>Evidências: {it.evidencias.length}</span>
+                                  </>
+                                )}
+                                <span aria-hidden="true">·</span>
+                                <span>
+                                  {it.validadoQualidade ? 'Validado pela Qualidade' : 'Rascunho'}
+                                </span>
+                                {it.reutilizadaDe && !it.reutilizadaDe.validadeVerificada && (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span className="text-amber-700 dark:text-amber-400 font-medium">
+                                      Reutilizada · Confirmar validade
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </button>
+
+                            {/* 3 opções rápidas por item: clique já salva e conta como resposta */}
+                            {canWrite && (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                {SITUACAO_CHOICE_OPTIONS.map((opt) => {
+                                  const active = it.situacao === opt.value;
+                                  return (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      onClick={() => handleQuickSelectSituacao(it, opt.value)}
+                                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                                        active ? opt.activeClass : opt.idleClass
+                                      }`}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         );
                       })
                     )}
@@ -1737,14 +2089,7 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                           {canWrite && (
                             <button
                               type="button"
-                              onClick={() =>
-                                setDraftReutilizadaDe({
-                                  ...draftReutilizadaDe,
-                                  validadeVerificada: true,
-                                  verificadaPorNome: actorName,
-                                  verificadaEm: new Date().toISOString(),
-                                })
-                              }
+                              onClick={handleConfirmReusedValidity}
                               className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-700 hover:bg-amber-800 text-white whitespace-nowrap shrink-0 cursor-pointer"
                             >
                               Confirmar Validade
@@ -1800,7 +2145,7 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <label className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                            4. Resposta da IMPACTO
+                            4. Resposta / Comentário da IMPACTO (opcional se marcado Conforme / Não Conforme / Não Aplicável)
                           </label>
                           {canWrite && (
                             <div className="flex flex-wrap items-center gap-2">
@@ -1839,7 +2184,7 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                             setDraftResposta(e.target.value);
                             if (draftValidadoQualidade) setDraftValidadoQualidade(false);
                           }}
-                          placeholder="Descreva objetivamente como a IMPACTO atende ao requisito, citando documentos e registros reais..."
+                          placeholder="Opcional quando já marcado Conforme, Não Conforme ou Não Aplicável. Detalhe aqui procedimentos, capítulos ou observações complementares..."
                           className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
                         />
                       </div>
@@ -1905,11 +2250,11 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                         </div>
                       )}
 
-                      {/* Campo 5: Evidências Associadas */}
+                      {/* Campo 5: Evidências Associadas (opcional) */}
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <label className="text-xs font-medium text-slate-700 dark:text-slate-300 tabular-nums">
-                            5. Evidências associadas ({draftEvidencias.length})
+                            5. Evidências associadas ({draftEvidencias.length}) — opcional (ex.: verificação visual)
                           </label>
                           {canWrite && (
                             <button
@@ -1923,16 +2268,9 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                           )}
                         </div>
 
-                        {(draftSituacao === 'ATENDIDO' || draftSituacao === 'PARCIALMENTE_ATENDIDO') &&
-                          draftEvidencias.length === 0 && (
-                            <p className="text-xs text-rose-600 dark:text-rose-400">
-                              Atenção: este item está marcado como {SITUACAO_LABELS[draftSituacao]} sem nenhuma evidência associada.
-                            </p>
-                          )}
-
                         {draftEvidencias.length === 0 ? (
                           <div className="p-3 rounded-lg border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-500">
-                            Nenhuma evidência vinculada a este item.
+                            Nenhuma evidência anexada (opcional — itens verificados visualmente ou sem anexo são válidos normalmente).
                           </div>
                         ) : (
                           <div className="border border-slate-200 dark:border-slate-800 rounded-lg divide-y divide-slate-200 dark:divide-slate-800">
@@ -1983,30 +2321,43 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                         )}
                       </div>
 
-                      {/* Campos 6 e 7: Situação e Observações/Pendências */}
+                      {/* Campos 6 e 7: Avaliação em 3 opções e Observações/Pendências */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
-                            6. Situação
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                            6. Avaliação (clique já registra como resposta)
                           </label>
-                          <select
-                            disabled={!canWrite}
-                            value={draftSituacao}
-                            onChange={(e) =>
-                              setDraftSituacao(e.target.value as SituacaoItemAuditoriaPrep)
-                            }
-                            className="w-full px-3 py-2 text-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950"
-                          >
-                            {SITUACAO_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {SITUACAO_CHOICE_OPTIONS.map((opt) => {
+                              const active = draftSituacao === opt.value;
+                              return (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  disabled={!canWrite}
+                                  onClick={() => {
+                                    if (selectedItem && !isCreatingManualItem) {
+                                      void handleQuickSelectSituacao(selectedItem, opt.value);
+                                    } else {
+                                      setDraftSituacao(opt.value);
+                                      if (draftOrigemResposta === 'NAO_PREENCHIDA') {
+                                        setDraftOrigemResposta('MANUAL');
+                                      }
+                                    }
+                                  }}
+                                  className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 cursor-pointer disabled:opacity-60 ${
+                                    active ? opt.activeClass : opt.idleClass
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1">
+                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                             7. Observações e pendências
                           </label>
                           <input
@@ -2173,15 +2524,9 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                     </div>
                   </div>
                   <div className="p-3.5 rounded-lg border border-slate-200 dark:border-slate-800">
-                    <div className="text-slate-500 dark:text-slate-400">Atendidos/Parciais sem Evidência</div>
-                    <div
-                      className={`text-xl font-bold tabular-nums mt-1 ${
-                        readinessChecks.semEvidencia.length > 0
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {readinessChecks.semEvidencia.length}
+                    <div className="text-slate-500 dark:text-slate-400">Com Evidência Anexada (opcional)</div>
+                    <div className="text-xl font-bold text-blue-600 dark:text-blue-400 tabular-nums mt-1">
+                      {readinessChecks.comEvidencia.length}
                     </div>
                   </div>
                   <div className="p-3.5 rounded-lg border border-slate-200 dark:border-slate-800">
@@ -2198,12 +2543,11 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                   </div>
                 </div>
 
-                {readinessChecks.pendenciasAbertas.length > 0 || readinessChecks.semEvidencia.length > 0 ? (
+                {readinessChecks.pendenciasAbertas.length > 0 || readinessChecks.reutilizadasSemConfirmacao.length > 0 ? (
                   <div className="border border-slate-200 dark:border-slate-800 rounded-lg divide-y divide-slate-200 dark:divide-slate-800">
                     {Array.from(
                       new Map(
                         [
-                          ...readinessChecks.semEvidencia,
                           ...readinessChecks.reutilizadasSemConfirmacao,
                           ...readinessChecks.pendenciasAbertas,
                         ].map((i) => [i.id, i])
@@ -2221,13 +2565,6 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                           <span className={getSituacaoTextClass(it.situacao)}>
                             {SITUACAO_LABELS[it.situacao]}
                           </span>
-                          {(!it.evidencias || it.evidencias.length === 0) &&
-                            (it.situacao === 'ATENDIDO' || it.situacao === 'PARCIALMENTE_ATENDIDO') && (
-                              <>
-                                <span aria-hidden="true"> · </span>
-                                <span className="text-rose-600 dark:text-rose-400">Sem evidência</span>
-                              </>
-                            )}
                           {it.observacoesPendencias && (
                             <>
                               <span aria-hidden="true"> · </span>
@@ -2254,7 +2591,7 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                 ) : (
                   <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Todos os itens avaliados possuem resposta e evidências associadas.</span>
+                    <span>Todos os itens foram avaliados e não há pendências abertas.</span>
                   </div>
                 )}
               </div>
@@ -2294,19 +2631,16 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                   <div className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                     1. RESUMO
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs tabular-nums">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-xs tabular-nums">
                     <div>Total: <strong>{selectedAuditResumo.totalItens}</strong></div>
                     <div className="text-emerald-700 dark:text-emerald-400">
-                      Atendidos: <strong>{selectedAuditResumo.atendidos}</strong>
-                    </div>
-                    <div className="text-amber-700 dark:text-amber-400">
-                      Parciais: <strong>{selectedAuditResumo.parcialmenteAtendidos}</strong>
+                      Conformes: <strong>{selectedAuditResumo.atendidos}</strong>
                     </div>
                     <div className="text-rose-700 dark:text-rose-400">
-                      Não Atendidos: <strong>{selectedAuditResumo.naoAtendidos}</strong>
+                      Não Conformes: <strong>{selectedAuditResumo.naoAtendidos}</strong>
                     </div>
                     <div>Não Aplicáveis: <strong>{selectedAuditResumo.naoAplicaveis}</strong></div>
-                    <div>Pendentes: <strong>{selectedAuditResumo.pendentes}</strong></div>
+                    <div>Pendentes: <strong>{selectedAuditResumo.pendentes + selectedAuditResumo.parcialmenteAtendidos}</strong></div>
                   </div>
                 </div>
 
@@ -2338,13 +2672,16 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
                           )}
                           <p className="text-slate-700 dark:text-slate-300 whitespace-pre-line">
                             <span className="font-medium">Resposta da IMPACTO:</span>{' '}
-                            {it.respostaImpacto?.trim() || 'Não preenchida.'}
+                            {it.respostaImpacto?.trim() ||
+                              (it.situacao !== 'PENDENTE_DE_AVALIACAO'
+                                ? `Avaliação registrada diretamente como: ${SITUACAO_LABELS[it.situacao]}.`
+                                : 'Não preenchida.')}
                           </p>
                           <p className="text-[11px] text-slate-500 dark:text-slate-400">
                             <span className="font-medium">Evidências:</span>{' '}
                             {it.evidencias?.length > 0
                               ? it.evidencias.map((e) => `${e.titulo} (${e.referencia})`).join('; ')
-                              : 'Nenhuma evidência associada.'}
+                              : 'Sem anexo (evidência opcional / verificação visual).'}
                           </p>
                           {it.observacoesPendencias?.trim() && (
                             <p className="text-[11px] text-amber-700 dark:text-amber-400">
@@ -2382,8 +2719,27 @@ export const AuditPreparationCenterView: React.FC<AuditPreparationCenterViewProp
           open={isImportModalOpen}
           organizationId={orgId}
           userName={actorName}
+          audits={audits}
+          allItems={allItems}
+          historicalRequirements={auditRequirements}
+          currentAuditId={selectedAudit.id}
           onImportConfirm={handleConfirmImport}
           onClose={() => setIsImportModalOpen(false)}
+        />
+      )}
+
+      {isExistingMatchOpen && selectedAudit && (
+        <ExistingItemsMatchModal
+          open={isExistingMatchOpen}
+          organizationId={orgId}
+          currentAuditId={selectedAudit.id}
+          currentAuditName={selectedAudit.nome}
+          currentItems={selectedAuditItems}
+          audits={audits}
+          allItems={allItems}
+          historicalRequirements={auditRequirements}
+          onApplyMatches={handleApplyExistingMatches}
+          onClose={() => setIsExistingMatchOpen(false)}
         />
       )}
 
